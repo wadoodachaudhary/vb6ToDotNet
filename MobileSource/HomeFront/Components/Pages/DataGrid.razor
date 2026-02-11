@@ -1,0 +1,266 @@
+@page "/datagrid"
+@rendermode InteractiveServer
+
+<PageTitle>Data Grid - HomeFront</PageTitle>
+
+<h1>HfGrid — Data Grid Component</h1>
+<p>SyncFusion-equivalent grid with sorting, filtering, paging, <strong>multi-selection</strong> (Ctrl/Shift+Click), editing, templates, toolbar, <strong>drag-and-drop grouping</strong>, <strong>column resize</strong>, <strong>group expand/collapse</strong>, and <strong>group aggregates/totals</strong>.</p>
+
+<div style="margin-bottom: 16px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <button class="btn btn-outline-primary btn-sm" @onclick="GroupByDepartment">Group by Department</button>
+    <button class="btn btn-outline-primary btn-sm" @onclick="GroupByStatus">Group by Status</button>
+    <button class="btn btn-outline-secondary btn-sm" @onclick="ClearGroups">Clear Grouping</button>
+    <button class="btn btn-outline-success btn-sm" @onclick="ExpandAll">Expand All</button>
+    <button class="btn btn-outline-warning btn-sm" @onclick="CollapseAll">Collapse All</button>
+    <span style="color:#6c757d; font-size:13px; margin-left:8px;">
+        Drag headers to group &middot; Ctrl/Shift+Click rows to multi-select
+    </span>
+</div>
+
+<HfGrid TValue="Employee"
+        DataSource="@employees"
+        @ref="ItemsGrid"
+        AllowSorting="true"
+        AllowFiltering="true"
+        AllowPaging="true"
+        AllowSelection="true"
+        AllowGrouping="true"
+        AllowResizing="true"
+        EnableHover="true"
+        EnableAltRow="true"
+        ShowSearchBar="true"
+        ShowGroupExpandCollapse="true"
+        Height="620px"
+        RowHeight="42"
+        Toolbar="@(new List<string> { "Add", "Edit", "Delete" })"
+        AggregateRows="@aggregateRows"
+        FilterSettingsRef="@filterSettings"
+        PageSettingsRef="@pageSettings"
+        EditSettingsRef="@editSettings"
+        SelectionSettingsRef="@selectionSettings">
+
+    <HfGridColumnsBase>
+        <HfGridColumn Field="@nameof(Employee.EmployeeID)"
+                      HeaderText="ID"
+                      IsPrimaryKey="true"
+                      Type="ColumnType.Number"
+                      Width="80px"
+                      Visible="true"
+                      TextAlign="TextAlign.Right"
+                      AllowGrouping="false" />
+
+        <HfGridColumn Field="@nameof(Employee.Name)"
+                      HeaderText="Employee Name"
+                      Width="200px"
+                      ClipMode="ClipMode.EllipsisWithTooltip">
+            <Template>
+                @{
+                    var emp = (Employee)context;
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:@(emp.Gender == "Male" ? "#0d6efd" : "#e91e8a"); color:#fff; font-size:12px; font-weight:600;">
+                            @emp.Name[0]
+                        </span>
+                        <span>@emp.Name</span>
+                    </div>
+                }
+            </Template>
+        </HfGridColumn>
+
+        <HfGridColumn Field="@nameof(Employee.Designation)"
+                      HeaderText="Designation"
+                      Width="180px"
+                      FilterSettings="@(new HfFilterSettings { Type = FilterType.CheckBox })" />
+
+        <HfGridColumn Field="@nameof(Employee.Department)"
+                      HeaderText="Department"
+                      Width="160px"
+                      FilterSettings="@(new HfFilterSettings { Type = FilterType.CheckBox })" />
+
+        <HfGridColumn Field="@nameof(Employee.Salary)"
+                      HeaderText="Salary"
+                      Type="ColumnType.Number"
+                      Format="C0"
+                      TextAlign="TextAlign.Right"
+                      Width="130px"
+                      AllowGrouping="false" />
+
+        <HfGridColumn Field="@nameof(Employee.HireDate)"
+                      HeaderText="Hire Date"
+                      Type="ColumnType.Date"
+                      Format="yyyy-MM-dd"
+                      Width="130px" />
+
+        <HfGridColumn Field="@nameof(Employee.Status)"
+                      HeaderText="Status"
+                      Width="120px"
+                      FilterSettings="@(new HfFilterSettings { Type = FilterType.CheckBox })">
+            <Template>
+                @{
+                    var emp = (Employee)context;
+                    var isActive = emp.Status == "Active";
+                    <span style="display:inline-block; padding:3px 12px; border-radius:12px; font-size:12px; font-weight:500;
+                                 background:@(isActive ? "#d1e7dd" : "#f8d7da");
+                                 color:@(isActive ? "#0f5132" : "#842029");">
+                        @emp.Status
+                    </span>
+                }
+            </Template>
+        </HfGridColumn>
+
+        <HfGridColumn Field="@nameof(Employee.Rating)"
+                      HeaderText="Rating"
+                      Width="140px"
+                      AllowSorting="true"
+                      AllowFiltering="false"
+                      AllowGrouping="false">
+            <Template>
+                @{
+                    var emp = (Employee)context;
+                    <div>
+                        @for (int i = 0; i < 5; i++)
+                        {
+                            <span style="color:@(i < emp.Rating ? "#ffa600" : "#dee2e6"); font-size:16px;">★</span>
+                        }
+                    </div>
+                }
+            </Template>
+        </HfGridColumn>
+
+        <HfGridColumn HeaderText="Actions"
+                      Width="160px"
+                      AllowSorting="false"
+                      AllowFiltering="false"
+                      AllowEditing="false"
+                      AllowGrouping="false"
+                      AllowResizing="false"
+                      Commands="@(new List<GridCommandModel>
+                      {
+                          new() { Type = "Edit" },
+                          new() { Type = "Delete" }
+                      })" />
+    </HfGridColumnsBase>
+</HfGrid>
+
+@code {
+    private List<Employee> employees = new();
+    private HfGrid<Employee>? ItemsGrid;
+    private HfFilterSettings filterSettings = new() { Type = FilterType.Menu };
+    private HfPageSettings pageSettings = new() { PageSize = 12, PageSizes = [5, 10, 12, 20, 50] };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = true,
+        AllowDeleting = true,
+        Mode = EditMode.Dialog,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = true
+    };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        CheckboxOnly = false,
+        PersistSelection = true,
+        EnableToggle = true
+    };
+
+    private List<HfAggregateRow> aggregateRows = new()
+    {
+        new HfAggregateRow
+        {
+            ShowInGroupFooter = true,
+            ShowInGroupCaption = true,
+            ShowInFooter = true,
+            Columns = new List<HfAggregateColumn>
+            {
+                new() { Field = "Salary", Type = AggregateType.Sum, Format = "C0", FooterTemplate = "Total: {value}", GroupFooterTemplate = "Sub Total: {value}", GroupCaptionTemplate = "Total: {value}" },
+                new() { Field = "Salary", Type = AggregateType.Average, Format = "C0", FooterTemplate = "Avg: {value}" },
+                new() { Field = "EmployeeID", Type = AggregateType.Count, Format = "N0", FooterTemplate = "Count: {value}", GroupFooterTemplate = "Count: {value}" }
+            }
+        }
+    };
+
+    protected override void OnInitialized()
+    {
+        employees = GenerateEmployees(120);
+    }
+
+    private async Task GroupByDepartment()
+    {
+        if (ItemsGrid != null)
+            await ItemsGrid.GroupByColumnAsync("Department");
+    }
+
+    private async Task GroupByStatus()
+    {
+        if (ItemsGrid != null)
+            await ItemsGrid.GroupByColumnAsync("Status");
+    }
+
+    private async Task ClearGroups()
+    {
+        if (ItemsGrid != null)
+            await ItemsGrid.ClearGroupingAsync();
+    }
+
+    private async Task ExpandAll()
+    {
+        if (ItemsGrid != null)
+            await ItemsGrid.ExpandAllGroupAsync();
+    }
+
+    private async Task CollapseAll()
+    {
+        if (ItemsGrid != null)
+            await ItemsGrid.CollapseAllGroupAsync();
+    }
+
+    private static List<Employee> GenerateEmployees(int count)
+    {
+        var names = new[] { "James Wilson", "Sarah Johnson", "Michael Chen", "Emily Davis",
+            "Robert Taylor", "Jennifer Martinez", "David Anderson", "Jessica Thomas",
+            "William Jackson", "Amanda White", "Christopher Harris", "Melissa Martin",
+            "Daniel Thompson", "Stephanie Garcia", "Matthew Robinson", "Nicole Clark",
+            "Andrew Lewis", "Laura Walker", "Joshua Hall", "Rachel Allen" };
+
+        var designations = new[] { "Software Engineer", "Senior Developer", "Tech Lead",
+            "Project Manager", "QA Analyst", "UX Designer", "DevOps Engineer",
+            "Data Scientist", "Product Owner", "Architect" };
+
+        var departments = new[] { "Engineering", "Design", "QA", "Product", "DevOps", "Data", "Management" };
+        var statuses = new[] { "Active", "Inactive" };
+        var genders = new[] { "Male", "Female" };
+
+        var rng = new Random(42);
+        var list = new List<Employee>();
+
+        for (int i = 1; i <= count; i++)
+        {
+            list.Add(new Employee
+            {
+                EmployeeID = 1000 + i,
+                Name = names[rng.Next(names.Length)],
+                Designation = designations[rng.Next(designations.Length)],
+                Department = departments[rng.Next(departments.Length)],
+                Salary = rng.Next(55, 200) * 1000,
+                HireDate = DateTime.Today.AddDays(-rng.Next(30, 3000)),
+                Status = statuses[rng.Next(statuses.Length)],
+                Rating = rng.Next(1, 6),
+                Gender = genders[rng.Next(genders.Length)]
+            });
+        }
+        return list;
+    }
+
+    public class Employee
+    {
+        public int EmployeeID { get; set; }
+        public string Name { get; set; } = "";
+        public string Designation { get; set; } = "";
+        public string Department { get; set; } = "";
+        public decimal Salary { get; set; }
+        public DateTime HireDate { get; set; }
+        public string Status { get; set; } = "Active";
+        public int Rating { get; set; }
+        public string Gender { get; set; } = "Male";
+    }
+}
