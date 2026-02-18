@@ -1,0 +1,802 @@
+@page "/custom-quote"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Data
+@using System.Dynamic
+@using System.Linq
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Custom Option Quote</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        min-width: 72px;
+    }
+
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-separator { width: 1px; height: 32px; background: #ced4da; margin: 0 4px; }
+
+    .content-layout { display: flex; flex-direction: column; height: calc(100vh - 140px); }
+    .grid-panel { flex: 1; min-height: 280px; }
+    .bottom-panel { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; margin-top: 10px; }
+    .info-panel, .price-panel { border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; background: #fff; }
+    .panel-title { font-weight: 700; font-size: 12px; color: #495057; margin-bottom: 8px; text-transform: uppercase; }
+    .info-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .info-table th { text-align: right; padding: 4px 8px; color: #6c757d; width: 120px; }
+    .info-table td { padding: 4px 8px; }
+    .desc { font-size: 13px; margin-bottom: 8px; color: #333; min-height: 40px; }
+    .field-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
+    .field-row label { width: 70px; text-align: right; font-size: 12px; font-weight: 600; color: #495057; }
+    .inline { display: flex; align-items: center; gap: 6px; }
+    .price-label { margin-top: 4px; font-weight: 600; color: #0d6efd; }
+</style>
+
+<div class="toolbar-cntr">
+    <button class="tbar-btn" disabled="@(!CanSave)" @onclick="OnSaveClick">
+        <span>💾</span>
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnPreviewClick">
+        <span>🖨</span>
+        <span class="tool-label">Preview</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("One Time")'>
+        <span class="tool-label">One Time</span>
+    </button>
+    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("Item")'>
+        <span class="tool-label">Item</span>
+    </button>
+    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("Assembly")'>
+        <span class="tool-label">Assembly</span>
+    </button>
+    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("Custom")'>
+        <span class="tool-label">Custom</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnAttachmentsClick">
+        <span class="tool-label">Attachments</span>
+    </button>
+</div>
+
+<div class="content-layout">
+    <div class="grid-panel">
+        <HfGrid @ref="ItemsGrid"
+                TValue="CustomQuoteItem"
+                DataSource="@ItemsData"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowFiltering="false"
+                AllowGrouping="false"
+                AllowResizing="true"
+                EnableHover="true"
+                Height="100%"
+                RowHeight="34"
+                SelectionSettingsRef="@selectionSettings"
+                EditSettingsRef="@editSettings"
+                EventsRef="@gridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(CustomQuoteItem.Selected)" HeaderText="" Width="40px" Type="ColumnType.CheckBox" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.POIndex)" HeaderText="PO Index" Width="80px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.EstPhase)" HeaderText="Phase" Width="70px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.EstItem)" HeaderText="Item" Width="70px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.ItemDesc)" HeaderText="Description" Width="260px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.ItemComments)" HeaderText="Comments" Width="200px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.TakeoffQty)" HeaderText="Takeoff Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.OrderUOM)" HeaderText="Order UOM" Width="80px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.ConversionFactor)" HeaderText="Conv" Width="70px" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetQty)" HeaderText="Budget Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetRate)" HeaderText="Rate" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetPretax)" HeaderText="Pretax" Width="95px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetTax)" HeaderText="Tax" Width="80px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetVendorName)" HeaderText="Vendor" Width="200px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.JCCostCode)" HeaderText="Cost Code" Width="90px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.JCCategory)" HeaderText="Category" Width="90px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetTaxGroup)" HeaderText="Tax Group" Width="90px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.RoomLocation)" HeaderText="Room" Width="120px" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetJCTaxRate)" Visible="false" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetNJCTaxRate)" Visible="false" />
+                <HfGridColumn Field="@nameof(CustomQuoteItem.RowState)" Visible="false" />
+                @for (var i = 1; i <= 40; i++)
+                {
+                    <HfGridColumn Field="@($"WBS{i:D2}")" HeaderText="@($"WBS{i:D2}")" Visible="false" />
+                }
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <div class="bottom-panel">
+        <div class="info-panel">
+            <div class="panel-title">Info</div>
+            <table class="info-table">
+                <tr><th>Community</th><td>@InfoCommunity</td></tr>
+                <tr><th>Customer</th><td>@InfoCustomer</td></tr>
+                <tr><th>Model</th><td>@InfoModel</td></tr>
+                <tr><th>Series</th><td>@InfoSeries</td></tr>
+                <tr><th>Assembly</th><td>@InfoAssembly</td></tr>
+            </table>
+        </div>
+
+        <div class="price-panel">
+            <div class="panel-title">Custom Request</div>
+            <div class="desc">@mAssemblyDesc</div>
+
+            <div class="field-row">
+                <label>Cost</label>
+                <HfNumericTextBox TValue="decimal" @bind-Value="mCost" Format="N2" Width="120px"
+                                  Enabled="@(!mReadOnly)" ValueChange="OnCostChanged" />
+            </div>
+            <div class="field-row">
+                <label>Markup</label>
+                <HfNumericTextBox TValue="decimal" @bind-Value="mMarkup" Format="N2" Width="120px"
+                                  Enabled="@(!mReadOnly)" ValueChange="OnMarkupChanged" />
+            </div>
+            <div class="field-row">
+                <label>Margin</label>
+                <HfNumericTextBox TValue="decimal" @bind-Value="mMargin" Format="N2" Width="120px"
+                                  Enabled="@(!mReadOnly)" ValueChange="OnMarginChanged" />
+            </div>
+            <div class="field-row">
+                <label>Sell</label>
+                <HfNumericTextBox TValue="decimal" @bind-Value="mSell" Format="N2" Width="120px"
+                                  Enabled="@(!mReadOnly)" ValueChange="OnSellChanged" />
+            </div>
+            <div class="field-row">
+                <label>Sell Qty</label>
+                <div class="inline">
+                    <HfNumericTextBox TValue="decimal" @bind-Value="mSalesQty" Format="N2" Width="90px"
+                                      Enabled="@(!mReadOnly)" ValueChange="OnSalesQtyChanged" />
+                    <HfDropDownList TValue="string" TItem="ComboBoxItem"
+                                    DataSource="@UomItems"
+                                    @bind-Value="mSalesUOM"
+                                    TextFieldName="Text" ValueFieldName="Value"
+                                    Width="90px"
+                                    Enabled="@(!mReadOnly)"
+                                    ValueChange="OnUomChanged" />
+                </div>
+            </div>
+            <div class="price-label">@PriceLabel</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public string AttachmentID { get; set; } = "";
+    [Parameter] public string Location { get; set; } = "ADDENDUM";
+    [Parameter] public string Model { get; set; } = "";
+    [Parameter] public string Opt { get; set; } = "";
+    [Parameter] public string Job { get; set; } = "";
+    [Parameter] public string Customer { get; set; } = "";
+    [Parameter] public string Community { get; set; } = "";
+    [Parameter] public string CommunityPhase { get; set; } = "";
+    [Parameter] public string Extra { get; set; } = "";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public long Seq { get; set; }
+    [Parameter] public string Category { get; set; } = "";
+    [Parameter] public decimal CostAmount { get; set; }
+    [Parameter] public decimal SellAmount { get; set; }
+    [Parameter] public decimal SalesQty { get; set; } = 1;
+    [Parameter] public string SalesUOM { get; set; } = "";
+
+    private readonly DbWrapperSqlServer db = new();
+    private HfGrid<CustomQuoteItem>? ItemsGrid;
+    private readonly HfSelectionSettings selectionSettings = new() { Mode = SelectionMode.Row, Type = SelectionType.Multiple, EnableToggle = true };
+    private HfEditSettings editSettings = new() { AllowAdding = true, AllowEditing = true, AllowDeleting = true, ShowConfirmDialog = false };
+    private readonly HfGridEvents<CustomQuoteItem> gridEvents = new();
+
+    private bool mReadOnly;
+    private bool mSaved;
+    private bool mDirty;
+    private bool _editLock;
+
+    private string mAttachmentID = "";
+    private string mCommunity = "";
+    private string mCommunityPhase = "";
+    private string mAssemblyDesc = "";
+    private decimal mSalesQty = 1;
+    private string mSalesUOM = "";
+    private long mSeq;
+    private string mJob = "";
+    private string mExtra = "";
+    private string mCustomer = "";
+    private int mLocation;
+    private string mModel = "";
+    private string mOptionID = "";
+
+    private decimal mCost;
+    private decimal mSell;
+    private decimal mMarkup;
+    private decimal mMargin;
+
+    private List<CustomQuoteItem> ItemsData = new();
+    private List<ComboBoxItem> UomItems = new();
+
+    private string InfoCommunity = "";
+    private string InfoCustomer = "";
+    private string InfoModel = "";
+    private string InfoSeries = "";
+    private string InfoAssembly = "";
+
+    private bool _initialized;
+
+    private int DivisionID => 1;
+
+    private bool CanSave => !mReadOnly && mDirty;
+
+    private string PriceLabel => $"@ {mSell:0.00} = {(mSalesQty * mSell):$#,##0.00}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_initialized) return;
+        InitializeFromParameters();
+        ApplyReadOnly();
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CustomQuoteItem>>(this, OnCellSaved);
+        await LoadUomAsync();
+        await LoadInfoPanelAsync();
+        await LoadDataAsync();
+        CalcTotals();
+        _initialized = true;
+    }
+
+    private void InitializeFromParameters()
+    {
+        mReadOnly = ReadOnly;
+        mAttachmentID = AttachmentID;
+        mCommunity = Community;
+        mCommunityPhase = CommunityPhase;
+        mAssemblyDesc = Description;
+        mSalesQty = SalesQty <= 0 ? 1 : SalesQty;
+        mSalesUOM = SalesUOM;
+        mSeq = Seq;
+        mJob = (Job ?? "").Replace("-", "");
+        mExtra = Extra;
+        mCustomer = Customer;
+        mLocation = MapLocation(Location);
+        mModel = Model;
+        mOptionID = Opt;
+        mCost = CostAmount;
+        mSell = SellAmount;
+
+        if (mCost != 0 && mSell != 0)
+        {
+            mMarkup = Math.Round((mSell - mCost) / mCost * 100, 2);
+            mMargin = mSell == 0 ? 0 : Math.Round((mSell - mCost) / mSell * 100, 0);
+        }
+    }
+
+    private void ApplyReadOnly()
+    {
+        editSettings = new HfEditSettings
+        {
+            AllowAdding = !mReadOnly,
+            AllowEditing = !mReadOnly,
+            AllowDeleting = !mReadOnly,
+            ShowConfirmDialog = false
+        };
+    }
+
+    private int MapLocation(string location)
+    {
+        return (location ?? "").ToUpperInvariant() switch
+        {
+            "ADDENDUM" => (int)QuoteLocation.ScheduleB,
+            "CHANGEORDER" => (int)QuoteLocation.ChangeOrder,
+            "DESIGNCENTER" => (int)QuoteLocation.DesignCenter,
+            _ => (int)QuoteLocation.ScheduleB
+        };
+    }
+
+    public async Task<bool> BuildQuote(bool readOnly, string attachmentId, string location, string model, string opt, string job, string customer, string community, string communityPhase, string extra, string description, long seq, string category, decimal costAmount, decimal sellAmount, decimal salesQty, string salesUom)
+    {
+        mReadOnly = readOnly;
+        mAttachmentID = attachmentId;
+        mCommunity = community;
+        mCommunityPhase = communityPhase;
+        mAssemblyDesc = description;
+        mSalesQty = salesQty;
+        mSalesUOM = salesUom;
+        mSeq = seq;
+        mJob = (job ?? "").Replace("-", "");
+        mExtra = extra;
+        mCustomer = customer;
+        mLocation = MapLocation(location);
+        mModel = model;
+        mOptionID = opt;
+        mCost = costAmount;
+        mSell = sellAmount;
+        mMarkup = mCost == 0 ? 0 : Math.Round((mSell - mCost) / mCost * 100, 2);
+        mMargin = mSell == 0 ? 0 : Math.Round((mSell - mCost) / mSell * 100, 0);
+
+        ApplyReadOnly();
+        await LoadUomAsync();
+        await LoadInfoPanelAsync();
+        await LoadDataAsync();
+        CalcTotals();
+        return mSaved;
+    }
+
+    private async Task LoadUomAsync()
+    {
+        var rows = await db.QueryAsync("SELECT DISTINCT OrderUOM Unit FROM tblPhaseItem WHERE DivisionID=@DivisionID ORDER BY 1", new { DivisionID });
+        UomItems = rows.Select(r => new ComboBoxItem
+        {
+            Text = r["Unit"]?.ToString() ?? "",
+            Value = r["Unit"]?.ToString() ?? ""
+        }).ToList();
+        if (!string.IsNullOrWhiteSpace(mSalesUOM) && UomItems.All(u => u.Value != mSalesUOM))
+            UomItems.Insert(0, new ComboBoxItem { Text = mSalesUOM, Value = mSalesUOM });
+    }
+
+    private async Task LoadInfoPanelAsync()
+    {
+        var s = @"
+select isnull(c.community,'') + isnull('.' + c.phase,'') + ' - ' + isnull(l.description,'') + isnull(' ' + p.description,'') Community,
+       isnull(c.customer_no,'** not found **') + isnull(' - ' + c.Description,'') Customer,
+       isnull(c.model,'') + isnull(' - ' + m.description,'   ** not found **') Model,
+       isnull(c.Series,'') + isnull(' - ' + s.description,'   ** not found **') Series,
+       isnull(c.ModelAssembly,'') + isnull(' - ' + a.description,'   ** not found **') Assembly
+from tblcustomers c
+     LEFT OUTER JOIN tbllocality l on(c.community=l.area)
+     LEFT OUTER JOIN communityphase p on(c.community=p.community and c.phase=p.communityphase)
+     LEFT OUTER JOIN DistinctDivisionModelSeries m on(c.model=m.model and c.series=m.series and c.divisionid=m.divisionid)
+     LEFT OUTER JOIN tblseries s on(m.series=s.series and m.DivisionID = s.DivisionID)
+     LEFT OUTER JOIN tblDBAssemblyMaster a on(c.DivisionID = a.DivisionID and c.community=a.community and c.modelassembly=a.assembly and a.model=c.model and a.optionid='')
+where c.customer_no=@CustomerNo";
+        var rows = await db.QueryAsync(s, new { CustomerNo = mCustomer });
+        if (rows.Count > 0)
+        {
+            var r = rows[0];
+            InfoCommunity = r["Community"]?.ToString() ?? "";
+            InfoCustomer = r["Customer"]?.ToString() ?? "";
+            InfoModel = r["Model"]?.ToString() ?? "";
+            InfoSeries = r["Series"]?.ToString() ?? "";
+            InfoAssembly = r["Assembly"]?.ToString() ?? "";
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var s = @"
+select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_Name BudgetVendorName, pi.roundto, pi.rounddir, i.*
+  from CustomPreEstimateItems i
+  left outer join tblphaseitem pi ON(pi.DivisionID = @DivisionID and i.phase=pi.phase and i.item=pi.item)
+  left outer join tblVendors v   ON(i.BudgetVendor=v.Vendor_ID and v.DivisionID = @DivisionID)
+  left outer join StandardCostCodes cc   ON(cc.DivisionID=@DivisionID and i.JCCostCode=cc.CostCode)
+  left outer join StandardCategories cat ON(cat.DivisionID=@DivisionID and i.JCCategory=cat.Category)
+ where i.customerno=@CustomerNo
+   and i.location=@Location
+   and i.seq=@Seq";
+        var dt = db.SqlExec(s, new { DivisionID, CustomerNo = mCustomer, Location = mLocation, Seq = mSeq });
+        ItemsData = new List<CustomQuoteItem>();
+        foreach (DataRow row in dt.Rows)
+        {
+            var item = new CustomQuoteItem
+            {
+                Customer_No = mCustomer,
+                Location = mLocation,
+                OptionID = mOptionID,
+                HFDescription = mAssemblyDesc,
+                POIndex = row["POIndex"]?.ToString() ?? "",
+                RoundTo = ToDecimal(row["RoundTo"]),
+                RoundDir = ToInt(row["RoundDir"]),
+                ConversionFactor = ToDecimal(row["ConversionFactor"]),
+                EstPhase = row["Phase"]?.ToString() ?? "",
+                EstItem = row["Item"]?.ToString() ?? "",
+                ItemDesc = row["Description"]?.ToString() ?? "",
+                ItemComments = row["Comments"]?.ToString() ?? "",
+                TakeoffQty = ToDecimal(row["TakeoffQty"]),
+                TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
+                OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+                Job_No = mJob,
+                JCExtra = mExtra,
+                JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+                JCCategory = row["JCCategory"]?.ToString() ?? "",
+                BudgetVendor = row["BudgetVendor"]?.ToString() ?? "",
+                BudgetQty = ToDecimal(row["BudgetQty"]),
+                BudgetRate = ToDecimal(row["BudgetRate"]),
+                BudgetPretax = ToDecimal(row["BudgetPretax"]),
+                BudgetTaxGroup = row["BudgetTaxGroup"]?.ToString() ?? "",
+                BudgetJCTax = ToDecimal(row["BudgetJCTax"]),
+                BudgetJCTaxRate = ToDecimal(row["BudgetJCTaxRate"]),
+                BudgetNJCTax = ToDecimal(row["BudgetNJCTax"]),
+                BudgetNJCTaxRate = ToDecimal(row["BudgetNJCTaxRate"]),
+                Seq = mSeq,
+                Assembly = row["Assembly"]?.ToString() ?? "",
+                JCCostCodeDesc = row["JCCostCodeDesc"]?.ToString() ?? "",
+                JCCategoryDesc = row["JCCategoryDesc"]?.ToString() ?? "",
+                BudgetVendorName = row["BudgetVendorName"]?.ToString() ?? "",
+                RoomLocation = row["RoomLocation"]?.ToString() ?? "",
+                RowState = "CLEAN"
+            };
+            item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+            for (var i = 1; i <= 40; i++)
+                item.SetWbs(i, row[$"WBS{i:D2}"]?.ToString() ?? "");
+            ItemsData.Add(item);
+        }
+        mDirty = false;
+    }
+
+    private void OnCellSaved(CellSaveArgs<CustomQuoteItem> args)
+    {
+        if (args.Data == null) return;
+        var field = args.ColumnName ?? "";
+        RecalcRow(args.Data, field);
+        if (args.Data.RowState != "NEW") args.Data.RowState = "DIRTY";
+        mDirty = true;
+        CalcTotals();
+    }
+
+    private void RecalcRow(CustomQuoteItem row, string field)
+    {
+        switch (field)
+        {
+            case nameof(CustomQuoteItem.TakeoffQty):
+                if (row.ConversionFactor != 0)
+                    row.BudgetQty = Math.Round(row.TakeoffQty * row.ConversionFactor, 2);
+                row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                break;
+            case nameof(CustomQuoteItem.BudgetQty):
+            case nameof(CustomQuoteItem.BudgetRate):
+                row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                break;
+            case nameof(CustomQuoteItem.BudgetPretax):
+                if (row.BudgetQty != 0)
+                    row.BudgetRate = Math.Round(row.BudgetPretax / row.BudgetQty, 4);
+                break;
+        }
+
+        row.BudgetJCTax = Math.Round(row.BudgetPretax * row.BudgetJCTaxRate / 100, 2);
+        row.BudgetNJCTax = Math.Round(row.BudgetPretax * row.BudgetNJCTaxRate / 100, 2);
+        row.BudgetTax = row.BudgetJCTax + row.BudgetNJCTax;
+    }
+
+    private void CalcTotals(bool calcMargin = true, bool calcMarkup = true)
+    {
+        _editLock = true;
+        if (ItemsData.Count > 0)
+            mCost = ItemsData.Sum(i => i.BudgetPretax + i.BudgetJCTax);
+        if (calcMargin)
+            mMargin = mSell == 0 ? 0 : Math.Round((mSell - mCost) / mSell * 100, 0);
+        if (calcMarkup)
+            mMarkup = mCost == 0 ? 0 : Math.Round((mSell - mCost) / mCost * 100, 0);
+        _editLock = false;
+    }
+
+    private void OnCostChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        if (_editLock) return;
+        mCost = args.Value;
+        CalcTotals();
+        mDirty = true;
+    }
+
+    private void OnSellChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        if (_editLock) return;
+        mSell = args.Value;
+        CalcTotals();
+        mDirty = true;
+    }
+
+    private void OnMarkupChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        if (_editLock) return;
+        _editLock = true;
+        mMarkup = args.Value;
+        mSell = mCost * (1 + mMarkup / 100);
+        CalcTotals(true, false);
+        mDirty = true;
+        _editLock = false;
+    }
+
+    private void OnMarginChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        if (_editLock) return;
+        _editLock = true;
+        mMargin = args.Value;
+        mSell = mMargin >= 100 ? mCost : (100 * mCost / (100 - mMargin));
+        CalcTotals(false, true);
+        mDirty = true;
+        _editLock = false;
+    }
+
+    private void OnSalesQtyChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        mSalesQty = args.Value;
+        mDirty = true;
+    }
+
+    private void OnUomChanged(HfDropDownList<string, ComboBoxItem>.ChangeEventArgs<string, ComboBoxItem> args)
+    {
+        mSalesUOM = args.Value ?? "";
+        mDirty = true;
+    }
+
+    private async Task OnSaveClick()
+    {
+        if (await SaveDataAsync(false))
+            await JSRuntime.InvokeVoidAsync("alert", "Custom Quote saved.");
+    }
+
+    private async Task OnPreviewClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Preview report not implemented in this demo.");
+    }
+
+    private async Task OnAttachmentsClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Open attachments for ID: {mAttachmentID}");
+    }
+
+    private async Task OnTakeoffClick(string mode)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Takeoff ({mode}) not implemented in this demo.");
+    }
+
+    public async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!mDirty) return true;
+        if (prompt)
+        {
+            var ok = await JSRuntime.InvokeAsync<bool>("confirm", "This data has changed. Do you want to save these changes?");
+            if (!ok) return true;
+        }
+
+        await db.ExecuteAsync("DELETE FROM CustomPreEstimateItems WHERE customerno=@CustomerNo AND location=@Location AND seq=@Seq",
+            new { CustomerNo = mCustomer, Location = mLocation, Seq = mSeq });
+
+        var wbsCols = string.Join(",", Enumerable.Range(1, 40).Select(i => $"WBS{i:D2}"));
+        var wbsParams = string.Join(",", Enumerable.Range(1, 40).Select(i => $"@WBS{i:D2}"));
+        var sql = $@"
+INSERT INTO CustomPreEstimateItems(Assembly,CustomerNo,Location,OptionID,Seq,POIndex,Phase,Item,Description,Comments,TakeoffUOM,TakeoffQty,ConversionFactor,OrderUOM,Job,JCExtra,JCCostCode,JCCategory,BudgetVendor,BudgetQty,BudgetRate,BudgetPretax,BudgetTaxGroup,BudgetJCTax,BudgetJCTaxRate,BudgetNJCTax,BudgetNJCTaxRate,RoomLocation,{wbsCols})
+VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Description,@Comments,@TakeoffUOM,@TakeoffQty,@ConversionFactor,@OrderUOM,@Job,@JCExtra,@JCCostCode,@JCCategory,@BudgetVendor,@BudgetQty,@BudgetRate,@BudgetPretax,@BudgetTaxGroup,@BudgetJCTax,@BudgetJCTaxRate,@BudgetNJCTax,@BudgetNJCTaxRate,@RoomLocation,{wbsParams})";
+
+        foreach (var item in ItemsData)
+            await db.ExecuteAsync(sql, BuildInsertParams(item));
+
+        mDirty = false;
+        mSaved = true;
+        return true;
+    }
+
+    private Dictionary<string, object?> BuildInsertParams(CustomQuoteItem item)
+    {
+        var p = new Dictionary<string, object?>
+        {
+            ["Assembly"] = item.Assembly,
+            ["CustomerNo"] = mCustomer,
+            ["Location"] = mLocation,
+            ["OptionID"] = item.OptionID ?? mOptionID,
+            ["Seq"] = mSeq,
+            ["POIndex"] = item.POIndex,
+            ["Phase"] = item.EstPhase,
+            ["Item"] = item.EstItem,
+            ["Description"] = item.ItemDesc,
+            ["Comments"] = item.ItemComments,
+            ["TakeoffUOM"] = item.TakeoffUOM,
+            ["TakeoffQty"] = item.TakeoffQty,
+            ["ConversionFactor"] = item.ConversionFactor == 0 ? 1 : item.ConversionFactor,
+            ["OrderUOM"] = item.OrderUOM,
+            ["Job"] = mJob,
+            ["JCExtra"] = mExtra,
+            ["JCCostCode"] = item.JCCostCode,
+            ["JCCategory"] = item.JCCategory,
+            ["BudgetVendor"] = item.BudgetVendor,
+            ["BudgetQty"] = item.BudgetQty,
+            ["BudgetRate"] = item.BudgetRate,
+            ["BudgetPretax"] = item.BudgetPretax,
+            ["BudgetTaxGroup"] = item.BudgetTaxGroup,
+            ["BudgetJCTax"] = item.BudgetJCTax,
+            ["BudgetJCTaxRate"] = item.BudgetJCTaxRate,
+            ["BudgetNJCTax"] = item.BudgetNJCTax,
+            ["BudgetNJCTaxRate"] = item.BudgetNJCTaxRate,
+            ["RoomLocation"] = item.RoomLocation
+        };
+
+        for (var i = 1; i <= 40; i++)
+            p[$"WBS{i:D2}"] = item.GetWbs(i);
+
+        return p;
+    }
+
+    public void AddItem(string assembly, string assemblyDescription, string model, string phase, string item, long sequence, string description,
+                        double orderQty, string orderUom, double takeoffQty, string takeoffUom, double conversionFactor,
+                        double roundTo, long roundDir, long wastePercent, string jcExtra, string jcCostCode,
+                        string jcCostCodeDesc, string jcCategory, string jcCategoryDesc, string vendor,
+                        string vendorName, double price, string taxGroup, string taxGroupName, double jcTaxRate,
+                        double njcTaxRate, string poIndex, string comments, string formula, double salesQty,
+                        string location, string[] wbs, string? job = null)
+    {
+        var row = new CustomQuoteItem
+        {
+            RowState = "NEW",
+            Selected = false,
+            Customer_No = mCustomer,
+            Seq = mSeq,
+            Location = mLocation,
+            Assembly = assembly,
+            HFDescription = mAssemblyDesc,
+            Job_No = mJob,
+            JCExtra = mExtra,
+            EstPhase = phase,
+            EstItem = item,
+            ItemDesc = description,
+            ConversionFactor = (decimal)conversionFactor,
+            JCCostCode = jcCostCode,
+            JCCostCodeDesc = jcCostCodeDesc,
+            JCCategory = jcCategory,
+            JCCategoryDesc = jcCategoryDesc,
+            POIndex = poIndex,
+            RoundTo = (decimal)roundTo,
+            RoundDir = (int)roundDir,
+            ItemComments = comments,
+            TakeoffQty = (decimal)takeoffQty,
+            TakeoffUOM = takeoffUom,
+            OrderUOM = orderUom,
+            OptionID = mOptionID,
+            BudgetQty = (decimal)orderQty,
+            BudgetVendor = vendor,
+            BudgetVendorName = vendorName,
+            BudgetRate = (decimal)price,
+            BudgetPretax = Math.Round((decimal)orderQty * (decimal)price, 2),
+            BudgetTaxGroup = taxGroup,
+            BudgetJCTaxRate = (decimal)jcTaxRate,
+            BudgetNJCTaxRate = (decimal)njcTaxRate,
+            RoomLocation = location
+        };
+        row.BudgetJCTax = Math.Round(row.BudgetPretax * row.BudgetJCTaxRate / 100, 2);
+        row.BudgetNJCTax = Math.Round(row.BudgetPretax * row.BudgetNJCTaxRate / 100, 2);
+        row.BudgetTax = row.BudgetJCTax + row.BudgetNJCTax;
+
+        for (var i = 1; i <= 40 && i <= wbs.Length; i++)
+            row.SetWbs(i, wbs[i - 1]);
+
+        ItemsData.Add(row);
+        mDirty = true;
+        CalcTotals();
+    }
+
+    private static decimal ToDecimal(object? value) => value == null || value == DBNull.Value ? 0 : Convert.ToDecimal(value);
+    private static int ToInt(object? value) => value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+
+    public enum QuoteLocation { ScheduleB = 0, ChangeOrder = 1, DesignCenter = 2 }
+
+    public class ComboBoxItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    public class CustomQuoteItem
+    {
+        public bool Selected { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+        public string Customer_No { get; set; } = "";
+        public long Seq { get; set; }
+        public int Location { get; set; }
+        public string Assembly { get; set; } = "";
+        public string HFDescription { get; set; } = "";
+        public string Job_No { get; set; } = "";
+        public string JCExtra { get; set; } = "";
+        public string EstPhase { get; set; } = "";
+        public string EstItem { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public string ItemComments { get; set; } = "";
+        public decimal TakeoffQty { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public decimal ConversionFactor { get; set; } = 1;
+        public string OrderUOM { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public decimal BudgetQty { get; set; }
+        public string BudgetVendor { get; set; } = "";
+        public string BudgetVendorName { get; set; } = "";
+        public decimal BudgetRate { get; set; }
+        public decimal BudgetPretax { get; set; }
+        public string BudgetTaxGroup { get; set; } = "";
+        public decimal BudgetJCTax { get; set; }
+        public decimal BudgetJCTaxRate { get; set; }
+        public decimal BudgetNJCTax { get; set; }
+        public decimal BudgetNJCTaxRate { get; set; }
+        public decimal BudgetTax { get; set; }
+        public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public decimal RoundTo { get; set; }
+        public int RoundDir { get; set; }
+        public string RoomLocation { get; set; } = "";
+
+        public string WBS01 { get; set; } = "";
+        public string WBS02 { get; set; } = "";
+        public string WBS03 { get; set; } = "";
+        public string WBS04 { get; set; } = "";
+        public string WBS05 { get; set; } = "";
+        public string WBS06 { get; set; } = "";
+        public string WBS07 { get; set; } = "";
+        public string WBS08 { get; set; } = "";
+        public string WBS09 { get; set; } = "";
+        public string WBS10 { get; set; } = "";
+        public string WBS11 { get; set; } = "";
+        public string WBS12 { get; set; } = "";
+        public string WBS13 { get; set; } = "";
+        public string WBS14 { get; set; } = "";
+        public string WBS15 { get; set; } = "";
+        public string WBS16 { get; set; } = "";
+        public string WBS17 { get; set; } = "";
+        public string WBS18 { get; set; } = "";
+        public string WBS19 { get; set; } = "";
+        public string WBS20 { get; set; } = "";
+        public string WBS21 { get; set; } = "";
+        public string WBS22 { get; set; } = "";
+        public string WBS23 { get; set; } = "";
+        public string WBS24 { get; set; } = "";
+        public string WBS25 { get; set; } = "";
+        public string WBS26 { get; set; } = "";
+        public string WBS27 { get; set; } = "";
+        public string WBS28 { get; set; } = "";
+        public string WBS29 { get; set; } = "";
+        public string WBS30 { get; set; } = "";
+        public string WBS31 { get; set; } = "";
+        public string WBS32 { get; set; } = "";
+        public string WBS33 { get; set; } = "";
+        public string WBS34 { get; set; } = "";
+        public string WBS35 { get; set; } = "";
+        public string WBS36 { get; set; } = "";
+        public string WBS37 { get; set; } = "";
+        public string WBS38 { get; set; } = "";
+        public string WBS39 { get; set; } = "";
+        public string WBS40 { get; set; } = "";
+
+        public string GetWbs(int index) => index switch
+        {
+            1 => WBS01, 2 => WBS02, 3 => WBS03, 4 => WBS04, 5 => WBS05, 6 => WBS06, 7 => WBS07, 8 => WBS08, 9 => WBS09, 10 => WBS10,
+            11 => WBS11, 12 => WBS12, 13 => WBS13, 14 => WBS14, 15 => WBS15, 16 => WBS16, 17 => WBS17, 18 => WBS18, 19 => WBS19, 20 => WBS20,
+            21 => WBS21, 22 => WBS22, 23 => WBS23, 24 => WBS24, 25 => WBS25, 26 => WBS26, 27 => WBS27, 28 => WBS28, 29 => WBS29, 30 => WBS30,
+            31 => WBS31, 32 => WBS32, 33 => WBS33, 34 => WBS34, 35 => WBS35, 36 => WBS36, 37 => WBS37, 38 => WBS38, 39 => WBS39, 40 => WBS40,
+            _ => ""
+        };
+
+        public void SetWbs(int index, string value)
+        {
+            switch (index)
+            {
+                case 1: WBS01 = value; break; case 2: WBS02 = value; break; case 3: WBS03 = value; break; case 4: WBS04 = value; break; case 5: WBS05 = value; break;
+                case 6: WBS06 = value; break; case 7: WBS07 = value; break; case 8: WBS08 = value; break; case 9: WBS09 = value; break; case 10: WBS10 = value; break;
+                case 11: WBS11 = value; break; case 12: WBS12 = value; break; case 13: WBS13 = value; break; case 14: WBS14 = value; break; case 15: WBS15 = value; break;
+                case 16: WBS16 = value; break; case 17: WBS17 = value; break; case 18: WBS18 = value; break; case 19: WBS19 = value; break; case 20: WBS20 = value; break;
+                case 21: WBS21 = value; break; case 22: WBS22 = value; break; case 23: WBS23 = value; break; case 24: WBS24 = value; break; case 25: WBS25 = value; break;
+                case 26: WBS26 = value; break; case 27: WBS27 = value; break; case 28: WBS28 = value; break; case 29: WBS29 = value; break; case 30: WBS30 = value; break;
+                case 31: WBS31 = value; break; case 32: WBS32 = value; break; case 33: WBS33 = value; break; case 34: WBS34 = value; break; case 35: WBS35 = value; break;
+                case 36: WBS36 = value; break; case 37: WBS37 = value; break; case 38: WBS38 = value; break; case 39: WBS39 = value; break; case 40: WBS40 = value; break;
+            }
+        }
+    }
+}

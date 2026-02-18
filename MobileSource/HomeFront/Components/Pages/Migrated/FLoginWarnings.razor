@@ -1,0 +1,147 @@
+@using HomeFront.Components.Hf
+@inject IJSRuntime JS
+
+<style>
+    .login-warning-body {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .login-warning-icon {
+        width: 48px;
+        height: 48px;
+        flex: 0 0 48px;
+    }
+
+    .login-warning-title {
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .login-warning-message {
+        white-space: pre-wrap;
+    }
+
+    .login-warning-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+    }
+
+    .login-warning-footer .hf-button {
+        min-width: 90px;
+    }
+</style>
+
+<HfDialog Visible="@_isVisible"
+          Header="HomeFront"
+          Width="720px"
+          IsModal="false"
+          ShowCloseIcon="false"
+          CloseOnEscape="false"
+          OnClose="HandleClose">
+    <ChildContent>
+        <div class="login-warning-body">
+            <img src="images/32/warning.png" class="login-warning-icon" alt="Warning" />
+            <div class="login-warning-text">
+                <div class="login-warning-title">
+                    HomeFront is unable to connect to the following network resources. Please contact your system administrator for assistance.
+                </div>
+                <div class="login-warning-message">@_message</div>
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="login-warning-footer">
+            <HfCheckBox Checked="@_dontShowAgain" CheckedChanged="OnDontShowAgainChanged" Label="Don't show me this again" />
+            <HfButton CssClass="hf-dialog-btn hf-primary" OnClick="OnOkClicked">OK</HfButton>
+        </div>
+    </FooterContent>
+</HfDialog>
+
+@code {
+    private const string IniFile = "warnings.ini";
+    private const string IniSection = "Options";
+    private const string IniKey = "SuppressConnectionWarnings";
+
+    private string _message = "Errors....";
+    private bool _dontShowAgain;
+    private bool _isVisible;
+
+    [Parameter] public EventCallback Closed { get; set; }
+
+    public void ShowMessage(string message) => _ = ShowMessageAsync(message);
+
+    public async Task ShowMessageAsync(string message)
+    {
+        var suppress = await IniGetAsync(IniFile, IniSection, IniKey, "False");
+        if (!string.Equals(suppress, "False", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _message = message;
+        _dontShowAgain = false;
+        _isVisible = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnDontShowAgainChanged(bool value)
+    {
+        _dontShowAgain = value;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnOkClicked()
+    {
+        await PersistSuppressionAsync();
+        await CloseAsync();
+    }
+
+    private async Task HandleClose()
+    {
+        await PersistSuppressionAsync();
+        await CloseAsync();
+    }
+
+    private async Task PersistSuppressionAsync()
+    {
+        await IniPutAsync(IniFile, IniSection, IniKey, _dontShowAgain ? "True" : "False");
+    }
+
+    private async Task CloseAsync()
+    {
+        _isVisible = false;
+        if (Closed.HasDelegate)
+            await Closed.InvokeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string StorageKey(string file, string section, string key) => $"{file}:{section}:{key}";
+
+    private async Task<string> IniGetAsync(string file, string section, string key, string defaultValue)
+    {
+        try
+        {
+            var value = await JS.InvokeAsync<string>("localStorage.getItem", StorageKey(file, section, key));
+            return string.IsNullOrWhiteSpace(value) ? defaultValue : value;
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    private async Task IniPutAsync(string file, string section, string key, string value)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey(file, section, key), value);
+        }
+        catch
+        {
+            // ignore storage errors
+        }
+    }
+}

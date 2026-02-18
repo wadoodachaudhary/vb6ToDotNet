@@ -1,0 +1,514 @@
+@page "/login"
+@rendermode InteractiveServer
+@using System.Reflection
+@using System.Text
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Login</PageTitle>
+
+<div class="f-login" tabindex="0" @onkeydown="HandleKeyDown">
+    <div class="f-login-header">
+        <div class="app-title">@AppName</div>
+        <div class="app-version">@AppVersion</div>
+        <button class="link-button" @onclick="ShowAbout">About HomeFront</button>
+    </div>
+
+    <div class="f-login-body">
+        <div class="license-panel">
+            <div class="license-caption">This software is licensed to:</div>
+            <div class="license-company">@LicensedTo</div>
+            <div class="license-info">@LicenseInfo</div>
+        </div>
+
+        <div class="login-panel">
+            @if (ShowConnections)
+            {
+                <div class="panel-title">Select Connection</div>
+                <HfListBox TItem="ConnectionItem"
+                           DataSource="@Connections"
+                           TextField="Name"
+                           ValueField="Name"
+                           SelectionMode="HfListBoxSelectionMode.Single"
+                           ShowCheckbox="false"
+                           @bind-Value="SelectedConnections" />
+            }
+
+            @if (ShowUserPanel)
+            {
+                <div class="panel-title">User Login</div>
+                <div class="form-row">
+                    <label>User ID</label>
+                    <HfTextBox @bind-Value="UserId" Placeholder="User ID" CssClass="login-input" />
+                </div>
+                <div class="form-row">
+                    <label>Password</label>
+                    <HfTextBox @bind-Value="Password" Placeholder="Password" InputType="password" CssClass="login-input" />
+                </div>
+
+                <button class="link-button" @onclick="ToggleChangePassword">Change Password</button>
+
+                @if (ShowChangePassword)
+                {
+                    <div class="form-row">
+                        <label>New Password</label>
+                        <HfTextBox @bind-Value="NewPassword" Placeholder="New Password" InputType="password" CssClass="login-input" />
+                    </div>
+                    <div class="form-row">
+                        <label>Confirm Password</label>
+                        <HfTextBox @bind-Value="ConfirmPassword" Placeholder="Confirm Password" InputType="password" CssClass="login-input" />
+                    </div>
+                }
+            }
+
+            @if (ShowDivisions)
+            {
+                <div class="panel-title">Select Division</div>
+                <HfListBox TItem="DivisionItem"
+                           DataSource="@Divisions"
+                           TextField="Display"
+                           ValueField="DivisionID"
+                           SelectionMode="HfListBoxSelectionMode.Single"
+                           ShowCheckbox="false"
+                           @bind-Value="SelectedDivisions" />
+            }
+
+            @if (ShowCheat)
+            {
+                <div class="form-row">
+                    <label>Cheat</label>
+                    <HfTextBox @bind-Value="CheatCode" Placeholder="CHEAT" CssClass="login-input" />
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="f-login-footer">
+        <div class="status-message">@StatusMessage</div>
+        <div class="button-row">
+            <HfButton CssClass="hf-button-primary" Disabled="@(!CanOk)" OnClick="HandleOk">OK</HfButton>
+            <HfButton CssClass="hf-button-secondary" OnClick="HandleCancel">Cancel</HfButton>
+        </div>
+    </div>
+</div>
+
+@code {
+    private const string DefaultConnectionString =
+        "Server=localhost,1433;Database=HomeFrontDB;User Id=sa;Password=Nusr@t7860;TrustServerCertificate=true;";
+
+    private bool mLicensed = true;
+    private bool mCancel;
+    private int Step;
+    private bool mChangePswd;
+
+    private readonly List<ConnectionItem> Connections = new();
+    private readonly List<DivisionItem> Divisions = new();
+    private List<string> SelectedConnections = new();
+    private List<string> SelectedDivisions = new();
+
+    private DbWrapperSqlServer? _db;
+
+    private string UserId = "";
+    private string Password = "";
+    private string NewPassword = "";
+    private string ConfirmPassword = "";
+
+    private bool ShowCheat;
+    private string CheatCode = "";
+    private string StatusMessage = "";
+
+    private string LicensedTo = "Company Name";
+    private string LicenseInfo = "License information.";
+    private string AppName = "HomeFront";
+    private string AppVersion = $"Version {Assembly.GetEntryAssembly()?.GetName().Version}";
+    private string Copyright = $"Copyright © {DateTime.Now.Year} HomeFront Software";
+
+    [Parameter] public EventCallback<LoginResult> OnLoggedIn { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+
+    private bool ShowConnections => Step == 0;
+    private bool ShowUserPanel => Step == 1;
+    private bool ShowDivisions => Step == 2;
+    private bool ShowChangePassword => mChangePswd;
+
+    private bool CanOk =>
+        mLicensed && ((Step == 0 && SelectedConnections.Any()) || (Step == 1) || (Step == 2 && SelectedDivisions.Any()));
+
+    private string SelectedConnectionName => SelectedConnections.FirstOrDefault() ?? "";
+    private string SelectedDivisionId => SelectedDivisions.FirstOrDefault() ?? "";
+    private bool IsCheat => ShowCheat && string.Equals(CheatCode, "CHEAT", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        LoadLicense();
+        await SetStepAsync(0);
+    }
+
+    private void LoadLicense()
+    {
+        mLicensed = true;
+    }
+
+    private async Task SetStepAsync(int value)
+    {
+        switch (value)
+        {
+            case -1:
+                mCancel = true;
+                StatusMessage = "";
+                if (OnCancelled.HasDelegate)
+                    await OnCancelled.InvokeAsync();
+                break;
+            case 0:
+                if (Connections.Count == 0)
+                    await LoadConnectionsAsync();
+                Step = 0;
+                EnsureConnectionSelection();
+                break;
+            case 1:
+                if (await DoOpenDbAsync())
+                {
+                    Step = 1;
+                }
+                break;
+            case 2:
+                mChangePswd = ShowChangePassword;
+                await LoadDivisionsAsync();
+                if (Divisions.Count == 0)
+                {
+                    StatusMessage = "No divisions available.";
+                    break;
+                }
+
+                if (Divisions.Count == 1)
+                {
+                    SelectedDivisions = new List<string> { Divisions[0].DivisionID };
+                    await SetStepAsync(3);
+                    return;
+                }
+
+                Step = 2;
+                EnsureDivisionSelection();
+                break;
+            case 3:
+                await DoLoginAsync();
+                break;
+            default:
+                Step = value;
+                break;
+        }
+
+        StateHasChanged();
+    }
+
+    private void EnsureConnectionSelection()
+    {
+        if (SelectedConnections.Count == 0 && Connections.Count > 0)
+            SelectedConnections = new List<string> { Connections[0].Name };
+    }
+
+    private void EnsureDivisionSelection()
+    {
+        if (SelectedDivisions.Count == 0 && Divisions.Count > 0)
+            SelectedDivisions = new List<string> { Divisions[0].DivisionID };
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        Connections.Clear();
+        Connections.Add(new ConnectionItem
+        {
+            Name = "Default",
+            ConnectionString = DefaultConnectionString
+        });
+
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadDivisionsAsync()
+    {
+        Divisions.Clear();
+        if (_db == null) return;
+
+        try
+        {
+            var rows = await _db.QueryAsync("SELECT DivisionID, DivisionCode, DivisionName FROM Divisions");
+            foreach (var row in rows)
+            {
+                Divisions.Add(new DivisionItem
+                {
+                    DivisionID = row["DivisionID"]?.ToString() ?? "",
+                    DivisionCode = row["DivisionCode"]?.ToString() ?? "",
+                    DivisionName = row["DivisionName"]?.ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading divisions: {ex.Message}";
+        }
+    }
+
+    private async Task<bool> DoOpenDbAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedConnectionName))
+        {
+            StatusMessage = "Select a connection.";
+            return false;
+        }
+
+        var connection = Connections.FirstOrDefault(c => c.Name == SelectedConnectionName);
+        if (connection == null)
+        {
+            StatusMessage = "Invalid connection selection.";
+            return false;
+        }
+
+        try
+        {
+            _db = new DbWrapperSqlServer(connection.ConnectionString);
+            await _db.ExecuteScalarAsync<int>("SELECT 1");
+            StatusMessage = "";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Unable to open the database: {ex.Message}";
+            return false;
+        }
+    }
+
+    private async Task DoLoginAsync()
+    {
+        if (_db == null) return;
+
+        if (string.IsNullOrWhiteSpace(UserId))
+        {
+            StatusMessage = "Enter a user ID.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Password) && !IsCheat)
+        {
+            StatusMessage = "Enter a password.";
+            return;
+        }
+
+        StatusMessage = "Validating user...";
+        StateHasChanged();
+
+        try
+        {
+            var sql = new StringBuilder();
+            sql.AppendLine("SELECT user_access FROM User_Manager");
+            sql.AppendLine("WHERE User_ID = @UserId");
+            if (!IsCheat)
+                sql.AppendLine("AND ISNULL(User_Password,'') = @Password");
+
+            var rows = await _db.QueryAsync(sql.ToString(), new { UserId, Password });
+            if (!rows.Any())
+            {
+                await AlertAsync(IsCheat ? $"Login \"{UserId}\" does not exist." : "Access denied.\nInvalid login or password.");
+                StatusMessage = "";
+                return;
+            }
+
+            if (mChangePswd)
+            {
+                if (NewPassword != ConfirmPassword)
+                {
+                    await AlertAsync("Unable to change password.\n\nYour new passwords don't match.");
+                    return;
+                }
+
+                await _db.ExecuteAsync("UPDATE User_Manager SET User_Password=@NewPassword WHERE User_ID=@UserId",
+                    new { NewPassword, UserId });
+
+                NewPassword = "";
+                ConfirmPassword = "";
+                mChangePswd = false;
+            }
+
+            StatusMessage = "Login successful.";
+            if (OnLoggedIn.HasDelegate)
+                await OnLoggedIn.InvokeAsync(new LoginResult(UserId, SelectedDivisionId, SelectedConnectionName));
+        }
+        catch (Exception ex)
+        {
+            await AlertAsync($"Error during login: {ex.Message}");
+        }
+    }
+
+    private async Task HandleOk()
+    {
+        await SetStepAsync(Step + 1);
+    }
+
+    private async Task HandleCancel()
+    {
+        await SetStepAsync(Step - 1);
+    }
+
+    private void ToggleChangePassword()
+    {
+        mChangePswd = !mChangePswd;
+    }
+
+    private async Task ShowAbout()
+    {
+        await AlertAsync($"{AppName}\n{AppVersion}\n{Copyright}");
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key?.Equals("z", StringComparison.OrdinalIgnoreCase) == true && e.CtrlKey && e.ShiftKey)
+        {
+            ShowCheat = true;
+            CheatCode = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task AlertAsync(string message)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", message);
+    }
+
+    public record LoginResult(string UserId, string DivisionId, string ConnectionName);
+
+    private sealed class ConnectionItem
+    {
+        public string Name { get; set; } = "";
+        public string ConnectionString { get; set; } = "";
+    }
+
+    private sealed class DivisionItem
+    {
+        public string DivisionID { get; set; } = "";
+        public string DivisionCode { get; set; } = "";
+        public string DivisionName { get; set; } = "";
+        public string Display => string.IsNullOrWhiteSpace(DivisionCode)
+            ? DivisionName
+            : $"{DivisionCode} - {DivisionName}";
+    }
+}
+
+<style>
+    .f-login {
+        max-width: 900px;
+        margin: 40px auto;
+        background: #fff;
+        border: 1px solid #d6d6d6;
+        border-radius: 6px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        padding: 24px;
+    }
+
+    .f-login-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+
+    .app-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #504b4a;
+    }
+
+    .app-version {
+        font-size: 14px;
+        color: #400000;
+    }
+
+    .f-login-body {
+        display: flex;
+        gap: 24px;
+    }
+
+    .license-panel {
+        flex: 1;
+        border-right: 1px solid #e6e6e6;
+        padding-right: 16px;
+    }
+
+    .license-caption {
+        font-size: 13px;
+        color: #400000;
+        margin-bottom: 8px;
+    }
+
+    .license-company {
+        font-weight: 700;
+        color: #504b4a;
+        margin-bottom: 8px;
+    }
+
+    .license-info {
+        color: #400000;
+        font-size: 13px;
+    }
+
+    .login-panel {
+        flex: 1;
+    }
+
+    .panel-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #504b4a;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .login-input {
+        width: 100%;
+    }
+
+    .link-button {
+        background: none;
+        border: none;
+        color: #400000;
+        text-decoration: underline;
+        cursor: pointer;
+        padding: 0;
+        font-size: 13px;
+    }
+
+    .f-login-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 16px;
+        border-top: 1px solid #e6e6e6;
+        padding-top: 12px;
+    }
+
+    .status-message {
+        font-size: 13px;
+        color: #400000;
+    }
+
+    .button-row {
+        display: flex;
+        gap: 8px;
+    }
+
+    .hf-button-primary {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .hf-button-secondary {
+        background: #f3f3f3;
+    }
+</style>

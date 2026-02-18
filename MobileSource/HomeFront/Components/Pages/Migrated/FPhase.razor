@@ -1,0 +1,329 @@
+```razor
+@page "/estimating-phase"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Estimating Phase</PageTitle>
+
+<style>
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        width: 540px;
+        max-width: 95vw;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .dialog-header button:hover {
+        color: #212529;
+    }
+
+    .dialog-body {
+        padding: 20px;
+    }
+
+    .dialog-body .instruction {
+        font-size: 13px;
+        color: #495057;
+        margin-bottom: 16px;
+    }
+
+    .dialog-body .form-group {
+        margin-bottom: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .dialog-body .form-group label {
+        min-width: 90px;
+        text-align: right;
+        font-weight: 500;
+        font-size: 13px;
+        color: #495057;
+    }
+
+    .dialog-body .form-group input {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+
+    .dialog-body .form-group input:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover {
+        background: #e9ecef;
+    }
+
+    .dialog-footer .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .dialog-footer .btn-primary:hover {
+        background: #0b5ed7;
+    }
+</style>
+
+@if (IsVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel">
+            <div class="dialog-header">
+                <span>Estimating Phase</span>
+                <button @onclick="OnCancelClick">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="instruction">
+                    Enter a number and description for the new phase.
+                </div>
+                <div class="form-group">
+                    <label>Number</label>
+                    <input type="text"
+                           @bind="PhaseNumber"
+                           @bind:event="oninput"
+                           maxlength="@PhaseMaxLength"
+                           @onfocus="() => SelectAllPhase = true"
+                           placeholder="Phase number" />
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text"
+                           @bind="PhaseDescription"
+                           @bind:event="oninput"
+                           maxlength="@DescriptionMaxLength"
+                           @onfocus="() => SelectAllDescription = true"
+                           placeholder="Phase description" />
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
+                <button class="btn" @onclick="OnCancelClick">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const string SRCFILE = "FPhase::";
+
+    // === Parameters ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public bool GrpPhase { get; set; }
+    [Parameter] public EventCallback<bool> OnResult { get; set; }
+    [Parameter] public int DivisionID { get; set; } = 1;
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Form State ===
+    private string PhaseNumber { get; set; } = "";
+    private string PhaseDescription { get; set; } = "";
+    private int PhaseMaxLength { get; set; } = 100;
+    private int DescriptionMaxLength { get; set; } = 100;
+    private bool SelectAllPhase { get; set; }
+    private bool SelectAllDescription { get; set; }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFieldSizes();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible)
+        {
+            PhaseNumber = "";
+            PhaseDescription = "";
+        }
+    }
+
+    // === Load field sizes from DB (mirrors HFApp.EstFieldSize) ===
+    private async Task LoadFieldSizes()
+    {
+        try
+        {
+            var phaseSize = await db.ExecuteScalarAsync<int?>(
+                "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tblEstPhases' AND COLUMN_NAME = 'Phase'");
+            if (phaseSize.HasValue && phaseSize.Value > 0)
+                PhaseMaxLength = phaseSize.Value;
+
+            var descSize = await db.ExecuteScalarAsync<int?>(
+                "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'tblEstPhases' AND COLUMN_NAME = 'Description'");
+            if (descSize.HasValue && descSize.Value > 0)
+                DescriptionMaxLength = descSize.Value;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FPhase.LoadFieldSizes] Error: {ex.Message}");
+        }
+    }
+
+    // === Show the dialog programmatically ===
+    public async Task<bool> ShowForm(bool grpPhase)
+    {
+        GrpPhase = grpPhase;
+        PhaseNumber = "";
+        PhaseDescription = "";
+        IsVisible = true;
+        await IsVisibleChanged.InvokeAsync(true);
+        StateHasChanged();
+        // Note: In Blazor, modal behavior is handled via the IsVisible flag and OnResult callback.
+        // The caller should await the OnResult event.
+        return true;
+    }
+
+    // === OK Button ===
+    private async Task OnOkClick()
+    {
+        if (await SaveData())
+        {
+            IsVisible = false;
+            await IsVisibleChanged.InvokeAsync(false);
+            await OnResult.InvokeAsync(true);
+        }
+    }
+
+    // === Cancel Button ===
+    private async Task OnCancelClick()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+        await OnResult.InvokeAsync(false);
+    }
+
+    // === SaveData ===
+    private async Task<bool> SaveData()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(PhaseNumber) || string.IsNullOrWhiteSpace(PhaseDescription))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Number and description are both required.");
+                return false;
+            }
+
+            var sql = @"
+                INSERT INTO tblEstPhases (DivisionID, Phase, Description, GroupPhase, UpdateEstimating)
+                VALUES (@DivisionID, @Phase, @Description, @GroupPhase, 0)";
+
+            await db.ExecuteAsync(sql, new
+            {
+                DivisionID = DivisionID,
+                Phase = PhaseNumber.Trim(),
+                Description = PhaseDescription.Trim(),
+                GroupPhase = GrpPhase ? 1 : 0
+            });
+
+            await FixGroupPhaseValue();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.IndexOf("duplicate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                ex.Message.IndexOf("unique", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                ex.Message.IndexOf("violation of primary key", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert",
+                    $"Phase \"{PhaseNumber.Trim()}\" has already been entered. Please specify a different value.");
+            }
+            else
+            {
+                Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving phase: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    // === FixGroupPhaseValue (placeholder — mirrors VB6 call) ===
+    private async Task FixGroupPhaseValue()
+    {
+        try
+        {
+            // If the newly inserted phase is a group phase, update GroupPhaseValue for phases
+            // that don't yet have one assigned. This mirrors the VB6 FixGroupPhaseValue routine.
+            // Adjust the SQL below to match your actual business logic.
+            var sql = @"
+                UPDATE tblEstPhases
+                SET GroupPhaseValue = Phase
+                WHERE DivisionID = @DivisionID
+                  AND GroupPhaseValue IS NULL";
+
+            await db.ExecuteAsync(sql, new { DivisionID = DivisionID });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}FixGroupPhaseValue] Error: {ex.Message}");
+        }
+    }
+}
+```

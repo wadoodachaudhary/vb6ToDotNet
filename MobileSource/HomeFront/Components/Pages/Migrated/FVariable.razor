@@ -1,0 +1,539 @@
+```razor
+@page "/variable"
+@page "/variable/{Name}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Linq
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Variable</PageTitle>
+
+<style>
+    .variable-card {
+        max-width: 720px;
+        margin: 20px auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        background: #fff;
+        padding: 16px 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .variable-card h3 { margin: 0 0 16px 0; }
+    .form-field {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 14px;
+        align-items: flex-start;
+    }
+    .form-field label {
+        width: 110px;
+        text-align: right;
+        font-weight: 600;
+        font-size: 13px;
+        padding-top: 6px;
+        color: #495057;
+    }
+    .form-field input, .form-field textarea {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    .radio-group {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        padding-top: 4px;
+        font-size: 13px;
+    }
+    .values-panel {
+        flex: 1;
+    }
+    .numeric-grid {
+        display: grid;
+        grid-template-columns: 80px 1fr 80px 1fr;
+        gap: 8px;
+        align-items: center;
+    }
+    .numeric-grid label {
+        text-align: right;
+        font-size: 12px;
+        color: #495057;
+    }
+    .condition-panel {
+        margin-top: 12px;
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+    }
+    .condition-link {
+        border: none;
+        background: none;
+        color: #0d6efd;
+        text-decoration: underline;
+        cursor: pointer;
+        font-size: 13px;
+        padding: 0;
+    }
+    .condition-text {
+        font-size: 12px;
+        color: #6c757d;
+        white-space: pre-line;
+    }
+    .button-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .btn {
+        padding: 6px 18px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+</style>
+
+<div class="variable-card">
+    <h3>Variable</h3>
+
+    <div class="form-field">
+        <label>Name</label>
+        <input type="text" value="@NameText" @oninput="OnNameInput" placeholder="Variable name" />
+    </div>
+
+    <div class="form-field">
+        <label>Type</label>
+        <div class="radio-group">
+            <label>
+                <input type="radio" name="vartype" checked="@(VariableType == 0)" @onchange="() => SetVariableType(0)" />
+                Numeric
+            </label>
+            <label>
+                <input type="radio" name="vartype" checked="@(VariableType == 1)" @onchange="() => SetVariableType(1)" />
+                List of values
+            </label>
+        </div>
+    </div>
+
+    <div class="form-field">
+        <label>Values</label>
+        <div class="values-panel">
+            @if (VariableType == 0)
+            {
+                <div class="numeric-grid">
+                    <label>Min</label>
+                    <HfNumericTextBox TValue="decimal" @bind-Value="MinValue" Format="N0" Width="120px" />
+                    <label>Default</label>
+                    <HfNumericTextBox TValue="decimal" @bind-Value="DefaultValue" Format="N0" Width="120px" />
+                    <label>Max</label>
+                    <HfNumericTextBox TValue="decimal" @bind-Value="MaxValue" Format="N0" Width="120px" />
+                    <label>UOM</label>
+                    <HfDropDownList TValue="string" TItem="UomItem"
+                                    @bind-Value="SelectedUom"
+                                    DataSource="@UomItems"
+                                    TextFieldName="UOM"
+                                    ValueFieldName="UOM"
+                                    Width="120px" />
+                </div>
+
+                @if (ShowConditionPanel)
+                {
+                    <div class="condition-panel">
+                        <button class="condition-link" @onclick="OnConditionClick">Condition...</button>
+                        <div class="condition-text">@ConditionDisplay</div>
+                    </div>
+                }
+            }
+            else
+            {
+                <textarea rows="6" value="@ListValuesText" @oninput="OnListValuesInput" placeholder="Enter values, one per line"></textarea>
+            }
+        </div>
+    </div>
+
+    <div class="form-field">
+        <label>Help Notes</label>
+        <textarea rows="4" @bind="HelpText" @bind:event="oninput" placeholder="Enter help notes..."></textarea>
+    </div>
+
+    <div class="button-row">
+        <button class="btn btn-primary" @onclick="OnOk">OK</button>
+        <button class="btn" @onclick="OnCancel">Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Name { get; set; }
+
+    private readonly DbWrapperSqlServer db = new();
+
+    private bool _loading;
+    private bool mDirty;
+    private string mName = "";
+
+    private int _variableType;
+    private string _nameText = "";
+    private string _helpText = "";
+    private string _listValuesText = "";
+    private decimal _minValue = -9999;
+    private decimal _maxValue = 9999;
+    private decimal _defaultValue = 0;
+    private string _selectedUom = "";
+
+    private string mConditionName = "";
+    private string mConditionType = "";
+    private string mConditionUom = "";
+
+    private List<UomItem> UomItems { get; set; } = new();
+
+    private enum TakeoffSystemType { None = 0, OnScreen = 1, PlanSwift = 2 }
+    private TakeoffSystemType CurrentTakeoffSystem { get; set; } = TakeoffSystemType.OnScreen;
+
+    private bool ShowConditionPanel => CurrentTakeoffSystem != TakeoffSystemType.None;
+
+    private int VariableType
+    {
+        get => _variableType;
+        set => SetField(ref _variableType, value);
+    }
+
+    private string NameText
+    {
+        get => _nameText;
+        set => SetField(ref _nameText, value);
+    }
+
+    private string HelpText
+    {
+        get => _helpText;
+        set => SetField(ref _helpText, value);
+    }
+
+    private string ListValuesText
+    {
+        get => _listValuesText;
+        set => SetField(ref _listValuesText, value);
+    }
+
+    private decimal MinValue
+    {
+        get => _minValue;
+        set => SetField(ref _minValue, value);
+    }
+
+    private decimal MaxValue
+    {
+        get => _maxValue;
+        set => SetField(ref _maxValue, value);
+    }
+
+    private decimal DefaultValue
+    {
+        get => _defaultValue;
+        set => SetField(ref _defaultValue, value);
+    }
+
+    private string SelectedUom
+    {
+        get => _selectedUom;
+        set => SetField(ref _selectedUom, value);
+    }
+
+    private string ConditionDisplay => BuildConditionDisplay();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUomsAsync();
+        await LoadVariableAsync(Name);
+    }
+
+    private async Task LoadUomsAsync()
+    {
+        var rows = await db.QueryAsync("select uom from uom order by 1");
+        UomItems = rows.Select(r => new UomItem { UOM = r["uom"]?.ToString() ?? "" }).ToList();
+    }
+
+    private async Task LoadVariableAsync(string? name)
+    {
+        _loading = true;
+        try
+        {
+            mName = name ?? "";
+            NameText = mName;
+
+            if (string.IsNullOrWhiteSpace(mName))
+            {
+                ApplyDefaults();
+                return;
+            }
+
+            var rows = await db.QueryAsync("select * from variables where name=@name", new { name = mName });
+            if (rows.Any())
+            {
+                var row = rows.First();
+                VariableType = ToInt(row["VariableType"]);
+                MinValue = ToDecimal(row["MinimumValue"]);
+                MaxValue = ToDecimal(row["MaximumValue"]);
+                DefaultValue = ToDecimal(row["DefaultValue"]);
+                ListValuesText = (row["ListOfValues"]?.ToString() ?? "").Replace("|", "\n");
+                HelpText = row["Help"]?.ToString() ?? "";
+                mConditionName = row["ConditionName"]?.ToString() ?? "";
+                mConditionType = row["ConditionType"]?.ToString() ?? "";
+                mConditionUom = row["ConditionUOM"]?.ToString() ?? "";
+                SelectedUom = row["UOM"]?.ToString() ?? "";
+            }
+            else
+            {
+                ApplyDefaults();
+            }
+        }
+        finally
+        {
+            _loading = false;
+            mDirty = false;
+        }
+    }
+
+    private void ApplyDefaults()
+    {
+        VariableType = 0;
+        MinValue = 0;
+        MaxValue = 9999999;
+        DefaultValue = 0;
+        ListValuesText = "";
+        HelpText = "";
+        SelectedUom = "";
+        mConditionName = "";
+        mConditionType = "";
+        mConditionUom = "";
+    }
+
+    private async Task OnOk()
+    {
+        if (await SaveDataAsync(false))
+            await CloseAsync();
+    }
+
+    private async Task OnCancel()
+    {
+        if (await SaveDataAsync(true))
+            await CloseAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("history.back");
+    }
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!mDirty)
+            return true;
+
+        if (prompt)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "This data has changed.\n\nDo you want to save these changes?");
+            if (!confirm)
+                return true;
+        }
+
+        var values = "";
+        if (VariableType == 1)
+        {
+            values = (ListValuesText ?? "")
+                .Replace("\r\n", "|")
+                .Replace("\n", "|");
+            var check = values.Replace("|", "").Replace(" ", "");
+            if (string.IsNullOrWhiteSpace(check))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "You must specify at least one value.");
+                return false;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(mName))
+        {
+            var insertSql = @"
+                insert into variables
+                (name, variabletype, minimumvalue, maximumvalue, defaultvalue, listofvalues, uom, help, conditionname, conditiontype, conditionuom)
+                values
+                (@Name, @VariableType, @MinimumValue, @MaximumValue, @DefaultValue, @ListOfValues, @UOM, @Help, @ConditionName, @ConditionType, @ConditionUOM)";
+            await db.ExecuteAsync(insertSql, new
+            {
+                Name = NameText,
+                VariableType,
+                MinimumValue = MinValue,
+                MaximumValue = MaxValue,
+                DefaultValue,
+                ListOfValues = values,
+                UOM = SelectedUom,
+                Help = HelpText,
+                ConditionName = mConditionName,
+                ConditionType = mConditionType,
+                ConditionUOM = mConditionUom
+            });
+            mName = NameText;
+        }
+        else
+        {
+            var updateSql = @"
+                update variables set
+                    Name=@Name,
+                    VariableType=@VariableType,
+                    MinimumValue=@MinimumValue,
+                    MaximumValue=@MaximumValue,
+                    DefaultValue=@DefaultValue,
+                    ListOfValues=@ListOfValues,
+                    UOM=@UOM,
+                    Help=@Help,
+                    ConditionName=@ConditionName,
+                    ConditionType=@ConditionType,
+                    ConditionUOM=@ConditionUOM
+                where name=@OriginalName";
+            await db.ExecuteAsync(updateSql, new
+            {
+                Name = NameText,
+                VariableType,
+                MinimumValue = MinValue,
+                MaximumValue = MaxValue,
+                DefaultValue,
+                ListOfValues = values,
+                UOM = SelectedUom,
+                Help = HelpText,
+                ConditionName = mConditionName,
+                ConditionType = mConditionType,
+                ConditionUOM = mConditionUom,
+                OriginalName = mName
+            });
+            mName = NameText;
+        }
+
+        mDirty = false;
+        return true;
+    }
+
+    private void SetVariableType(int type) => VariableType = type;
+
+    private async Task OnConditionClick()
+    {
+        if (CurrentTakeoffSystem == TakeoffSystemType.None)
+            return;
+
+        if (CurrentTakeoffSystem == TakeoffSystemType.PlanSwift)
+        {
+            var path = await JSRuntime.InvokeAsync<string>("prompt", "PlanSwift Path");
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            var variable = await JSRuntime.InvokeAsync<string>("prompt", "Variable Name");
+            if (string.IsNullOrWhiteSpace(variable)) return;
+
+            var valueName = await JSRuntime.InvokeAsync<string>("prompt", "Value Name");
+            if (string.IsNullOrWhiteSpace(valueName)) return;
+
+            var uom = await JSRuntime.InvokeAsync<string>("prompt", "UOM", mConditionUom ?? "");
+
+            mConditionName = $"{path}{(char)1}{variable}{(char)1}{valueName}";
+            mConditionType = "";
+            mConditionUom = uom ?? "";
+        }
+        else
+        {
+            var name = await JSRuntime.InvokeAsync<string>("prompt", "Condition Name");
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            var type = await JSRuntime.InvokeAsync<string>("prompt", "Condition Type");
+            var uom = await JSRuntime.InvokeAsync<string>("prompt", "Condition UOM");
+
+            mConditionName = name ?? "";
+            mConditionType = type ?? "";
+            mConditionUom = uom ?? "";
+        }
+
+        mDirty = true;
+    }
+
+    private void OnNameInput(ChangeEventArgs e)
+    {
+        NameText = SanitizeQuotes(e.Value?.ToString() ?? "");
+    }
+
+    private void OnListValuesInput(ChangeEventArgs e)
+    {
+        ListValuesText = SanitizeQuotes(e.Value?.ToString() ?? "");
+    }
+
+    private string BuildConditionDisplay()
+    {
+        if (string.IsNullOrWhiteSpace(mConditionName))
+            return "";
+
+        if (mConditionName.Contains((char)1))
+        {
+            var parts = mConditionName.Split((char)1);
+            if (parts.Length >= 3)
+                return $"{parts[0]}/{parts[1]}/{parts[2]}";
+            return mConditionName.Replace((char)1, '/');
+        }
+
+        var suffixParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(mConditionType)) suffixParts.Add(mConditionType);
+        if (!string.IsNullOrWhiteSpace(mConditionUom)) suffixParts.Add(mConditionUom);
+        var suffix = string.Join(", ", suffixParts);
+
+        return string.IsNullOrWhiteSpace(suffix) ? mConditionName : $"{mConditionName}\n{suffix}";
+    }
+
+    private string SanitizeQuotes(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        if (s.Contains((char)147) || s.Contains((char)148) || s.Contains((char)152) || s.Contains('\"'))
+        {
+            s = s.Replace((char)150, '-');
+            s = s.Replace((char)147, '\"')
+                 .Replace((char)148, '\"')
+                 .Replace((char)152, '\"');
+            s = s.Replace('\"', '\'');
+        }
+        return s;
+    }
+
+    private void SetField<T>(ref T field, T value)
+    {
+        if (!EqualityComparer<T>.Default.Equals(field, value))
+        {
+            field = value;
+            if (!_loading)
+                mDirty = true;
+        }
+    }
+
+    private static int ToInt(object? value) =>
+        value == null || value == DBNull.Value || string.IsNullOrWhiteSpace(value.ToString())
+            ? 0
+            : Convert.ToInt32(value);
+
+    private static decimal ToDecimal(object? value) =>
+        value == null || value == DBNull.Value || string.IsNullOrWhiteSpace(value.ToString())
+            ? 0
+            : Convert.ToDecimal(value);
+
+    private class UomItem
+    {
+        public string UOM { get; set; } = "";
+    }
+}
+```

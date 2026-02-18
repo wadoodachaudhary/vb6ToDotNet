@@ -1,0 +1,606 @@
+```razor
+@page "/floorplans"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Floorplan Dimensions - HomeFront</PageTitle>
+
+<style>
+    .floorplans-container {
+        max-width: 970px;
+        margin: 20px auto;
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    .floorplans-header {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #333;
+    }
+
+    .main-layout {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .models-panel {
+        width: 300px;
+        min-width: 200px;
+    }
+
+    .categories-panel {
+        flex: 1;
+    }
+
+    .panel-label {
+        font-weight: 700;
+        color: #800080;
+        margin-bottom: 4px;
+        font-size: 13px;
+    }
+
+    .button-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .btn-nav {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 80px;
+    }
+
+    .btn-nav:hover:not(:disabled) {
+        background: #e8e8e8;
+    }
+
+    .btn-nav:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-nav.primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .btn-nav.primary:hover:not(:disabled) {
+        background: #0b5ed7;
+    }
+
+    .context-menu-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+    }
+
+    .context-menu {
+        position: fixed;
+        z-index: 1000;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 160px;
+        padding: 4px 0;
+    }
+
+    .context-menu button {
+        display: block;
+        width: 100%;
+        padding: 6px 16px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .context-menu button:hover {
+        background: #f0f0f0;
+    }
+
+    .context-menu button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.15);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 16px 32px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 14px;
+        font-weight: 500;
+        color: #333;
+    }
+</style>
+
+<div class="floorplans-container" style="position: relative;">
+    @if (IsLoading)
+    {
+        <div class="loading-overlay">
+            <div class="loading-spinner">⏳ Loading...</div>
+        </div>
+    }
+
+    <div class="floorplans-header">Floorplan Dimensions</div>
+
+    <div class="main-layout">
+        @* ── Left Panel: Models Grid ──────────────────────────── *@
+        <div class="models-panel">
+            <div class="panel-label">Models</div>
+            <HfGrid @ref="ModelsGrid"
+                    TValue="ModelRow"
+                    DataSource="@ModelsData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    Height="440px"
+                    SelectionSettingsRef="@modelsSelectionSettings"
+                    EventsRef="@modelsGridEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(ModelRow.ModelID)" HeaderText="ModelID" Width="1px" Visible="false" />
+                    <HfGridColumn Field="@nameof(ModelRow.Model)" HeaderText="Model" Width="280px" AllowEditing="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        @* ── Right Panel: Categories Grid ─────────────────────── *@
+        <div class="categories-panel">
+            <HfGrid @ref="CategoriesGrid"
+                    TValue="CategoryRow"
+                    DataSource="@CategoriesData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    AllowSorting="true"
+                    Height="440px"
+                    SelectionSettingsRef="@categoriesSelectionSettings"
+                    EditSettingsRef="@categoriesEditSettings"
+                    EventsRef="@categoriesGridEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(CategoryRow.Room)" HeaderText="Room" Width="150px" />
+                    <HfGridColumn Field="@nameof(CategoryRow.SubCategory)" HeaderText="Sub Category" Width="150px" />
+                    <HfGridColumn Field="@nameof(CategoryRow.Qty)" HeaderText="Qty" Width="80px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(CategoryRow.UOM)" HeaderText="UOM" Width="80px" />
+                    <HfGridColumn Field="@nameof(CategoryRow.RowState)" HeaderText="" Width="1px" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+
+    @* ── Button Bar ───────────────────────────────────────────── *@
+    <div class="button-bar">
+        <button class="btn-nav primary" disabled="@(!mDirty)" @onclick="OnOkClick">
+            &amp;OK
+        </button>
+        <button class="btn-nav" @onclick="OnCancelClick">
+            &amp;Cancel
+        </button>
+    </div>
+</div>
+
+@* ── Context Menu for Models Grid ─────────────────────────────── *@
+@if (IsContextMenuVisible)
+{
+    <div class="context-menu-overlay" @onclick="CloseContextMenu">
+        <div class="context-menu" style="left: @(ContextMenuX)px; top: @(ContextMenuY)px;" @onclick:stopPropagation="true">
+            <button @onclick="OnAddModel">Add Model...</button>
+            <button disabled="@(SelectedModel == null)" @onclick="OnAddRoom">Add Room...</button>
+        </div>
+    </div>
+}
+
+@code {
+    private const string SRCFILE = "FFloorplans::";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string mModelID = "";
+
+    // === Grid Refs ===
+    private HfGrid<ModelRow>? ModelsGrid;
+    private HfGrid<CategoryRow>? CategoriesGrid;
+
+    // === Data Sources ===
+    private List<ModelRow> ModelsData = new();
+    private List<CategoryRow> CategoriesData = new();
+
+    // === Selection ===
+    private ModelRow? SelectedModel;
+
+    // === Context Menu ===
+    private bool IsContextMenuVisible = false;
+    private double ContextMenuX = 0;
+    private double ContextMenuY = 0;
+
+    // === Grid Settings ===
+    private HfSelectionSettings modelsSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+
+    private HfSelectionSettings categoriesSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+
+    private HfEditSettings categoriesEditSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+
+    private HfGridEvents<ModelRow> modelsGridEvents = new();
+    private HfGridEvents<CategoryRow> categoriesGridEvents = new();
+
+    // === Dirty Property ===
+    private bool Dirty
+    {
+        get => mDirty;
+        set => mDirty = value;
+    }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        modelsGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ModelRow>>(this, OnModelSelected);
+        categoriesGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CategoryRow>>(this, OnCategoryCellSaved);
+
+        await LoadModels();
+    }
+
+    // === ShowForm (entry point, equivalent to VB6 ShowForm) ===
+    public void ShowForm()
+    {
+        // In Blazor, navigation to this page is the equivalent of ShowForm
+    }
+
+    // === Load Models ===
+    private async Task LoadModels()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            ModelsData.Clear();
+
+            var sql = @"
+                SELECT DISTINCT q.model
+                FROM RoomQtyByModel q
+                JOIN roommaster r ON q.roomid = r.roomid
+                WHERE r.divisionid = @DivisionID
+                ORDER BY q.model";
+
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+
+            foreach (var row in rows)
+            {
+                var model = row["model"]?.ToString() ?? "";
+                ModelsData.Add(new ModelRow
+                {
+                    ModelID = model,
+                    Model = model
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}LoadModels] Error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Load Model Categories ===
+    private async Task LoadModel(string modelID)
+    {
+        mModelID = modelID;
+        CategoriesData.Clear();
+
+        try
+        {
+            var sql = @"
+                SELECT q.*, m.Room
+                FROM RoomQtyByModel q
+                JOIN RoomMaster m ON q.roomid = m.roomid
+                WHERE q.model = @ModelID
+                ORDER BY m.room, q.subcategory, q.uom";
+
+            var rows = await db.QueryAsync(sql, new { ModelID = modelID });
+
+            foreach (var row in rows)
+            {
+                CategoriesData.Add(new CategoryRow
+                {
+                    Room = row["room"]?.ToString() ?? "",
+                    SubCategory = row["subcategory"]?.ToString() ?? "",
+                    Qty = SafeDecimal(row["qty"]),
+                    UOM = row["uom"]?.ToString() ?? "",
+                    RowState = "clean"
+                });
+            }
+
+            // Add empty row at end for new entry
+            CategoriesData.Add(new CategoryRow { RowState = "" });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}LoadModel] Error: {ex.Message}");
+        }
+
+        Dirty = false;
+        StateHasChanged();
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData(bool isCancel)
+    {
+        if (!mDirty)
+            return true;
+
+        if (!isCancel)
+        {
+            var result = await JSRuntime.InvokeAsync<string>("eval",
+                "(() => { var r = confirm('This data has changed.\\n\\nDo you want to save these changes?'); return r ? 'yes' : 'no'; })()");
+
+            if (result == "no")
+                return true;
+        }
+        else
+        {
+            // Cancel button pressed — just discard
+            return true;
+        }
+
+        try
+        {
+            // Delete existing records
+            var deleteSql = "DELETE roommastersubcategory WHERE roomid = @ModelID";
+            await db.ExecuteAsync(deleteSql, new { ModelID = mModelID });
+
+            // Insert non-deleted rows (skip last empty row)
+            for (int r = 0; r < CategoriesData.Count - 1; r++)
+            {
+                var row = CategoriesData[r];
+                if (row.RowState == "delete")
+                    continue;
+
+                try
+                {
+                    var insertSql = @"
+                        INSERT INTO roommastersubcategory (ModelID, SubCategory, UOM)
+                        VALUES (@ModelID, @SubCategory, @UOM)";
+
+                    await db.ExecuteAsync(insertSql, new
+                    {
+                        ModelID = mModelID,
+                        SubCategory = row.SubCategory ?? "",
+                        UOM = row.UOM ?? ""
+                    });
+
+                    row.RowState = "";
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    else
+                        throw;
+                }
+            }
+
+            Dirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+    }
+
+    // === Event Handlers ===
+    private async Task OnModelSelected(RowSelectEventArgs<ModelRow> args)
+    {
+        if (SelectedModel != null && mDirty)
+        {
+            if (!await SaveData(false))
+                return;
+        }
+
+        SelectedModel = args.Data;
+        if (SelectedModel != null)
+        {
+            await LoadModel(SelectedModel.ModelID);
+        }
+    }
+
+    private void OnCategoryCellSaved(CellSaveArgs<CategoryRow> args)
+    {
+        if (args.Data == null) return;
+
+        var row = args.Data;
+        var index = CategoriesData.IndexOf(row);
+
+        // If editing the last (empty) row, add a new empty row
+        if (index == CategoriesData.Count - 1)
+        {
+            row.RowState = "new";
+            CategoriesData.Add(new CategoryRow { RowState = "" });
+        }
+        else if (string.IsNullOrEmpty(row.RowState))
+        {
+            row.RowState = "dirty";
+        }
+
+        Dirty = true;
+        StateHasChanged();
+    }
+
+    private async Task OnOkClick()
+    {
+        if (await SaveData(false))
+        {
+            Dirty = false;
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        if (await SaveData(true))
+        {
+            Dirty = false;
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    // === Models Grid KeyDown — Delete Model Dimensions ===
+    public async Task OnModelsKeyDown(string key, bool shiftKey)
+    {
+        if (key == "Delete" && shiftKey && SelectedModel != null)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "Are you sure you want to delete the dimensions for this model?");
+            if (!confirm) return;
+
+            try
+            {
+                var sql = "DELETE RoomQtyByModel WHERE RoomID = @ModelID";
+                await db.ExecuteAsync(sql, new { ModelID = SelectedModel.ModelID });
+
+                ModelsData.Remove(SelectedModel);
+
+                if (ModelsData.Count > 0)
+                {
+                    SelectedModel = ModelsData[0];
+                    await LoadModel(SelectedModel.ModelID);
+                }
+                else
+                {
+                    SelectedModel = null;
+                    CategoriesData.Clear();
+                }
+
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{SRCFILE}OnModelsKeyDown] Error: {ex.Message}");
+            }
+        }
+    }
+
+    // === Categories Grid KeyDown — Delete Category Row ===
+    public async Task OnCategoriesKeyDown(CategoryRow? row, string key, bool shiftKey)
+    {
+        if (row == null) return;
+        var index = CategoriesData.IndexOf(row);
+        if (index < 1) return;
+        if (index == CategoriesData.Count - 1) return; // Don't delete the empty row
+
+        if (key == "Delete" && shiftKey)
+        {
+            row.RowState = "delete";
+            // Hide the row by removing it from the visible list
+            CategoriesData.Remove(row);
+            Dirty = true;
+            StateHasChanged();
+        }
+    }
+
+    // === Context Menu (right-click on Models grid) ===
+    public async Task OnModelsContextMenu(double x, double y)
+    {
+        ContextMenuX = x;
+        ContextMenuY = y;
+        IsContextMenuVisible = true;
+        StateHasChanged();
+    }
+
+    private void CloseContextMenu()
+    {
+        IsContextMenuVisible = false;
+    }
+
+    private async Task OnAddModel()
+    {
+        CloseContextMenu();
+        await JSRuntime.InvokeVoidAsync("alert", "Add Model - not yet implemented");
+    }
+
+    private async Task OnAddRoom()
+    {
+        CloseContextMenu();
+        await JSRuntime.InvokeVoidAsync("alert", "Add Room - not yet implemented");
+    }
+
+    // === Helpers ===
+    private decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+
+    // === Model Classes ===
+    public class ModelRow
+    {
+        public string ModelID { get; set; } = "";
+        public string Model { get; set; } = "";
+    }
+
+    public class CategoryRow
+    {
+        public string Room { get; set; } = "";
+        public string SubCategory { get; set; } = "";
+        public decimal Qty { get; set; }
+        public string UOM { get; set; } = "";
+        public string RowState { get; set; } = "";
+    }
+}
+```

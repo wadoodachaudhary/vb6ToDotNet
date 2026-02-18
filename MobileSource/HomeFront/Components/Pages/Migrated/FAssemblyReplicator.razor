@@ -1,0 +1,516 @@
+@page "/assembly-replicator"
+@rendermode InteractiveServer
+@using HomeFront.Data
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using System.Text
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Division Replication</PageTitle>
+
+<div class="replicator-container">
+    <div class="replicator-header">
+        <h2>Assembly Replication Wizard</h2>
+        <p>Use the Assembly Replication Wizard to quickly setup a new division or community by copying the assemblies from another.</p>
+    </div>
+
+    <div class="replicator-form">
+        <div class="replicator-row">
+            <label>Source Division</label>
+            <HfDropDownList TValue="int?" TItem="DivisionItem"
+                            DataSource="@SourceDivisions"
+                            TextFieldName="Name"
+                            ValueFieldName="Id"
+                            Placeholder="Select division"
+                            @bind-Value="SourceDivisionId"
+                            @bind-Value:after="OnSourceDivisionChanged" />
+        </div>
+
+        <div class="replicator-row">
+            <label>Source Community</label>
+            <HfDropDownList TValue="string" TItem="CommunityItem"
+                            DataSource="@SourceCommunities"
+                            TextFieldName="Name"
+                            ValueFieldName="Code"
+                            Placeholder="Select community"
+                            @bind-Value="SourceCommunityCode"
+                            @bind-Value:after="OnSourceCommunityChanged" />
+        </div>
+
+        <div class="replicator-row">
+            <label>Assembly Type</label>
+            <HfDropDownList TValue="int?" TItem="AssemblyTypeItem"
+                            DataSource="@AssemblyTypes"
+                            TextFieldName="Name"
+                            ValueFieldName="Id"
+                            Placeholder="Select type"
+                            @bind-Value="AssemblyTypeIndex"
+                            @bind-Value:after="OnAssemblyTypeChanged" />
+        </div>
+
+        <div class="replicator-row">
+            <label>Destination Community</label>
+            <HfDropDownList TValue="string" TItem="CommunityItem"
+                            DataSource="@DestinationCommunities"
+                            TextFieldName="Name"
+                            ValueFieldName="Code"
+                            Placeholder="Select destination"
+                            @bind-Value="DestinationCommunityCode" />
+        </div>
+
+        <div class="replicator-row">
+            <HfCheckBox Checked="true" Label="Replicate Item DB" Disabled="true" />
+        </div>
+    </div>
+
+    <div class="replicator-grid">
+        <div class="replicator-grid-title">Assemblies</div>
+        <HfGrid TValue="AssemblyRow"
+                DataSource="@Assemblies"
+                AllowFiltering="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                Height="520px"
+                FilterSettingsRef="@filterSettings">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(AssemblyRow.Selected)" HeaderText="Select" Width="80px" AllowFiltering="false" AllowSorting="false">
+                    <HeaderTemplate>
+                        <input type="checkbox" checked="@SelectAllAssemblies" @onchange="ToggleSelectAll" />
+                    </HeaderTemplate>
+                    <Template>
+                        @{
+                            var row = (AssemblyRow)context;
+                        }
+                        <input type="checkbox" @bind="row.Selected" @bind:after="OnSelectionChanged" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(AssemblyRow.Community)" HeaderText="Community" Width="140px" />
+                <HfGridColumn Field="@nameof(AssemblyRow.Model)" HeaderText="Model" Width="140px" />
+                <HfGridColumn Field="@nameof(AssemblyRow.OptionID)" HeaderText="Option" Width="120px" />
+                <HfGridColumn Field="@nameof(AssemblyRow.Assembly)" HeaderText="Assembly" Width="160px" />
+                <HfGridColumn Field="@nameof(AssemblyRow.Description)" HeaderText="Description" Width="320px" />
+                <HfGridColumn Field="@nameof(AssemblyRow.AssemblyID)" HeaderText="AssemblyID" Visible="false" AllowEditing="false" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <div class="replicator-actions">
+        <HfButton CssClass="hf-button-primary" OnClick="HandleOk">OK</HfButton>
+        <HfButton CssClass="hf-button-secondary" OnClick="HandleClose">Close</HfButton>
+    </div>
+</div>
+
+<style>
+    .replicator-container {
+        max-width: 1200px;
+        margin: 20px auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .replicator-header h2 {
+        margin: 0 0 6px 0;
+    }
+
+    .replicator-form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px 24px;
+        align-items: center;
+    }
+
+    .replicator-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 14px;
+    }
+
+    .replicator-grid-title {
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+
+    .replicator-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+</style>
+
+@code {
+    private const int atGlobal = 1;
+    private const int atDesignCenter = 3;
+
+    [Parameter] public int DivisionId { get; set; } = 1;
+    [Parameter] public EventCallback CloseRequested { get; set; }
+
+    private readonly DbWrapperSqlServer db = new();
+    private readonly HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+
+    private List<DivisionItem> SourceDivisions { get; set; } = new();
+    private List<CommunityItem> SourceCommunities { get; set; } = new();
+    private List<CommunityItem> DestinationCommunities { get; set; } = new();
+    private List<AssemblyTypeItem> AssemblyTypes { get; set; } = new();
+    private List<AssemblyRow> Assemblies { get; set; } = new();
+
+    private int? SourceDivisionId { get; set; }
+    private string? SourceCommunityCode { get; set; }
+    private int? AssemblyTypeIndex { get; set; }
+    private string? DestinationCommunityCode { get; set; }
+
+    private bool SelectAllAssemblies { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSourceDivisionsAsync();
+        await LoadDestinationCommunitiesAsync();
+        LoadAssemblyTypes();
+
+        if (DestinationCommunities.Count > 0)
+        {
+            DestinationCommunityCode = DestinationCommunities[0].Code;
+        }
+    }
+
+    private async Task LoadSourceDivisionsAsync()
+    {
+        var sql = "select divisionname as Name, divisionid as Id from divisions order by 1";
+        var rows = await db.QueryAsync(sql);
+        SourceDivisions = rows
+            .Select(r => new DivisionItem
+            {
+                Id = Convert.ToInt32(r["Id"] ?? 0),
+                Name = r["Name"]?.ToString() ?? ""
+            })
+            .ToList();
+    }
+
+    private async Task LoadDestinationCommunitiesAsync()
+    {
+        var sql = new StringBuilder();
+        sql.AppendLine("select '(Global)' as Name, '' as Code");
+        sql.AppendLine("union all");
+        sql.AppendLine("select community + ' - ' + c.description, community");
+        sql.AppendLine("from divisioncommunities d");
+        sql.AppendLine("join tbllocality c on c.area=d.community");
+        sql.AppendLine($"where d.divisionid={DivisionId}");
+        sql.AppendLine("order by 1");
+
+        var rows = await db.QueryAsync(sql.ToString());
+        DestinationCommunities = rows
+            .Select(r => new CommunityItem
+            {
+                Name = r["Name"]?.ToString() ?? "",
+                Code = r["Code"]?.ToString() ?? ""
+            })
+            .ToList();
+    }
+
+    private void LoadAssemblyTypes()
+    {
+        AssemblyTypes = new List<AssemblyTypeItem>
+        {
+            new() { Id = 0, Name = "Models and Options" },
+            new() { Id = 1, Name = "Global Options" },
+            new() { Id = 2, Name = "Design Center Options" }
+        };
+    }
+
+    private async Task OnSourceDivisionChanged()
+    {
+        Assemblies.Clear();
+        SelectAllAssemblies = false;
+
+        if (!SourceDivisionId.HasValue)
+        {
+            SourceCommunities.Clear();
+            SourceCommunityCode = null;
+            AssemblyTypeIndex = null;
+            return;
+        }
+
+        await LoadSourceCommunitiesAsync(SourceDivisionId.Value);
+        SourceCommunityCode = null;
+        AssemblyTypeIndex = null;
+    }
+
+    private async Task LoadSourceCommunitiesAsync(int divisionId)
+    {
+        var sql = new StringBuilder();
+        sql.AppendLine("select '(Global)' as Name, '' as Code");
+        sql.AppendLine("union all");
+        sql.AppendLine("select community + ' - ' + c.description, community");
+        sql.AppendLine("from divisioncommunities d");
+        sql.AppendLine("join tbllocality c on c.area=d.community");
+        sql.AppendLine($"where d.divisionid={divisionId}");
+        sql.AppendLine("order by 1");
+
+        var rows = await db.QueryAsync(sql.ToString());
+        SourceCommunities = rows
+            .Select(r => new CommunityItem
+            {
+                Name = r["Name"]?.ToString() ?? "",
+                Code = r["Code"]?.ToString() ?? ""
+            })
+            .ToList();
+    }
+
+    private async Task OnSourceCommunityChanged()
+    {
+        await LoadAssembliesAsync();
+    }
+
+    private async Task OnAssemblyTypeChanged()
+    {
+        await LoadAssembliesAsync();
+    }
+
+    private async Task LoadAssembliesAsync()
+    {
+        Assemblies.Clear();
+        SelectAllAssemblies = false;
+
+        if (!SourceDivisionId.HasValue || AssemblyTypeIndex == null || SourceCommunityCode == null)
+            return;
+
+        var sql = new StringBuilder();
+        sql.AppendLine("select 0 as Selected, Community, Model, OptionID, Assembly, Description, AssemblyID");
+        sql.AppendLine("from tbldbassemblymaster");
+        sql.AppendLine($"where divisionid = {SourceDivisionId.Value}");
+        sql.AppendLine($"and isnull(community,'') = {SqlQuote(SourceCommunityCode)}");
+        sql.AppendLine("and isnull(isBaseAssembly,0)=0");
+
+        switch (AssemblyTypeIndex)
+        {
+            case 0:
+                sql.AppendLine("and assemblytype in(0,2)");
+                break;
+            case 1:
+                sql.AppendLine($"and assemblytype = {atGlobal}");
+                break;
+            case 2:
+                sql.AppendLine($"and assemblytype = {atDesignCenter}");
+                break;
+            default:
+                return;
+        }
+
+        sql.AppendLine("order by 2,3,4");
+
+        var rows = await db.QueryAsync(sql.ToString());
+        Assemblies = rows.Select(r => new AssemblyRow
+        {
+            Selected = false,
+            Community = r["Community"]?.ToString() ?? "",
+            Model = r["Model"]?.ToString() ?? "",
+            OptionID = r["OptionID"]?.ToString() ?? "",
+            Assembly = r["Assembly"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? "",
+            AssemblyID = Convert.ToInt32(r["AssemblyID"] ?? 0)
+        }).ToList();
+    }
+
+    private async Task HandleOk()
+    {
+        await SaveDataAsync();
+    }
+
+    private async Task HandleClose()
+    {
+        if (CloseRequested.HasDelegate)
+        {
+            await CloseRequested.InvokeAsync();
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        var isChecked = e.Value is bool b && b;
+        SelectAllAssemblies = isChecked;
+
+        foreach (var row in Assemblies)
+        {
+            row.Selected = isChecked;
+        }
+    }
+
+    private void OnSelectionChanged()
+    {
+        SelectAllAssemblies = Assemblies.Count > 0 && Assemblies.All(a => a.Selected);
+    }
+
+    private async Task SaveDataAsync()
+    {
+        try
+        {
+            if (!SourceDivisionId.HasValue)
+            {
+                await ShowMessageAsync("Select a source division.");
+                return;
+            }
+
+            var selectedIds = Assemblies.Where(a => a.Selected).Select(a => a.AssemblyID).ToList();
+            if (selectedIds.Count == 0)
+            {
+                await ShowMessageAsync("No assemblies are selected.");
+                return;
+            }
+
+            var srcAssemblyIds = string.Join(",", selectedIds);
+            var dstCommunity = DestinationCommunityCode ?? "";
+
+            var srcComponentIds = string.Empty;
+            if (DivisionId != SourceDivisionId.Value)
+            {
+                srcComponentIds = await GetComponentIdsAsync(srcAssemblyIds);
+            }
+
+            await CopyItemDbAsync(SourceDivisionId.Value);
+            await CopyAssembliesAsync(srcAssemblyIds, srcComponentIds, dstCommunity);
+
+            await ShowMessageAsync("Replication Complete");
+        }
+        catch (Exception ex)
+        {
+            await ShowMessageAsync($"Error replicating assemblies: {ex.Message}");
+        }
+    }
+
+    private async Task<string> GetComponentIdsAsync(string srcAssemblyIds)
+    {
+        var sql = $@"
+select distinct ComponentAssemblyID
+from tblDBAssemblyComponents
+where parentassemblyid in({srcAssemblyIds})";
+        var rows = await db.QueryAsync(sql);
+        var ids = rows.Select(r => r["ComponentAssemblyID"]?.ToString() ?? "")
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToList();
+
+        return ids.Count == 0 ? "" : "," + string.Join(",", ids);
+    }
+
+    private async Task CopyItemDbAsync(int srcDiv)
+    {
+        var sql = $@"
+insert tblphaseitem(DivisionID, Phase, Item, PriceLink, Description, Notes, POIndex, JCCostCode, JCCategory, OrderUOM, TakeoffUOM, UpdateEstimating, UStmp, TStmp, ConversionFactor, Price, TaxGroup, WastePercent, RoundDir, Roundto, PhaseSortOrder, ItemSortOrder, flag, PartNumber, CostCategory, ItemNumber, IsQuote, UseInFieldPO, AltJCCostCode, AltJCCategory, Formula, ModifiedDate, ModifiedBy, PriceModifiedDate, PriceModifiedBy, Location
+                  , WBS01, WBS02, WBS03, WBS04, WBS05, WBS06, WBS07, WBS08, WBS09, WBS10, WBS11, WBS12, WBS13, WBS14, WBS15, WBS16, WBS17, WBS18, WBS19, WBS20, WBS21, WBS22, WBS23, WBS24, WBS25, WBS26, WBS27, WBS28, WBS29, WBS30, WBS31, WBS32, WBS33, WBS34, WBS35, WBS36, WBS37, WBS38, WBS39, WBS40, OptionID, Color, OptionCategory, RetailPretax, InversePhase, InverseItem, DeleteMe)
+select {DivisionId} DivisionID, src.Phase, src.Item, src.PriceLink, src.Description, src.Notes, src.POIndex, src.JCCostCode, src.JCCategory, src.OrderUOM, src.TakeoffUOM, src.UpdateEstimating, src.UStmp, src.TStmp, src.ConversionFactor, src.Price, src.TaxGroup, src.WastePercent, src.RoundDir, src.Roundto, src.PhaseSortOrder, src.ItemSortOrder, src.flag, src.PartNumber, src.CostCategory, src.ItemNumber, src.IsQuote, src.UseInFieldPO, src.AltJCCostCode, src.AltJCCategory, src.Formula, src.ModifiedDate, src.ModifiedBy, src.PriceModifiedDate, src.PriceModifiedBy, src.Location
+      , src.WBS01, src.WBS02, src.WBS03, src.WBS04, src.WBS05, src.WBS06, src.WBS07, src.WBS08, src.WBS09, src.WBS10, src.WBS11, src.WBS12, src.WBS13, src.WBS14, src.WBS15, src.WBS16, src.WBS17, src.WBS18, src.WBS19, src.WBS20, src.WBS21, src.WBS22, src.WBS23, src.WBS24, src.WBS25, src.WBS26, src.WBS27, src.WBS28, src.WBS29, src.WBS30, src.WBS31, src.WBS32, src.WBS33, src.WBS34, src.WBS35, src.WBS36, src.WBS37, src.WBS38, src.WBS39, src.WBS40,src.OptionID, src.Color, src.OptionCategory, src.RetailPretax, src.InversePhase, src.InverseItem, src.DeleteMe
+from tblPhaseItem src
+left join tblphaseitem dst on(dst.divisionid={DivisionId} and dst.phase=src.phase and dst.item=src.item)
+where src.DivisionID={srcDiv}
+and dst.divisionid is null
+
+insert tblEstPhases(DivisionID, Phase, Description, GroupPhase, UpdateEstimating, UStmp, TStmp, SortOrder, GroupPhaseValue, DeleteMe, flag)
+select {DivisionId} DivisionID, src.Phase, src.Description, src.GroupPhase, src.UpdateEstimating, src.UStmp, src.TStmp, src.SortOrder, src.GroupPhaseValue, src.DeleteMe, src.flag
+from tblEstPhases src
+left join tblEstPhases dst on(dst.divisionid={DivisionId} and dst.phase=src.phase)
+where src.DivisionID={srcDiv}
+and dst.divisionid is null
+
+insert tblpoindex(DivisionID, POIndex, Notes, JCCostCode, JCCategory, UpdateEstimating, ForecastPercent1, ForecastPercent2, ForecastPercent3, ForecastPercent4, ForecastPercent5, ForecastPercent6, ForecastPercent7, ForecastPercent8, ForecastPercent9
+, ForecastPercent10, ForecastPercent11, ForecastPercent12, StandardText, Description, POGroup, HideQty, HidePrice, TotalOnly, POFormat, SchedTaskID, ReleaseTaskID, PaymentTerm, FOB, ShipVia, Terms, UStmp, TStmp, RetainagePercent, POType, PayPoint1Percent
+, PayPoint2Percent, PayPoint3Percent, PayPoint4Percent, PayPoint5Percent, PayPoint1SchedTask, PayPoint2SchedTask, PayPoint3SchedTask, PayPoint4SchedTask, PayPoint5SchedTask, RequiresPaymentApproval, BuildProEnabled, MPO, RequireLienRelease)
+select {DivisionId} DivisionID, src.POIndex, src.Notes, src.JCCostCode, src.JCCategory, src.UpdateEstimating, src.ForecastPercent1, src.ForecastPercent2, src.ForecastPercent3, src.ForecastPercent4, src.ForecastPercent5
+, src.ForecastPercent6, src.ForecastPercent7, src.ForecastPercent8, src.ForecastPercent9, src.ForecastPercent10, src.ForecastPercent11, src.ForecastPercent12, src.StandardText, src.Description, src.POGroup, src.HideQty, src.HidePrice
+, src.TotalOnly, src.POFormat, src.SchedTaskID, src.ReleaseTaskID, src.PaymentTerm, src.FOB, src.ShipVia, src.Terms, src.UStmp, src.TStmp, src.RetainagePercent, src.POType, src.PayPoint1Percent, src.PayPoint2Percent, src.PayPoint3Percent
+, src.PayPoint4Percent, src.PayPoint5Percent, src.PayPoint1SchedTask, src.PayPoint2SchedTask, src.PayPoint3SchedTask, src.PayPoint4SchedTask, src.PayPoint5SchedTask, src.RequiresPaymentApproval, src.BuildProEnabled, src.MPO, src.RequireLienRelease
+from tblPOIndex src
+left join tblPOIndex dst on(dst.divisionid={DivisionId} and dst.poindex=src.poindex)
+where src.DivisionID={srcDiv}
+and dst.divisionid is null";
+
+        await db.ExecuteAsync(sql);
+    }
+
+    private async Task CopyAssembliesAsync(string srcAssemblyIds, string srcComponentIds, string dstCommunity)
+    {
+        var dstCommunitySql = SqlQuote(dstCommunity);
+        var allIds = string.IsNullOrWhiteSpace(srcComponentIds) ? srcAssemblyIds : $"{srcAssemblyIds}{srcComponentIds}";
+
+        var sql = $@"
+insert tbldbassemblymaster(SourceAssemblyID, DivisionID, Community, Assembly, OptionID, AssemblyType, Model, Elevation, Series, FloorArea, Bedrooms, Bathrooms, Style, Description, Notes, Category, Markup, Roundto, Cost, Pretax, COCost, COPretax, IncludeTax, TaxRate, Total_Selling, Tax, Total_CO_Selling, COTax, UStmp, TStmp, ConstCutoff,
+                           Margin, JCExtra, IncentiveRetail, TakeoffRequired, AssemblyUOM, Pretax2, Pretax3, Pretax4, Pretax5, Pretax6, Pretax7, Pretax8, Pretax9, Pretax10, Tax2, Tax3, Tax4, Tax5, Tax6, Tax7, Tax8, Tax9, Tax10, IncludedInSpec, IncludedInSpec2, IncludedInSpec3, IncludedInSpec4, IncludedInSpec5, IncludedInSpec6, 
+                           IncludedInSpec7, IncludedInSpec8, IncludedInSpec9, IncludedInSpec10, Status, UseNormalSalesQtyFactors, InActive,  Comments, Color, Location, Qty, IncludedOption, ColorListID, StyleListID, FinishListID, OtherListID, StyleValue, FinishValue, OtherValue, GraphicPath, SpecDocument, MaxWidth, 
+                           Maxlength, BillingFactor, BillingCode, BillingCategory, IsBaseAssembly, ScheduleTemplate, DesignCenterSalesOnly, SelectByRoom, DisplayTotalOnly, MainSF, UpperSF, LowerSF, GarageSF)
+
+select src.AssemblyID, {DivisionId} DivisionID, {dstCommunitySql} Community, src.Assembly, src.OptionID, src.AssemblyType, src.Model, src.Elevation, src.Series, src.FloorArea, src.Bedrooms, src.Bathrooms, src.Style, src.Description, src.Notes, src.Category, src.Markup, src.Roundto, src.Cost, src.Pretax, src.COCost, src.COPretax, src.IncludeTax, src.TaxRate, src.Total_Selling, src.Tax, src.Total_CO_Selling, src.COTax, src.UStmp, src.TStmp, src.ConstCutoff, src.
+       Margin, src.JCExtra, src.IncentiveRetail, src.TakeoffRequired, src.AssemblyUOM, src.Pretax2, src.Pretax3, src.Pretax4, src.Pretax5, src.Pretax6, src.Pretax7, src.Pretax8, src.Pretax9, src.Pretax10, src.Tax2, src.Tax3, src.Tax4, src.Tax5, src.Tax6, src.Tax7, src.Tax8, src.Tax9, src.Tax10, src.IncludedInSpec, src.IncludedInSpec2, src.IncludedInSpec3, src.IncludedInSpec4, src.IncludedInSpec5, src.IncludedInSpec6, src.
+       IncludedInSpec7, src.IncludedInSpec8, src.IncludedInSpec9, src.IncludedInSpec10, src.Status, src.UseNormalSalesQtyFactors, src.InActive, src.Comments, src.Color, src.Location, src.Qty, src.IncludedOption, src.ColorListID, src.StyleListID, src.FinishListID, src.OtherListID, src.StyleValue, src.FinishValue, src.OtherValue, src.GraphicPath, src.SpecDocument, src.MaxWidth, src.
+       Maxlength, src.BillingFactor, src.BillingCode, src.BillingCategory, src.IsBaseAssembly, src.ScheduleTemplate, src.DesignCenterSalesOnly, src.SelectByRoom, src.DisplayTotalOnly, src.MainSF, src.UpperSF, src.LowerSF, src.GarageSF
+from tblDBAssemblyMaster src
+left join tblDBAssemblyMaster dst on dst.Divisionid={DivisionId} and dst.community={dstCommunitySql} and dst.Assembly=src.Assembly and dst.model=Src.Model and dst.OptionID=src.OptionID
+where dst.assemblyid is null
+and src.assemblyid in({allIds})
+
+insert tblDBAssemblyDetails(DivisionID, Community, AssemblyID, Assembly, OptionID, SourceSeq, Phase, Item, Vendor, Quantity, Rate, Cost, Notes, UStmp, TStmp, TakeoffQty, OrderQty, Model, Formula, ItemChart, Location, WBS01, WBS02, WBS03, WBS04, WBS05, WBS06, WBS07, WBS08, WBS09, WBS10, WBS11, WBS12, WBS13, WBS14, WBS15, WBS16, WBS17, WBS18, WBS19,
+                            WBS20, WBS21, WBS22, WBS23, WBS24, WBS25, WBS26, WBS27, WBS28, WBS29, WBS30, WBS31, WBS32, WBS33, WBS34, WBS35, WBS36, WBS37, WBS38, WBS39, WBS40, POIndex, UseModelCost, ConversionFactor, Invertable)
+select {DivisionId} DivisionID, {dstCommunitySql} Community, dstM.AssemblyID, src.Assembly, src.OptionID, src.Sequence, src.Phase, src.Item, src.Vendor, src.Quantity, src.Rate, src.Cost, src.Notes, src.UStmp, src.TStmp, src.TakeoffQty, src.OrderQty, src.Model, src.Formula, src.ItemChart, src.Location, src.WBS01, src.WBS02, src.WBS03, src.WBS04, src.WBS05, src.WBS06, src.WBS07, src.WBS08, src.WBS09, src.WBS10, src.WBS11, src.WBS12, src.WBS13, src.WBS14, src.WBS15, src.WBS16, src.WBS17, src.WBS18, src.WBS19,
+       src.WBS20, src.WBS21, src.WBS22, src.WBS23, src.WBS24, src.WBS25, src.WBS26, src.WBS27, src.WBS28, src.WBS29, src.WBS30, src.WBS31, src.WBS32, src.WBS33, src.WBS34, src.WBS35, src.WBS36, src.WBS37, src.WBS38, src.WBS39, src.WBS40, src.POIndex, src.UseModelCost, src.ConversionFactor, src.Invertable
+from tblDBAssemblyDetails src
+join tblDBAssemblyMaster dstM on src.AssemblyID=dstM.SourceAssemblyID
+left join tblDBAssemblyDetails dst on dst.Divisionid={DivisionId} and dst.community={dstCommunitySql} and dst.Assembly=src.Assembly and dst.model=Src.Model and dst.OptionID=src.OptionID and dst.SourceSeq=src.Sequence
+where dst.divisionid is null
+and src.assemblyid in({allIds})
+
+insert tblDBAssemblyComponents(ParentAssemblyID, ComponentAssemblyID, Qty)
+select dst.AssemblyID ParentAssemblyID, isnull(dstY.AssemblyID,srcX.ComponentAssemblyID) ComponentAssemblyID, srcX.Qty
+from tblDBAssemblyMaster dst
+join tblDBAssemblyComponents srcX on srcX.ParentAssemblyID=dst.SourceAssemblyID
+left join tblDBAssemblyMaster dstY on dstY.SourceAssemblyID=srcX.ComponentAssemblyID
+left join tblDBAssemblyComponents dstX on dstX.ParentAssemblyID=dst.AssemblyID and dstX.ComponentAssemblyID=dstY.AssemblyID
+where dst.SourceAssemblyid in({srcAssemblyIds})
+and dstX.ParentAssemblyID is null";
+
+        await db.ExecuteAsync(sql);
+    }
+
+    private async Task ShowMessageAsync(string message)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", message);
+    }
+
+    private static string SqlQuote(string value)
+    {
+        value ??= "";
+        return $"'{value.Replace("'", "''")}'";
+    }
+
+    private sealed class DivisionItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    private sealed class CommunityItem
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    private sealed class AssemblyTypeItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    private sealed class AssemblyRow
+    {
+        public bool Selected { get; set; }
+        public string Community { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string Description { get; set; } = "";
+        public int AssemblyID { get; set; }
+    }
+}

@@ -1,0 +1,1342 @@
+@page "/option-list-multi-select"
+@page "/option-list-multi-select/{Job}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using System.Data
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>HSMC - Option List</PageTitle>
+
+<style>
+    .option-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 80px);
+        padding: 8px;
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    .option-type-frame {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        background: #f8f9fa;
+    }
+
+    .option-type-frame legend {
+        font-size: 13px;
+        font-weight: 600;
+        padding: 0 6px;
+    }
+
+    .option-type-group {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .option-type-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .main-content {
+        display: flex;
+        flex: 1;
+        gap: 8px;
+        overflow: hidden;
+    }
+
+    .grid-panel {
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .side-panel {
+        width: 320px;
+        min-width: 280px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .location-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .location-row label {
+        font-size: 13px;
+        min-width: 60px;
+    }
+
+    .location-row input {
+        flex: 1;
+        padding: 4px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #e9ecef;
+    }
+
+    .location-row button {
+        padding: 4px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .location-row button:hover {
+        background: #e9ecef;
+    }
+
+    .image-viewer {
+        flex: 1;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        min-height: 200px;
+    }
+
+    .image-viewer img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+    }
+
+    .image-viewer .no-image {
+        color: #6c757d;
+        font-size: 12px;
+    }
+
+    .button-row {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-start;
+        padding-top: 4px;
+    }
+
+    .button-row button {
+        padding: 8px 16px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 100px;
+    }
+
+    .button-row button:hover {
+        background: #e8e8e8;
+    }
+
+    .button-row button.primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .button-row button.primary:hover {
+        background: #0b5ed7;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    /* Pick list dialog */
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .dialog-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover {
+        background: #e9ecef;
+    }
+
+    .dialog-footer .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .pick-list-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .pick-list-item:hover {
+        background: #e8f0fe;
+    }
+
+    .pick-list-item.selected {
+        background: #cce5ff;
+        font-weight: 600;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Options...</div>
+    </div>
+}
+
+<div class="option-container">
+    @* Option Type Frame *@
+    <fieldset class="option-type-frame">
+        <legend>Option Type</legend>
+        <div class="option-type-group">
+            <label>
+                <input type="radio" name="optionType" value="3" checked="@(SelectedOptionType == 3)"
+                       @onchange="() => OnOptionTypeChanged(3)" />
+                All Options Combined
+            </label>
+            <label>
+                <input type="radio" name="optionType" value="1" checked="@(SelectedOptionType == 1)"
+                       @onchange="() => OnOptionTypeChanged(1)" />
+                Model Specific Options
+            </label>
+            <label>
+                <input type="radio" name="optionType" value="2" checked="@(SelectedOptionType == 2)"
+                       @onchange="() => OnOptionTypeChanged(2)" />
+                Personal Choice Options
+            </label>
+            @if (ShowCustomerShoppingCart)
+            {
+                <label>
+                    <input type="radio" name="optionType" value="4" checked="@(SelectedOptionType == 4)"
+                           @onchange="() => OnOptionTypeChanged(4)" />
+                    Customer Shopping Cart
+                </label>
+            }
+            @if (UseCORequests)
+            {
+                <label>
+                    <input type="radio" name="optionType" value="5" checked="@(SelectedOptionType == 5)"
+                           @onchange="() => OnOptionTypeChanged(5)" />
+                    Change Requests
+                </label>
+            }
+        </div>
+    </fieldset>
+
+    @* Main Content *@
+    <div class="main-content">
+        @* Grid Panel *@
+        <div class="grid-panel">
+            <HfGrid @ref="ItemsGrid"
+                    TValue="OptionItemRow"
+                    DataSource="@ItemsData"
+                    AllowSelection="true"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowResizing="true"
+                    EnableHover="true"
+                    Height="100%"
+                    RowHeight="28"
+                    FilterSettingsRef="@filterSettings"
+                    PageSettingsRef="@pageSettings"
+                    SelectionSettingsRef="@selectionSettings"
+                    EditSettingsRef="@editSettings"
+                    EventsRef="@gridEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Pick)" HeaderText="Pick" Width="60px"
+                                  Type="ColumnType.CheckBox" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Qty)" HeaderText="Qty" Width="60px"
+                                  Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right"
+                                  AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.UOM)" HeaderText="UOM" Width="60px"
+                                  AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Price)" HeaderText="Price" Width="100px"
+                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                  AllowEditing="true" />
+                    @if (UseMajorGroup)
+                    {
+                        <HfGridColumn Field="@nameof(OptionItemRow.MajDesc)" HeaderText="Group" Width="120px"
+                                      AllowEditing="false" />
+                    }
+                    <HfGridColumn Field="@nameof(OptionItemRow.CatDesc)" HeaderText="Category" Width="140px"
+                                  AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Description)" HeaderText="Description" Width="250px"
+                                  AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.OPT)" HeaderText="OPT" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Assembly)" HeaderText="Assembly" Width="100px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Location)" HeaderText="Location" Width="120px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span>@data.Location</span>
+                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                        @onclick="() => OnLocationButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Color)" HeaderText="Color" Width="100px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span>@data.Color</span>
+                                @if (data.ColorListID != 0)
+                                {
+                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                            @onclick="() => OnColorButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                }
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Style)" HeaderText="Style" Width="100px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span>@data.Style</span>
+                                @if (data.StyleListID != 0)
+                                {
+                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                            @onclick="() => OnStyleButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                }
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Finish)" HeaderText="Finish" Width="100px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span>@data.Finish</span>
+                                @if (data.FinishListID != 0)
+                                {
+                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                            @onclick="() => OnFinishButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                }
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Other)" HeaderText="Other" Width="100px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span>@data.Other</span>
+                                @if (data.OtherListID != 0)
+                                {
+                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                            @onclick="() => OnOtherButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                }
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.Comments)" HeaderText="Comments" Width="200px"
+                                  AllowEditing="true">
+                        <Template>
+                            @{
+                                var data = (OptionItemRow)context;
+                                <span title="@data.Comments">@TruncateText(data.Comments, 30)</span>
+                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                        @onclick="() => OnCommentsButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(OptionItemRow.EstimatorNotes)" HeaderText="Estimator Notes"
+                                  Width="150px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Cost_Amount)" HeaderText="Cost" Width="90px"
+                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.CO_Price)" HeaderText="CO Price" Width="90px"
+                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.GrandTotal)" HeaderText="Grand Total" Width="100px"
+                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.GrandCOTotal)" HeaderText="Grand CO Total" Width="100px"
+                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.TL_Extra)" HeaderText="TL Extra" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Major_Group)" HeaderText="Major Group" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Category)" HeaderText="Category Code" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Option_Type)" HeaderText="Option Type" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.Graphic_Path)" HeaderText="Graphic" Width="80px"
+                                  AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.NoCharge)" HeaderText="No Charge" Width="70px"
+                                  Type="ColumnType.CheckBox" AllowEditing="true" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.ColorListID)" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.StyleListID)" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.FinishListID)" Visible="false" />
+                    <HfGridColumn Field="@nameof(OptionItemRow.OtherListID)" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        @* Side Panel *@
+        <div class="side-panel">
+            <div class="location-row">
+                <label>Location</label>
+                <input type="text" @bind="LocationText" readonly />
+                <button @onclick="OnLocationDropdownClick" title="Select Location">...</button>
+            </div>
+
+            <div class="image-viewer">
+                @if (!string.IsNullOrEmpty(CurrentImagePath))
+                {
+                    <img src="@CurrentImagePath" alt="Option Image" />
+                }
+                else
+                {
+                    <span class="no-image">No image available</span>
+                }
+            </div>
+
+            <div class="button-row">
+                <button class="primary" @onclick="OnSaveToCustomerClick">Save to Customer</button>
+                <button @onclick="OnCancelClick">&Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Comments Edit Dialog *@
+@if (IsCommentsDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="OnCommentsDialogCancel">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Edit Comments</span>
+                <button @onclick="OnCommentsDialogCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <textarea @bind="EditingComments" rows="10" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:4px; resize:vertical;" maxlength="4000"></textarea>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnCommentsDialogOk">OK</button>
+                <button class="btn" @onclick="OnCommentsDialogCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Pick List Dialog *@
+@if (IsPickListVisible)
+{
+    <div class="dialog-overlay" @onclick="OnPickListCancel">
+        <div class="dialog-panel" style="min-width:350px;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>@PickListTitle</span>
+                <button @onclick="OnPickListCancel">×</button>
+            </div>
+            <div class="dialog-body" style="max-height:400px; overflow-y:auto;">
+                @foreach (var item in PickListItems)
+                {
+                    <div class="pick-list-item @(item == SelectedPickListItem ? "selected" : "")"
+                         @onclick="() => SelectedPickListItem = item">
+                        @item
+                    </div>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnPickListSelect" disabled="@(SelectedPickListItem == null)">Select</button>
+                <button class="btn" @onclick="OnPickListCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Job { get; set; }
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+    private string LoginID = "";
+
+    // UI State
+    private bool IsLoading = false;
+    private bool gCancel = false;
+    private bool itemschecked = false;
+    private int SelectedOptionType = 2;
+    private string LocationText = "";
+    private List<string> LocationItems = new();
+    private string CurrentImagePath = "";
+    private bool ShowCustomerShoppingCart = false;
+    private bool UseCORequests = false;
+    private bool UseMajorGroup = false;
+    private bool OptionByArea = false;
+    private bool OptionByAreaPhase = false;
+    private bool GlobalOptionByArea = false;
+    private bool GlobalOptionByAreaPhase = false;
+
+    // Customer data
+    private string CustomerNo = "";
+    private string sJob = "";
+    private string Model = "";
+    private string Series = "";
+    private string Community = "";
+    private string Elevation = "";
+    private string Phase = "";
+
+    // Grid
+    private HfGrid<OptionItemRow>? ItemsGrid;
+    private List<OptionItemRow> ItemsData = new();
+
+    // Grid settings
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 100 };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<OptionItemRow> gridEvents = new();
+
+    // Comments dialog
+    private bool IsCommentsDialogVisible = false;
+    private string EditingComments = "";
+    private OptionItemRow? EditingCommentsRow;
+
+    // Pick list dialog
+    private bool IsPickListVisible = false;
+    private string PickListTitle = "";
+    private List<string> PickListItems = new();
+    private string? SelectedPickListItem;
+    private Action<string>? PickListCallback;
+
+    // Connection string
+    private string ConnectionString = "Server=localhost,1433;Database=HomeFrontDB;User Id=sa;Password=YourPassword;Encrypt=false;TrustServerCertificate=true;";
+
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<OptionItemRow>>(this, OnRowSelected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<OptionItemRow>>(this, OnCellSaved);
+
+        sJob = Job ?? "";
+        await LoadFormAsync();
+    }
+
+    private async Task LoadFormAsync()
+    {
+        try
+        {
+            IsLoading = true;
+            StateHasChanged();
+
+            // Load app options
+            UseCORequests = await GetAppOptionBool("ChangeRequests");
+            UseMajorGroup = await GetAppOptionBool("UseMajorGroup");
+            OptionByArea = await GetAppOptionBool("OptionByArea");
+            OptionByAreaPhase = await GetAppOptionBool("OptionByAreaPhase");
+            GlobalOptionByArea = await GetAppOptionBool("GlobalOptionByArea");
+            GlobalOptionByAreaPhase = await GetAppOptionBool("GlobalOptionByAreaPhase");
+
+            // Load customer info
+            var custSql = @"SELECT TOP 1 customer_no, ISNULL(Community,'') Community, gst_rate, Item_seq,
+                           ISNULL(Elevation,'') Elevation, ISNULL(Phase,'') Phase, Model, ISNULL(Series,'') Series
+                           FROM tblcustomers WHERE job_no = @Job AND DivisionID = @DivisionID";
+            var custDt = db.SqlExec(custSql, new { Job = sJob, DivisionID });
+            if (custDt.Rows.Count > 0)
+            {
+                var row = custDt.Rows[0];
+                CustomerNo = row["customer_no"]?.ToString() ?? "";
+                Community = row["Community"]?.ToString() ?? "";
+                Elevation = row["Elevation"]?.ToString() ?? "";
+                Phase = row["Phase"]?.ToString() ?? "";
+                Model = row["Model"]?.ToString() ?? "";
+                Series = row["Series"]?.ToString() ?? "";
+            }
+
+            // Check shopping cart count
+            var cartCount = SafeInt(db.SqlExec(
+                "SELECT COUNT(customer_no) FROM CustomerShoppingCart WHERE ISNULL(addtoco,0) = 0 AND customer_no = @CustomerNo",
+                new { CustomerNo }).Rows[0][0]);
+            ShowCustomerShoppingCart = cartCount > 0;
+
+            // Default to Personal Choice Options
+            SelectedOptionType = 2;
+            await LoadOptionsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadFormAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading form: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnOptionTypeChanged(int optionType)
+    {
+        SelectedOptionType = optionType;
+        await LoadOptionsAsync();
+    }
+
+    private async Task LoadOptionsAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            string sql = SelectedOptionType switch
+            {
+                1 => BuildModelSpecificQuery(),
+                2 => BuildPersonalChoiceQuery(),
+                3 => BuildAllCombinedQuery(),
+                4 => BuildCustomerShoppingCartQuery(),
+                5 => BuildChangeRequestsQuery(),
+                _ => BuildPersonalChoiceQuery()
+            };
+
+            var dt = db.SqlExec(sql);
+            ItemsData = new List<OptionItemRow>();
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var item = new OptionItemRow
+                {
+                    Pick = false,
+                    OPT = row["OPT"]?.ToString() ?? "",
+                    Description = row["Description"]?.ToString() ?? "",
+                    Price = SafeDecimal(row["Price"]),
+                    BasePrice = SafeDecimal(row.Table.Columns.Contains("BasePrice") ? row["BasePrice"] : row["Price"]),
+                    CO_Price = SafeDecimal(row.Table.Columns.Contains("CO_Price") ? row["CO_Price"] : null),
+                    Cost_Amount = SafeDecimal(row.Table.Columns.Contains("Cost_Amount") ? row["Cost_Amount"] : null),
+                    Category = row["Category"]?.ToString() ?? "",
+                    CatDesc = row.Table.Columns.Contains("CatDesc") ? (row["CatDesc"]?.ToString() ?? "") : "",
+                    MajDesc = row.Table.Columns.Contains("MajDesc") ? (row["MajDesc"]?.ToString() ?? "") : "",
+                    Major_Group = row.Table.Columns.Contains("Major_Group") ? (row["Major_Group"]?.ToString() ?? "") : "",
+                    Comments = row["Comments"]?.ToString() ?? "",
+                    UOM = row.Table.Columns.Contains("UOM") ? (row["UOM"]?.ToString() ?? "") : "",
+                    Qty = SafeInt(row.Table.Columns.Contains("Qty") ? row["Qty"] : null, 1),
+                    Option_Type = SafeInt(row.Table.Columns.Contains("Option_Type") ? row["Option_Type"] : null),
+                    Assembly = row.Table.Columns.Contains("Assembly") ? (row["Assembly"]?.ToString() ?? "") : "",
+                    Location = row.Table.Columns.Contains("Location") ? (row["Location"]?.ToString() ?? "") : "",
+                    Color = row.Table.Columns.Contains("Color") ? (row["Color"]?.ToString() ?? "") : "",
+                    Style = row.Table.Columns.Contains("Style") ? (row["Style"]?.ToString() ?? "") : "",
+                    Finish = row.Table.Columns.Contains("Finish") ? (row["Finish"]?.ToString() ?? "") : "",
+                    Other = row.Table.Columns.Contains("Other") ? (row["Other"]?.ToString() ?? "") : "",
+                    TL_Extra = row.Table.Columns.Contains("TL_Extra") ? (row["TL_Extra"]?.ToString() ?? "") : "",
+                    EstimatorNotes = row.Table.Columns.Contains("EstimatorNotes") ? (row["EstimatorNotes"]?.ToString() ?? "") : "",
+                    Graphic_Path = row.Table.Columns.Contains("graphic_path") ? (row["graphic_path"]?.ToString() ?? "") : "",
+                    GrandTotal = SafeDecimal(row.Table.Columns.Contains("GrandTotal") ? row["GrandTotal"] : null),
+                    GrandCOTotal = SafeDecimal(row.Table.Columns.Contains("GrandCOTotal") ? row["GrandCOTotal"] : null),
+                    ColorListID = SafeInt(row.Table.Columns.Contains("ColorListID") ? row["ColorListID"] : null),
+                    StyleListID = SafeInt(row.Table.Columns.Contains("StyleListID") ? row["StyleListID"] : null),
+                    FinishListID = SafeInt(row.Table.Columns.Contains("FinishListID") ? row["FinishListID"] : null),
+                    OtherListID = SafeInt(row.Table.Columns.Contains("OtherListID") ? row["OtherListID"] : null),
+                    NoCharge = false
+                };
+                ItemsData.Add(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadOptionsAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading options: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    #region SQL Query Builders
+
+    private string BuildModelSpecificQuery()
+    {
+        var s = "";
+        if (UseMajorGroup)
+        {
+            s = @"SELECT T1.Area, T1.Model, T1.Series, T1.Option_Type, T1.Option_Type_Desc, T1.OPT, t1.Description,
+                  t1.Construction_Cut_Off, t1.D_Structural_Change, T1.Cost_Amount, T1.Price, T1.TL_Extra,
+                  CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END CO_Price,
+                  T1.Category, T1.Comments, t1.UOM, t1.Major_Group,
+                  T1.Price as BasePrice, CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END BaseCO_Price,
+                  t1.NoCommission, t1.French_Desc, t1.French_Comments, t1.graphic_path,
+                  t1.Qty, T1.Pick, T1.WebUpdated, T1.NoDataChanged, t1.Web_View, t1.EnerGuideRating,
+                  t1.GreenHouseRating, t1.FuelCost, t1.UseTax, t1.NetTax, t1.TotalAmount,
+                  t1.NetCOTax, t1.TotalCOAmount, T2.Description as CatDesc, T3.Description as MajDesc,
+                  ISNULL(T1.Price,0)+ISNULL(T1.NetTAX,0) as GrandTotal,
+                  ISNULL(T1.CO_Price,0)+ISNULL(T1.NetCOTAX,0) as GrandCOTotal,
+                  T1.SalesWorkSheet, T1.Assembly, T1.ApplyIncentive, T1.EstimatorNotes, t1.Pick as NoCharge,
+                  t4.Description Location, t1.Color, t1.ColorListID, t1.StyleListID, t1.FinishListID, t1.OtherListID,
+                  t1.Style, t1.Finish, t1.Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM tblOptions t1
+                  LEFT OUTER JOIN tblcategories T2 ON T1.Category = T2.Category
+                  LEFT OUTER JOIN attributelists l1 ON T1.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON T1.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON T1.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON T1.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON T1.Location = T4.Area
+                  LEFT OUTER JOIN tblMajorGroups T3 ON T2.Group_Code = T3.Major_Group
+                  WHERE ISNULL(t1.inactive,0) = 0 AND T1.model='" + Model + "'";
+            s += " AND T1.Series='" + Series + "'";
+            s += " AND (T1.Elevation = '" + Escape(Elevation) + "' OR t1.elevation ='' OR t1.elevation IS NULL)";
+            s += BuildAreaFilter("T1.Area", "T1", "tblOptions");
+            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
+            s += " ORDER BY T3.Description, T2.Description, T1.Description";
+        }
+        else
+        {
+            s = @"SELECT T1.Area, T1.Model, T1.Series, T1.Option_Type, T1.Option_Type_Desc, T1.OPT, t1.Description,
+                  t1.Construction_Cut_Off, t1.D_Structural_Change, T1.Cost_Amount, T1.Price, T1.TL_Extra,
+                  CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END CO_Price,
+                  T1.Category, T1.Comments, t1.UOM, t1.Major_Group,
+                  T1.Price as BasePrice, CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END BaseCO_Price,
+                  t1.NoCommission, t1.French_Desc, t1.French_Comments, t1.graphic_path,
+                  t1.Qty, T1.Pick, T1.WebUpdated, T1.NoDataChanged, t1.Web_View, t1.EnerGuideRating,
+                  t1.GreenHouseRating, t1.FuelCost, t1.UseTax, t1.NetTax, t1.TotalAmount,
+                  t1.NetCOTax, t1.TotalCOAmount, T2.Description as CatDesc,
+                  ISNULL(T1.Price,0)+ISNULL(T1.NetTAX,0) as GrandTotal,
+                  ISNULL(T1.CO_Price,0)+ISNULL(T1.NetCOTAX,0) as GrandCOTotal,
+                  T1.SalesWorkSheet, T1.Assembly, T1.ApplyIncentive, T1.EstimatorNotes, t1.Pick as NoCharge,
+                  t4.Description Location, t1.Color, t1.ColorListID, t1.StyleListID, t1.FinishListID, t1.OtherListID,
+                  t1.Style, t1.Finish, t1.Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM tblOptions t1
+                  LEFT OUTER JOIN tblcategories T2 ON T1.Category = T2.Category
+                  LEFT OUTER JOIN attributelists l1 ON T1.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON T1.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON T1.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON T1.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON T1.Location = T4.Area
+                  WHERE ISNULL(t1.inactive,0) = 0 AND T1.model='" + Model + "'";
+            s += " AND T1.Series='" + Series + "'";
+            s += " AND (T1.Elevation = '" + Escape(Elevation) + "' OR t1.elevation ='' OR t1.elevation IS NULL)";
+            s += BuildAreaFilter("T1.Area", "T1", "tblOptions");
+            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
+            s += " ORDER BY T2.Description, T1.Description";
+        }
+        return s;
+    }
+
+    private string BuildPersonalChoiceQuery()
+    {
+        var s = "";
+        if (UseMajorGroup)
+        {
+            s = @"SELECT T1.Option_Type, T1.Option_Type_Desc, t1.OPT, t1.Description,
+                  T1.Construction_Cut_Off, T1.D_Structural_Change, t1.Cost_Amount, t1.Price,
+                  t1.TL_Extra, t1.Category,
+                  CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END CO_Price,
+                  t1.Comments, t1.UOM, t1.Major_Group, t1.NoCommission,
+                  t1.French_Desc, t1.French_Comments, t1.graphic_path, t1.Qty, t1.Pick, t1.WebUpdated,
+                  t1.NoDataChanged, t1.Web_View, t1.EnerGuideRating, t1.GreenHouseRating, t1.FuelCost,
+                  t1.UseTax, t1.NetTAX, t1.TotalAmount, t1.NetCOTax, t1.TotalCOAmount,
+                  t2.Description as CatDesc, T3.Description as MajDesc,
+                  ISNULL(T1.Price,0)+ISNULL(T1.NetTAX,0) as GrandTotal,
+                  ISNULL(T1.CO_Price,0)+ISNULL(T1.NetCOTAX,0) as GrandCOTotal,
+                  T1.SalesWorkSheet,
+                  T1.Price as BasePrice, CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END BaseCO_Price,
+                  T1.Assembly, T1.ApplyIncentive, T1.EstimatorNotes, t1.Pick as NoCharge,
+                  t4.Description Location, t1.Color, t1.ColorListID, t1.StyleListID, t1.FinishListID, t1.OtherListID,
+                  t1.Style, t1.Finish, t1.Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM tblGlobalOptions T1
+                  LEFT Join tblcategories T2 ON T1.Category = T2.Category
+                  LEFT OUTER JOIN attributelists l1 ON T1.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON T1.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON T1.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON T1.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON T1.Location = T4.Area
+                  LEFT Join tblMajorGroups T3 ON T2.Group_Code = T3.Major_Group
+                  WHERE ISNULL(t1.inactive,0) = 0 AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
+            s += BuildGlobalAreaFilter();
+            s += " AND t1.DivisionID = " + DivisionID;
+            s += " ORDER BY T3.Description, T2.Description, T1.Description";
+        }
+        else
+        {
+            s = @"SELECT T1.Option_Type, T1.Option_Type_Desc, t1.OPT, t1.Description,
+                  T1.Construction_Cut_Off, T1.D_Structural_Change, t1.Cost_Amount, t1.Price,
+                  t1.TL_Extra, t1.Category,
+                  CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END CO_Price,
+                  t1.Comments, t1.UOM, t1.Major_Group, t1.NoCommission,
+                  t1.French_Desc, t1.French_Comments, t1.graphic_path, t1.Qty, t1.Pick, t1.WebUpdated,
+                  t1.NoDataChanged, t1.Web_View, t1.EnerGuideRating, t1.GreenHouseRating, t1.FuelCost,
+                  t1.UseTax, t1.NetTAX, t1.TotalAmount, t1.NetCOTax, t1.TotalCOAmount,
+                  t2.Description as CatDesc,
+                  ISNULL(T1.Price,0)+ISNULL(T1.NetTAX,0) as GrandTotal,
+                  T1.Price as BasePrice, CASE WHEN ISNULL(t1.co_price,0) < t1.price THEN t1.price ELSE t1.co_price END BaseCO_Price,
+                  ISNULL(T1.CO_Price,0)+ISNULL(T1.NetCOTAX,0) as GrandCOTotal,
+                  T1.SalesWorkSheet, T1.Assembly, T1.ApplyIncentive, T1.EstimatorNotes, t1.Pick as NoCharge,
+                  t4.Description Location, t1.Color, t1.ColorListID, t1.StyleListID, t1.FinishListID, t1.OtherListID,
+                  t1.Style, t1.Finish, t1.Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM tblGlobalOptions T1
+                  LEFT Join tblcategories T2 ON T1.Category = T2.Category
+                  LEFT OUTER JOIN attributelists l1 ON T1.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON T1.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON T1.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON T1.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON T1.Location = T4.Area
+                  WHERE ISNULL(t1.inactive,0) = 0 AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
+            s += BuildGlobalAreaFilter();
+            s += " AND t1.DivisionID = " + DivisionID;
+            s += " ORDER BY T2.Description, T1.Description";
+        }
+        return s;
+    }
+
+    private string BuildAllCombinedQuery()
+    {
+        var s = "";
+        if (UseMajorGroup)
+        {
+            s = @"SELECT Community, Model, Series, Option_Type, Option_Type_Desc, OPT, CombinedOptionList.Description,
+                  Construction_Cut_Off, D_Structural_Change, Cost_Amount, Price, Price as BasePrice, TL_Extra,
+                  CO_Price, CO_Price as BaseCO_Price, Category, Comments, UOM, Major_Group, NoCommission,
+                  French_Desc, French_Comments, graphic_path, Qty, Pick, WebUpdated, NoDataChanged, Web_View,
+                  EnerGuideRating, GreenHouseRating, FuelCost, UseTax, NetTax, TotalAmount, NetCOTax, TotalCOAmount,
+                  CatDesc, MajDesc, GrandTotal, GrandCOTotal, SalesWorkSheet, Assembly, ApplyIncentive, EstimatorNotes,
+                  NoCharge, t4.Description Location, Color, IncludedOption, inactive, communityphase, Elevation,
+                  ColorListID, StyleListID, FinishListID, OtherListID, Style, Finish, Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM CombinedOptionList
+                  LEFT OUTER JOIN attributelists l1 ON combinedoptionlist.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON combinedoptionlist.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON combinedoptionlist.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON combinedoptionlist.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON CombinedOptionList.Location = T4.Area
+                  WHERE ISNULL(inactive,0) = 0 AND (ISNULL(model,'')='" + Model + "' OR ISNULL(Model,'')='')";
+            s += " AND (ISNULL(Series,'')='" + Series + "' OR ISNULL(Series,'') = '')";
+            s += " AND (Elevation = '" + Escape(Elevation) + "' OR ISNULL(elevation,'') ='')";
+            s += BuildCombinedAreaFilter();
+            s += " AND (Construction_Cut_Off>0 OR Construction_Cut_Off=0)";
+            s += " AND CombinedOptionList.DivisionID = " + DivisionID;
+            s += " ORDER BY CatDesc, CombinedOptionList.Description";
+        }
+        else
+        {
+            s = @"SELECT Community, Model, Series, Option_Type, Option_Type_Desc, OPT, CombinedOptionList.Description,
+                  Construction_Cut_Off, D_Structural_Change, Cost_Amount, Price, TL_Extra, CO_Price, Category, Comments,
+                  UOM, Major_Group, NoCommission, French_Desc, French_Comments, graphic_path, Qty, Pick, WebUpdated,
+                  NoDataChanged, Web_View, EnerGuideRating, GreenHouseRating, FuelCost, UseTax, NetTax, TotalAmount,
+                  NetCOTax, TotalCOAmount, CatDesc, GrandTotal, GrandCOTotal,
+                  Price as BasePrice, Co_price as BaseCO_Price,
+                  SalesWorkSheet, Assembly, ApplyIncentive, EstimatorNotes, NoCharge,
+                  t4.Description Location, Color, ColorListID, StyleListID, FinishListID, OtherListID, Style, Finish, Other,
+                  l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                  l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                  FROM CombinedOptionList
+                  LEFT OUTER JOIN attributelists l1 ON combinedoptionlist.ColorListid=l1.Listid
+                  LEFT OUTER JOIN attributelists l2 ON combinedoptionlist.styleListid=l2.Listid
+                  LEFT OUTER JOIN attributelists l3 ON combinedoptionlist.FinishListid=l3.Listid
+                  LEFT OUTER JOIN attributelists l4 ON combinedoptionlist.OtherListid=l4.Listid
+                  LEFT OUTER JOIN TBLAREAS T4 ON CombinedOptionList.Location = T4.Area
+                  WHERE ISNULL(inactive,0) = 0 AND (ISNULL(model,'')='" + Model + "' OR ISNULL(Model,'')='')";
+            s += " AND (ISNULL(Series,'')='" + Series + "' OR ISNULL(Series,'') = '')";
+            s += " AND (Elevation = '" + Escape(Elevation) + "' OR ISNULL(elevation,'') ='')";
+            s += BuildCombinedAreaFilter();
+            s += " AND (Construction_Cut_Off>0 OR Construction_Cut_Off=0)";
+            s += " AND CombinedOptionList.DivisionID = " + DivisionID;
+            s += " ORDER BY CatDesc, CombinedOptionList.Description";
+        }
+        return s;
+    }
+
+    private string BuildCustomerShoppingCartQuery()
+    {
+        return @"SELECT c.Customer_No, c.Location as Option_type, l.Category, l.Major_group, l.MajDesc, l.CatDesc,
+                c.OptionID as OPT, c.Description, c.Qty, c.Rate as Price, c.Rate as BasePrice, l.GrandTotal,
+                l.GrandCoTotal, l.Graphic_path, c.Comments, c.OptionListingSeq, l.Pick, l.French_desc,
+                l.French_Comments, 0 as NoCharge, l.ApplyIncentive, l.Cost_Amount, l.Assembly, l.NetTax,
+                l.UseTax, l.CO_Price, l.CO_Price as BaseCO_Price, l.D_Structural_Change, l.TL_Extra,
+                l.NoCommission, l.EstimatorNotes, l.UOM, l.SalesWorksheet, c.Seq,
+                l.EnerGuideRating, l.GreenHouseRating, l.FuelCost, T4.Description Location,
+                l.Color, l.ColorListID, l.StyleListID, l.FinishListID, l.OtherListID, l.Style, l.Finish, l.Other,
+                l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                FROM CustomerShoppingCart c
+                JOIN combinedoptionlist l ON (c.location = l.option_type AND c.OptionListingSeq = l.Seq)
+                LEFT OUTER JOIN attributelists l1 ON l.ColorListid=l1.Listid
+                LEFT OUTER JOIN attributelists l2 ON l.styleListid=l2.Listid
+                LEFT OUTER JOIN attributelists l3 ON l.FinishListid=l3.Listid
+                LEFT OUTER JOIN attributelists l4 ON l.OtherListid=l4.Listid
+                LEFT OUTER JOIN TBLAREAS T4 ON l.Location = T4.Area
+                WHERE ISNULL(c.AddToCO,0) = 0 AND c.Customer_No = '" + Escape(CustomerNo) + @"'
+                ORDER BY l.CatDesc, c.Description";
+    }
+
+    private string BuildChangeRequestsQuery()
+    {
+        return @"SELECT c.Customer_No, c.Option_type, c.Category, c.Major_group,
+                g.Description as MajDesc, l.description as CatDesc, c.OPT, c.Description, c.Qty,
+                c.Rate as Price, c.Rate as BasePrice, c.Override_price as GrandTotal,
+                c.Comments, c.ExportedtoBMT as Pick, '' as French_desc, '' as French_Comments,
+                0 as NoCharge, c.EstimatorNotes, c.NoCommission, EnerGuideRating, GreenHouseRating, FuelCost,
+                0 as usetax, 0 as D_Structural_Change, c.Rate as CO_Price, c.Rate as BaseCO_Price,
+                0 as ApplyIncentive, c.Cost_Amount, c.Assembly, c.Override_price as GrandCOTotal,
+                0 as NetCOTax, c.TL_Extra, c.UOM, c.SalesWorksheet, c.Seq,
+                c.Custom, c.Require_Quote, c.EstimateIndex, T4.Description Location,
+                c.Color, c.ColorListID, c.StyleListID, c.FinishListID, c.OtherListID, c.Style, c.Finish, c.Other,
+                l1.Required ColorRequired, l2.Required StyleRequired, l3.Required FinishRequired, l4.Required OtherRequired,
+                l1.StrictList ColorStrict, l2.StrictList StyleStrict, l3.StrictList FinishStrict, l4.StrictList OtherStrict
+                FROM tblscheduleb c
+                LEFT OUTER JOIN attributelists l1 ON c.ColorListid=l1.Listid
+                LEFT OUTER JOIN attributelists l2 ON c.styleListid=l2.Listid
+                LEFT OUTER JOIN attributelists l3 ON c.FinishListid=l3.Listid
+                LEFT OUTER JOIN attributelists l4 ON c.OtherListid=l4.Listid
+                LEFT OUTER JOIN tblcategories l ON (c.category = l.category)
+                LEFT OUTER JOIN tblmajorgroups g ON (l.Group_Code = g.Major_Group)
+                LEFT OUTER JOIN TBLAREAS T4 ON c.Location = T4.Area
+                WHERE ISNULL(c.CONumber,'') = '' AND c.Customer_No = '" + Escape(CustomerNo) + @"'
+                ORDER BY l.Description, c.Description";
+    }
+
+    private string BuildAreaFilter(string areaCol, string alias, string tableName)
+    {
+        var s = "";
+        if (OptionByArea || OptionByAreaPhase)
+        {
+            s += $" AND ({areaCol} = dbo.Sales_GetOptionCommunity(Model,OPT,'{Escape(Community)}','{tableName}') OR {areaCol} = '')";
+            if (OptionByAreaPhase)
+                s += $" AND ({alias}.communityphase ='{Escape(Phase)}' OR {alias}.communityphase ='' OR {alias}.communityphase IS NULL)";
+            else
+                s += $" AND ({alias}.communityphase ='' OR {alias}.communityphase IS NULL)";
+        }
+        else
+        {
+            s += $" AND ({areaCol}='' OR {areaCol} IS NULL OR {areaCol} = 'ALL AREA' OR {areaCol} = 'ALL AREAS')";
+        }
+        return s;
+    }
+
+    private string BuildGlobalAreaFilter()
+    {
+        var s = "";
+        if (GlobalOptionByArea || GlobalOptionByAreaPhase)
+        {
+            s += $" AND (t1.community = dbo.Sales_GetOptionCommunity('',OPT,'{Escape(Community)}','tblGlobalOptions'))";
+            if (GlobalOptionByAreaPhase)
+                s += $" AND (t1.communityphase ='{Escape(Phase)}' OR ISNULL(t1.communityphase,'') ='')";
+            else
+                s += " AND (t1.communityphase ='' OR t1.communityphase IS NULL)";
+        }
+        else
+        {
+            s += " AND (T1.Community='' OR t1.Community IS NULL OR t1.Community = 'ALL AREA')";
+        }
+        return s;
+    }
+
+    private string BuildCombinedAreaFilter()
+    {
+        var s = "";
+        if (OptionByArea || OptionByAreaPhase)
+        {
+            s += $" AND (Community = dbo.Sales_GetOptionCommunity(Model,OPT,'{Escape(Community)}','CombinedOptionlist'))";
+            if (OptionByAreaPhase)
+                s += $" AND (communityphase ='{Escape(Phase)}' OR ISNULL(communityphase,'') ='')";
+            else
+                s += " AND (communityphase ='' OR communityphase IS NULL)";
+        }
+        else
+        {
+            s += " AND (Community='' OR Community IS NULL OR Community = 'ALL AREA' OR Community = 'ALL AREAS')";
+        }
+        return s;
+    }
+
+    #endregion
+
+    #region Save to Customer
+
+    private async Task OnSaveToCustomerClick()
+    {
+        try
+        {
+            IsLoading = true;
+            StateHasChanged();
+
+            var checkedItems = ItemsData.Where(i => i.Pick).ToList();
+            if (checkedItems.Count == 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "No items selected.");
+                return;
+            }
+
+            // Create customer estimate
+            var estimateIndexDt = db.SqlExec(
+                $"EXEC Purch_CreateCustomerEstimate '{Escape(CustomerNo)}', '{Escape(LoginID)}'");
+            var estimateIndex = SafeInt(estimateIndexDt.Rows.Count > 0 ? estimateIndexDt.Rows[0][0] : 0);
+
+            foreach (var item in checkedItems)
+            {
+                var optionType = SelectedOptionType switch
+                {
+                    1 => 1,
+                    2 => 2,
+                    _ => item.Option_Type
+                };
+
+                var qty = item.Qty == 0 ? 1 : item.Qty;
+                var overridePrice = item.Price * qty;
+
+                var s = $@"INSERT INTO tblScheduleB(Customer_No, Item_Seq, Category, UserID,
+                          Cost_Amount, Qty, Option_Type, UOM, OPT, Assembly, Location, Color, Style, Finish, Other,
+                          Base_Price, Rate, Override_Price, Description, Comments, EstimatorNotes, TL_Extra,
+                          Major_Group, CreationDate, ColorListID, StyleListID, FinishListID, OtherListID) VALUES(
+                          '{Escape(CustomerNo)}', {estimateIndex}, '{Escape(item.Category)}', '{Escape(LoginID)}',
+                          {item.Cost_Amount}, {qty}, {optionType}, '{Escape(item.UOM)}', '{Escape(item.OPT)}',
+                          '{Escape(item.Assembly)}', '{Escape(item.Location)}', '{Escape(item.Color)}',
+                          '{Escape(item.Style)}', '{Escape(item.Finish)}', '{Escape(item.Other)}',
+                          {item.BasePrice}, {item.Price}, {overridePrice}, '{Escape(item.Description)}',
+                          '{Escape(item.Comments)}', '{Escape(item.EstimatorNotes)}', '{Escape(item.TL_Extra)}',
+                          '{Escape(item.Major_Group)}', GETDATE(),
+                          {item.ColorListID}, {item.StyleListID}, {item.FinishListID}, {item.OtherListID})";
+                db.SqlExec(s);
+            }
+
+            await JSRuntime.InvokeVoidAsync("alert", $"{checkedItems.Count} item(s) saved to customer estimate.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OnSaveToCustomerClick error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    #endregion
+
+    // ── Event Handlers ────────────────────────────────────────────────
+    private void OnRowSelected(RowSelectEventArgs<OptionItemRow> args)
+    {
+        if (args.Data != null)
+        {
+            CurrentImagePath = !string.IsNullOrEmpty(args.Data.Graphic_Path)
+                ? args.Data.Graphic_Path : "";
+        }
+    }
+
+    private void OnCellSaved(CellSaveArgs<OptionItemRow> args)
+    {
+        if (args.Data == null) return;
+        // Recalculate totals if price or qty changed
+        var col = args.ColumnName ?? "";
+        if (col is nameof(OptionItemRow.Price) or nameof(OptionItemRow.Qty))
+        {
+            args.Data.GrandTotal = args.Data.Price * (args.Data.Qty == 0 ? 1 : args.Data.Qty);
+        }
+    }
+
+    private void OnLocationButtonClick(OptionItemRow item)
+    {
+        ShowPickList("Select Location", LocationItems, selected =>
+        {
+            item.Location = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnColorButtonClick(OptionItemRow item)
+    {
+        LoadPickListForField(item.ColorListID, selected =>
+        {
+            item.Color = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnStyleButtonClick(OptionItemRow item)
+    {
+        LoadPickListForField(item.StyleListID, selected =>
+        {
+            item.Style = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnFinishButtonClick(OptionItemRow item)
+    {
+        LoadPickListForField(item.FinishListID, selected =>
+        {
+            item.Finish = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnOtherButtonClick(OptionItemRow item)
+    {
+        LoadPickListForField(item.OtherListID, selected =>
+        {
+            item.Other = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnCommentsButtonClick(OptionItemRow item)
+    {
+        EditingCommentsRow = item;
+        EditingComments = item.Comments;
+        IsCommentsDialogVisible = true;
+    }
+
+    private void OnCommentsDialogOk()
+    {
+        if (EditingCommentsRow != null)
+        {
+            EditingCommentsRow.Comments = EditingComments ?? "";
+        }
+        IsCommentsDialogVisible = false;
+        EditingCommentsRow = null;
+    }
+
+    private void OnCommentsDialogCancel()
+    {
+        IsCommentsDialogVisible = false;
+        EditingCommentsRow = null;
+    }
+
+    private void OnLocationDropdownClick()
+    {
+        ShowPickList("Select Location", LocationItems, selected =>
+        {
+            LocationText = selected;
+            StateHasChanged();
+        });
+    }
+
+    private void OnCancelClick()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private void OnPickListSelect()
+    {
+        if (SelectedPickListItem != null && PickListCallback != null)
+        {
+            PickListCallback(SelectedPickListItem);
+        }
+        IsPickListVisible = false;
+        PickListCallback = null;
+    }
+
+    private void OnPickListCancel()
+    {
+        IsPickListVisible = false;
+        PickListCallback = null;
+    }
+
+    private void ShowPickList(string title, List<string> items, Action<string> callback)
+    {
+        PickListTitle = title;
+        PickListItems = items;
+        SelectedPickListItem = null;
+        PickListCallback = callback;
+        IsPickListVisible = true;
+    }
+
+    private void LoadPickListForField(int listId, Action<string> callback)
+    {
+        try
+        {
+            var dt = db.SqlExec("SELECT Description FROM PickListItems WHERE ListID=@ListID ORDER BY SortOrder, Description",
+                new { ListID = listId });
+            var items = dt.AsEnumerable().Select(r => r["Description"]?.ToString() ?? "").ToList();
+            ShowPickList("Select Value", items, callback);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPickListForField error: {ex.Message}");
+        }
+    }
+
+    private static string TruncateText(string? text, int maxLength = 50)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text[..maxLength] + "...";
+    }
+
+    private async Task<bool> GetAppOptionBool(string optionName)
+    {
+        try
+        {
+            var dt = db.SqlExec($"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id=@Id", new { Id = DivisionID });
+            if (dt.Rows.Count > 0)
+            {
+                var val = dt.Rows[0][0]?.ToString() ?? "";
+                return val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    // ── Helper Methods ──────────────────────────────────────────────────
+    private static string Escape(string? s) => (s ?? "").Replace("'", "''");
+
+    private static decimal SafeDecimal(object? val, decimal def = 0)
+    {
+        if (val == null || val == DBNull.Value) return def;
+        return decimal.TryParse(val.ToString(), out var d) ? d : def;
+    }
+
+    private static int SafeInt(object? val, int def = 0)
+    {
+        if (val == null || val == DBNull.Value) return def;
+        return int.TryParse(val.ToString(), out var i) ? i : def;
+    }
+
+    // ── Data Model ──────────────────────────────────────────────────────
+    private sealed class OptionItemRow
+    {
+        public bool Pick { get; set; }
+        public string OPT { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Price { get; set; }
+        public decimal BasePrice { get; set; }
+        public decimal CO_Price { get; set; }
+        public decimal Cost_Amount { get; set; }
+        public string Category { get; set; } = "";
+        public string CatDesc { get; set; } = "";
+        public string MajDesc { get; set; } = "";
+        public string Major_Group { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public string UOM { get; set; } = "";
+        public int Qty { get; set; } = 1;
+        public int Option_Type { get; set; }
+        public string Assembly { get; set; } = "";
+        public string Location { get; set; } = "";
+        public string Color { get; set; } = "";
+        public string Style { get; set; } = "";
+        public string Finish { get; set; } = "";
+        public string Other { get; set; } = "";
+        public string TL_Extra { get; set; } = "";
+        public string EstimatorNotes { get; set; } = "";
+        public string Graphic_Path { get; set; } = "";
+        public decimal GrandTotal { get; set; }
+        public decimal GrandCOTotal { get; set; }
+        public int ColorListID { get; set; }
+        public int StyleListID { get; set; }
+        public int FinishListID { get; set; }
+        public int OtherListID { get; set; }
+        public bool NoCharge { get; set; }
+    }
+}

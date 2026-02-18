@@ -1,0 +1,142 @@
+@using HomeFront.Components.Hf
+@using Microsoft.AspNetCore.Components.Web
+
+<HfDialog Visible="@Visible"
+          Header="@Title"
+          Width="520px"
+          Height="320px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          CloseOnEscape="false"
+          OnClose="HandleCancel">
+    <ChildContent>
+        <div class="fcomments-body" tabindex="0" @onkeydown="HandleKeyDown">
+            <HfTextBox @bind-Value="EditText"
+                       @bind-Value:after="OnTextChanged"
+                       Multiline="true"
+                       Rows="10"
+                       CssClass="fcomments-textbox"
+                       Enabled="@Editable"
+                       MaxLength="@EffectiveMaxLength"
+                       HtmlAttributes="@TextBoxAttributes" />
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="HandleSave">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="HandleCancel">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .fcomments-body {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .fcomments-textbox {
+        width: 100%;
+        height: 100%;
+        min-height: 200px;
+        box-sizing: border-box;
+    }
+</style>
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    [Parameter] public bool Editable { get; set; } = true;
+    [Parameter] public string Title { get; set; } = "Comments";
+    [Parameter] public int? MaxLength { get; set; }
+
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string EditText { get; set; } = "";
+    private string _originalValue = "";
+    private bool _wasVisible;
+
+    private int? EffectiveMaxLength => MaxLength.HasValue && MaxLength.Value > 0 ? MaxLength : null;
+
+    private Dictionary<string, object> TextBoxAttributes
+    {
+        get
+        {
+            var attrs = new Dictionary<string, object>();
+            if (Editable)
+            {
+                attrs["title"] = "(Ctrl + Enter) to save -- (Esc) to cancel";
+            }
+            return attrs;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Visible && !_wasVisible)
+        {
+            _originalValue = Value ?? "";
+            EditText = NormalizeLineEndings(_originalValue);
+        }
+        _wasVisible = Visible;
+    }
+
+    private void OnTextChanged()
+    {
+        // Mirror VB6 Text1_Change
+    }
+
+    private async Task HandleSave()
+    {
+        var normalized = NormalizeLineEndings(EditText);
+        if (ValueChanged.HasDelegate)
+            await ValueChanged.InvokeAsync(normalized);
+
+        if (OnSave.HasDelegate)
+            await OnSave.InvokeAsync();
+
+        await CloseAsync();
+    }
+
+    private async Task HandleCancel()
+    {
+        EditText = NormalizeLineEndings(_originalValue);
+
+        if (OnCancel.HasDelegate)
+            await OnCancel.InvokeAsync();
+
+        await CloseAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        if (VisibleChanged.HasDelegate)
+            await VisibleChanged.InvokeAsync(false);
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            _ = HandleCancel();
+        }
+        else if (e.Key == "Enter" && e.CtrlKey)
+        {
+            _ = HandleSave();
+        }
+    }
+
+    private static string NormalizeLineEndings(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "";
+
+        var s = value.Replace("\n", "\r");
+        s = s.Replace("\r\r", "\r");
+        return s.Replace("\r", "\r\n");
+    }
+}

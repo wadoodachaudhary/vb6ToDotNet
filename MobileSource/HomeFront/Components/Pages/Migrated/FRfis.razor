@@ -1,0 +1,1088 @@
+```razor
+@page "/rfis"
+@page "/rfis/{Job}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Request For Information - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-btn.active { background: #cce5ff; border-color: #0d6efd; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+
+    .rfi-container { display: flex; height: calc(100vh - 160px); min-height: 600px; }
+    .rfi-list-panel {
+        width: 320px; min-width: 200px; max-width: 500px;
+        border-right: 3px solid #c9c9c9; overflow: auto; resize: horizontal;
+    }
+    .rfi-detail-panel { flex: 1; overflow: auto; padding: 0 12px; }
+
+    .form-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
+    .form-row label { min-width: 80px; text-align: right; font-size: 12px; font-weight: 600; color: #495057; }
+    .form-row input, .form-row select, .form-row textarea {
+        flex: 1; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .form-row .browse-btn {
+        padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .form-row .browse-btn:hover { background: #e9ecef; }
+    .form-row .date-field { max-width: 160px; }
+    .form-row .cost-field { max-width: 120px; text-align: right; }
+
+    .section-label {
+        font-size: 12px; font-weight: 600; color: #495057;
+        margin: 10px 0 4px 0; text-align: right; min-width: 80px;
+    }
+
+    .loading-overlay {
+        position: absolute; height: 100%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+
+    .status-bar {
+        height: 24px; background: #f0f0f0; border-top: 1px solid #ccc;
+        padding: 3px 8px; font-size: 12px; color: #555;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading RFIs...</div>
+    </div>
+}
+
+<!-- Toolbar -->
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+        <span class="tool-label">Open</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="() => SaveData(false)">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnNewRFI">
+        <img src="images/32/new.ico" alt="New" onerror="this.style.display='none'" />
+        <span class="tool-label">New</span>
+    </button>
+    <button class="tbar-btn" disabled>
+        <span class="tool-label">Delete</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnPreviewClick">
+        <img src="images/32/ChangeView.ico" alt="Preview" onerror="this.style.display='none'" />
+        <span class="tool-label">Preview</span>
+    </button>
+    <button class="tbar-btn" disabled>
+        <span class="tool-label">Send</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn @(HighPressed ? "active" : "")" @onclick="OnHighClick">
+        <span class="tool-label">High</span>
+    </button>
+    <button class="tbar-btn @(LowPressed ? "active" : "")" @onclick="OnLowClick">
+        <span class="tool-label">Low</span>
+    </button>
+</div>
+
+<!-- Main Layout -->
+<div class="rfi-container">
+    <!-- Left: RFI List -->
+    <div class="rfi-list-panel">
+        <HfGrid @ref="RFIGrid"
+                TValue="RFIRow"
+                DataSource="@RFIData"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                EnableHover="true"
+                Height="100%"
+                RowHeight="32"
+                SelectionSettingsRef="@rfiSelectionSettings"
+                EventsRef="@rfiGridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(RFIRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center" />
+                <HfGridColumn Field="@nameof(RFIRow.RFIID)" HeaderText="RFI #" Width="60px" TextAlign="TextAlign.Center" />
+                <HfGridColumn Field="@nameof(RFIRow.Subject)" HeaderText="Subject" Width="180px" />
+                <HfGridColumn Field="@nameof(RFIRow.Status)" HeaderText="Status" Width="120px" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <!-- Right: RFI Detail -->
+    <div class="rfi-detail-panel">
+        <!-- From / To / CC / BCC -->
+        <div class="form-row">
+            <label>From</label>
+            <input type="text" @bind="txtSender" @bind:event="oninput" @onfocus="() => SelectAll(nameof(txtSender))" maxlength="50" />
+            <button class="browse-btn" @onclick="() => BrowseContacts(3)" title="Pick Contact">📇</button>
+            <label style="min-width:40px;">Sent</label>
+            <input type="text" class="date-field" @bind="txtSentDate" @bind:event="oninput" readonly style="background:#e9ecef;" />
+            <button class="browse-btn" @onclick="() => BrowseDate(0)" title="Calendar">📅</button>
+        </div>
+        <div class="form-row">
+            <label>To</label>
+            <input type="text" @bind="txtRecipients" @bind:event="oninput" maxlength="50" />
+            <button class="browse-btn" @onclick="() => BrowseContacts(4)" title="Pick Contact">📇</button>
+            <label style="min-width:40px;">Due</label>
+            <input type="text" class="date-field" @bind="txtDueDate" @bind:event="oninput" />
+            <button class="browse-btn" @onclick="() => BrowseDate(2)" title="Calendar">📅</button>
+        </div>
+        <div class="form-row">
+            <label>CC</label>
+            <input type="text" @bind="txtRecipientsCC" @bind:event="oninput" maxlength="50" />
+            <button class="browse-btn" @onclick="() => BrowseContacts(5)" title="Pick Contact">📇</button>
+            <label style="min-width:40px;">Closed</label>
+            <input type="text" class="date-field" @bind="txtClosedDate" @bind:event="oninput" />
+            <button class="browse-btn" @onclick="() => BrowseDate(1)" title="Calendar">📅</button>
+        </div>
+        <div class="form-row">
+            <label>BCC</label>
+            <input type="text" @bind="txtRecipientsBCC" @bind:event="oninput" maxlength="50" />
+            <button class="browse-btn" @onclick="() => BrowseContacts(6)" title="Pick Contact">📇</button>
+            <label style="min-width:40px;">Status</label>
+            <select @bind="cboStatus" style="max-width:180px;">
+                @foreach (var s in StatusOptions)
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+
+        <!-- Subject -->
+        <div class="form-row">
+            <label>Subject</label>
+            <input type="text" @bind="txtSubject" @bind:event="oninput" maxlength="50" />
+        </div>
+
+        <!-- Question -->
+        <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">Issue or Question</label>
+            <textarea rows="4" @bind="txtQuestion" @bind:event="oninput" maxlength="8000" style="resize:vertical;"></textarea>
+        </div>
+
+        <!-- Answer -->
+        <div class="form-row" style="align-items:flex-start;">
+            <label style="padding-top:6px;">Resolution or Answer</label>
+            <textarea rows="4" @bind="txtAnswer" @bind:event="oninput" maxlength="8000" style="resize:vertical;"></textarea>
+        </div>
+
+        <!-- Cost Impact / Scheduling Impact -->
+        <div class="form-row">
+            <label>Cost Impact</label>
+            <input type="text" class="cost-field" @bind="txtCostImpact" @bind:event="oninput"
+                   @onblur="OnCostImpactBlur" maxlength="50" style="text-align:right;" />
+            <label style="min-width:120px;">Scheduling Impact</label>
+            <input type="text" @bind="txtSchedulingImpact" @bind:event="oninput" maxlength="50" />
+        </div>
+
+        <!-- Approved By / Approved Date -->
+        <div class="form-row">
+            <label>Approved By</label>
+            <input type="text" @bind="txtApprovedBy" @bind:event="oninput" maxlength="50" style="max-width:200px;" />
+            <button class="browse-btn" @onclick="() => BrowseContacts(7)" title="Pick Contact">📇</button>
+            <label style="min-width:100px;">Approved Date</label>
+            <input type="text" class="date-field" @bind="txtApprovedDate" @bind:event="oninput" />
+            <button class="browse-btn" @onclick="() => BrowseDate(8)" title="Calendar">📅</button>
+        </div>
+
+        <!-- Attachments -->
+        <div style="margin-top:12px;">
+            <span class="section-label" style="display:block; text-align:left;">Attachments</span>
+            <HfGrid @ref="AttachmentsGrid"
+                    TValue="AttachmentRow"
+                    DataSource="@AttachmentsData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    EnableHover="true"
+                    Height="180px"
+                    RowHeight="28">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(AttachmentRow.FileTitle)" HeaderText="Name" Width="200px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Class" Width="100px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.Revision)" HeaderText="Revision" Width="80px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.Path)" HeaderText="Location" Width="200px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.FileSize)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.ModifiedDate)" HeaderText="Modified" Width="140px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.CreatedDate)" HeaderText="Created" Width="140px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.AttachedDate)" HeaderText="Attached" Width="140px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.WebPortals)" HeaderText="Web Portals" Width="100px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.WebLocation)" HeaderText="Web Location" Width="100px" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.Embedded)" HeaderText="Embedded" Width="80px" Visible="false" />
+                    <HfGridColumn Field="@nameof(AttachmentRow.FileName)" HeaderText="FileName" Width="1px" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        <!-- Conversation / Messages -->
+        <div style="margin-top:12px;">
+            <span class="section-label" style="display:block; text-align:left;">Conversation</span>
+            <HfGrid @ref="MessagesGrid"
+                    TValue="MessageRow"
+                    DataSource="@MessagesData"
+                    AllowSelection="true"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    EnableHover="true"
+                    Height="350px"
+                    RowHeight="28"
+                    EditSettingsRef="@messageEditSettings"
+                    EventsRef="@messageGridEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{
+                                var msg = (MessageRow)context;
+                                var icon = msg.Priority switch { 0 => "🔽", 2 => "🔺", _ => "" };
+                            }
+                            <span style="cursor:pointer;" @onclick="() => ToggleMessagePriority(msg)">@icon</span>
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="40px" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{
+                                var msg = (MessageRow)context;
+                            }
+                            @if (msg.MessageType == "Email")
+                            {
+                                <span style="cursor:pointer;" @onclick="() => OpenOriginalMessage(msg)" title="Open original email">📧</span>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Type" Width="80px">
+                        <EditTemplate>
+                            @{
+                                var msg = (MessageRow)context;
+                            }
+                            <select @bind="msg.MessageType">
+                                <option value="Mail">Mail</option>
+                                <option value="Fax">Fax</option>
+                                <option value="Phone">Phone</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="150px" />
+                    <HfGridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="150px" />
+                    <HfGridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="120px" />
+                    <HfGridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="120px" />
+                    <HfGridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="200px" />
+                    <HfGridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="250px" />
+                    <HfGridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent" Width="120px" />
+                    <HfGridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received" Width="120px" />
+                    <HfGridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false" AllowEditing="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Job { get; set; }
+
+    private const string SRCFILE = "FRfis::";
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // UI State
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private bool mLoading = false;
+    private string mJob = "";
+    private int mRFIRow = -1;
+    private bool HighPressed = false;
+    private bool LowPressed = false;
+
+    // Grid refs
+    private HfGrid<RFIRow>? RFIGrid;
+    private HfGrid<AttachmentRow>? AttachmentsGrid;
+    private HfGrid<MessageRow>? MessagesGrid;
+
+    // Grid settings
+    private HfSelectionSettings rfiSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfGridEvents<RFIRow> rfiGridEvents = new();
+    private HfEditSettings messageEditSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<MessageRow> messageGridEvents = new();
+
+    // Data
+    private List<RFIRow> RFIData = new();
+    private List<AttachmentRow> AttachmentsData = new();
+    private List<MessageRow> MessagesData = new();
+
+    // Form fields
+    private string txtSender = "";
+    private string txtRecipients = "";
+    private string txtRecipientsCC = "";
+    private string txtRecipientsBCC = "";
+    private string txtSubject = "";
+    private string txtQuestion = "";
+    private string txtAnswer = "";
+    private string txtSentDate = "";
+    private string txtDueDate = "";
+    private string txtClosedDate = "";
+    private string txtCostImpact = "";
+    private string txtSchedulingImpact = "";
+    private string txtApprovedBy = "";
+    private string txtApprovedDate = "";
+    private string cboStatus = "Open";
+
+    private List<string> StatusOptions = new()
+    {
+        "Open", "Awaiting Response", "Requires Attention", "Approved", "Closed"
+    };
+
+    // Lifecycle
+    protected override async Task OnInitializedAsync()
+    {
+        rfiGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<RFIRow>>(this, OnRFIRowSelected);
+        messageGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<MessageRow>>(this, OnMessageCellSaved);
+
+        mJob = Job ?? "";
+        await LoadJob(mJob);
+    }
+
+    // ShowForm equivalent
+    public async Task ShowForm(string job, long rfiId = 0)
+    {
+        mJob = job;
+        await LoadJob(mJob);
+    }
+
+    // Load Job
+    private async Task LoadJob(string job)
+    {
+        try
+        {
+            IsLoading = true;
+            StateHasChanged();
+
+            if (string.IsNullOrEmpty(job))
+            {
+                // Would show a job picker dialog
+                var promptResult = await JSRuntime.InvokeAsync<string?>("prompt", "Enter Job Number:");
+                if (string.IsNullOrWhiteSpace(promptResult)) return;
+                mJob = promptResult.Trim();
+            }
+            else
+            {
+                mJob = job;
+            }
+
+            var sql = "SELECT * FROM rfis WHERE job=@Job";
+            var rows = await db.QueryAsync(sql, new { Job = mJob });
+
+            mLoading = true;
+            RFIData.Clear();
+
+            foreach (var rs in rows)
+            {
+                var rfi = new RFIRow
+                {
+                    Priority = SafeInt(rs, "Priority", 1),
+                    RFIID = SafeInt(rs, "RFIID"),
+                    Subject = SafeStr(rs, "Subject"),
+                    Status = SafeStr(rs, "Status"),
+                    Sender = SafeStr(rs, "Sender"),
+                    Recipients = SafeStr(rs, "Recipients"),
+                    RecipientsCC = SafeStr(rs, "RecipientsCC"),
+                    RecipientsBCC = SafeStr(rs, "RecipientsBCC"),
+                    Question = SafeStr(rs, "Question"),
+                    Answer = SafeStr(rs, "Answer"),
+                    CostImpact = FormatCostImpact(rs, "CostImpact"),
+                    SchedulingImpact = SafeStr(rs, "SchedulingImpact"),
+                    ApprovedBy = SafeStr(rs, "ApprovedBy"),
+                    ApprovedDate = FormatMediumDate(rs, "ApprovedDate"),
+                    SentDate = FormatMediumDate(rs, "SentDate"),
+                    DueDate = FormatMediumDate(rs, "DueDate"),
+                    ClosedDate = FormatMediumDate(rs, "ClosedDate")
+                };
+                RFIData.Add(rfi);
+            }
+
+            mLoading = false;
+            mRFIRow = -1;
+
+            if (RFIData.Count > 0)
+            {
+                mRFIRow = 0;
+                LoadRFI(0);
+            }
+
+            SetDirty(false);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"{SRCFILE}LoadJob: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading job: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Load RFI detail
+    private async void LoadRFI(int rfiIndex)
+    {
+        if (mLoading) return;
+        mLoading = true;
+
+        try
+        {
+            mRFIRow = rfiIndex;
+            var rfi = RFIData[rfiIndex];
+
+            // Set priority buttons
+            HighPressed = rfi.Priority == 2;
+            LowPressed = rfi.Priority == 0;
+
+            // Load form fields
+            txtSubject = rfi.Subject;
+            cboStatus = rfi.Status;
+            txtSender = rfi.Sender;
+            txtRecipients = rfi.Recipients;
+            txtRecipientsCC = rfi.RecipientsCC;
+            txtRecipientsBCC = rfi.RecipientsBCC;
+            txtQuestion = rfi.Question;
+            txtAnswer = rfi.Answer;
+            txtSentDate = rfi.SentDate;
+            txtDueDate = rfi.DueDate;
+            txtClosedDate = rfi.ClosedDate;
+            txtApprovedBy = rfi.ApprovedBy;
+            txtApprovedDate = rfi.ApprovedDate;
+            txtCostImpact = rfi.CostImpact;
+            txtSchedulingImpact = rfi.SchedulingImpact;
+
+            // Load messages
+            await LoadMessages(rfi.RFIID);
+
+            // Load attachments
+            await LoadAttachments();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"{SRCFILE}LoadRFI: {ex.Message}");
+        }
+        finally
+        {
+            mLoading = false;
+            mDirty = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMessages(int rfiId)
+    {
+        var sql = @"SELECT * FROM messages WHERE job=@Job AND rfiid=@RFIID";
+        var rows = await db.QueryAsync(sql, new { Job = mJob, RFIID = rfiId });
+
+        MessagesData.Clear();
+        foreach (var rs in rows)
+        {
+            var msg = new MessageRow
+            {
+                ID = SafeStr(rs, "ID"),
+                Priority = SafeInt(rs, "Priority", 1),
+                MessageType = SafeStr(rs, "MessageType"),
+                Sender = SafeStr(rs, "Sender"),
+                Recipients = SafeStr(rs, "Recipients"),
+                RecipientsCC = SafeStr(rs, "RecipientsCC"),
+                RecipientsBCC = SafeStr(rs, "RecipientsBCC"),
+                Subject = SafeStr(rs, "Subject"),
+                Body = SafeStr(rs, "Body"),
+                SentDate = SafeStr(rs, "SentDate"),
+                ReceivedDate = SafeStr(rs, "ReceivedDate"),
+                Size = SafeInt(rs, "Size") > 0 ? $"{SafeInt(rs, "Size")} KB" : "",
+                Attachments = SafeInt(rs, "Attachments"),
+                Original = SafeStr(rs, "MessageType") == "Email" ? "📧" : "",
+                RowState = "CLEAN",
+                IsDeleted = false
+            };
+            MessagesData.Add(msg);
+        }
+
+        // Add empty row for new entry
+        MessagesData.Add(new MessageRow { RowState = "NEW" });
+    }
+
+    private async Task LoadAttachments()
+    {
+        var objectId = GetObjectID();
+        var sql = @"SELECT a.filename, a.documentclass, a.filesize, a.filetitle, a.path,
+                           a.modifieddate, a.createddate, a.attacheddate, a.embedded,
+                           a.webcustomers, a.webvendors, a.weblocation, a.Revision
+                    FROM attachments a
+                    WHERE a.objectid=@ObjectId
+                    ORDER BY 1";
+        var rows = await db.QueryAsync(sql, new { ObjectId = objectId });
+
+        AttachmentsData.Clear();
+        foreach (var rs in rows)
+        {
+            var fileName = SafeStr(rs, "FileName");
+            if (string.IsNullOrEmpty(fileName)) continue;
+
+            var embedded = SafeStr(rs, "Embedded") == "True";
+            var webCustomers = SafeStr(rs, "WebCustomers") == "True";
+            var webVendors = SafeStr(rs, "WebVendors") == "True";
+
+            string webPortals;
+            if (webCustomers && webVendors) webPortals = "All";
+            else if (webCustomers) webPortals = "Customer";
+            else if (webVendors) webPortals = "Vendor";
+            else webPortals = "None";
+
+            var att = new AttachmentRow
+            {
+                FileName = fileName,
+                FileTitle = SafeStr(rs, "FileTitle"),
+                Path = SafeStr(rs, "Path"),
+                FileSize = SafeStr(rs, "FileSize"),
+                DocumentClass = SafeStr(rs, "DocumentClass"),
+                Revision = SafeStr(rs, "Revision"),
+                ModifiedDate = FormatGeneralDate(rs, "ModifiedDate"),
+                CreatedDate = FormatGeneralDate(rs, "CreatedDate"),
+                AttachedDate = FormatGeneralDate(rs, "AttachedDate"),
+                Embedded = embedded ? "True" : "False",
+                WebPortals = webPortals,
+                WebLocation = string.IsNullOrEmpty(SafeStr(rs, "WebLocation")) ? "Documents" : SafeStr(rs, "WebLocation")
+            };
+            AttachmentsData.Add(att);
+        }
+    }
+
+    // Unload RFI (save form fields back to data)
+    private void UnloadRFI()
+    {
+        if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return;
+
+        var rfi = RFIData[mRFIRow];
+        rfi.Subject = txtSubject;
+        rfi.Status = cboStatus;
+        rfi.Sender = txtSender;
+        rfi.Recipients = txtRecipients;
+        rfi.RecipientsCC = txtRecipientsCC;
+        rfi.RecipientsBCC = txtRecipientsBCC;
+        rfi.Question = txtQuestion;
+        rfi.Answer = txtAnswer;
+        rfi.SentDate = txtSentDate;
+        rfi.DueDate = txtDueDate;
+        rfi.ClosedDate = txtClosedDate;
+        rfi.CostImpact = txtCostImpact;
+        rfi.SchedulingImpact = txtSchedulingImpact;
+        rfi.ApprovedBy = txtApprovedBy;
+        rfi.ApprovedDate = txtApprovedDate;
+    }
+
+    // Save Data
+    private async Task<bool> SaveData(bool prompt)
+    {
+        try
+        {
+            UnloadRFI();
+
+            if (!mDirty) return true;
+
+            if (prompt)
+            {
+                var answer = await JSRuntime.InvokeAsync<string?>("prompt",
+                    "This data has changed.\n\nDo you want to save these changes?\n\nType 'yes' to save, 'no' to discard, or 'cancel' to go back.");
+                if (answer == null || answer.Equals("cancel", StringComparison.OrdinalIgnoreCase)) return false;
+                if (answer.Equals("no", StringComparison.OrdinalIgnoreCase)) { mDirty = false; return true; }
+            }
+
+            IsLoading = true;
+            StateHasChanged();
+
+            if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return true;
+
+            var rfi = RFIData[mRFIRow];
+
+            // If new RFI (no RFIID), generate one
+            if (rfi.RFIID == 0)
+            {
+                var nextIdSql = "SELECT ISNULL(LastRFIID,0)+1 FROM tbljobs WHERE job_no=@Job";
+                var nextId = await db.ExecuteScalarAsync<int>(nextIdSql, new { Job = mJob });
+                rfi.RFIID = nextId;
+
+                await db.ExecuteAsync("UPDATE tbljobs SET lastrfiid=ISNULL(LastRFIID,0)+1 WHERE job_no=@Job",
+                    new { Job = mJob });
+
+                await db.ExecuteAsync("INSERT INTO rfis(job,rfiid) VALUES(@Job,@RFIID)",
+                    new { Job = mJob, RFIID = rfi.RFIID });
+            }
+
+            // Update RFI
+            var updateSql = @"UPDATE rfis SET
+                priority=@Priority, subject=@Subject, status=@Status,
+                Sender=@Sender, Recipients=@Recipients, RecipientsCC=@RecipientsCC,
+                RecipientsBCC=@RecipientsBCC, Question=@Question, Answer=@Answer,
+                SentDate=@SentDate, DueDate=@DueDate, ClosedDate=@ClosedDate,
+                CostImpact=@CostImpact, SchedulingImpact=@SchedulingImpact,
+                ApprovedBy=@ApprovedBy, ApprovedDate=@ApprovedDate
+                WHERE job=@Job AND rfiid=@RFIID";
+
+            await db.ExecuteAsync(updateSql, new
+            {
+                rfi.Priority,
+                rfi.Subject,
+                rfi.Status,
+                rfi.Sender,
+                rfi.Recipients,
+                rfi.RecipientsCC,
+                rfi.RecipientsBCC,
+                rfi.Question,
+                rfi.Answer,
+                SentDate = ParseDateOrNull(rfi.SentDate),
+                DueDate = ParseDateOrNull(rfi.DueDate),
+                ClosedDate = ParseDateOrNull(rfi.ClosedDate),
+                CostImpact = ParseDecimalOrNull(rfi.CostImpact),
+                SchedulingImpact = rfi.SchedulingImpact,
+                ApprovedBy = rfi.ApprovedBy,
+                ApprovedDate = ParseDateOrNull(rfi.ApprovedDate),
+                Job = mJob,
+                RFIID = rfi.RFIID
+            });
+
+            // Save messages
+            // Delete hidden/deleted messages
+            foreach (var msg in MessagesData.Where(m => m.IsDeleted && !string.IsNullOrEmpty(m.ID)))
+            {
+                await db.ExecuteAsync("DELETE FROM messages WHERE id=@ID", new { msg.ID });
+            }
+            MessagesData.RemoveAll(m => m.IsDeleted);
+
+            // Save dirty messages
+            foreach (var msg in MessagesData.Where(m => m.RowState == "DIRTY"))
+            {
+                if (string.IsNullOrEmpty(msg.ID))
+                {
+                    msg.ID = Guid.NewGuid().ToString();
+                    await db.ExecuteAsync(@"INSERT INTO messages(job,rfiid,id,priority,messagetype,sender,recipients,
+                        recipientscc,recipientsbcc,subject,body,sentdate,receiveddate)
+                        VALUES(@Job,@RFIID,@ID,@Priority,@MessageType,@Sender,@Recipients,
+                        @RecipientsCC,@RecipientsBCC,@Subject,@Body,@SentDate,@ReceivedDate)",
+                        new
+                        {
+                            Job = mJob,
+                            RFIID = rfi.RFIID,
+                            msg.ID,
+                            msg.Priority,
+                            msg.MessageType,
+                            msg.Sender,
+                            msg.Recipients,
+                            msg.RecipientsCC,
+                            msg.RecipientsBCC,
+                            msg.Subject,
+                            msg.Body,
+                            SentDate = ParseDateOrNull(msg.SentDate),
+                            ReceivedDate = ParseDateOrNull(msg.ReceivedDate)
+                        });
+                }
+                else
+                {
+                    await db.ExecuteAsync(@"UPDATE messages SET
+                        priority=@Priority, messagetype=@MessageType, sender=@Sender,
+                        recipients=@Recipients, recipientscc=@RecipientsCC,
+                        recipientsbcc=@RecipientsBCC, subject=@Subject, body=@Body,
+                        sentdate=@SentDate, receiveddate=@ReceivedDate
+                        WHERE id=@ID",
+                        new
+                        {
+                            msg.Priority,
+                            msg.MessageType,
+                            msg.Sender,
+                            msg.Recipients,
+                            msg.RecipientsCC,
+                            msg.RecipientsBCC,
+                            msg.Subject,
+                            msg.Body,
+                            SentDate = ParseDateOrNull(msg.SentDate),
+                            ReceivedDate = ParseDateOrNull(msg.ReceivedDate),
+                            msg.ID
+                        });
+                }
+                msg.RowState = "CLEAN";
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"{SRCFILE}SaveData: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Event Handlers
+    private async Task OnRFIRowSelected(RowSelectEventArgs<RFIRow> args)
+    {
+        if (mLoading) return;
+
+        if (!await SaveData(true)) return;
+
+        var index = RFIData.IndexOf(args.Data);
+        if (index >= 0)
+        {
+            LoadRFI(index);
+        }
+    }
+
+    private void OnMessageCellSaved(CellSaveArgs<MessageRow> args)
+    {
+        if (args.Data != null)
+        {
+            args.Data.RowState = "DIRTY";
+            SetDirty(true);
+
+            // If editing the last (empty) row, add a new empty row
+            var idx = MessagesData.IndexOf(args.Data);
+            if (idx == MessagesData.Count - 1 && args.Data.RowState == "DIRTY")
+            {
+                args.Data.Priority = 1;
+                args.Data.MessageType = string.IsNullOrEmpty(args.Data.MessageType) ? "Other" : args.Data.MessageType;
+                args.Data.ReceivedDate = DateTime.Now.ToString("MMM d, yyyy");
+                MessagesData.Add(new MessageRow { RowState = "NEW" });
+            }
+        }
+    }
+
+    private void ToggleMessagePriority(MessageRow msg)
+    {
+        if (msg.MessageType == "Email") return;
+        msg.Priority = msg.Priority switch
+        {
+            0 => 1,
+            1 => 2,
+            2 => 0,
+            _ => 1
+        };
+        msg.RowState = "DIRTY";
+        SetDirty(true);
+        StateHasChanged();
+    }
+
+    private async Task OpenOriginalMessage(MessageRow msg)
+    {
+        if (msg.MessageType != "Email" || string.IsNullOrEmpty(msg.ID)) return;
+        await JSRuntime.InvokeVoidAsync("alert", $"Would open original email message: {msg.ID}");
+    }
+
+    // Toolbar handlers
+    private async Task OnOpenClick()
+    {
+        if (!await SaveData(true)) return;
+        await LoadJob("");
+    }
+
+    private async Task OnNewRFI()
+    {
+        var rfi = new RFIRow
+        {
+            Priority = 1,
+            RFIID = 0,
+            Subject = "untitled",
+            Status = "Open",
+            Sender = "",
+            Recipients = "",
+            RecipientsCC = "",
+            RecipientsBCC = "",
+            Question = "",
+            Answer = "",
+            SentDate = "",
+            DueDate = "",
+            ClosedDate = "",
+            CostImpact = "",
+            SchedulingImpact = "",
+            ApprovedBy = "",
+            ApprovedDate = ""
+        };
+        RFIData.Add(rfi);
+        mRFIRow = RFIData.Count - 1;
+        LoadRFI(mRFIRow);
+        SetDirty(true);
+        StateHasChanged();
+    }
+
+    private async Task OnPreviewClick()
+    {
+        if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return;
+        var rfiId = RFIData[mRFIRow].RFIID;
+        if (rfiId == 0)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please save the RFI first.");
+            return;
+        }
+        await JSRuntime.InvokeVoidAsync("alert", $"Preview RFI #{rfiId} for Job {mJob} - Report preview not implemented.");
+    }
+
+    private void OnHighClick()
+    {
+        if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return;
+        HighPressed = !HighPressed;
+        if (HighPressed) LowPressed = false;
+        RFIData[mRFIRow].Priority = HighPressed ? 2 : 1;
+        SetDirty(true);
+    }
+
+    private void OnLowClick()
+    {
+        if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return;
+        LowPressed = !LowPressed;
+        if (LowPressed) HighPressed = false;
+        RFIData[mRFIRow].Priority = LowPressed ? 0 : 1;
+        SetDirty(true);
+    }
+
+    // Browse handlers
+    private async Task BrowseContacts(int index)
+    {
+        var contact = await JSRuntime.InvokeAsync<string?>("prompt", "Enter contact name:");
+        if (string.IsNullOrEmpty(contact)) return;
+
+        switch (index)
+        {
+            case 3: txtSender = AppendContact(txtSender, contact); break;
+            case 4: txtRecipients = AppendContact(txtRecipients, contact); break;
+            case 5: txtRecipientsCC = AppendContact(txtRecipientsCC, contact); break;
+            case 6: txtRecipientsBCC = AppendContact(txtRecipientsBCC, contact); break;
+            case 7: txtApprovedBy = AppendContact(txtApprovedBy, contact); break;
+        }
+        SetDirty(true);
+    }
+
+    private async Task BrowseDate(int index)
+    {
+        var dateStr = await JSRuntime.InvokeAsync<string?>("prompt", "Enter date (e.g. Jan 15, 2024):");
+        if (string.IsNullOrEmpty(dateStr)) return;
+
+        if (!DateTime.TryParse(dateStr, out var dt))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Invalid date format.");
+            return;
+        }
+
+        var formatted = dt.ToString("MMM d, yyyy");
+        switch (index)
+        {
+            case 0: txtSentDate = formatted; break;
+            case 1: txtClosedDate = formatted; break;
+            case 2: txtDueDate = formatted; break;
+            case 8: txtApprovedDate = formatted; break;
+        }
+        SetDirty(true);
+    }
+
+    // Cost Impact validation
+    private void OnCostImpactBlur()
+    {
+        if (decimal.TryParse(txtCostImpact, out var val))
+        {
+            txtCostImpact = val == 0 ? "" : val.ToString("#,##0.00");
+        }
+        else if (!string.IsNullOrWhiteSpace(txtCostImpact))
+        {
+            txtCostImpact = "";
+        }
+    }
+
+    // Helpers
+    private void SetDirty(bool value)
+    {
+        if (!mLoading)
+            mDirty = value;
+    }
+
+    private string GetObjectID()
+    {
+        return $"RFI~{mJob}:{mRFIRow}";
+    }
+
+    private string AppendContact(string existing, string newContact)
+    {
+        if (string.IsNullOrEmpty(existing)) return newContact;
+        return $"{existing}; {newContact}";
+    }
+
+    private void SelectAll(string fieldName)
+    {
+        // In Blazor, text selection on focus is handled differently
+        // Could use JS interop if needed
+    }
+
+    private static string SafeStr(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var val) && val != null && val != DBNull.Value)
+            return val.ToString() ?? "";
+        return "";
+    }
+
+    private static int SafeInt(Dictionary<string, object> row, string key, int defaultVal = 0)
+    {
+        var s = SafeStr(row, key);
+        return int.TryParse(s, out var v) ? v : defaultVal;
+    }
+
+    private static string FormatMediumDate(Dictionary<string, object> row, string key)
+    {
+        var s = SafeStr(row, key);
+        if (string.IsNullOrEmpty(s)) return "";
+        return DateTime.TryParse(s, out var dt) ? dt.ToString("MMM d, yyyy") : "";
+    }
+
+    private static string FormatGeneralDate(Dictionary<string, object> row, string key)
+    {
+        var s = SafeStr(row, key);
+        if (string.IsNullOrEmpty(s)) return "";
+        return DateTime.TryParse(s, out var dt) ? dt.ToString("g") : "";
+    }
+
+    private static string FormatCostImpact(Dictionary<string, object> row, string key)
+    {
+        var s = SafeStr(row, key);
+        if (string.IsNullOrEmpty(s)) return "";
+        if (decimal.TryParse(s, out var val) && val != 0)
+            return val.ToString("#,##0.00");
+        return "";
+    }
+
+    private static DateTime? ParseDateOrNull(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        return DateTime.TryParse(s, out var dt) ? dt : null;
+    }
+
+    private static decimal? ParseDecimalOrNull(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        return decimal.TryParse(s, out var v) ? v : null;
+    }
+
+    // Models
+    public class RFIRow
+    {
+        public int Priority { get; set; } = 1;
+        public int RFIID { get; set; }
+        public string Subject { get; set; } = "";
+        public string Status { get; set; } = "Open";
+        public string Sender { get; set; } = "";
+        public string Recipients { get; set; } = "";
+        public string RecipientsCC { get; set; } = "";
+        public string RecipientsBCC { get; set; } = "";
+        public string Question { get; set; } = "";
+        public string Answer { get; set; } = "";
+        public string SentDate { get; set; } = "";
+        public string DueDate { get; set; } = "";
+        public string ClosedDate { get; set; } = "";
+        public string CostImpact { get; set; } = "";
+        public string SchedulingImpact { get; set; } = "";
+        public string ApprovedBy { get; set; } = "";
+        public string ApprovedDate { get; set; } = "";
+    }
+
+    public class MessageRow
+    {
+        public string ID { get; set; } = "";
+        public int Priority { get; set; } = 1;
+        public string Original { get; set; } = "";
+        public int Attachments { get; set; }
+        public string MessageType { get; set; } = "";
+        public string Sender { get; set; } = "";
+        public string Recipients { get; set; } = "";
+        public string RecipientsCC { get; set; } = "";
+        public string RecipientsBCC { get; set; } = "";
+        public string Subject { get; set; } = "";
+        public string Body { get; set; } = "";
+        public string Size { get; set; } = "";
+        public string SentDate { get; set; } = "";
+        public string ReceivedDate { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+        public bool IsDeleted { get; set; } = false;
+    }
+
+    public class AttachmentRow
+    {
+        public string FileName { get; set; } = "";
+        public string FileTitle { get; set; } = "";
+        public string Path { get; set; } = "";
+        public string FileSize { get; set; } = "";
+        public string DocumentClass { get; set; } = "";
+        public string Revision { get; set; } = "";
+        public string ModifiedDate { get; set; } = "";
+        public string CreatedDate { get; set; } = "";
+        public string AttachedDate { get; set; } = "";
+        public string Embedded { get; set; } = "False";
+        public string WebPortals { get; set; } = "None";
+        public string WebLocation { get; set; } = "Documents";
+    }
+}
+```

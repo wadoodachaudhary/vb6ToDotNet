@@ -1,0 +1,297 @@
+@using HomeFront.Components.Hf
+@using Microsoft.AspNetCore.Components.Web
+@using System.Globalization
+@inject IJSRuntime JS
+
+<HfDialog Visible="@_visible"
+          Header="Adjust Selling Prices"
+          Width="600px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          CloseOnEscape="true"
+          OnClose="OnCancel">
+    <ChildContent>
+        <div class="adjust-prices-body">
+            <div class="section-title">Percent Change</div>
+            <div class="section-line"></div>
+
+            <div class="input-row">
+                <label>Percent Increase</label>
+                <HfTextBox Value="@_values[0]"
+                           ValueChanged="v => OnValueChanged(0, v)"
+                           MaxLength="50"
+                           HtmlAttributes="@(new Dictionary<string, object> { ["id"] = "txtValue0" })"
+                           @onfocus="() => OnGotFocus(0)"
+                           @onkeydown="e => OnKeyDown(0, e)"
+                           @onblur="() => OnValidate(0)" />
+            </div>
+
+            <div class="input-row">
+                <label>Percent Decrease</label>
+                <HfTextBox Value="@_values[1]"
+                           ValueChanged="v => OnValueChanged(1, v)"
+                           MaxLength="50"
+                           HtmlAttributes="@(new Dictionary<string, object> { ["id"] = "txtValue1" })"
+                           @onfocus="() => OnGotFocus(1)"
+                           @onkeydown="e => OnKeyDown(1, e)"
+                           @onblur="() => OnValidate(1)" />
+            </div>
+
+            <div class="section-title mt-3">Dollar Value</div>
+            <div class="section-line"></div>
+
+            <div class="input-row">
+                <label>Price Increase</label>
+                <HfTextBox Value="@_values[2]"
+                           ValueChanged="v => OnValueChanged(2, v)"
+                           MaxLength="50"
+                           HtmlAttributes="@(new Dictionary<string, object> { ["id"] = "txtValue2" })"
+                           @onfocus="() => OnGotFocus(2)"
+                           @onkeydown="e => OnKeyDown(2, e)"
+                           @onblur="() => OnValidate(2)" />
+            </div>
+
+            <div class="input-row">
+                <label>Price Decrease</label>
+                <HfTextBox Value="@_values[3]"
+                           ValueChanged="v => OnValueChanged(3, v)"
+                           MaxLength="50"
+                           HtmlAttributes="@(new Dictionary<string, object> { ["id"] = "txtValue3" })"
+                           @onfocus="() => OnGotFocus(3)"
+                           @onkeydown="e => OnKeyDown(3, e)"
+                           @onblur="() => OnValidate(3)" />
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_validationError))
+            {
+                <div class="validation-error">@_validationError</div>
+            }
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn hf-primary" OnClick="OnOk">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="OnCancel">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .adjust-prices-body {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 6px 4px;
+    }
+
+    .section-title {
+        font-weight: 700;
+        color: #405ea6;
+        font-size: 14px;
+    }
+
+    .section-line {
+        height: 2px;
+        background: #c9c9c9;
+        margin-bottom: 6px;
+    }
+
+    .input-row {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .input-row label {
+        text-align: right;
+        font-weight: 600;
+        color: #444;
+    }
+
+    .validation-error {
+        color: #b00020;
+        font-size: 12px;
+        margin-top: 6px;
+    }
+
+    .mt-3 {
+        margin-top: 12px;
+    }
+</style>
+
+<script>
+    window.hfFocus = function (id) {
+        const el = document.getElementById(id);
+        if (el) el.focus();
+    };
+    window.hfSelectAll = function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.focus();
+            if (el.select) el.select();
+        }
+    };
+</script>
+
+@code {
+    private readonly string[] _values = new string[4];
+    private bool _visible;
+    private bool _cancel;
+    private bool _inChange;
+    private string _validationError = "";
+    private TaskCompletionSource<AdjustPriceResult>? _tcs;
+
+    public Task<AdjustPriceResult> ShowFormAsync()
+    {
+        _cancel = false;
+        _validationError = "";
+        for (int i = 0; i < _values.Length; i++)
+        {
+            _values[i] = "";
+        }
+
+        _visible = true;
+        _tcs = new TaskCompletionSource<AdjustPriceResult>();
+        StateHasChanged();
+        return _tcs.Task;
+    }
+
+    private async Task OnOk()
+    {
+        _cancel = false;
+        var (percent, dollar) = ComputeChanges();
+        var ok = (percent != 0 || dollar != 0) && !_cancel;
+        var result = new AdjustPriceResult(ok, percent, percent == 0 ? dollar : 0);
+        await CloseAsync(result);
+    }
+
+    private async Task OnCancel()
+    {
+        _cancel = true;
+        await CloseAsync(new AdjustPriceResult(false, 0, 0));
+    }
+
+    private async Task CloseAsync(AdjustPriceResult result)
+    {
+        _visible = false;
+        _validationError = "";
+        if (_tcs != null && !_tcs.Task.IsCompleted)
+        {
+            _tcs.SetResult(result);
+        }
+        _tcs = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnValueChanged(int index, string? value)
+    {
+        if (_inChange)
+        {
+            _values[index] = value ?? "";
+            return;
+        }
+
+        _inChange = true;
+        _values[index] = value ?? "";
+        for (int i = 0; i < _values.Length; i++)
+        {
+            if (i != index)
+            {
+                _values[i] = "";
+            }
+        }
+        _validationError = "";
+        _inChange = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnKeyDown(int index, KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter")
+            return;
+
+        if (!string.IsNullOrWhiteSpace(_values[index]))
+        {
+            await OnOk();
+            return;
+        }
+
+        if (index < _values.Length - 1)
+        {
+            await FocusInput(index + 1);
+        }
+    }
+
+    private async Task OnGotFocus(int index)
+    {
+        await JS.InvokeVoidAsync("hfSelectAll", $"txtValue{index}");
+    }
+
+    private void OnValidate(int index)
+    {
+        var text = _values[index];
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        if (!TryParseNumber(text, out var number))
+        {
+            _values[index] = "";
+            _validationError = "Please enter a numeric value.";
+            return;
+        }
+
+        _validationError = "";
+        number = Math.Abs(number);
+
+        if (index < 2)
+        {
+            _values[index] = $"{number:0.##}%";
+        }
+        else
+        {
+            _values[index] = number.ToString("#,##0.00", CultureInfo.CurrentCulture);
+        }
+    }
+
+    private (double Percent, double Dollar) ComputeChanges()
+    {
+        double percent = 0;
+        double dollar = 0;
+
+        if (!string.IsNullOrWhiteSpace(_values[0]))
+            percent = Math.Abs(ParseNumber(_values[0]));
+        if (!string.IsNullOrWhiteSpace(_values[1]))
+            percent = -Math.Abs(ParseNumber(_values[1]));
+
+        if (!string.IsNullOrWhiteSpace(_values[2]))
+            dollar = Math.Abs(ParseNumber(_values[2]));
+        if (!string.IsNullOrWhiteSpace(_values[3]))
+            dollar = -Math.Abs(ParseNumber(_values[3]));
+
+        return (percent, dollar);
+    }
+
+    private static bool TryParseNumber(string input, out decimal result)
+    {
+        var cleaned = (input ?? "")
+            .Replace("%", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("$", "", StringComparison.OrdinalIgnoreCase)
+            .Replace(",", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        return decimal.TryParse(cleaned, NumberStyles.Any, CultureInfo.CurrentCulture, out result);
+    }
+
+    private static double ParseNumber(string input)
+    {
+        if (TryParseNumber(input, out var dec))
+            return (double)dec;
+        return 0;
+    }
+
+    private async Task FocusInput(int index)
+    {
+        await JS.InvokeVoidAsync("hfFocus", $"txtValue{index}");
+    }
+
+    public record AdjustPriceResult(bool Ok, double PercentChange, double DollarChange);
+}

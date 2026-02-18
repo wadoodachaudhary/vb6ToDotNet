@@ -1,0 +1,136 @@
+@page "/workflow-pm"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Hf
+
+<PageTitle>HSMC - Project Management Workflow</PageTitle>
+
+<h3 style="margin: 16px 0 8px 16px; color: #2C5F8A;">Project Management Workflow</h3>
+
+<HfDiagram Nodes="@_nodes"
+           Connectors="@_connectors"
+           Width="900"
+           Height="700"
+           NodeClicked="OnNodeClicked" />
+
+@code {
+    // ── Icon path helper ────────────────────────────────────────────────
+    private const string IconBase = "images/workflow/icons";
+
+    // ── Shared style: transparent background, icon above label ──────────
+    private static HfDiagramNode MakeNode(
+        string id, string label, double x, double y,
+        string icon, string? navigateUrl = null,
+        double w = 90, double h = 80) => new()
+    {
+        Id = id,
+        Label = label,
+        OffsetX = x,
+        OffsetY = y,
+        Width = w,
+        Height = h,
+        Shape = HfDiagramShape.Rectangle,
+        FillColor = "transparent",
+        StrokeColor = "transparent",
+        StrokeWidth = 0,
+        TextColor = "#2C5F8A",
+        CornerRadius = 0,
+        BackgroundImage = $"{IconBase}/{icon}",
+        BackgroundImageFit = HfImageFit.Contain,
+        BackgroundImageOpacity = 1.0,
+        BackgroundImagePadding = 0,
+        NavigateUrl = navigateUrl,
+        Tooltip = label
+    };
+
+    // ── Connector style ─────────────────────────────────────────────────
+    private const string ArrowColor = "#4A7FB5";
+
+    private static HfDiagramConnector MakeConn(
+        string id, string from, string to,
+        HfDiagramPort srcPort = HfDiagramPort.Auto,
+        HfDiagramPort tgtPort = HfDiagramPort.Auto,
+        HfConnectorType type = HfConnectorType.Straight) => new()
+    {
+        Id = id,
+        SourceId = from,
+        TargetId = to,
+        Type = type,
+        StrokeColor = ArrowColor,
+        StrokeWidth = 2,
+        ShowArrow = true,
+        SourcePort = srcPort,
+        TargetPort = tgtPort
+    };
+
+    // ── Nodes ───────────────────────────────────────────────────────────
+    //
+    //  Row 1 (y=100):  Proposal  Customer  Contracts&CO's  CustomRequests
+    //  Row 2 (y=260):  Estimate       Job                  RFI's
+    //  Row 3 (y=420):  FieldPO   PurchaseOrders       Bids&Tenders
+    //  Row 4 (y=570):                Vendor
+    //
+
+    private readonly List<HfDiagramNode> _nodes = new()
+    {
+        // ── Row 1 ──
+        MakeNode("proposal",    "Proposal",          130, 100, "proposal.svg",    "/quote"),
+        MakeNode("customer",    "Customer",          290, 100, "customer.svg",    "/customer"),
+        MakeNode("contracts",   "Contracts\n& CO's", 460, 100, "contracts.svg",   "/contracts", w: 100),
+        MakeNode("custom-req",  "Custom\nRequests",  700, 100, "custom-requests.svg", "/custom-requests", w: 100),
+
+        // ── Row 2 ──
+        MakeNode("estimate",    "Estimate",          180, 270, "estimate.svg",    "/estimate"),
+        MakeNode("job",         "Job",               460, 270, "job.svg",         "/job"),
+        MakeNode("rfis",        "RFI's",             700, 270, "rfis.svg",        "/rfis"),
+
+        // ── Row 3 ──
+        MakeNode("field-po",    "Field PO\nRequests", 130, 440, "field-po.svg",   "/field-po",  w: 100),
+        MakeNode("po",          "Purchase\nOrders",   320, 440, "purchase-orders.svg", "/po-index", w: 100),
+        MakeNode("bids",        "Bids &\nTenders",    580, 440, "bids-tenders.svg",    "/bids",   w: 100),
+
+        // ── Row 4 ──
+        MakeNode("vendor",      "Vendor",            460, 580, "vendor.svg",      "/vendor"),
+    };
+
+    // ── Connectors ──────────────────────────────────────────────────────
+    private readonly List<HfDiagramConnector> _connectors = new()
+    {
+        // Row 1: Proposal → Customer → Contracts ← Custom Requests
+        MakeConn("c1", "proposal",   "customer",   HfDiagramPort.Right, HfDiagramPort.Left),
+        MakeConn("c2", "customer",   "contracts",  HfDiagramPort.Right, HfDiagramPort.Left),
+        MakeConn("c3", "custom-req", "contracts",  HfDiagramPort.Left,  HfDiagramPort.Right),
+
+        // Contracts → Job (down)
+        MakeConn("c4", "contracts",  "job",        HfDiagramPort.Bottom, HfDiagramPort.Top),
+
+        // Row 2: Estimate → Job → RFI's
+        MakeConn("c5", "estimate",   "job",        HfDiagramPort.Right, HfDiagramPort.Left),
+        MakeConn("c6", "job",        "rfis",       HfDiagramPort.Right, HfDiagramPort.Left),
+
+        // Custom Requests ↕ RFI's
+        MakeConn("c7", "custom-req", "rfis",       HfDiagramPort.Bottom, HfDiagramPort.Top),
+
+        // Job → Purchase Orders (down-left orthogonal)
+        MakeConn("c8", "job",        "po",         HfDiagramPort.Bottom, HfDiagramPort.Top, HfConnectorType.Orthogonal),
+
+        // Job → Bids & Tenders (down-right orthogonal)
+        MakeConn("c9", "job",        "bids",       HfDiagramPort.Bottom, HfDiagramPort.Top, HfConnectorType.Orthogonal),
+
+        // Field PO Requests → Purchase Orders
+        MakeConn("c10", "field-po",  "po",         HfDiagramPort.Right, HfDiagramPort.Left),
+
+        // Bids & Tenders → Purchase Orders
+        MakeConn("c11", "bids",      "po",         HfDiagramPort.Left,  HfDiagramPort.Right),
+
+        // Purchase Orders → Vendor (down)
+        MakeConn("c12", "po",        "vendor",     HfDiagramPort.Bottom, HfDiagramPort.Top, HfConnectorType.Orthogonal),
+    };
+
+    // ── Click handler ───────────────────────────────────────────────────
+    private void OnNodeClicked(HfDiagramNodeClickEventArgs args)
+    {
+        // Navigation is handled automatically via NavigateUrl.
+        // This handler is available for custom logic if needed.
+    }
+}

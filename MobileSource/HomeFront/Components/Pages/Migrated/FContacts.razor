@@ -1,0 +1,939 @@
+```razor
+@page "/contacts"
+@page "/contacts/{Job}"
+@rendermode InteractiveServer
+
+@using System.Data
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Contacts - HomeFront</PageTitle>
+
+<style>
+    .contacts-container {
+        padding: 16px;
+        font-family: "Segoe UI", Arial, sans-serif;
+    }
+    .header-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+    }
+    .job-label {
+        font-size: 13px;
+        color: #6c757d;
+    }
+    .section {
+        margin-bottom: 16px;
+    }
+    .section-title {
+        font-weight: 700;
+        color: #495057;
+        margin: 6px 0 6px;
+    }
+    .footer-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .btn {
+        padding: 6px 16px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+    .btn-secondary {
+        background: #fff;
+    }
+    .cell-edit-btn {
+        padding: 1px 6px;
+        margin-left: 6px;
+        border: 1px solid #ced4da;
+        background: #fff;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+    }
+    .cell-edit-btn:hover { background: #e9ecef; }
+    .edit-input {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 13px;
+    }
+    .grid-block {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #fff;
+    }
+</style>
+
+<div class="contacts-container">
+    <div class="header-row">
+        <div class="title">Contacts</div>
+        <div class="job-label">Job: @Job</div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Personnel</div>
+        <div class="grid-block">
+            <HfGrid @ref="ContactsGrid"
+                    TValue="ContactRow"
+                    DataSource="@ContactsData"
+                    AllowPaging="false"
+                    AllowSorting="false"
+                    AllowFiltering="false"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="220px"
+                    RowHeight="32"
+                    EditSettingsRef="@contactsEditSettings"
+                    SelectionSettingsRef="@selectionSettings"
+                    EventsRef="@contactsEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(ContactRow.ContactType)" HeaderText="Type" Width="160px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.ID)" HeaderText="ID" Width="70px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="220px">
+                        <Template>
+                            @{
+                                var row = (ContactRow)context;
+                            }
+                            <span>@row.Name</span>
+                            @if (!IsCustomerRow(row))
+                            {
+                                <button class="cell-edit-btn" title="Select" @onclick="() => OnPickContact(row)">...</button>
+                            }
+                        </Template>
+                        <EditTemplate>
+                            @{
+                                var row = (ContactRow)context;
+                                var disabled = !CanEditCustomerRow(row);
+                            }
+                            <input class="edit-input" @bind="row.Name" disabled="@disabled" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContactRow)context;
+                                var disabled = !CanEditCustomerRow(row);
+                            }
+                            <input class="edit-input" @bind="row.Phone" disabled="@disabled" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Cell" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContactRow)context;
+                                var disabled = !CanEditCustomerRow(row);
+                            }
+                            <input class="edit-input" @bind="row.Cell" disabled="@disabled" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContactRow)context;
+                                var disabled = !CanEditCustomerRow(row);
+                            }
+                            <input class="edit-input" @bind="row.Fax" disabled="@disabled" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="220px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContactRow)context;
+                                var disabled = !CanEditCustomerRow(row);
+                            }
+                            <input class="edit-input" @bind="row.Email" disabled="@disabled" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Contacts</div>
+        <div class="grid-block">
+            <HfGrid @ref="JobContactsGrid"
+                    TValue="JobContactRow"
+                    DataSource="@JobContactsData"
+                    AllowPaging="false"
+                    AllowSorting="false"
+                    AllowFiltering="false"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="320px"
+                    RowHeight="32"
+                    EditSettingsRef="@jobContactsEditSettings"
+                    SelectionSettingsRef="@selectionSettings"
+                    EventsRef="@jobContactsEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(JobContactRow.Role)" HeaderText="Role" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.ContactID)" HeaderText="Contact ID" Width="90px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Company)" HeaderText="Company" Width="180px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Name)" HeaderText="Name" Width="180px">
+                        <Template>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <span>@row.Name</span>
+                            <button class="cell-edit-btn" title="Select" @onclick="() => OnPickJobContact(row)">...</button>
+                        </Template>
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <input class="edit-input" @bind="row.Name" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.Phone)" HeaderText="Phone" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <input class="edit-input" @bind="row.Phone" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.Cell)" HeaderText="Cell" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <input class="edit-input" @bind="row.Cell" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.Fax)" HeaderText="Fax" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <input class="edit-input" @bind="row.Fax" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.Email)" HeaderText="Email" Width="200px">
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <input class="edit-input" @bind="row.Email" />
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.SendVia)" HeaderText="Send Via" Width="100px">
+                        <Template>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <span>@GetSendViaLabel(row.SendVia)</span>
+                        </Template>
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <select class="edit-input" @bind="row.SendVia">
+                                <option value="0"></option>
+                                @foreach (var opt in SendViaOptions)
+                                {
+                                    <option value="@opt.Value">@opt.Text</option>
+                                }
+                            </select>
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.SmsAddress)" HeaderText="SMS Address" Width="160px">
+                        <Template>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <span>@GetSmsCarrierLabel(row.SmsAddress)</span>
+                        </Template>
+                        <EditTemplate>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <select class="edit-input" @bind="row.SmsAddress">
+                                <option value=""></option>
+                                @foreach (var carrier in SmsCarriers)
+                                {
+                                    <option value="@carrier.Address">@carrier.Name</option>
+                                }
+                            </select>
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn HeaderText="" Width="60px">
+                        <Template>
+                            @{
+                                var row = (JobContactRow)context;
+                            }
+                            <button class="cell-edit-btn" title="Clear" @onclick="() => ClearJobContact(row)">Clear</button>
+                        </Template>
+                    </HfGridColumn>
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+
+    <div class="footer-bar">
+        <button class="btn btn-primary" @onclick="OnOk">OK</button>
+        <button class="btn btn-secondary" @onclick="OnCancel">Cancel</button>
+    </div>
+</div>
+
+@if (ShowPickDialog)
+{
+    <HfDialog @bind-Visible="ShowPickDialog" Width="800px" Header="@PickDialogTitle"
+              IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
+        <ChildContent>
+            <HfGrid @ref="PickGrid"
+                    TValue="PickRow"
+                    DataSource="@PickData"
+                    AllowPaging="true"
+                    AllowSorting="true"
+                    AllowSelection="true"
+                    Height="300px"
+                    SelectionSettingsRef="@pickSelectionSettings"
+                    EventsRef="@pickEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(PickRow.Id)" HeaderText="ID" Width="90px" />
+                    <HfGridColumn Field="@nameof(PickRow.Company)" HeaderText="Company" Width="200px" />
+                    <HfGridColumn Field="@nameof(PickRow.Name)" HeaderText="Name" Width="160px" />
+                    <HfGridColumn Field="@nameof(PickRow.Phone)" HeaderText="Phone" Width="120px" />
+                    <HfGridColumn Field="@nameof(PickRow.Cell)" HeaderText="Cell" Width="120px" />
+                    <HfGridColumn Field="@nameof(PickRow.Email)" HeaderText="Email" Width="200px" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </ChildContent>
+        <FooterContent>
+            <button class="btn btn-primary" @onclick="OnPickConfirm">OK</button>
+            <button class="btn" @onclick="() => ShowPickDialog = false">Cancel</button>
+        </FooterContent>
+    </HfDialog>
+}
+
+@code {
+    [Parameter] public string? Job { get; set; }
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
+
+    private const int DivisionID = 1;
+
+    private readonly DbWrapperSqlServer db = new();
+
+    private HfGrid<ContactRow>? ContactsGrid;
+    private HfGrid<JobContactRow>? JobContactsGrid;
+    private HfGrid<PickRow>? PickGrid;
+
+    private List<ContactRow> ContactsData = new();
+    private List<JobContactRow> JobContactsData = new();
+    private List<SmsCarrier> SmsCarriers = new();
+
+    private readonly List<SendViaOption> SendViaOptions = new()
+    {
+        new SendViaOption(1, "Print"),
+        new SendViaOption(3, "Email"),
+        new SendViaOption(4, "Fax")
+    };
+
+    private bool Dirty;
+    private bool mIsQuote;
+    private string? _loadedJob;
+
+    private bool ShowPickDialog;
+    private string PickDialogTitle = "";
+    private List<PickRow> PickData = new();
+    private PickRow? SelectedPick;
+    private ContactRow? _pendingContactRow;
+    private JobContactRow? _pendingJobContactRow;
+
+    private readonly HfEditSettings contactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
+    private readonly HfEditSettings jobContactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
+    private readonly HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+    private readonly HfSelectionSettings pickSelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+
+    private readonly HfGridEvents<ContactRow> contactsEvents = new();
+    private readonly HfGridEvents<JobContactRow> jobContactsEvents = new();
+    private readonly HfGridEvents<PickRow> pickEvents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        contactsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ContactRow>>(this, OnContactsCellSave);
+        jobContactsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<JobContactRow>>(this, OnJobContactsCellSave);
+        pickEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickRow>>(this, OnPickRowSelected);
+        await LoadSmsCarriersAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Job) && Job != _loadedJob)
+        {
+            _loadedJob = Job;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadSmsCarriersAsync()
+    {
+        var dt = db.SqlExec("select address,name from smscarriers order by 2");
+        SmsCarriers = dt.AsEnumerable()
+            .Select(r => new SmsCarrier
+            {
+                Address = r["address"]?.ToString() ?? "",
+                Name = r["name"]?.ToString() ?? ""
+            }).ToList();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Job)) return;
+
+        await LoadQuoteFlagAsync();
+        await LoadContactsAsync();
+        await LoadJobContactsAsync();
+
+        Dirty = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadQuoteFlagAsync()
+    {
+        var dt = db.SqlExec(
+            "select isQuote,Quote_No from tblJobs where DivisionID=@DivisionID and job_no=@Job",
+            new { DivisionID, Job });
+
+        if (dt.Rows.Count > 0)
+        {
+            var row = dt.Rows[0];
+            var quoteNo = row["Quote_No"]?.ToString() ?? "";
+            var isQuote = row["IsQuote"]?.ToString() ?? "";
+            mIsQuote = !string.IsNullOrEmpty(quoteNo) || isQuote.Equals("True", StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            mIsQuote = false;
+        }
+    }
+
+    private async Task LoadContactsAsync()
+    {
+        ContactsData.Clear();
+        var sql = @"
+SELECT 'vendor' icon,'Project Manager' ContactType,p.pm ID,p.pmname Name,p.phone,p.cell,p.fax,p.email
+  FROM system_setup s
+       left outer join tblJobs j on(s.id = j.DivisionID and Job_No=@Job)
+       left outer JOIN tblProjectManager p ON(j.PM=p.PM)
+ where s.id = @DivisionID
+UNION ALL
+SELECT 'vendor' icon,'Estimator' ContactType,p.pm ID,p.pmname Name,p.phone,p.cell,p.fax,p.email
+  FROM system_setup s
+       left outer join tblJobs j on(s.ID = j.DivisionID and Job_No=@Job)
+       LEFT JOIN tblProjectManager p ON(j.Estimator=p.PM)
+ where s.id = @DivisionID
+UNION ALL
+SELECT 'vendor' icon,'Purchaser' ContactType,p.pm ID,p.pmname Name,p.phone,p.cell,p.fax,p.email
+  FROM system_setup s
+       left outer join tblJobs j on(s.ID = j.DivisionID and Job_No=@Job)
+       LEFT JOIN tblProjectManager p ON(j.Purchaser=p.PM)
+ where s.id = @DivisionID";
+
+        var dt = db.SqlExec(sql, new { DivisionID, Job });
+        foreach (DataRow row in dt.Rows)
+        {
+            ContactsData.Add(new ContactRow
+            {
+                ContactType = row["ContactType"]?.ToString() ?? "",
+                ID = row["ID"]?.ToString() ?? "",
+                Name = row["Name"]?.ToString() ?? "",
+                Phone = row["Phone"]?.ToString() ?? "",
+                Cell = row["Cell"]?.ToString() ?? "",
+                Fax = row["Fax"]?.ToString() ?? "",
+                Email = row["Email"]?.ToString() ?? ""
+            });
+        }
+    }
+
+    private async Task LoadJobContactsAsync()
+    {
+        JobContactsData.Clear();
+
+        var roles = await GetJobContactRolesAsync();
+        foreach (var role in roles)
+        {
+            JobContactsData.Add(new JobContactRow { Role = role });
+        }
+
+        var sql = @"
+select j.Role JobRole,c.*
+  from jobContacts j
+  join contacts c on(j.contactid=c.contactid)
+ where j.Contactid<>0 and j.job=@Job";
+
+        var dt = db.SqlExec(sql, new { Job });
+        foreach (DataRow row in dt.Rows)
+        {
+            var role = row["JobRole"]?.ToString() ?? "";
+            var match = JobContactsData.FirstOrDefault(r => r.Role.Equals(role, StringComparison.OrdinalIgnoreCase));
+            if (match == null)
+            {
+                match = new JobContactRow { Role = role };
+                JobContactsData.Add(match);
+            }
+            match.ContactID = row["ContactID"]?.ToString() ?? "";
+            match.Company = row["CompanyName"]?.ToString() ?? "";
+            match.Name = row["FirstName"]?.ToString() ?? "";
+            match.Phone = row["WorkPhone"]?.ToString() ?? "";
+            match.Cell = row["CellPhone"]?.ToString() ?? "";
+            match.Fax = row["Fax"]?.ToString() ?? "";
+            match.Email = row["Email"]?.ToString() ?? "";
+            match.SendVia = ToInt(row["CommModeID"]);
+            match.SmsAddress = row["SmsAddress"]?.ToString() ?? "";
+        }
+    }
+
+    private async Task<List<string>> GetJobContactRolesAsync()
+    {
+        string? roles = null;
+        try
+        {
+            roles = await db.ExecuteScalarAsync<string>("SELECT Value FROM AppOptions WHERE Name='JobContactRoles'");
+        }
+        catch { }
+
+        if (string.IsNullOrWhiteSpace(roles))
+            roles = "Buyer|Cobuyer|Superintendent|Sales";
+
+        return roles.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(r => r.Trim())
+                    .Where(r => !string.IsNullOrEmpty(r))
+                    .ToList();
+    }
+
+    private async Task OnContactsCellSave(CellSaveArgs<ContactRow> args)
+    {
+        if (args.Data == null) return;
+        args.Data.Phone = FormatPhone(args.Data.Phone);
+        args.Data.Cell = FormatPhone(args.Data.Cell);
+        args.Data.Fax = FormatPhone(args.Data.Fax);
+        Dirty = true;
+    }
+
+    private async Task OnJobContactsCellSave(CellSaveArgs<JobContactRow> args)
+    {
+        if (args.Data == null) return;
+        args.Data.Phone = FormatPhone(args.Data.Phone);
+        args.Data.Cell = FormatPhone(args.Data.Cell);
+        args.Data.Fax = FormatPhone(args.Data.Fax);
+        args.Data.RowState = "DIRTY";
+        Dirty = true;
+        SyncJobContactDuplicates(args.Data);
+    }
+
+    private void SyncJobContactDuplicates(JobContactRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.ContactID)) return;
+        foreach (var r in JobContactsData)
+        {
+            if (!ReferenceEquals(r, row) && r.ContactID == row.ContactID)
+            {
+                r.Company = row.Company;
+                r.Name = row.Name;
+                r.Phone = row.Phone;
+                r.Cell = row.Cell;
+                r.Fax = row.Fax;
+                r.Email = row.Email;
+                r.SendVia = row.SendVia;
+                r.SmsAddress = row.SmsAddress;
+            }
+        }
+    }
+
+    private async Task OnPickContact(ContactRow row)
+    {
+        _pendingContactRow = row;
+        _pendingJobContactRow = null;
+        PickDialogTitle = $"Select {row.ContactType}";
+        var field = row.ContactType == "Project Manager" ? "PrjMgr" : row.ContactType;
+        var sql = $@"SELECT PM AS Id, PMName AS Name, Phone, Cell, Fax, Email
+                     FROM tblProjectManager
+                     WHERE Inactive<>1 AND 1={field}";
+        var dt = db.SqlExec(sql);
+        PickData = dt.AsEnumerable()
+            .Select(r => new PickRow
+            {
+                Id = r["Id"]?.ToString() ?? "",
+                Name = r["Name"]?.ToString() ?? "",
+                Phone = r["Phone"]?.ToString() ?? "",
+                Cell = r["Cell"]?.ToString() ?? "",
+                Fax = r["Fax"]?.ToString() ?? "",
+                Email = r["Email"]?.ToString() ?? ""
+            }).ToList();
+        SelectedPick = null;
+        ShowPickDialog = true;
+    }
+
+    private async Task OnPickJobContact(JobContactRow row)
+    {
+        _pendingContactRow = null;
+        _pendingJobContactRow = row;
+        PickDialogTitle = "Select Contact";
+        var sql = @"SELECT ContactID AS Id, CompanyName AS Company, FirstName AS Name,
+                           WorkPhone AS Phone, CellPhone AS Cell, Fax, Email,
+                           CommModeID AS SendVia, SmsAddress
+                    FROM Contacts
+                    WHERE ContactTypeID=99
+                    ORDER BY CompanyName, FirstName";
+        var dt = db.SqlExec(sql);
+        PickData = dt.AsEnumerable()
+            .Select(r => new PickRow
+            {
+                Id = r["Id"]?.ToString() ?? "",
+                Company = r["Company"]?.ToString() ?? "",
+                Name = r["Name"]?.ToString() ?? "",
+                Phone = r["Phone"]?.ToString() ?? "",
+                Cell = r["Cell"]?.ToString() ?? "",
+                Fax = r["Fax"]?.ToString() ?? "",
+                Email = r["Email"]?.ToString() ?? "",
+                SendVia = ToInt(r["SendVia"]),
+                SmsAddress = r["SmsAddress"]?.ToString() ?? ""
+            }).ToList();
+        SelectedPick = null;
+        ShowPickDialog = true;
+    }
+
+    private void OnPickRowSelected(RowSelectEventArgs<PickRow> args)
+    {
+        SelectedPick = args.Data;
+    }
+
+    private void OnPickConfirm()
+    {
+        if (SelectedPick == null) return;
+
+        if (_pendingContactRow != null)
+        {
+            _pendingContactRow.ID = SelectedPick.Id;
+            _pendingContactRow.Name = SelectedPick.Name;
+            _pendingContactRow.Phone = SelectedPick.Phone;
+            _pendingContactRow.Cell = SelectedPick.Cell;
+            _pendingContactRow.Fax = SelectedPick.Fax;
+            _pendingContactRow.Email = SelectedPick.Email;
+            Dirty = true;
+        }
+
+        if (_pendingJobContactRow != null)
+        {
+            _pendingJobContactRow.ContactID = SelectedPick.Id;
+            _pendingJobContactRow.Company = SelectedPick.Company;
+            _pendingJobContactRow.Name = SelectedPick.Name;
+            _pendingJobContactRow.Phone = SelectedPick.Phone;
+            _pendingJobContactRow.Cell = SelectedPick.Cell;
+            _pendingJobContactRow.Fax = SelectedPick.Fax;
+            _pendingJobContactRow.Email = SelectedPick.Email;
+            _pendingJobContactRow.SendVia = SelectedPick.SendVia;
+            _pendingJobContactRow.SmsAddress = SelectedPick.SmsAddress;
+            _pendingJobContactRow.RowState = "DIRTY";
+            Dirty = true;
+        }
+
+        ShowPickDialog = false;
+    }
+
+    private void ClearJobContact(JobContactRow row)
+    {
+        row.ContactID = "";
+        row.Company = "";
+        row.Name = "";
+        row.Phone = "";
+        row.Cell = "";
+        row.Fax = "";
+        row.Email = "";
+        row.SendVia = 0;
+        row.SmsAddress = "";
+        row.RowState = "DIRTY";
+        Dirty = true;
+    }
+
+    private async Task OnOk()
+    {
+        if (await SaveDataAsync(false))
+            await CloseAsync();
+    }
+
+    private async Task OnCancel()
+    {
+        if (await SaveDataAsync(true))
+            await CloseAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync(true);
+        else
+            await JSRuntime.InvokeVoidAsync("history.back");
+    }
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!Dirty) return true;
+
+        if (prompt)
+        {
+            var save = await JSRuntime.InvokeAsync<bool>("confirm",
+                "This data has changed.\n\nDo you want to save these changes?");
+            if (!save) { Dirty = false; return true; }
+        }
+
+        try
+        {
+            await SaveContactsAsync();
+            await SaveJobContactsAsync();
+            Dirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving contacts: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task SaveContactsAsync()
+    {
+        foreach (var row in ContactsData)
+        {
+            switch (row.ContactType)
+            {
+                case "Buyer":
+                    await db.ExecuteAsync(@"
+update tblcustomers
+set customer_name=@FirstName,
+    customer_lname=@LastName,
+    phone=@Phone,
+    cellphone=@Cell,
+    fax=@Fax,
+    email=@Email
+where customer_no=@ID",
+                        new
+                        {
+                            FirstName = GetFirstName(row.Name),
+                            LastName = GetLastName(row.Name),
+                            row.Phone,
+                            Cell = row.Cell,
+                            row.Fax,
+                            row.Email,
+                            row.ID
+                        });
+                    break;
+
+                case "Cobuyer":
+                    await db.ExecuteAsync(@"
+update tblcustomers
+set cobuyer_name=@FirstName,
+    cobuyer_lname=@LastName,
+    c_phone=@Phone,
+    c_cellphone=@Cell,
+    c_fax=@Fax,
+    c_email=@Email
+where customer_no=@ID",
+                        new
+                        {
+                            FirstName = GetFirstName(row.Name),
+                            LastName = GetLastName(row.Name),
+                            row.Phone,
+                            Cell = row.Cell,
+                            row.Fax,
+                            row.Email,
+                            row.ID
+                        });
+                    break;
+
+                case "Project Manager":
+                    await db.ExecuteAsync(
+                        "UPDATE tblJobs SET PM=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
+                        new { row.ID, DivisionID, Job });
+                    break;
+
+                case "Estimator":
+                    await db.ExecuteAsync(
+                        "UPDATE tblJobs SET Estimator=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
+                        new { row.ID, DivisionID, Job });
+                    break;
+
+                case "Purchaser":
+                    await db.ExecuteAsync(
+                        "UPDATE tblJobs SET Purchaser=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
+                        new { row.ID, DivisionID, Job });
+                    break;
+            }
+        }
+    }
+
+    private async Task SaveJobContactsAsync()
+    {
+        foreach (var row in JobContactsData.Where(r => r.RowState == "DIRTY"))
+        {
+            var contactId = ToInt(row.ContactID);
+
+            await db.ExecuteAsync(@"
+IF NOT EXISTS (SELECT 1 FROM JobContacts WHERE Role=@Role AND Job=@Job)
+    INSERT INTO JobContacts(ContactID,Role,Job) VALUES(@ContactID,@Role,@Job)",
+                new { ContactID = contactId, row.Role, Job });
+
+            await db.ExecuteAsync(@"
+UPDATE JobContacts
+SET ContactID=@ContactID
+WHERE Role=@Role AND Job=@Job",
+                new { ContactID = contactId, row.Role, Job });
+
+            if (contactId > 0)
+            {
+                await db.ExecuteAsync(@"
+UPDATE Contacts
+SET Role=@Role,
+    FirstName=@Name,
+    WorkPhone=@Phone,
+    CellPhone=@Cell,
+    Fax=@Fax,
+    Email=@Email,
+    CommModeID=@SendVia,
+    SmsAddress=@SmsAddress
+WHERE ContactID=@ContactID",
+                    new
+                    {
+                        row.Role,
+                        row.Name,
+                        row.Phone,
+                        row.Cell,
+                        row.Fax,
+                        row.Email,
+                        row.SendVia,
+                        row.SmsAddress,
+                        ContactID = contactId
+                    });
+            }
+
+            row.RowState = "";
+        }
+    }
+
+    private bool IsCustomerRow(ContactRow row) =>
+        row.ContactType.Equals("Buyer", StringComparison.OrdinalIgnoreCase) ||
+        row.ContactType.Equals("Cobuyer", StringComparison.OrdinalIgnoreCase);
+
+    private bool CanEditCustomerRow(ContactRow row) =>
+        IsCustomerRow(row) && mIsQuote;
+
+    private string FormatPhone(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        var digits = new string(input.Where(char.IsDigit).ToArray());
+        if (digits.Length == 10)
+            return $"({digits.Substring(0, 3)}) {digits.Substring(3, 3)}-{digits.Substring(6, 4)}";
+        if (digits.Length == 7)
+            return $"{digits.Substring(0, 3)}-{digits.Substring(3, 4)}";
+        return input;
+    }
+
+    private string GetFirstName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "";
+        return fullName.Trim().Split(' ', 2)[0];
+    }
+
+    private string GetLastName(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName)) return "";
+        var parts = fullName.Trim().Split(' ', 2);
+        return parts.Length > 1 ? parts[1] : "";
+    }
+
+    private int ToInt(object? val)
+    {
+        if (val == null || val == DBNull.Value) return 0;
+        return int.TryParse(val.ToString(), out var i) ? i : 0;
+    }
+
+    private string GetSendViaLabel(int val) =>
+        SendViaOptions.FirstOrDefault(o => o.Value == val)?.Text ?? "";
+
+    private string GetSmsCarrierLabel(string address) =>
+        SmsCarriers.FirstOrDefault(c => c.Address == address)?.Name ?? address;
+
+    public class ContactRow
+    {
+        public string ContactType { get; set; } = "";
+        public string ID { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+    }
+
+    public class JobContactRow
+    {
+        public string Role { get; set; } = "";
+        public string ContactID { get; set; } = "";
+        public string Company { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public int SendVia { get; set; }
+        public string SmsAddress { get; set; } = "";
+        public string RowState { get; set; } = "";
+    }
+
+    public class PickRow
+    {
+        public string Id { get; set; } = "";
+        public string Company { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public int SendVia { get; set; }
+        public string SmsAddress { get; set; } = "";
+    }
+
+    public class SmsCarrier
+    {
+        public string Address { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    public record SendViaOption(int Value, string Text);
+}
+```

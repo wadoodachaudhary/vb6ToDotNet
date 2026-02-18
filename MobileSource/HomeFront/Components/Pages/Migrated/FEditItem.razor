@@ -1,0 +1,397 @@
+```razor
+@namespace HomeFront.Components.Pages
+
+@using HomeFront.Data
+@inject IJSRuntime JSRuntime
+
+<style>
+    .edit-item-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .edit-item-dialog {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        width: 500px;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .edit-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .edit-item-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .edit-item-header button:hover {
+        color: #212529;
+    }
+
+    .edit-item-body {
+        padding: 16px 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .edit-item-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .edit-item-footer .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .edit-item-footer .btn:hover {
+        background: #e9ecef;
+    }
+
+    .edit-item-footer .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .edit-item-footer .btn-primary:hover {
+        background: #0b5ed7;
+    }
+
+    .field-row {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 10px;
+    }
+
+    .field-row label {
+        min-width: 120px;
+        text-align: right;
+        padding-right: 10px;
+        padding-top: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .field-row input,
+    .field-row select,
+    .field-row textarea {
+        flex: 1;
+        padding: 5px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+
+    .field-row input:focus,
+    .field-row select:focus,
+    .field-row textarea:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
+    }
+</style>
+
+@if (Visible)
+{
+    <div class="edit-item-overlay" @onclick="OnCancelClick">
+        <div class="edit-item-dialog" @onclick:stopPropagation="true">
+            <div class="edit-item-header">
+                <span>Item</span>
+                <button @onclick="OnCancelClick">×</button>
+            </div>
+
+            <div class="edit-item-body">
+                <div class="field-row">
+                    <label>Phase</label>
+                    <input type="text" @bind="Phase" maxlength="20" />
+                </div>
+
+                <div class="field-row">
+                    <label>Item</label>
+                    <input type="text" @bind="POIndex" maxlength="20" />
+                </div>
+
+                <div class="field-row">
+                    <label>Description</label>
+                    <input type="text" @bind="Description" maxlength="20" />
+                </div>
+
+                <div class="field-row">
+                    <label>Notes</label>
+                    <textarea rows="5" @bind="Notes" maxlength="2000"></textarea>
+                </div>
+
+                <div class="field-row">
+                    <label>JC Cost Code</label>
+                    <select @bind="JCCostCode">
+                        <option value="">-- Select --</option>
+                        @foreach (var cc in JCCostCodeItems)
+                        {
+                            <option value="@cc.Value">@cc.Text</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field-row">
+                    <label>JC Category</label>
+                    <select @bind="JCCategory">
+                        <option value="">-- Select --</option>
+                        @foreach (var cat in JCCategoryItems)
+                        {
+                            <option value="@cat.Value">@cat.Text</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field-row">
+                    <label>Order unit</label>
+                    <select @bind="OrderUnit" style="max-width: 140px;">
+                        <option value="">-- Select --</option>
+                        @foreach (var u in UnitItems)
+                        {
+                            <option value="@u.Value">@u.Text</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field-row">
+                    <label>Takeoff unit</label>
+                    <select @bind="TakeoffUnit" style="max-width: 140px;">
+                        <option value="">-- Select --</option>
+                        @foreach (var u in UnitItems)
+                        {
+                            <option value="@u.Value">@u.Text</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field-row">
+                    <label>Conversion</label>
+                    <input type="text" @bind="Conversion" maxlength="20" style="max-width: 140px;" />
+                </div>
+
+                <div class="field-row">
+                    <label>Rounding</label>
+                    <input type="text" @bind="Rounding" maxlength="20" style="max-width: 60px;" />
+                </div>
+            </div>
+
+            <div class="edit-item-footer">
+                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
+                <button class="btn" @onclick="OnCancelClick">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Parameters ===
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public EventCallback<EditItemResult> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    // === Bound Fields ===
+    [Parameter] public string Phase { get; set; } = "";
+    [Parameter] public string POIndex { get; set; } = "";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public string Notes { get; set; } = "";
+    [Parameter] public string JCCostCode { get; set; } = "";
+    [Parameter] public string JCCategory { get; set; } = "";
+    [Parameter] public string OrderUnit { get; set; } = "";
+    [Parameter] public string TakeoffUnit { get; set; } = "";
+    [Parameter] public string Conversion { get; set; } = "";
+    [Parameter] public string Rounding { get; set; } = "";
+
+    // === Combo Data Sources ===
+    [Parameter] public List<ComboItem> JCCostCodeItems { get; set; } = new();
+    [Parameter] public List<ComboItem> JCCategoryItems { get; set; } = new();
+    [Parameter] public List<ComboItem> UnitItems { get; set; } = new();
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        if (JCCostCodeItems.Count == 0)
+            await LoadLookupData();
+    }
+
+    private async Task LoadLookupData()
+    {
+        try
+        {
+            // Load JC Cost Codes
+            var costCodes = await db.QueryAsync(
+                $"SELECT CostCode, Description FROM StandardCostCodes WHERE DivisionID = {DivisionID} ORDER BY CostCode");
+            JCCostCodeItems = costCodes.Select(r => new ComboItem
+            {
+                Value = r["CostCode"]?.ToString() ?? "",
+                Text = $"{r["CostCode"]} - {r["Description"]}"
+            }).ToList();
+
+            // Load JC Categories
+            var categories = await db.QueryAsync(
+                $"SELECT Category, Description FROM StandardCategories WHERE DivisionID = {DivisionID} ORDER BY Category");
+            JCCategoryItems = categories.Select(r => new ComboItem
+            {
+                Value = r["Category"]?.ToString() ?? "",
+                Text = $"{r["Category"]} - {r["Description"]}"
+            }).ToList();
+
+            // Load Units (Order and Takeoff units)
+            if (UnitItems.Count == 0)
+            {
+                UnitItems = new List<ComboItem>
+                {
+                    new() { Value = "EA", Text = "EA" },
+                    new() { Value = "LF", Text = "LF" },
+                    new() { Value = "SF", Text = "SF" },
+                    new() { Value = "SY", Text = "SY" },
+                    new() { Value = "CY", Text = "CY" },
+                    new() { Value = "BF", Text = "BF" },
+                    new() { Value = "MBF", Text = "MBF" },
+                    new() { Value = "TON", Text = "TON" },
+                    new() { Value = "GAL", Text = "GAL" },
+                    new() { Value = "BAG", Text = "BAG" },
+                    new() { Value = "BOX", Text = "BOX" },
+                    new() { Value = "BDL", Text = "BDL" },
+                    new() { Value = "SQ", Text = "SQ" },
+                    new() { Value = "LS", Text = "LS" },
+                    new() { Value = "HR", Text = "HR" },
+                    new() { Value = "DAY", Text = "DAY" },
+                    new() { Value = "LOT", Text = "LOT" },
+                    new() { Value = "SET", Text = "SET" },
+                    new() { Value = "PR", Text = "PR" },
+                    new() { Value = "RL", Text = "RL" }
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FEditItem.LoadLookupData error: {ex.Message}");
+        }
+    }
+
+    // === Event Handlers ===
+    private async Task OnOkClick()
+    {
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(Phase))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Phase is required.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(POIndex))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Item is required.");
+            return;
+        }
+
+        var result = new EditItemResult
+        {
+            Phase = Phase,
+            POIndex = POIndex,
+            Description = Description,
+            Notes = Notes,
+            JCCostCode = JCCostCode,
+            JCCategory = JCCategory,
+            OrderUnit = OrderUnit,
+            TakeoffUnit = TakeoffUnit,
+            Conversion = Conversion,
+            Rounding = Rounding
+        };
+
+        await OnSave.InvokeAsync(result);
+        await SetVisible(false);
+    }
+
+    private async Task OnCancelClick()
+    {
+        await OnCancel.InvokeAsync();
+        await SetVisible(false);
+    }
+
+    private async Task SetVisible(bool value)
+    {
+        Visible = value;
+        await VisibleChanged.InvokeAsync(value);
+    }
+
+    // === Public Methods ===
+    public void Show(string phase = "", string poIndex = "", string description = "",
+        string notes = "", string jcCostCode = "", string jcCategory = "",
+        string orderUnit = "", string takeoffUnit = "", string conversion = "", string rounding = "")
+    {
+        Phase = phase;
+        POIndex = poIndex;
+        Description = description;
+        Notes = notes;
+        JCCostCode = jcCostCode;
+        JCCategory = jcCategory;
+        OrderUnit = orderUnit;
+        TakeoffUnit = takeoffUnit;
+        Conversion = conversion;
+        Rounding = rounding;
+        Visible = true;
+        StateHasChanged();
+    }
+
+    // === Models ===
+    public class ComboItem
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
+    public class EditItemResult
+    {
+        public string Phase { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string OrderUnit { get; set; } = "";
+        public string TakeoffUnit { get; set; } = "";
+        public string Conversion { get; set; } = "";
+        public string Rounding { get; set; } = "";
+    }
+}
+```

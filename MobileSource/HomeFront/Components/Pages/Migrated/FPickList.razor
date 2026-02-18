@@ -1,0 +1,258 @@
+@page "/datagrid/picklist"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Dynamic
+@using System.Collections.Generic
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+<PageTitle>HSMC - @mTitle</PageTitle>
+
+<div @onkeydown="HandleKeyDown" tabindex="0" style="outline:none;">
+    <h3>@mTitle</h3>
+
+    @if (!string.IsNullOrEmpty(Prompt))
+    {
+        <p style="margin: 8px 0; color: #555;">@Prompt</p>
+    }
+
+    @* Views Dropdown - replaces VB6 cboViews *@
+    @if (!string.IsNullOrEmpty(Views))
+    {
+        <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+            <strong>View:</strong>
+            <HfDropDownList TValue="int" TItem="ViewItem"
+                            DataSource="@ViewItems"
+                            TextFieldName="Name"
+                            ValueFieldName="Id"
+                            @bind-Value="viewIndex"
+                            @bind-Value:after="OnViewChanged"
+                            Placeholder="Select a view"
+                            Width="320px" />
+        </div>
+    }
+
+    @* Main Grid - replaces Syncfusion SfGrid *@
+    <HfGrid @ref="grid"
+            TValue="ExpandoObject"
+            DataSource="@GridData"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowFiltering="true"
+            AllowSelection="true"
+            Height="520"
+            Width="100%"
+            SelectionSettingsRef="@selectionSettings"
+            EventsRef="@gridEvents">
+
+        <HfGridColumnsBase>
+            @foreach (var col in ColumnsConfig)
+            {
+                <HfGridColumn Field="@col.Field"
+                              HeaderText="@col.Header"
+                              Width="@($"{col.Width}px")"
+                              AllowSorting="true"
+                              Visible="@col.Visible" />
+            }
+        </HfGridColumnsBase>
+    </HfGrid>
+
+    @* Action Buttons - New / OK / Cancel *@
+    <div style="margin-top: 16px; text-align: right;">
+        @if (AllowNew)
+        {
+            <HfButton CssClass="hf-btn-flat" OnClick="OnNewClick" Style="margin-right:8px;">New</HfButton>
+        }
+        <HfButton CssClass="hf-btn-primary" OnClick="OnOkClick" Style="margin-right:8px;">OK</HfButton>
+        <HfButton OnClick="OnCancelClick">Cancel</HfButton>
+    </div>
+
+    @* Fast Loading Checkbox *@
+    <div style="margin-top: 12px;">
+        <HfCheckBox @bind-Checked="chkFast"
+                    Label="Fast loading (memory optimization)" />
+    </div>
+
+    @* Debug SQL Viewer - toggle with Ctrl+F9 *@
+    @if (showSql)
+    {
+        <div style="margin-top: 16px; border: 1px solid #ddd; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+            <strong>Debug SQL:</strong>
+            <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 8px; background: white; padding: 10px; border: 1px solid #ccc;">@mSQL</pre>
+        </div>
+    }
+</div>
+
+@code {
+    // Parameters - mirror VB6 FPickList.Choose() call
+    [Parameter] public string Title { get; set; } = "Select List";
+    [Parameter] public string Sql { get; set; } = "";
+    [Parameter] public string Views { get; set; } = "";
+    [Parameter] public string Columns { get; set; } = "";
+    [Parameter] public string KeyColumns { get; set; } = "";
+    [Parameter] public string SortCol { get; set; } = "";
+    [Parameter] public string HiddenColumns { get; set; } = "";
+    [Parameter] public bool AllowMultiple { get; set; } = false;
+    [Parameter] public string GroupingColumns { get; set; } = "";
+    [Parameter] public bool AllowNew { get; set; } = false;
+    [Parameter] public string Prompt { get; set; } = "";
+
+    [Parameter] public EventCallback<List<IDictionary<string, object>>> OnSelected { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string CancelNavigateTo { get; set; } = "/edit-model-assembly/220";
+
+    // Private state
+    private HfGrid<ExpandoObject>? grid;
+    private string mTitle = "";
+    private string mSQL = "";
+    private int viewIndex = 1;
+    private bool chkFast = true;
+    private bool showSql = false;
+    private bool mLoading = false;
+
+    private List<ViewItem> ViewItems = new();
+    private List<ColumnConfig> ColumnsConfig = new();
+    private List<ExpandoObject> GridData = new();
+    private List<string> KeyColumnList = new();
+    private List<string> HiddenColumnList = new();
+
+    // Grid settings
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true
+    };
+    private HfGridEvents<ExpandoObject> gridEvents = new();
+
+    // Data model classes
+    public class ViewItem { public int Id { get; set; } public string Name { get; set; } = ""; }
+    public class ColumnConfig
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public int Width { get; set; } = 120;
+        public bool Visible { get; set; } = true;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        mTitle = Title;
+        mSQL = Sql;
+
+        // Load persisted fast load setting
+        chkFast = true;
+
+        // Wire up double-click event
+        gridEvents.OnRecordDoubleClick = EventCallback.Factory.Create<CellClickEventArgs<ExpandoObject>>(this, RecordDoubleClickHandler);
+
+        // Load views
+        if (!string.IsNullOrEmpty(Views))
+        {
+            var names = Views.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            ViewItems = names.Select((n, i) => new ViewItem { Id = i + 1, Name = n.Trim() }).ToList();
+            viewIndex = 1;
+        }
+
+        // Parse key/hidden columns
+        KeyColumnList = KeyColumns?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList() ?? new();
+        HiddenColumnList = HiddenColumns?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList() ?? new();
+
+        await LoadDataAndBuildColumns();
+    }
+
+    private DbWrapperSqlServer db = new();
+
+    private async Task LoadDataAndBuildColumns()
+    {
+        if (string.IsNullOrWhiteSpace(mSQL)) return;
+
+        GridData = await db.QueryDynamicAsync(mSQL);
+
+        if (!GridData.Any()) return;
+
+        var first = (IDictionary<string, object>)GridData[0];
+        var fields = first.Keys.ToList();
+
+        ColumnsConfig.Clear();
+
+        if (!string.IsNullOrEmpty(Columns))
+        {
+            var headers = Columns.Split('|');
+            for (int i = 0; i < headers.Length && i < fields.Count; i++)
+            {
+                var header = headers[i].TrimStart('<');
+                var field = fields[i];
+                ColumnsConfig.Add(new ColumnConfig
+                {
+                    Field = field,
+                    Header = header,
+                    Width = 120,
+                    Visible = !HiddenColumnList.Contains(field)
+                });
+            }
+        }
+        else
+        {
+            foreach (var field in fields)
+            {
+                ColumnsConfig.Add(new ColumnConfig
+                {
+                    Field = field,
+                    Header = field,
+                    Width = 120,
+                    Visible = !HiddenColumnList.Contains(field)
+                });
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    // ── Event Handlers ──────────────────────────────────────────────────
+
+    private async Task OnViewChanged()
+    {
+        await LoadDataAndBuildColumns();
+    }
+
+    private async Task OnOkClick()
+    {
+        if (grid == null) return;
+
+        var selected = await grid.GetSelectedRecordsAsync();
+        if (selected == null || selected.Count == 0) return;
+
+        var result = selected.Cast<IDictionary<string, object>>().ToList();
+        await OnSelected.InvokeAsync(result);
+        Navigation.NavigateTo(CancelNavigateTo);
+    }
+
+    private void OnCancelClick()
+    {
+        OnCancel.InvokeAsync();
+        Navigation.NavigateTo(CancelNavigateTo);
+    }
+
+    private Task OnNewClick() => OnSelected.InvokeAsync(new List<IDictionary<string, object>>());
+
+    private void RecordDoubleClickHandler(CellClickEventArgs<ExpandoObject> args)
+    {
+        if (args.Data == null) return;
+        dynamic rowData = args.Data;
+        Console.WriteLine($"Double click on row: {args.Column}");
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && e.Key == "F9")
+        {
+            showSql = !showSql;
+            StateHasChanged();
+        }
+    }
+}

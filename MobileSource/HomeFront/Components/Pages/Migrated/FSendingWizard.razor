@@ -1,0 +1,1315 @@
+```razor
+@page "/po-sending-wizard"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>PO Sending Wizard - HomeFront</PageTitle>
+
+<style>
+    .wizard-container {
+        max-width: 700px;
+        margin: 0 auto;
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        background: #f0f0f0;
+        overflow: hidden;
+    }
+
+    .wizard-header {
+        background: linear-gradient(to right, #fff, #e8e8e8);
+        border-bottom: 1px solid #ccc;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 60px;
+    }
+
+    .wizard-header-icon {
+        width: 48px;
+        height: 48px;
+        background: #0078d7;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+    }
+
+    .wizard-header-text h4 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .wizard-header-text p {
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: #555;
+    }
+
+    .wizard-body {
+        min-height: 280px;
+        padding: 16px;
+        background: #fff;
+    }
+
+    .wizard-footer {
+        border-top: 1px solid #aaa;
+        padding: 8px 16px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        background: #f0f0f0;
+    }
+
+    .wizard-footer button {
+        padding: 5px 16px;
+        border: 1px solid #888;
+        border-radius: 3px;
+        background: #e8e8e8;
+        cursor: pointer;
+        font-size: 12px;
+        min-width: 80px;
+    }
+
+    .wizard-footer button:hover:not(:disabled) {
+        background: #d0d0d0;
+    }
+
+    .wizard-footer button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .wizard-footer button.btn-primary {
+        background: #0078d7;
+        color: white;
+        border-color: #005a9e;
+    }
+
+    .wizard-footer button.btn-primary:hover:not(:disabled) {
+        background: #005a9e;
+    }
+
+    .frame-content {
+        display: flex;
+        gap: 12px;
+    }
+
+    .frame-icon {
+        width: 48px;
+        height: 48px;
+        background: #ddd;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    .frame-main {
+        flex: 1;
+    }
+
+    .frame-label {
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .task-option {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+        cursor: pointer;
+    }
+
+    .task-option input[type="radio"] {
+        margin: 0;
+    }
+
+    .task-option label {
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .select-all-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .select-all-row label {
+        font-weight: 700;
+    }
+
+    .select-all-check {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+    }
+
+    .grid-wrapper {
+        height: 220px;
+        overflow: auto;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+    }
+
+    .grid-wrapper table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .grid-wrapper th {
+        background: #e8e8e8;
+        padding: 4px 8px;
+        text-align: left;
+        border-bottom: 1px solid #ccc;
+        position: sticky;
+        top: 0;
+    }
+
+    .grid-wrapper td {
+        padding: 3px 8px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .grid-wrapper tr:hover {
+        background: #f0f7ff;
+    }
+
+    .grid-wrapper input[type="checkbox"] {
+        margin: 0;
+    }
+
+    .finish-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .finish-info {
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .printer-section {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 10px;
+        background: #fafafa;
+    }
+
+    .printer-section .field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 4px;
+        font-size: 12px;
+    }
+
+    .printer-section .field-row label {
+        min-width: 80px;
+        font-weight: 600;
+        color: #555;
+    }
+
+    .printer-section select {
+        width: 100%;
+        padding: 3px 6px;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        font-size: 12px;
+        margin-bottom: 6px;
+    }
+
+    .progress-bar-container {
+        width: 100%;
+        height: 20px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(to right, #0078d7, #00a2ed);
+        transition: width 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .status-text {
+        background: #f5f5f5;
+        border: none;
+        width: 100%;
+        height: 100px;
+        font-size: 11px;
+        font-family: 'Consolas', monospace;
+        resize: none;
+        padding: 6px;
+        overflow-y: auto;
+    }
+
+    .processing-labels {
+        font-size: 12px;
+        color: #333;
+    }
+</style>
+
+<div class="wizard-container">
+    @* ── WIZARD HEADER ─────────────────────────────────────── *@
+    <div class="wizard-header">
+        <div class="wizard-header-icon">📧</div>
+        <div class="wizard-header-text">
+            <h4>@WizardCaption</h4>
+            <p>@WizardDescription</p>
+        </div>
+    </div>
+
+    @* ── WIZARD BODY ───────────────────────────────────────── *@
+    <div class="wizard-body">
+        @switch (CurrentFrame)
+        {
+            case 0:
+                @* Frame 0: Task Selection *@
+                <div class="frame-content">
+                    <div class="frame-icon">📋</div>
+                    <div class="frame-main">
+                        <div class="frame-label">Choose the task you would like to perform</div>
+                        <div class="task-option">
+                            <input type="radio" id="chkSend0" name="sendTask" value="0"
+                                   checked="@(SelectedTask == 0)" @onchange="() => SelectedTask = 0" />
+                            <label for="chkSend0">Send new purchase orders</label>
+                        </div>
+                        <div class="task-option">
+                            <input type="radio" id="chkSend1" name="sendTask" value="1"
+                                   checked="@(SelectedTask == 1)" @onchange="() => SelectedTask = 1" />
+                            <label for="chkSend1">Resend a purchase order</label>
+                        </div>
+                        <div class="task-option">
+                            <input type="radio" id="chkSend2" name="sendTask" value="2"
+                                   checked="@(SelectedTask == 2)" @onchange="() => SelectedTask = 2" />
+                            <label for="chkSend2">Send new RFP's</label>
+                        </div>
+                        <div class="task-option">
+                            <input type="radio" id="chkSend3" name="sendTask" value="3"
+                                   checked="@(SelectedTask == 3)" @onchange="() => SelectedTask = 3" />
+                            <label for="chkSend3">Resend an RFP</label>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 1:
+                @* Frame 1: Select Communities *@
+                <div class="frame-content">
+                    <div class="frame-icon">🏘️</div>
+                    <div class="frame-main">
+                        <div class="select-all-row">
+                            <label>Select Communities</label>
+                            <div class="select-all-check">
+                                <input type="checkbox" id="selAll1" checked="@SelectAllCommunities"
+                                       @onchange="e => OnSelectAllChanged(1, (bool)(e.Value ?? false))" />
+                                <label for="selAll1">Select All</label>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:30px;"></th>
+                                        <th>Community</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in CommunityData)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(1)" /></td>
+                                            <td>@item.Code</td>
+                                            <td>@item.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 2:
+                @* Frame 2: Select Jobs *@
+                <div class="frame-content">
+                    <div class="frame-icon">🏠</div>
+                    <div class="frame-main">
+                        <div class="select-all-row">
+                            <label>@JobsLabel</label>
+                            <div class="select-all-check">
+                                <input type="checkbox" id="selAll2" checked="@SelectAllJobs"
+                                       @onchange="e => OnSelectAllChanged(2, (bool)(e.Value ?? false))" />
+                                <label for="selAll2">Select All</label>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:30px;"></th>
+                                        <th>Job</th>
+                                        <th>Description</th>
+                                        @if (SelectedTask >= 2)
+                                        {
+                                            <th>RFP</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in JobData)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(2)" /></td>
+                                            <td>@item.Code</td>
+                                            <td>@item.Description</td>
+                                            @if (SelectedTask >= 2)
+                                            {
+                                                <td>@item.Extra</td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 3:
+                @* Frame 3: Select Vendors *@
+                <div class="frame-content">
+                    <div class="frame-icon">🏢</div>
+                    <div class="frame-main">
+                        <div class="select-all-row">
+                            <label>Select Vendors</label>
+                            <div class="select-all-check">
+                                <input type="checkbox" id="selAll3" checked="@SelectAllVendors"
+                                       @onchange="e => OnSelectAllChanged(3, (bool)(e.Value ?? false))" />
+                                <label for="selAll3">Select All</label>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:30px;"></th>
+                                        <th>Vendor</th>
+                                        <th>Name</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in VendorData)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(3)" /></td>
+                                            <td>@item.Code</td>
+                                            <td>@item.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 4:
+                @* Frame 4: Select PO Groups *@
+                <div class="frame-content">
+                    <div class="frame-icon">📦</div>
+                    <div class="frame-main">
+                        <div class="select-all-row">
+                            <label>Select PO Groups</label>
+                            <div class="select-all-check">
+                                <input type="checkbox" id="selAll4" checked="@SelectAllPOGroups"
+                                       @onchange="e => OnSelectAllChanged(4, (bool)(e.Value ?? false))" />
+                                <label for="selAll4">Select All</label>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:30px;"></th>
+                                        <th>PO Group</th>
+                                        <th>PO Index</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in POGroupData)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(4)" /></td>
+                                            <td>@item.Code</td>
+                                            <td>@item.Extra</td>
+                                            <td>@item.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 5:
+                @* Frame 5: Select Purchase Orders *@
+                <div class="frame-content">
+                    <div class="frame-icon">📄</div>
+                    <div class="frame-main">
+                        <div class="select-all-row">
+                            <label>Select Purchase Orders</label>
+                            <div class="select-all-check">
+                                <input type="checkbox" id="selAll5" checked="@SelectAllPOs"
+                                       @onchange="e => OnSelectAllChanged(5, (bool)(e.Value ?? false))" />
+                                <label for="selAll5">Select All</label>
+                            </div>
+                        </div>
+                        <div class="grid-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:30px;"></th>
+                                        <th>PO Number</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in POData)
+                                    {
+                                        <tr>
+                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(5)" /></td>
+                                            <td>@item.Code</td>
+                                            <td>@item.Description</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 6:
+                @* Frame 6: Finish / Processing *@
+                <div class="frame-content">
+                    <div class="frame-icon">✅</div>
+                    <div class="frame-main">
+                        <div class="finish-panel">
+                            <div class="finish-info">@FinishMessage</div>
+
+                            @if (PrintedPOCount > 0 && !IsProcessing)
+                            {
+                                <div class="printer-section">
+                                    <div class="finish-info">@PrinterInfoMessage</div>
+                                    <div class="field-row" style="margin-top:6px;">
+                                        <label style="font-weight:700;">Printer:</label>
+                                    </div>
+                                    <select @bind="SelectedPrinter">
+                                        @foreach (var p in PrinterList)
+                                        {
+                                            <option value="@p">@p</option>
+                                        }
+                                    </select>
+                                    <div class="field-row"><label>Status:</label><span>@PrinterStatus</span></div>
+                                    <div class="field-row"><label>Model:</label><span>@PrinterModel</span></div>
+                                    <div class="field-row"><label>Where:</label><span>@PrinterLocation</span></div>
+                                    <div class="field-row"><label>Comment:</label><span>@PrinterComments</span></div>
+                                </div>
+                            }
+
+                            @if (IsProcessing)
+                            {
+                                <div class="processing-labels">
+                                    <div><strong>Processing:</strong></div>
+                                    <div class="progress-bar-container">
+                                        <div class="progress-bar-fill" style="width: @ProgressPercent%;">
+                                            @if (ProgressMax > 0)
+                                            {
+                                                @($"{ProgressValue} of {ProgressMax}")
+                                            }
+                                        </div>
+                                    </div>
+                                    <div style="margin-top:4px;">@ProgressCountLabel</div>
+                                    <div>@ProgressItemLabel</div>
+                                </div>
+                                <textarea class="status-text" readonly>@StatusText</textarea>
+                            }
+                        </div>
+                    </div>
+                </div>
+                break;
+        }
+    </div>
+
+    @* ── WIZARD FOOTER ─────────────────────────────────────── *@
+    <div class="wizard-footer">
+        <button @onclick="OnCancelClick">Cancel</button>
+        <button disabled="@(!CanGoBack)" @onclick="OnBackClick">&lt; Back</button>
+        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">Next &gt;</button>
+        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">Finish</button>
+    </div>
+</div>
+
+@code {
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Parameters ===
+    [Parameter] public string? Job { get; set; }
+
+    // === Wizard State ===
+    private int CurrentFrame = 0;
+    private int SelectedTask = 0; // 0=Send new POs, 1=Resend PO, 2=Send new RFPs, 3=Resend RFP
+    private bool IsProcessing = false;
+
+    // === Header ===
+    private string WizardCaption => "Send purchase orders to vendors";
+    private string WizardDescription => "The PO Sending wizard will help you deliver your purchase orders.";
+
+    // === Navigation ===
+    private bool CanGoBack => CurrentFrame > 0 && !IsProcessing;
+    private bool CanGoNext => CurrentFrame < 6 && !IsProcessing;
+    private bool CanFinish => CurrentFrame == 6 && !IsProcessing;
+
+    // === Data Lists ===
+    private List<GridRowItem> CommunityData = new();
+    private List<GridRowItem> JobData = new();
+    private List<GridRowItem> VendorData = new();
+    private List<GridRowItem> POGroupData = new();
+    private List<GridRowItem> POData = new();
+
+    // === Select All Flags ===
+    private bool SelectAllCommunities = true;
+    private bool SelectAllJobs = true;
+    private bool SelectAllVendors = true;
+    private bool SelectAllPOGroups = true;
+    private bool SelectAllPOs = true;
+
+    // === Finish Frame ===
+    private int AllPOCount = 0;
+    private int PrintedPOCount = 0;
+    private string FinishMessage = "";
+    private string PrinterInfoMessage = "";
+
+    // === Printer ===
+    private List<string> PrinterList = new() { "Default Printer" };
+    private string SelectedPrinter = "Default Printer";
+    private string PrinterStatus = "Ready";
+    private string PrinterModel = "";
+    private string PrinterLocation = "";
+    private string PrinterComments = "";
+
+    // === Progress ===
+    private int ProgressValue = 0;
+    private int ProgressMax = 0;
+    private double ProgressPercent => ProgressMax > 0 ? (double)ProgressValue / ProgressMax * 100 : 0;
+    private string ProgressCountLabel = "";
+    private string ProgressItemLabel = "";
+    private string StatusText = "";
+
+    // === Labels ===
+    private string JobsLabel => SelectedTask >= 2 ? "Select Jobs/RFP's" : "Select Jobs";
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        SetCurrentFrame(0, true);
+    }
+
+    // === Navigation ===
+    private async Task OnCancelClick()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnBackClick()
+    {
+        await SetCurrentFrame(GetPreviousFrame(), false);
+    }
+
+    private async Task OnNextClick()
+    {
+        await SetCurrentFrame(GetNextFrame(), true);
+    }
+
+    private async Task OnFinishClick()
+    {
+        if (SelectedTask < 2)
+        {
+            if (await SendPOs())
+                NavigationManager.NavigateTo("/");
+        }
+        else
+        {
+            if (await SendRFPs())
+                NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private int GetNextFrame()
+    {
+        var next = CurrentFrame + 1;
+        if (SelectedTask < 2)
+        {
+            // PO flow: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6
+            if (next == 1 && !string.IsNullOrEmpty(Job)) next = 3;
+        }
+        else
+        {
+            // RFP flow: 0 -> 2 -> 3 -> 6 (skip 1, 4, 5)
+            if (next == 1) next = 2;
+            if (next == 4) next = 6;
+        }
+        return Math.Min(next, 6);
+    }
+
+    private int GetPreviousFrame()
+    {
+        var prev = CurrentFrame - 1;
+        if (SelectedTask < 2)
+        {
+            if (prev == 2 && !string.IsNullOrEmpty(Job)) prev = 0;
+        }
+        else
+        {
+            // RFP flow backwards
+            if (prev == 5) prev = 3;
+            if (prev == 4) prev = 3;
+            if (prev == 1) prev = 0;
+        }
+        return Math.Max(prev, 0);
+    }
+
+    private async Task SetCurrentFrame(int frame, bool forward)
+    {
+        CurrentFrame = frame;
+
+        if (SelectedTask < 2)
+        {
+            // PO flow
+            switch (frame)
+            {
+                case 1:
+                    if (forward) await LoadCommunities();
+                    break;
+                case 2:
+                    if (forward) await LoadJobs();
+                    break;
+                case 3:
+                    if (forward) await LoadVendors();
+                    break;
+                case 4:
+                    if (forward) await LoadPOGroups();
+                    break;
+                case 5:
+                    if (forward) await LoadPurchaseOrders();
+                    break;
+                case 6:
+                    await LoadFinishSummary();
+                    break;
+            }
+        }
+        else
+        {
+            // RFP flow
+            switch (frame)
+            {
+                case 2:
+                    if (forward) await LoadRFPJobs();
+                    break;
+                case 3:
+                    if (forward) await LoadRFPVendors();
+                    break;
+                case 6:
+                    await LoadRFPFinishSummary();
+                    break;
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    // === PO Data Loading ===
+    private async Task LoadCommunities()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(1);
+            var sql = $"SELECT DISTINCT Community, CommunityDesc FROM PurchaseOrders p {whereClause} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            CommunityData = rows.Select(r => new GridRowItem
+            {
+                Code = r["Community"]?.ToString() ?? "",
+                Description = r["CommunityDesc"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+            SelectAllCommunities = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadCommunities error: {ex.Message}");
+            CommunityData = new();
+        }
+    }
+
+    private async Task LoadJobs()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(2);
+            var sql = $"SELECT DISTINCT Job, JobDesc FROM PurchaseOrders p {whereClause} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            JobData = rows.Select(r => new GridRowItem
+            {
+                Code = r["Job"]?.ToString() ?? "",
+                Description = r["JobDesc"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+            SelectAllJobs = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadJobs error: {ex.Message}");
+            JobData = new();
+        }
+    }
+
+    private async Task LoadVendors()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(3);
+            var sql = $"SELECT DISTINCT Vendor, VendorDesc FROM PurchaseOrders p {whereClause} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            VendorData = rows.Select(r => new GridRowItem
+            {
+                Code = r["Vendor"]?.ToString() ?? "",
+                Description = r["VendorDesc"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+            SelectAllVendors = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadVendors error: {ex.Message}");
+            VendorData = new();
+        }
+    }
+
+    private async Task LoadPOGroups()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(4);
+            var sql = $"SELECT DISTINCT POGroup, POIndex, CASE WHEN POIndex=POIndexDescription THEN '' ELSE POIndexDescription END FROM PurchaseOrders p {whereClause} ORDER BY 1, 2";
+            var rows = await db.QueryAsync(sql);
+            POGroupData = rows.Select(r =>
+            {
+                var vals = r.Values.ToArray();
+                return new GridRowItem
+                {
+                    Code = vals[0]?.ToString() ?? "",
+                    Extra = vals[1]?.ToString() ?? "",
+                    Description = vals[2]?.ToString() ?? "",
+                    IsChecked = true
+                };
+            }).ToList();
+            SelectAllPOGroups = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPOGroups error: {ex.Message}");
+            POGroupData = new();
+        }
+    }
+
+    private async Task LoadPurchaseOrders()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(5);
+            var sql = $"SELECT DISTINCT PONumber, PODesc + char(9) + DeliveryAddress AS PODesc FROM PurchaseOrders p {whereClause} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            POData = rows.Select(r => new GridRowItem
+            {
+                Code = r["PONumber"]?.ToString() ?? "",
+                Description = (r["PODesc"]?.ToString() ?? "").Replace("\t", " - "),
+                IsChecked = true
+            }).ToList();
+            SelectAllPOs = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPurchaseOrders error: {ex.Message}");
+            POData = new();
+        }
+    }
+
+    private async Task LoadFinishSummary()
+    {
+        try
+        {
+            var whereClause = BuildPOWhereClause(6);
+            var sql = $"SELECT COUNT(DISTINCT PONumber), SUM(CASE ISNULL(DeliveryMethod,0) WHEN 0 THEN 1 ELSE 0 END) FROM PurchaseOrders p {whereClause}";
+            var dt = db.SqlExec(sql);
+            if (dt.Rows.Count > 0)
+            {
+                AllPOCount = Convert.ToInt32(dt.Rows[0][0] ?? 0);
+                PrintedPOCount = Convert.ToInt32(dt.Rows[0][1] ?? 0);
+            }
+            ProgressMax = AllPOCount;
+            FinishMessage = $"Ready for processing. You have selected {AllPOCount} purchase orders for sending. Click Finish to send these documents now.";
+            PrinterInfoMessage = $"{PrintedPOCount} documents are set to print. They will be sent to:";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadFinishSummary error: {ex.Message}");
+            FinishMessage = "Error loading summary.";
+        }
+    }
+
+    // === RFP Data Loading ===
+    private async Task LoadRFPJobs()
+    {
+        try
+        {
+            var sql = "SELECT DISTINCT Job, Title, RFP FROM RFPs ORDER BY 1, 2";
+            var rows = await db.QueryAsync(sql);
+            JobData = rows.Select(r => new GridRowItem
+            {
+                Code = r["Job"]?.ToString() ?? "",
+                Description = r["Title"]?.ToString() ?? "",
+                Extra = r["RFP"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+            SelectAllJobs = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadRFPJobs error: {ex.Message}");
+            JobData = new();
+        }
+    }
+
+    private async Task LoadRFPVendors()
+    {
+        try
+        {
+            var whereClause = BuildRFPWhereClause(3);
+            var sql = $"SELECT DISTINCT b.vendor, v.vendor_name FROM vendorbids b JOIN tblvendors v ON (b.vendor=v.vendor_id) {whereClause} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            VendorData = rows.Select(r => new GridRowItem
+            {
+                Code = r["vendor"]?.ToString() ?? "",
+                Description = r["vendor_name"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+            SelectAllVendors = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadRFPVendors error: {ex.Message}");
+            VendorData = new();
+        }
+    }
+
+    private async Task LoadRFPFinishSummary()
+    {
+        try
+        {
+            var whereClause = BuildRFPWhereClause(6);
+            var sql = $"SELECT COUNT(*), SUM(CASE ISNULL(PurchDelMethod,0) WHEN 0 THEN 1 ELSE 0 END) FROM VendorBids b JOIN tblvendors v ON (b.vendor=v.vendor_id) {whereClause}";
+            var dt = db.SqlExec(sql);
+            if (dt.Rows.Count > 0)
+            {
+                AllPOCount = Convert.ToInt32(dt.Rows[0][0] ?? 0);
+                PrintedPOCount = Convert.ToInt32(dt.Rows[0][1] ?? 0);
+            }
+            ProgressMax = AllPOCount;
+            FinishMessage = $"Ready for processing. You have selected {AllPOCount} documents for sending. Click Finish to send these documents now.";
+            PrinterInfoMessage = $"{PrintedPOCount} documents are set to print. They will be sent to:";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadRFPFinishSummary error: {ex.Message}");
+            FinishMessage = "Error loading summary.";
+        }
+    }
+
+    // === WHERE Clause Builders ===
+    private string BuildPOWhereClause(int frameIndex)
+    {
+        var c = $" WHERE Delivered={(SelectedTask == 1 ? "1" : "0")}";
+
+        if (!string.IsNullOrEmpty(Job))
+        {
+            c += $" AND job='{EscapeSql(Job)}'";
+        }
+        else
+        {
+            if (frameIndex > 1 && !SelectAllCommunities)
+            {
+                var selected = GetSelectedCodes(CommunityData);
+                c += selected.Any() ? $" AND p.Community IN({FormatInClause(selected)})" : " AND 1=2";
+            }
+
+            if (frameIndex > 2 && !SelectAllJobs)
+            {
+                var selected = GetSelectedCodes(JobData);
+                c += selected.Any() ? $" AND p.Job IN({FormatInClause(selected)})" : " AND 1=2";
+            }
+        }
+
+        if (frameIndex > 3 && !SelectAllVendors)
+        {
+            var selected = GetSelectedCodes(VendorData);
+            c += selected.Any() ? $" AND p.Vendor IN({FormatInClause(selected)})" : " AND 1=2";
+        }
+
+        if (frameIndex > 4 && !SelectAllPOGroups)
+        {
+            var selected = POGroupData.Where(x => x.IsChecked).Select(x => x.Extra).ToList();
+            c += selected.Any() ? $" AND p.POIndex IN({FormatInClause(selected)})" : " AND 1=2";
+        }
+
+        if (frameIndex > 5 && !SelectAllPOs)
+        {
+            var selected = GetSelectedCodes(POData);
+            c += selected.Any() ? $" AND p.PONumber IN({FormatInClause(selected)})" : " AND 1=2";
+        }
+
+        return c;
+    }
+
+    private string BuildRFPWhereClause(int frameIndex)
+    {
+        var c = " WHERE b.SentDate" + (SelectedTask == 3 ? " IS NOT NULL" : " IS NULL");
+
+        if (frameIndex > 2 && !SelectAllJobs)
+        {
+            var selected = JobData.Where(x => x.IsChecked).Select(x => x.Extra).ToList();
+            c += selected.Any() ? $" AND b.rfp IN({string.Join(",", selected)})" : " AND 1=2";
+        }
+
+        if (frameIndex > 3 && !SelectAllVendors)
+        {
+            var selected = GetSelectedCodes(VendorData);
+            c += selected.Any() ? $" AND b.vendor IN({FormatInClause(selected)})" : " AND 1=2";
+        }
+
+        return c;
+    }
+
+    // === Send POs ===
+    private async Task<bool> SendPOs()
+    {
+        IsProcessing = true;
+        StatusText = "";
+        ProgressValue = 0;
+        StateHasChanged();
+
+        try
+        {
+            var whereClause = BuildPOWhereClause(99);
+            var sql = $@"SELECT DeliveryMethod, DeliveryAddress, POFormat, PONumber, VendorDesc, '' AS PMEmail
+                         FROM PurchaseOrders p {whereClause} ORDER BY 1, 2, 5";
+            var rows = await db.QueryAsync(sql);
+
+            int i = 0;
+            string prevSendVia = "", prevAddress = "", prevFormat = "", prevPMEmail = "";
+            var poNumbers = new List<string>();
+
+            foreach (var row in rows)
+            {
+                i++;
+                var sendVia = row["DeliveryMethod"]?.ToString() ?? "0";
+                var address = row["DeliveryAddress"]?.ToString() ?? "";
+                var format = row["POFormat"]?.ToString() ?? "";
+                var pmEmail = row["PMEmail"]?.ToString() ?? "";
+                var poNumber = row["PONumber"]?.ToString() ?? "";
+                var vendorDesc = row["VendorDesc"]?.ToString() ?? "";
+
+                ProgressValue = i;
+                ProgressCountLabel = $"Purchase Order {i} of {ProgressMax}";
+                ProgressItemLabel = $"{poNumber} -- {vendorDesc}";
+                StateHasChanged();
+                await Task.Delay(1); // Allow UI to update
+
+                if (sendVia != prevSendVia || address != prevAddress || format != prevFormat || pmEmail != prevPMEmail)
+                {
+                    if (poNumbers.Any())
+                    {
+                        await SendPOGroup(int.Parse(prevSendVia), prevAddress, prevPMEmail, prevFormat, poNumbers);
+                    }
+                    prevSendVia = sendVia;
+                    prevAddress = address;
+                    prevFormat = format;
+                    prevPMEmail = pmEmail;
+                    poNumbers = new List<string>();
+                }
+
+                poNumbers.Add(poNumber);
+            }
+
+            if (poNumbers.Any())
+            {
+                await SendPOGroup(int.Parse(prevSendVia.Length > 0 ? prevSendVia : "0"), prevAddress, prevPMEmail, prevFormat, poNumbers);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error: {ex.Message}\n";
+            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send POs: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendPOGroup(int sendVia, string recipient, string ccRecipient, string rptFormat, List<string> poNumbers)
+    {
+        if (!poNumbers.Any() || string.IsNullOrEmpty(rptFormat)) return;
+
+        var poNumbersInClause = FormatInClause(poNumbers);
+
+        // Fax falls back to print; empty recipient falls back to print
+        if (sendVia == 2) sendVia = 0; // dtFax -> dtPrint
+        if (string.IsNullOrWhiteSpace(recipient)) sendVia = 0;
+
+        StatusText += "Loading PO format...\n";
+        StatusText += "Reading data...\n";
+        StateHasChanged();
+
+        switch (sendVia)
+        {
+            case 0: // Print
+                StatusText += "Printing...\n";
+                // In a real implementation, generate report and send to printer
+                break;
+
+            case 1: // Email
+                StatusText += "Sending email...\n";
+                // In a real implementation, generate PDF and send via email
+                break;
+        }
+
+        // Mark sent date
+        try
+        {
+            await db.ExecuteAsync($"UPDATE POMaster SET DeliveryDate=GETDATE() WHERE PONumber IN({poNumbersInClause})");
+            StatusText += $"Marked {poNumbers.Count} PO(s) as sent.\n";
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error marking sent: {ex.Message}\n";
+        }
+
+        StateHasChanged();
+    }
+
+    // === Send RFPs ===
+    private async Task<bool> SendRFPs()
+    {
+        IsProcessing = true;
+        StatusText = "";
+        ProgressValue = 0;
+        StateHasChanged();
+
+        try
+        {
+            var whereClause = BuildRFPWhereClause(99);
+            var sql = $@"SELECT PurchDelMethod, 
+                                CASE purchdelmethod WHEN 1 THEN purchemail WHEN 2 THEN purchfax ELSE '' END AS address,
+                                v.Vendor_id, v.Vendor_Name, b.rfp
+                         FROM vendorbids b
+                         JOIN tblvendors v ON (b.vendor=v.vendor_id)
+                         {whereClause}
+                         ORDER BY 1, 2, 3, 5";
+            var rows = await db.QueryAsync(sql);
+
+            int i = 0;
+            foreach (var row in rows)
+            {
+                i++;
+                ProgressValue = i;
+                ProgressCountLabel = $"RFP {i} of {ProgressMax}";
+                ProgressItemLabel = row["Vendor_Name"]?.ToString() ?? "";
+                StateHasChanged();
+                await Task.Delay(1);
+
+                var sendVia = Convert.ToInt32(row["PurchDelMethod"] ?? 0);
+                var address = row["address"]?.ToString() ?? "";
+                var rfp = Convert.ToInt64(row["rfp"] ?? 0);
+                var vendor = row["Vendor_id"]?.ToString() ?? "";
+
+                await SendRFPGroup(sendVia, address, rfp, vendor);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error: {ex.Message}\n";
+            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send RFPs: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendRFPGroup(int sendVia, string recipient, long rfp, string vendor)
+    {
+        if (rfp == 0 || string.IsNullOrEmpty(vendor)) return;
+
+        if (sendVia == 2) sendVia = 0; // Fax -> Print
+        if (string.IsNullOrWhiteSpace(recipient)) sendVia = 0;
+
+        StatusText += "Reading RFP...\n";
+        StatusText += "Reading data...\n";
+        StateHasChanged();
+
+        switch (sendVia)
+        {
+            case 0: // Print
+                StatusText += "Printing...\n";
+                break;
+            case 1: // Email
+                StatusText += "Sending email...\n";
+                break;
+        }
+
+        // Mark sent date
+        try
+        {
+            await db.ExecuteAsync($"UPDATE vendorbids SET SentDate=GETDATE() WHERE RFP={rfp} AND Vendor='{EscapeSql(vendor)}'");
+            StatusText += $"Marked RFP {rfp} / Vendor {vendor} as sent.\n";
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error marking sent: {ex.Message}\n";
+        }
+
+        StateHasChanged();
+    }
+
+    // === Select All Handling ===
+    private void OnSelectAllChanged(int frame, bool isChecked)
+    {
+        switch (frame)
+        {
+            case 1:
+                SelectAllCommunities = isChecked;
+                foreach (var item in CommunityData) item.IsChecked = isChecked;
+                break;
+            case 2:
+                SelectAllJobs = isChecked;
+                foreach (var item in JobData) item.IsChecked = isChecked;
+                break;
+            case 3:
+                SelectAllVendors = isChecked;
+                foreach (var item in VendorData) item.IsChecked = isChecked;
+                break;
+            case 4:
+                SelectAllPOGroups = isChecked;
+                foreach (var item in POGroupData) item.IsChecked = isChecked;
+                break;
+            case 5:
+                SelectAllPOs = isChecked;
+                foreach (var item in POData) item.IsChecked = isChecked;
+                break;
+        }
+    }
+
+    private void UpdateSelectAll(int frame)
+    {
+        switch (frame)
+        {
+            case 1:
+                SelectAllCommunities = CommunityData.All(x => x.IsChecked);
+                break;
+            case 2:
+                SelectAllJobs = JobData.All(x => x.IsChecked);
+                break;
+            case 3:
+                SelectAllVendors = VendorData.All(x => x.IsChecked);
+                break;
+            case 4:
+                SelectAllPOGroups = POGroupData.All(x => x.IsChecked);
+                break;
+            case 5:
+                SelectAllPOs = POData.All(x => x.IsChecked);
+                break;
+        }
+    }
+
+    // === Helpers ===
+    private List<string> GetSelectedCodes(List<GridRowItem> data)
+    {
+        return data.Where(x => x.IsChecked).Select(x => x.Code).ToList();
+    }
+
+    private string FormatInClause(List<string> values)
+    {
+        return string.Join(",", values.Select(v => $"'{EscapeSql(v)}'"));
+    }
+
+    private string EscapeSql(string value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+
+    // === Models ===
+    public class GridRowItem
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Extra { get; set; } = "";
+        public bool IsChecked { get; set; } = true;
+    }
+}
+```

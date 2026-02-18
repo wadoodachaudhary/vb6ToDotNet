@@ -1,0 +1,1235 @@
+```razor
+@page "/main"
+@page "/main/{CurrentJobParam}"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.Timers
+@using HomeFront.Data
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Precision Builder - HomeFront</PageTitle>
+
+<style>
+    /* Layout */
+    .main-container {
+        display: flex;
+        height: calc(100vh - 60px);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 14px;
+    }
+
+    /* Command Panel (Left Sidebar) */
+    .command-panel {
+        width: 280px;
+        min-width: 40px;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: width 0.2s;
+    }
+
+    .command-panel.collapsed {
+        width: 40px;
+    }
+
+    .command-panel.hidden {
+        display: none;
+    }
+
+    /* Panel Toolbar */
+    .panel-toolbar {
+        display: flex;
+        align-items: center;
+        padding: 4px;
+        background: #e9ecef;
+        border-bottom: 1px solid #dee2e6;
+        gap: 2px;
+    }
+
+    .panel-toolbar button {
+        padding: 4px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .panel-toolbar button:hover {
+        background: #e0e0e0;
+    }
+
+    /* Explorer Bar */
+    .explorer-bar {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px;
+    }
+
+    .explorer-section {
+        margin-bottom: 8px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+    .explorer-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: linear-gradient(to bottom, #4a7ab5, #3a6a9f);
+        color: #fff;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+        border-radius: 4px 4px 0 0;
+        user-select: none;
+    }
+
+    .explorer-section-header:hover {
+        background: linear-gradient(to bottom, #5a8ac5, #4a7ab5);
+    }
+
+    .explorer-section-header .toggle-icon {
+        font-size: 10px;
+    }
+
+    .explorer-section.collapsed .explorer-section-header {
+        border-radius: 4px;
+    }
+
+    .explorer-section-body {
+        padding: 4px 0;
+    }
+
+    .explorer-section.collapsed .explorer-section-body {
+        display: none;
+    }
+
+    .explorer-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #333;
+        transition: background 0.1s;
+        user-select: none;
+    }
+
+    .explorer-item:hover {
+        background: #e8f0fe;
+    }
+
+    .explorer-item.bold-item {
+        font-weight: 700;
+    }
+
+    .explorer-item.red-item {
+        color: red;
+        font-weight: 700;
+    }
+
+    .explorer-item .item-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+    }
+
+    /* MDI Content Area */
+    .mdi-content {
+        flex: 1;
+        background: #c0c0c0;
+        overflow: auto;
+        position: relative;
+    }
+
+    .mdi-content .welcome-message {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: #666;
+    }
+
+    /* Menu Bar */
+    .menu-bar {
+        display: flex;
+        align-items: center;
+        background: #f0f0f0;
+        border-bottom: 1px solid #ccc;
+        padding: 0;
+        height: 28px;
+        font-size: 13px;
+    }
+
+    .menu-item {
+        position: relative;
+        padding: 4px 12px;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .menu-item:hover {
+        background: #dde8f0;
+    }
+
+    .menu-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 1000;
+        background: #fff;
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 220px;
+        padding: 4px 0;
+    }
+
+    .menu-item:hover .menu-dropdown,
+    .menu-item.open .menu-dropdown {
+        display: block;
+    }
+
+    .menu-dropdown-item {
+        padding: 6px 16px;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .menu-dropdown-item:hover {
+        background: #e8f0fe;
+    }
+
+    .menu-dropdown-item.disabled {
+        color: #aaa;
+        cursor: default;
+    }
+
+    .menu-dropdown-item.disabled:hover {
+        background: transparent;
+    }
+
+    .menu-separator {
+        height: 1px;
+        background: #ddd;
+        margin: 4px 0;
+    }
+
+    /* Status Bar */
+    .status-bar {
+        height: 24px;
+        background: #f0f0f0;
+        border-top: 1px solid #ccc;
+        padding: 3px 12px;
+        font-size: 12px;
+        color: #555;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Caption bar */
+    .caption-bar {
+        background: linear-gradient(to right, #1a3a6a, #2a5a9a);
+        color: #fff;
+        padding: 6px 16px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    /* Loading overlay */
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    /* Tabs */
+    .tabs-container { margin: 0; }
+    .tab-buttons { display: flex; border-bottom: 2px solid #ddd; }
+    .tab-buttons button {
+        padding: 8px 20px; border: none; background: #f0f0f0;
+        cursor: pointer; font-size: 14px; transition: background 0.2s;
+    }
+    .tab-buttons button:hover { background: #e0e0e0; }
+    .tab-buttons button.active {
+        background: #fff; border-bottom: 2px solid #007bff;
+        margin-bottom: -2px; color: #007bff; font-weight: bold;
+    }
+    .tab-content { border: 1px solid #ddd; border-top: none; background: #fff; }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Precision Builder...</div>
+    </div>
+}
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1)
+        {
+            <!-- Caption Bar -->
+            <div class="caption-bar">@CaptionText</div>
+
+            <!-- Menu Bar -->
+            <div class="menu-bar">
+                <!-- File Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "File"' @onmouseleave="CloseMenuDelayed">
+                    <span>File</span>
+                    @if (openMenu == "File")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item" @onclick="OnMenuSave">💾 Save</div>
+                            <div class="menu-separator"></div>
+                            <div class="menu-dropdown-item" @onclick="OnMenuChangeDivision">🔄 Change Division</div>
+                            <div class="menu-dropdown-item" @onclick="OnMenuClose">❌ Close</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Tasks Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Tasks"' @onmouseleave="CloseMenuDelayed">
+                    <span>Tasks</span>
+                    @if (openMenu == "Tasks")
+                    {
+                        <div class="menu-dropdown">
+                            @if (SalesSystemEnabled)
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Inbox")'>📥 Inbox</div>
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Custom Requests")'>📋 Custom Requests</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Issue budgets")'>📊 Issue budgets</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Issue POs")'>📝 Issue POs</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Create Manual POs")'>📝 Create Manual POs</div>
+                            @if (AccountingConnected)
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Post budgets")'>📤 Post budgets</div>
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Post purchase orders")'>📤 Post purchase orders</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Send Purchase Orders")'>✉️ Send Purchase Orders</div>
+                            <div class="menu-separator"></div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Edit item prices")'>💲 Edit item prices</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Cost Forecasting")'>📈 Cost Forecasting</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Sales Pricing Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "SalesPricing"' @onmouseleave="CloseMenuDelayed">
+                    <span>Sales Pricing</span>
+                    @if (openMenu == "SalesPricing")
+                    {
+                        <div class="menu-dropdown">
+                            @if (!UseEstimatingWorksheetsOnly && BuilderType != "Commercial")
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Open a marketing worksheet")'>📄 Open a marketing worksheet</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Open an estimating worksheet")'>📄 Open an estimating worksheet</div>
+                            @if (BuilderType != "Commercial")
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Open a design center worksheet")'>📄 Open a design center worksheet</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Review a published worksheet")'>👁️ Review a published worksheet</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Setup Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Setup"' @onmouseleave="CloseMenuDelayed">
+                    <span>Setup</span>
+                    @if (openMenu == "Setup")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Job Cost Codes")'>📋 Job Cost Codes</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Job Cost Categories")'>📋 Job Cost Categories</div>
+                            <div class="menu-separator"></div>
+                            @if (BuilderType == "Commercial")
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Work Region Setup")'>🏗️ Work Region Setup</div>
+                            }
+                            else
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync(CD_Community + " Setup")'>🏘️ @CD_Community Setup</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Project Managers")'>👤 Project Managers</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Vendor setup")'>🏢 Vendor setup</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Customer setup")'>👥 Customer setup</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Job setup")'>📁 Job setup</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Purchase Orders")'>📦 Purchase Orders</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Default Vendors")'>🏢 Default Vendors</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Edit item database")'>🗃️ Edit item database</div>
+                            @if (UseCommunityStandards)
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync(CD_Community + " Standards")'>📐 @CD_Community Standards</div>
+                            }
+                            @if (BuilderType == "Commercial")
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Edit Assemblies")'>🔧 Edit Assemblies</div>
+                            }
+                            else
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Edit models and options")'>🔧 Edit models and options</div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- Inquiries Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Inquiries"' @onmouseleave="CloseMenuDelayed">
+                    <span>Inquiries</span>
+                    @if (openMenu == "Inquiries")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item disabled">(dynamic inquiries)</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Reports Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Reports"' @onmouseleave="CloseMenuDelayed">
+                    <span>Reports</span>
+                    @if (openMenu == "Reports")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item disabled">(dynamic reports)</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Tools Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Tools"' @onmouseleave="CloseMenuDelayed">
+                    <span>Tools</span>
+                    @if (openMenu == "Tools")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item" @onclick="OnMassChangeWizard">🔄 Mass Change Wizard</div>
+                            <div class="menu-dropdown-item" @onclick="OnWorkReassignment">🔀 Work Reassignment Wizard</div>
+                            <div class="menu-separator"></div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Import items")'>📥 Import items</div>
+                            @if (BuilderType == "Commercial")
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Import Assemblies")'>📥 Import Assemblies</div>
+                            }
+                            else
+                            {
+                                <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Import models and options")'>📥 Import models and options</div>
+                            }
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Import pricelists")'>📥 Import pricelists</div>
+                            <div class="menu-dropdown-item" @onclick='() => RunTaskAsync("Export pricelists")'>📤 Export pricelists</div>
+                            <div class="menu-separator"></div>
+                            <div class="menu-dropdown-item" @onclick="OnUserManager">👤 User Manager</div>
+                            <div class="menu-dropdown-item" @onclick="OnAppOptions">⚙️ Options</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Window Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Window"' @onmouseleave="CloseMenuDelayed">
+                    <span>Window</span>
+                    @if (openMenu == "Window")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item" @onclick="ToggleTaskPanel">@(CommandPanelVisible ? "Hide" : "Show") Task Panel (F2)</div>
+                            <div class="menu-dropdown-item" @onclick="ToggleWorkflow">@(WorkflowVisible ? "Hide" : "Show") Workflow (F6)</div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Help Menu -->
+                <div class="menu-item" @onmouseenter='() => openMenu = "Help"' @onmouseleave="CloseMenuDelayed">
+                    <span>Help</span>
+                    @if (openMenu == "Help")
+                    {
+                        <div class="menu-dropdown">
+                            <div class="menu-dropdown-item" @onclick="OnHelpContents">📖 Precision Builder Help</div>
+                            <div class="menu-dropdown-item" @onclick="OnHelpSupport">🌐 HomeFront Support</div>
+                            <div class="menu-separator"></div>
+                            <div class="menu-dropdown-item" @onclick="OnHelpAbout">ℹ️ About HomeFront...</div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Main Layout -->
+            <div class="main-container">
+                <!-- Command Panel (Left Sidebar) -->
+                <div class="command-panel @(CommandPanelVisible ? "" : "hidden") @(CommandPanelMinimized ? "collapsed" : "")">
+                    <!-- Panel Toolbar -->
+                    <div class="panel-toolbar">
+                        <button @onclick="CloseCommandPanel" title="Close panel">✕</button>
+                        @if (!CommandPanelMinimized)
+                        {
+                            <button @onclick="ShrinkCommandPanel" title="Minimize">◀</button>
+                        }
+                        else
+                        {
+                            <button @onclick="ExpandCommandPanel" title="Expand">▶</button>
+                        }
+                    </div>
+
+                    @if (!CommandPanelMinimized)
+                    {
+                        <!-- Explorer Bar Sections -->
+                        <div class="explorer-bar">
+                            @foreach (var section in ExplorerSections)
+                            {
+                                <div class="explorer-section @(section.IsCollapsed ? "collapsed" : "")">
+                                    <div class="explorer-section-header" @onclick="() => ToggleSection(section)">
+                                        <span>@(section.Title)</span>
+                                        <span class="toggle-icon">@(section.IsCollapsed ? "▶" : "▼")</span>
+                                    </div>
+                                    @if (!section.IsCollapsed)
+                                    {
+                                        <div class="explorer-section-body">
+                                            @foreach (var item in section.Items)
+                                            {
+                                                <div class="explorer-item @(item.IsBold ? "bold-item" : "") @(item.IsRed ? "red-item" : "")"
+                                                     @onclick="() => OnExplorerItemClick(item)">
+                                                    <span class="item-icon">@item.Icon</span>
+                                                    <span>@item.Text</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <!-- MDI Content Area -->
+                <div class="mdi-content">
+                    @if (WorkflowVisible)
+                    {
+                        <div style="padding: 40px; text-align: center; color: #666;">
+                            <h2>🏠 Workflow Home</h2>
+                            <p>Select a task from the left panel or menu to get started.</p>
+                            @if (!string.IsNullOrEmpty(mCurrentJob))
+                            {
+                                <p><strong>Current Job:</strong> @mCurrentJob — @CurrentJobDesc</p>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="welcome-message">
+                            <h3>Precision Builder</h3>
+                            <p>Use the menu or task panel to navigate.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="status-bar">
+                @StatusMessage
+            </div>
+        }
+        else if (activeTab == 2)
+        {
+            <div style="text-align: center; padding: 40px; color: #6c757d;">
+                <p>VB6 screenshot not available in this build.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? CurrentJobParam { get; set; }
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Constants ===
+    private const int TASKPANELWIDTH = 280;
+
+    // === UI State ===
+    private int activeTab = 1;
+    private bool IsLoading = false;
+    private string openMenu = "";
+    private string StatusMessage = "Ready";
+    private string CaptionText = "Precision Builder";
+
+    // === Command Panel State ===
+    private bool CommandPanelVisible = true;
+    private bool CommandPanelMinimized = false;
+    private bool WorkflowVisible = true;
+
+    // === Current Job ===
+    private string mCurrentJob = "";
+    private string mTimerTask = "";
+
+    // === Custom Descriptions ===
+    public string CD_Community { get; set; } = "Community";
+    public string CD_Communities { get; set; } = "Communities";
+    public string CD_Series { get; set; } = "Series";
+    public string CD_SqrFootage { get; set; } = "Square Footage";
+    public string CD_Color { get; set; } = "Color";
+
+    // === App Options (simulated) ===
+    private string DivisionID = "1";
+    private string LoginDSN = "HomeFrontDB";
+    private string LoginID = "admin";
+    private string BuilderType = "Residential";
+    private bool SalesSystemEnabled = true;
+    private bool AccountingConnected = false;
+    private bool UseEstimatingWorksheetsOnly = false;
+    private bool UseCommunityStandards = false;
+    private string AppVersion = "1.0.0.1";
+
+    // === Explorer Bar Data ===
+    private List<ExplorerSection> ExplorerSections = new();
+
+    // === Timer ===
+    private System.Timers.Timer? _refreshTimer;
+
+    // === Properties ===
+    public string CurrentJob
+    {
+        get => mCurrentJob;
+        set
+        {
+            mCurrentJob = value;
+            // Would trigger workflow reload
+        }
+    }
+
+    public string CurrentCustomer
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(mCurrentJob)) return "";
+            try
+            {
+                var dt = db.SqlExec("SELECT ar_customer_deposit FROM tblcustomers WHERE job_no=@Job",
+                    new { Job = mCurrentJob });
+                return dt.Rows.Count > 0 ? dt.Rows[0][0]?.ToString() ?? "" : "";
+            }
+            catch { return ""; }
+        }
+    }
+
+    public string CurrentCustomerDesc
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(mCurrentJob)) return "";
+            try
+            {
+                var sql = @"SELECT a.description
+                            FROM tblcustomers c
+                            JOIN arcustomers a ON c.ar_customer_deposit=a.arcustomer
+                            WHERE c.job_no=@Job";
+                var dt = db.SqlExec(sql, new { Job = mCurrentJob });
+                return dt.Rows.Count > 0 ? dt.Rows[0][0]?.ToString() ?? "" : "";
+            }
+            catch { return ""; }
+        }
+    }
+
+    public string CurrentJobDesc
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(mCurrentJob)) return "";
+            try
+            {
+                var dt = db.SqlExec("SELECT description FROM tbljobs WHERE DivisionID=@DivisionID AND job_no=@Job",
+                    new { DivisionID, Job = mCurrentJob });
+                return dt.Rows.Count > 0 ? dt.Rows[0][0]?.ToString() ?? "" : "";
+            }
+            catch { return ""; }
+        }
+    }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (!string.IsNullOrEmpty(CurrentJobParam))
+                mCurrentJob = CurrentJobParam;
+
+            await LoadCustomDescriptions();
+            UpdateCaption();
+            await LoadInterface();
+            StartRefreshTimer();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FMain.OnInitializedAsync] Error: {ex.Message}");
+            StatusMessage = $"Error during initialization: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateCaption()
+    {
+        var caption = $"Precision Builder ({LoginDSN.Trim()}, Login User: {LoginID.Trim()}) - version {AppVersion}";
+        if (!string.IsNullOrEmpty(DivisionID))
+        {
+            try
+            {
+                var dt = db.SqlExec("SELECT DivisionCode FROM Divisions WHERE DivisionID=@DivisionID",
+                    new { DivisionID });
+                if (dt.Rows.Count > 0)
+                    caption += $" Division: {dt.Rows[0][0]}";
+            }
+            catch { }
+        }
+        CaptionText = caption;
+    }
+
+    // === Load Custom Descriptions ===
+    private async Task LoadCustomDescriptions()
+    {
+        CD_Community = await GetCustomDesc("Community");
+        CD_Communities = await GetCustomDesc("Community", true);
+        CD_SqrFootage = await GetCustomDesc("Square Footage");
+        CD_Series = await GetCustomDesc("Series");
+        CD_Color = await GetCustomDesc("Color");
+    }
+
+    private async Task<string> GetCustomDesc(string item, bool plural = false)
+    {
+        try
+        {
+            var col = plural ? "custom_description_plural" : "custom_description";
+            var dt = db.SqlExec(
+                $"SELECT ISNULL(NULLIF({col},''),@DefaultVal) FROM customdescriptions WHERE item=@Item",
+                new { DefaultVal = item, Item = item });
+            return dt.Rows.Count > 0 ? dt.Rows[0][0]?.ToString() ?? item : item;
+        }
+        catch
+        {
+            return item;
+        }
+    }
+
+    // === Load Interface (Explorer Bar) ===
+    private async Task LoadInterface()
+    {
+        ExplorerSections.Clear();
+
+        // Purchasing Tasks
+        var purchasingSection = new ExplorerSection { Title = "Purchasing Tasks", IsCollapsed = false };
+
+        if (SalesSystemEnabled)
+        {
+            var inboxCount = await GetInboxCount();
+            if (inboxCount == 0)
+                purchasingSection.Items.Add(new ExplorerItem { Text = "Inbox (empty)", Icon = "📁", TaskName = "Inbox" });
+            else
+                purchasingSection.Items.Add(new ExplorerItem { Text = $"Inbox ({inboxCount})", Icon = "📁", TaskName = "Inbox", IsBold = true, IsRed = true });
+
+            var customCount = await GetCustomRequestCount();
+            if (customCount == 0)
+                purchasingSection.Items.Add(new ExplorerItem { Text = "Custom Requests", Icon = "📋", TaskName = "Custom Requests" });
+            else
+                purchasingSection.Items.Add(new ExplorerItem { Text = $"Custom Requests ({customCount})", Icon = "📋", TaskName = "Custom Requests", IsBold = true, IsRed = true });
+        }
+
+        purchasingSection.Items.Add(new ExplorerItem { Text = "Prepare Job Quote", Icon = "📝", TaskName = "Prepare Job Quote" });
+        purchasingSection.Items.Add(new ExplorerItem { Text = "Issue budgets", Icon = "📊", TaskName = "Issue budgets" });
+        purchasingSection.Items.Add(new ExplorerItem { Text = "Issue POs", Icon = "📝", TaskName = "Issue POs" });
+        purchasingSection.Items.Add(new ExplorerItem { Text = "Create Manual POs", Icon = "📝", TaskName = "Create Manual POs" });
+
+        if (AccountingConnected)
+        {
+            purchasingSection.Items.Add(new ExplorerItem { Text = "Post budgets", Icon = "📤", TaskName = "Post budgets" });
+            purchasingSection.Items.Add(new ExplorerItem { Text = "Post purchase orders", Icon = "📤", TaskName = "Post purchase orders" });
+        }
+
+        purchasingSection.Items.Add(new ExplorerItem { Text = "Send Purchase Orders", Icon = "✉️", TaskName = "Send Purchase Orders" });
+        ExplorerSections.Add(purchasingSection);
+
+        // Setup
+        var setupSection = new ExplorerSection { Title = "Setup", IsCollapsed = true };
+        setupSection.Items.Add(new ExplorerItem { Text = "Project Managers", Icon = "👤", TaskName = "Project Managers" });
+
+        if (BuilderType != "Commercial")
+            setupSection.Items.Add(new ExplorerItem { Text = $"{CD_Community} setup", Icon = "🏘️", TaskName = $"{CD_Community} Setup" });
+        else
+            setupSection.Items.Add(new ExplorerItem { Text = "Work Region Setup", Icon = "🏗️", TaskName = "Work Region Setup" });
+
+        setupSection.Items.Add(new ExplorerItem { Text = "Job setup", Icon = "📁", TaskName = "Job setup" });
+        setupSection.Items.Add(new ExplorerItem { Text = "Vendor setup", Icon = "🏢", TaskName = "Vendor setup" });
+        setupSection.Items.Add(new ExplorerItem { Text = "Purchase Orders", Icon = "📦", TaskName = "Purchase Orders" });
+        setupSection.Items.Add(new ExplorerItem { Text = "Import items", Icon = "📥", TaskName = "Import items" });
+
+        if (BuilderType != "Commercial")
+        {
+            setupSection.Items.Add(new ExplorerItem { Text = "Import models and options", Icon = "📥", TaskName = "Import models and options" });
+            setupSection.Items.Add(new ExplorerItem { Text = "Edit models and options", Icon = "🔧", TaskName = "Edit models and options" });
+        }
+        else
+        {
+            setupSection.Items.Add(new ExplorerItem { Text = "Import Assemblies", Icon = "📥", TaskName = "Import Assemblies" });
+            setupSection.Items.Add(new ExplorerItem { Text = "Edit Assemblies", Icon = "🔧", TaskName = "Edit Assemblies" });
+        }
+
+        setupSection.Items.Add(new ExplorerItem { Text = "Edit item database", Icon = "🗃️", TaskName = "Edit item database" });
+
+        if (UseCommunityStandards)
+            setupSection.Items.Add(new ExplorerItem { Text = $"{CD_Community} Standards", Icon = "📐", TaskName = $"{CD_Community} Standards" });
+
+        ExplorerSections.Add(setupSection);
+
+        // Vendor Pricing
+        var vendorPricingSection = new ExplorerSection { Title = "Vendor Pricing", IsCollapsed = true };
+        vendorPricingSection.Items.Add(new ExplorerItem { Text = "Edit item prices", Icon = "💲", TaskName = "Edit item prices" });
+        vendorPricingSection.Items.Add(new ExplorerItem { Text = "Cost Forecasting", Icon = "📈", TaskName = "Cost Forecasting" });
+        vendorPricingSection.Items.Add(new ExplorerItem { Text = "Export pricelists", Icon = "📤", TaskName = "Export pricelists" });
+        vendorPricingSection.Items.Add(new ExplorerItem { Text = "Import pricelists", Icon = "📥", TaskName = "Import pricelists" });
+        ExplorerSections.Add(vendorPricingSection);
+
+        // Sales Pricing
+        var salesPricingSection = new ExplorerSection { Title = "Sales Pricing", IsCollapsed = true };
+        if (!UseEstimatingWorksheetsOnly && BuilderType != "Commercial")
+            salesPricingSection.Items.Add(new ExplorerItem { Text = "Open a marketing worksheet", Icon = "📄", TaskName = "Open a marketing worksheet" });
+        salesPricingSection.Items.Add(new ExplorerItem { Text = "Open an estimating worksheet", Icon = "📄", TaskName = "Open an estimating worksheet" });
+        if (BuilderType != "Commercial")
+            salesPricingSection.Items.Add(new ExplorerItem { Text = "Open a design center worksheet", Icon = "📄", TaskName = "Open a design center worksheet" });
+        salesPricingSection.Items.Add(new ExplorerItem { Text = "Review a published worksheet", Icon = "👁️", TaskName = "Review a published worksheet" });
+        ExplorerSections.Add(salesPricingSection);
+    }
+
+    // === Inbox / Custom Request Counts ===
+    private async Task<int> GetInboxCount()
+    {
+        try
+        {
+            var sql1 = "SELECT COUNT(*) FROM unestimatedoptions o";
+            var sql2 = "SELECT COUNT(*) FROM unestimatedcustomers o";
+            if (!string.IsNullOrEmpty(DivisionID))
+            {
+                sql1 += $" LEFT OUTER JOIN divisioncommunities d ON d.Community=o.Community WHERE (d.DivisionID IS NULL OR d.DivisionID={DivisionID})";
+                sql2 += $" LEFT OUTER JOIN divisioncommunities d ON d.Community=o.Community WHERE (d.DivisionID IS NULL OR d.DivisionID={DivisionID})";
+            }
+            var dt1 = db.SqlExec(sql1);
+            var dt2 = db.SqlExec(sql2);
+            var c1 = dt1.Rows.Count > 0 ? Convert.ToInt32(dt1.Rows[0][0]) : 0;
+            var c2 = dt2.Rows.Count > 0 ? Convert.ToInt32(dt2.Rows[0][0]) : 0;
+            return c1 + c2;
+        }
+        catch { return 0; }
+    }
+
+    private async Task<int> GetCustomRequestCount()
+    {
+        try
+        {
+            var sql = "SELECT COUNT(*) FROM unquotedoptions o";
+            if (!string.IsNullOrEmpty(DivisionID))
+                sql += $" LEFT OUTER JOIN divisioncommunities d ON d.Community=o.Community WHERE (d.DivisionID IS NULL OR d.DivisionID={DivisionID})";
+            var dt = db.SqlExec(sql);
+            return dt.Rows.Count > 0 ? Convert.ToInt32(dt.Rows[0][0]) : 0;
+        }
+        catch { return 0; }
+    }
+
+    // === Timer for Auto-Refresh ===
+    private void StartRefreshTimer()
+    {
+        _refreshTimer = new System.Timers.Timer(30000);
+        _refreshTimer.Elapsed += async (s, e) => await OnTimerElapsed();
+        _refreshTimer.AutoReset = true;
+        _refreshTimer.Start();
+    }
+
+    private async Task OnTimerElapsed()
+    {
+        try
+        {
+            // Update inbox/custom request counts
+            var inboxCount = await GetInboxCount();
+            var customCount = await GetCustomRequestCount();
+
+            await InvokeAsync(() =>
+            {
+                // Update explorer items
+                if (ExplorerSections.Count > 0)
+                {
+                    var purchasingSection = ExplorerSections[0];
+                    foreach (var item in purchasingSection.Items)
+                    {
+                        if (item.TaskName == "Inbox")
+                        {
+                            item.Text = inboxCount == 0 ? "Inbox (empty)" : $"Inbox ({inboxCount})";
+                            item.IsBold = inboxCount > 0;
+                            item.IsRed = inboxCount > 0;
+                        }
+                        else if (item.TaskName == "Custom Requests")
+                        {
+                            item.Text = customCount == 0 ? "Custom Requests" : $"Custom Requests ({customCount})";
+                            item.IsBold = customCount > 0;
+                            item.IsRed = customCount > 0;
+                        }
+                    }
+                }
+
+                // Handle timer task
+                if (!string.IsNullOrEmpty(mTimerTask) && mTimerTask.StartsWith("EditAttachments"))
+                {
+                    // Would call HFApp.RunTask(mTimerTask)
+                    mTimerTask = "";
+                }
+
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Timer error: {ex.Message}");
+        }
+    }
+
+    // === Run Task ===
+    public async Task RunTaskAsync(string taskName)
+    {
+        openMenu = "";
+        StatusMessage = $"Running: {taskName}...";
+        StateHasChanged();
+
+        try
+        {
+            switch (taskName)
+            {
+                case "Inbox":
+                    await JSRuntime.InvokeVoidAsync("alert", "Inbox - would show FInboxJobs dialog");
+                    break;
+
+                case "Custom Requests":
+                    await JSRuntime.InvokeVoidAsync("alert", "Custom Requests - would show FInboxCustomQuote dialog");
+                    break;
+
+                case "Issue budgets":
+                    NavigationManager.NavigateTo("/estimate-items?mode=Budget");
+                    break;
+
+                case "Issue POs":
+                    NavigationManager.NavigateTo("/estimate-items?mode=PO");
+                    break;
+
+                case "Create Manual POs":
+                    NavigationManager.NavigateTo("/purchase-order");
+                    break;
+
+                case "Prepare Job Quote":
+                    NavigationManager.NavigateTo("/estimate-items?mode=Quote");
+                    break;
+
+                case "Project Managers":
+                    await JSRuntime.InvokeVoidAsync("alert", "Project Managers - would open EditProjectManagerList");
+                    break;
+
+                case var s when s == $"{CD_Community} Setup" || s == "Community Setup" || s == "Work Region Setup":
+                    await JSRuntime.InvokeVoidAsync("alert", "Community Setup - would open EditCommunities");
+                    break;
+
+                case "Job setup":
+                    await JSRuntime.InvokeVoidAsync("alert", $"Job Setup - would open EditJob for job: {mCurrentJob}");
+                    break;
+
+                case "Vendor setup":
+                    await JSRuntime.InvokeVoidAsync("alert", "Vendor Setup - would open EditVendor");
+                    break;
+
+                case "Customer setup":
+                    await JSRuntime.InvokeVoidAsync("alert", $"Customer Setup - would open EditCustomer for: {CurrentCustomer}");
+                    break;
+
+                case "Purchase Orders":
+                    await JSRuntime.InvokeVoidAsync("alert", "Purchase Orders - would open EditPOIndexes");
+                    break;
+
+                case "Default Vendors":
+                    await JSRuntime.InvokeVoidAsync("alert", "Default Vendors - would open EditDefaultVendors");
+                    break;
+
+                case "Edit item database":
+                    NavigationManager.NavigateTo("/items-db-opus");
+                    break;
+
+                case "Edit models and options":
+                case "Edit Assemblies":
+                    NavigationManager.NavigateTo("/edit-model-assembly");
+                    break;
+
+                case var s2 when s2 == $"{CD_Community} Standards":
+                    await JSRuntime.InvokeVoidAsync("alert", "Community Standards - would open FCommunityStandards");
+                    break;
+
+                case "Edit item prices":
+                    NavigationManager.NavigateTo("/vendor-pricelist-opus");
+                    break;
+
+                case "Cost Forecasting":
+                    await JSRuntime.InvokeVoidAsync("alert", "Cost Forecasting - would open FCostForecast");
+                    break;
+
+                case "Export pricelists":
+                    await JSRuntime.InvokeVoidAsync("alert", "Export Pricelists - would open FExportPricelists");
+                    break;
+
+                case "Import pricelists":
+                    await JSRuntime.InvokeVoidAsync("alert", "Import Pricelists - would open FImportPricelists");
+                    break;
+
+                case "Import items":
+                    await JSRuntime.InvokeVoidAsync("alert", "Import Items - would open FImportAssemblies (Item mode)");
+                    break;
+
+                case "Import models and options":
+                case "Import Assemblies":
+                    await JSRuntime.InvokeVoidAsync("alert", "Import Assemblies - would open FImportAssemblies (Assembly mode)");
+                    break;
+
+                case "Send Purchase Orders":
+                    await JSRuntime.InvokeVoidAsync("alert", "Send POs - would open FSendingWizard (PO mode)");
+                    break;
+
+                case "Post budgets":
+                    await JSRuntime.InvokeVoidAsync("alert", "Post Budgets - would open FExportBudgets");
+                    break;
+
+                case "Post purchase orders":
+                    await JSRuntime.InvokeVoidAsync("alert", "Post POs - would open FExportPOs");
+                    break;
+
+                case "Open a marketing worksheet":
+                    NavigationManager.NavigateTo("/pricing-worksheet-opus?view=Marketing");
+                    break;
+
+                case "Open an estimating worksheet":
+                    NavigationManager.NavigateTo("/pricing-worksheet-opus");
+                    break;
+
+                case "Open a design center worksheet":
+                    NavigationManager.NavigateTo("/pricing-worksheet-opus?view=DesignCenter");
+                    break;
+
+                case "Review a published worksheet":
+                    await JSRuntime.InvokeVoidAsync("alert", "Review Published Worksheet - would open report viewer");
+                    break;
+
+                case "Job Cost Codes":
+                    await JSRuntime.InvokeVoidAsync("alert", "Job Cost Codes - would open EditJCCostCodes");
+                    break;
+
+                case "Job Cost Categories":
+                    await JSRuntime.InvokeVoidAsync("alert", "Job Cost Categories - would open EditJCCategories");
+                    break;
+
+                default:
+                    await JSRuntime.InvokeVoidAsync("alert", $"Task '{taskName}' is not yet implemented.");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error running task: {ex.Message}");
+        }
+        finally
+        {
+            StatusMessage = "Ready";
+            StateHasChanged();
+        }
+    }
+
+    // === Explorer Bar Events ===
+    private async Task OnExplorerItemClick(ExplorerItem item)
+    {
+        await RunTaskAsync(item.TaskName);
+    }
+
+    private void ToggleSection(ExplorerSection section)
+    {
+        section.IsCollapsed = !section.IsCollapsed;
+    }
+
+    // === Menu Handlers ===
+    private void CloseMenuDelayed()
+    {
+        // Simple close; in production would use a small delay
+        openMenu = "";
+    }
+
+    private async Task OnMenuSave()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert", "Save - would save active form data");
+    }
+
+    private async Task OnMenuChangeDivision()
+    {
+        openMenu = "";
+        var newDiv = await JSRuntime.InvokeAsync<string>("prompt", "Enter Division ID:");
+        if (!string.IsNullOrWhiteSpace(newDiv))
+        {
+            DivisionID = newDiv.Trim();
+            UpdateCaption();
+            await LoadInterface();
+            StateHasChanged();
+        }
+    }
+
+    private void OnMenuClose()
+    {
+        openMenu = "";
+        _refreshTimer?.Stop();
+        _refreshTimer?.Dispose();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnMassChangeWizard()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert", "Mass Change Wizard - would open FMassChange");
+    }
+
+    private async Task OnWorkReassignment()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert", "Work Reassignment Wizard - would open FVendorChange");
+    }
+
+    private async Task OnUserManager()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert", "User Manager - would open frmuser");
+    }
+
+    private async Task OnAppOptions()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert", "Options - would open EditOptions");
+        await LoadInterface();
+        StateHasChanged();
+    }
+
+    private async Task OnHelpContents()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("open", "http://www.homefront-software.com/AppHelp/PrecisionBuilder/default.htm", "_blank");
+    }
+
+    private async Task OnHelpSupport()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("open", "http://s3.parature.com/ics/support/default.asp?deptID=5534", "_blank");
+    }
+
+    private async Task OnHelpAbout()
+    {
+        openMenu = "";
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Precision Builder\nVersion: {AppVersion}\nDivision: {DivisionID}\nUser: {LoginID}\n\n© HomeFront Software");
+    }
+
+    // === Command Panel Controls ===
+    private void CloseCommandPanel()
+    {
+        CommandPanelVisible = false;
+    }
+
+    private void ShrinkCommandPanel()
+    {
+        CommandPanelMinimized = true;
+    }
+
+    private void ExpandCommandPanel()
+    {
+        CommandPanelMinimized = false;
+    }
+
+    // === Window Menu ===
+    private void ToggleTaskPanel()
+    {
+        openMenu = "";
+        if (CommandPanelVisible)
+        {
+            CommandPanelVisible = false;
+        }
+        else
+        {
+            CommandPanelVisible = true;
+            CommandPanelMinimized = false;
+        }
+    }
+
+    private void ToggleWorkflow()
+    {
+        openMenu = "";
+        WorkflowVisible = !WorkflowVisible;
+    }
+
+    // === Cleanup ===
+    public void Dispose()
+    {
+        _refreshTimer?.Stop();
+        _refreshTimer?.Dispose();
+    }
+
+    // === Model Classes ===
+    public class ExplorerSection
+    {
+        public string Title { get; set; } = "";
+        public bool IsCollapsed { get; set; } = false;
+        public List<ExplorerItem> Items { get; set; } = new();
+    }
+
+    public class ExplorerItem
+    {
+        public string Text { get; set; } = "";
+        public string Icon { get; set; } = "📄";
+        public string TaskName { get; set; } = "";
+        public bool IsBold { get; set; } = false;
+        public bool IsRed { get; set; } = false;
+    }
+}
+```

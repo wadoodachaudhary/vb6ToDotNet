@@ -1,0 +1,795 @@
+```razor
+@page "/std-addons"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Standard Addons - HomeFront</PageTitle>
+
+<style>
+    .tabs-container {
+        margin: 20px auto;
+        font-family: sans-serif;
+    }
+
+    .tab-buttons {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+    }
+
+    .tab-buttons button {
+        padding: 12px 24px;
+        border: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background 0.2s;
+    }
+
+    .tab-buttons button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-buttons button.active {
+        background: #fff;
+        border-bottom: 2px solid #007bff;
+        margin-bottom: -2px;
+        color: #007bff;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-top: none;
+        background: #fff;
+    }
+
+    .panel {
+        text-align: center;
+    }
+
+    .panel img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #333;
+    }
+
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+
+    .tbar-btn:hover:not(:disabled) {
+        background: #e8e8e8;
+        border-color: #adb5bd;
+    }
+
+    .tbar-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .tbar-btn.btn-primary {
+        background: #007bff;
+        color: white;
+        border-color: #007bff;
+    }
+
+    .tbar-btn.btn-danger {
+        background: #dc3545;
+        color: white;
+        border-color: #dc3545;
+    }
+
+    .tbar-btn.btn-success {
+        background: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+
+    .tool-label {
+        font-size: 11px;
+        display: block;
+        text-align: center;
+    }
+
+    .toolbar-sep {
+        width: 1px;
+        height: 28px;
+        background: #dee2e6;
+        margin: 0 4px;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        height: 92%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .dirty-row {
+        background-color: #fff3cd !important;
+    }
+
+    .delete-row {
+        background-color: #f8d7da !important;
+        text-decoration: line-through;
+    }
+
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        min-width: 450px;
+        max-width: 700px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .dialog-header button:hover {
+        color: #212529;
+    }
+
+    .dialog-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .dialog-body input,
+    .dialog-body select,
+    .dialog-body textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    .dialog-body input:focus,
+    .dialog-body select:focus,
+    .dialog-body textarea:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
+    }
+
+    .dialog-body label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 4px;
+        font-size: 13px;
+        color: #495057;
+    }
+
+    .dialog-body .form-group {
+        margin-bottom: 14px;
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover {
+        background: #e9ecef;
+    }
+
+    .dialog-footer .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .dialog-footer .btn-primary:hover {
+        background: #0b5ed7;
+    }
+
+    .status-bar {
+        height: 24px;
+        background: #f0f0f0;
+        border-top: 1px solid #ccc;
+        padding: 3px 8px;
+        font-size: 12px;
+        color: #555;
+        margin-top: 8px;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Standard Addons...</div>
+    </div>
+}
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1)
+        {
+            @* ── Toolbar ──────────────────────────────────────────── *@
+            <div class="toolbar-cntr">
+                <button class="tbar-btn btn-success" disabled="@(!mDirty)" @onclick="OnSaveClick">
+                    <span>💾</span>
+                    <span class="tool-label">Save</span>
+                </button>
+
+                <div class="toolbar-sep"></div>
+
+                <button class="tbar-btn btn-primary" @onclick="OnAddClick">
+                    <span>➕</span>
+                    <span class="tool-label">Add</span>
+                </button>
+                <button class="tbar-btn btn-danger" disabled="@(SelectedAddon == null)" @onclick="OnDeleteClick">
+                    <span>🗑️</span>
+                    <span class="tool-label">Delete</span>
+                </button>
+
+                <div class="toolbar-sep"></div>
+
+                <button class="tbar-btn" @onclick="OnRefreshClick">
+                    <span>🔄</span>
+                    <span class="tool-label">Refresh</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnExportClick">
+                    <span>📊</span>
+                    <span class="tool-label">Export</span>
+                </button>
+            </div>
+
+            <h3 class="page-title">Standard Addons</h3>
+
+            @* ── Main Grid ────────────────────────────────────────── *@
+            <div class="grid-container">
+                <HfGrid @ref="AddonsGrid"
+                        TValue="StdAddonRow"
+                        DataSource="@AddonsData"
+                        AllowPaging="true"
+                        AllowSorting="true"
+                        AllowFiltering="true"
+                        AllowResizing="true"
+                        AllowSelection="true"
+                        EnableHover="true"
+                        Height="600px"
+                        FilterSettingsRef="@filterSettings"
+                        PageSettingsRef="@pageSettings"
+                        SelectionSettingsRef="@selectionSettings"
+                        EditSettingsRef="@editSettings"
+                        EventsRef="@gridEvents">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(StdAddonRow.AddonId)" HeaderText="ID" Width="80px"
+                                      IsPrimaryKey="true" AllowEditing="false" Visible="false" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.AddonCode)" HeaderText="Addon Code" Width="120px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Description)" HeaderText="Description" Width="250px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Category)" HeaderText="Category" Width="120px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Phase)" HeaderText="Phase" Width="100px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Item)" HeaderText="Item" Width="100px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Qty)" HeaderText="Qty" Width="80px"
+                                      Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.UOM)" HeaderText="UOM" Width="80px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.UnitCost)" HeaderText="Unit Cost" Width="100px"
+                                      Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.ExtendedCost)" HeaderText="Extended Cost" Width="120px"
+                                      Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right"
+                                      AllowEditing="false" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Assembly)" HeaderText="Assembly" Width="120px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Model)" HeaderText="Model" Width="100px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Community)" HeaderText="Community" Width="120px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.IsActive)" HeaderText="Active" Width="70px"
+                                      Type="ColumnType.CheckBox" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.Notes)" HeaderText="Notes" Width="200px" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.SortOrder)" HeaderText="Sort Order" Width="90px"
+                                      Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                        <HfGridColumn Field="@nameof(StdAddonRow.RowState)" HeaderText="" Width="1px" Visible="false" />
+                    </HfGridColumnsBase>
+                </HfGrid>
+            </div>
+
+            <div class="status-bar">
+                @StatusMessage
+            </div>
+        }
+        else if (activeTab == 2)
+        {
+            <div class="panel">
+                <p style="padding: 40px; color: #6c757d;">VB6 screenshot not available in this build.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@* ── Add Addon Dialog ──────────────────────────────────────────── *@
+@if (IsAddDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsAddDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Add Standard Addon</span>
+                <button @onclick="() => IsAddDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-group">
+                    <label>Addon Code:</label>
+                    <input @bind="NewAddonCode" placeholder="Enter addon code" />
+                </div>
+                <div class="form-group">
+                    <label>Description:</label>
+                    <input @bind="NewAddonDescription" placeholder="Enter description" />
+                </div>
+                <div class="form-group">
+                    <label>Category:</label>
+                    <input @bind="NewAddonCategory" placeholder="Enter category" />
+                </div>
+                <div class="form-group">
+                    <label>Phase:</label>
+                    <input @bind="NewAddonPhase" placeholder="Enter phase" />
+                </div>
+                <div class="form-group">
+                    <label>Item:</label>
+                    <input @bind="NewAddonItem" placeholder="Enter item" />
+                </div>
+                <div class="form-group">
+                    <label>Qty:</label>
+                    <input type="number" @bind="NewAddonQty" step="0.01" />
+                </div>
+                <div class="form-group">
+                    <label>UOM:</label>
+                    <input @bind="NewAddonUOM" placeholder="Enter UOM" />
+                </div>
+                <div class="form-group">
+                    <label>Unit Cost:</label>
+                    <input type="number" @bind="NewAddonUnitCost" step="0.01" />
+                </div>
+                <div class="form-group">
+                    <label>Notes:</label>
+                    <textarea @bind="NewAddonNotes" rows="3" placeholder="Enter notes..."></textarea>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnCreateAddon">Create</button>
+                <button class="btn" @onclick="() => IsAddDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private int activeTab = 1;
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string StatusMessage = "Ready";
+
+    // === Grid ===
+    private HfGrid<StdAddonRow>? AddonsGrid;
+    private List<StdAddonRow> AddonsData = new();
+    private StdAddonRow? SelectedAddon;
+
+    // === Grid Settings ===
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = new int[] { 25, 50, 100, 200 } };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = true
+    };
+    private HfGridEvents<StdAddonRow> gridEvents = new();
+
+    // === Add Dialog State ===
+    private bool IsAddDialogVisible = false;
+    private string NewAddonCode = "";
+    private string NewAddonDescription = "";
+    private string NewAddonCategory = "";
+    private string NewAddonPhase = "";
+    private string NewAddonItem = "";
+    private decimal NewAddonQty = 1;
+    private string NewAddonUOM = "";
+    private decimal NewAddonUnitCost = 0;
+    private string NewAddonNotes = "";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<StdAddonRow>>(this, OnRowSelected);
+        gridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<StdAddonRow>>(this, OnRowDeselected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<StdAddonRow>>(this, OnCellSaved);
+
+        await LoadDataAsync();
+    }
+
+    // === Load Data ===
+    private async Task LoadDataAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var sql = @"
+                SELECT 
+                    AddonId, AddonCode, Description, Category, Phase, Item,
+                    Qty, UOM, UnitCost, Assembly, Model, Community,
+                    ISNULL(Inactive, 0) AS Inactive, Notes, SortOrder
+                FROM tblStdAddons
+                WHERE DivisionID = @DivisionID
+                ORDER BY SortOrder, AddonCode";
+
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+
+            AddonsData = rows.Select(r => new StdAddonRow
+            {
+                AddonId = SafeInt(r.ContainsKey("AddonId") ? r["AddonId"] : null),
+                AddonCode = r["AddonCode"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                Category = r["Category"]?.ToString() ?? "",
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                Qty = SafeDecimal(r["Qty"], 1),
+                UOM = r["UOM"]?.ToString() ?? "",
+                UnitCost = SafeDecimal(r["UnitCost"]),
+                ExtendedCost = SafeDecimal(r["Qty"], 1) * SafeDecimal(r["UnitCost"]),
+                Assembly = r["Assembly"]?.ToString() ?? "",
+                Model = r["Model"]?.ToString() ?? "",
+                Community = r["Community"]?.ToString() ?? "",
+                IsActive = r["Inactive"]?.ToString() != "1" && r["Inactive"]?.ToString() != "True",
+                Notes = r["Notes"]?.ToString() ?? "",
+                SortOrder = SafeInt(r.ContainsKey("SortOrder") ? r["SortOrder"] : null),
+                RowState = "CLEAN"
+            }).ToList();
+
+            mDirty = false;
+            StatusMessage = $"Loaded {AddonsData.Count} standard addon(s)";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadDataAsync error: {ex.Message}");
+            StatusMessage = $"Error loading data: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveDataAsync()
+    {
+        if (!mDirty) return true;
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            // Delete marked rows
+            foreach (var row in AddonsData.Where(r => r.RowState == "Deleted"))
+            {
+                if (row.AddonId > 0)
+                {
+                    await db.ExecuteAsync(
+                        "DELETE FROM tblStdAddons WHERE DivisionID = @DivisionID AND AddonId = @AddonId",
+                        new { DivisionID, row.AddonId });
+                }
+            }
+
+            // Update dirty rows
+            foreach (var row in AddonsData.Where(r => r.RowState == "DIRTY"))
+            {
+                if (row.AddonId > 0)
+                {
+                    await db.ExecuteAsync(@"
+                        UPDATE tblStdAddons SET
+                            AddonCode = @AddonCode, Description = @Description, Category = @Category,
+                            Phase = @Phase, Item = @Item, Qty = @Qty, UOM = @UOM,
+                            UnitCost = @UnitCost, Assembly = @Assembly, Model = @Model,
+                            Community = @Community, Inactive = @Inactive, Notes = @Notes,
+                            SortOrder = @SortOrder
+                        WHERE DivisionID = @DivisionID AND AddonId = @AddonId",
+                        new
+                        {
+                            DivisionID,
+                            row.AddonId,
+                            row.AddonCode,
+                            row.Description,
+                            row.Category,
+                            row.Phase,
+                            row.Item,
+                            row.Qty,
+                            row.UOM,
+                            row.UnitCost,
+                            row.Assembly,
+                            row.Model,
+                            row.Community,
+                            Inactive = !row.IsActive,
+                            row.Notes,
+                            row.SortOrder
+                        });
+                }
+                row.RowState = "CLEAN";
+            }
+
+            AddonsData.RemoveAll(r => r.RowState == "Deleted");
+            mDirty = false;
+            StatusMessage = "Data saved successfully.";
+            await JSRuntime.InvokeVoidAsync("alert", "Data saved successfully.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveDataAsync error: {ex.Message}");
+            StatusMessage = $"Error saving data: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Event Handlers ===
+    private async Task OnSaveClick() => await SaveDataAsync();
+
+    private void OnAddClick()
+    {
+        NewAddonCode = "";
+        NewAddonDescription = "";
+        NewAddonCategory = "";
+        NewAddonPhase = "";
+        NewAddonItem = "";
+        NewAddonQty = 1;
+        NewAddonUOM = "";
+        NewAddonUnitCost = 0;
+        NewAddonNotes = "";
+        IsAddDialogVisible = true;
+    }
+
+    private async Task OnCreateAddon()
+    {
+        if (string.IsNullOrWhiteSpace(NewAddonCode))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Addon Code is required.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(NewAddonDescription))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Description is required.");
+            return;
+        }
+
+        try
+        {
+            await db.ExecuteAsync(@"
+                INSERT INTO tblStdAddons 
+                    (DivisionID, AddonCode, Description, Category, Phase, Item, Qty, UOM, UnitCost, Notes, Inactive, SortOrder)
+                VALUES 
+                    (@DivisionID, @AddonCode, @Description, @Category, @Phase, @Item, @Qty, @UOM, @UnitCost, @Notes, 0, 0)",
+                new
+                {
+                    DivisionID,
+                    AddonCode = NewAddonCode,
+                    Description = NewAddonDescription,
+                    Category = NewAddonCategory,
+                    Phase = NewAddonPhase,
+                    Item = NewAddonItem,
+                    Qty = NewAddonQty,
+                    UOM = NewAddonUOM,
+                    UnitCost = NewAddonUnitCost,
+                    Notes = NewAddonNotes
+                });
+
+            IsAddDialogVisible = false;
+            await LoadDataAsync();
+            StatusMessage = $"Addon '{NewAddonCode}' created successfully.";
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating addon: {ex.Message}");
+        }
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (SelectedAddon == null) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Are you sure you want to delete addon '{SelectedAddon.AddonCode}'?");
+        if (confirm)
+        {
+            SelectedAddon.RowState = "Deleted";
+            mDirty = true;
+            StatusMessage = $"Addon '{SelectedAddon.AddonCode}' marked for deletion. Save to confirm.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRefreshClick()
+    {
+        if (mDirty)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "You have unsaved changes. Discard and refresh?");
+            if (!confirm) return;
+        }
+        await LoadDataAsync();
+    }
+
+    private async Task OnExportClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Export to Excel - not yet implemented.");
+    }
+
+    private void OnRowSelected(RowSelectEventArgs<StdAddonRow> args)
+    {
+        SelectedAddon = args.Data;
+    }
+
+    private void OnRowDeselected(RowSelectEventArgs<StdAddonRow> args)
+    {
+        SelectedAddon = null;
+    }
+
+    private void OnCellSaved(CellSaveArgs<StdAddonRow> args)
+    {
+        if (args.Data != null)
+        {
+            args.Data.ExtendedCost = args.Data.Qty * args.Data.UnitCost;
+            args.Data.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    // === Helpers ===
+    private int SafeInt(object? val, int def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToInt32(val)
+            : def;
+
+    private decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+
+    // === Model ===
+    public class StdAddonRow
+    {
+        public int AddonId { get; set; }
+        public string AddonCode { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public decimal Qty { get; set; } = 1;
+        public string UOM { get; set; } = "";
+        public decimal UnitCost { get; set; }
+        public decimal ExtendedCost { get; set; }
+        public string Assembly { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Community { get; set; } = "";
+        public bool IsActive { get; set; } = true;
+        public string Notes { get; set; } = "";
+        public int SortOrder { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+    }
+}
+```

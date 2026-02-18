@@ -1,0 +1,667 @@
+```razor
+@page "/estimate-items"
+@page "/estimate-items/{Mode}"
+@page "/estimate-items/{Mode}/{Job}"
+
+@rendermode InteractiveServer
+
+@using System.Data
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using Microsoft.JSInterop
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Estimate Items - HomeFront</PageTitle>
+
+<style>
+    .tabs-container { margin: 20px auto; font-family: sans-serif; }
+    .tab-buttons { display: flex; border-bottom: 2px solid #ddd; }
+    .tab-buttons button {
+        padding: 10px 20px; border: none; background: #f0f0f0; cursor: pointer; font-size: 14px;
+        transition: background 0.2s;
+    }
+    .tab-buttons button:hover { background: #e0e0e0; }
+    .tab-buttons button.active {
+        background: #fff; border-bottom: 2px solid #007bff; margin-bottom: -2px; color: #007bff; font-weight: bold;
+    }
+    .tab-content { padding: 12px; border: 1px solid #ddd; border-top: none; background: #fff; }
+
+    .toolbar-cntr {
+        padding: 8px 12px; border: 1px solid #dee2e6; border-radius: 4px; background: #f8f9fa;
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;
+    }
+    .tbar-btn {
+        display: inline-flex; flex-direction: column; align-items: center; padding: 6px 12px;
+        border: 1px solid #ced4da; border-radius: 4px; background: #fff; cursor: pointer;
+        font-size: 11px; transition: background 0.15s; min-width: 70px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tool-label { font-size: 11px; }
+    .tbar-separator { width: 1px; height: 32px; background: #ced4da; margin: 0 4px; }
+
+    .job-panel {
+        border: 1px solid #dee2e6; border-radius: 6px; padding: 10px 12px; background: #fff; margin-bottom: 10px;
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    }
+    .job-field { display: flex; align-items: center; gap: 8px; }
+    .job-field label { min-width: 110px; text-align: right; font-weight: 600; font-size: 12px; }
+    .job-field input, .job-field select, .job-field textarea {
+        flex: 1; padding: 5px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px;
+    }
+    .job-field textarea { height: 60px; }
+
+    .split-container {
+        display: grid; grid-template-columns: 320px 1fr; gap: 10px; min-height: 520px;
+    }
+    .tree-panel, .grid-panel { border: 1px solid #dee2e6; border-radius: 6px; background: #fff; }
+    .tree-panel { padding: 6px; }
+    .grid-panel { padding: 6px; }
+
+    .subtabs { display: flex; gap: 8px; margin-bottom: 6px; }
+    .subtabs button {
+        padding: 6px 12px; border: 1px solid #ced4da; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px;
+    }
+    .subtabs button.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .note { font-size: 11px; color: #6c757d; }
+</style>
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1)
+        {
+            <div class="toolbar-cntr">
+                <button class="tbar-btn" @onclick="OnOpenClick">
+                    <span class="tool-label">Open</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnSaveClick" disabled="@(!mDirty)">
+                    <span class="tool-label">Save</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnDeleteClick" disabled="@string.IsNullOrWhiteSpace(JobNumber) || (ModeValue != FCEMode.fceQuote)">
+                    <span class="tool-label">Delete</span>
+                </button>
+                <div class="tbar-separator"></div>
+                <button class="tbar-btn" @onclick="OnGenerateClick" disabled="@string.IsNullOrWhiteSpace(JobNumber)">
+                    <span class="tool-label">Generate</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnRepriceClick" disabled="@string.IsNullOrWhiteSpace(JobNumber)">
+                    <span class="tool-label">Rfrsh Costs</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnPreviewClick" disabled="@string.IsNullOrWhiteSpace(JobNumber)">
+                    <span class="tool-label">Preview</span>
+                </button>
+                <div class="tbar-separator"></div>
+                <button class="tbar-btn" @onclick="OnToggleBudgetsClick" disabled="@string.IsNullOrWhiteSpace(JobNumber)">
+                    <span class="tool-label">@((ModeValue == FCEMode.fcePO) ? "View Budgets" : "View PO's")</span>
+                </button>
+                <div class="tbar-separator"></div>
+                <label class="note">
+                    <input type="checkbox" @bind="HideCancelledItems" @bind:event="onchange" />
+                    Hide Cancelled Items
+                </label>
+            </div>
+
+            <div class="job-panel">
+                <div class="job-field">
+                    <label>@(ModeValue == FCEMode.fceQuote ? "Quote Number" : "Job Number")</label>
+                    <input @bind="JobNumber" @bind:event="onchange" />
+                </div>
+                <div class="job-field">
+                    <label>Description</label>
+                    <input @bind="JobDescription" @bind:event="onchange" />
+                </div>
+                <div class="job-field">
+                    <label>Address</label>
+                    <input @bind="JobAddress" @bind:event="onchange" />
+                </div>
+                <div class="job-field">
+                    <label>Community</label>
+                    <select @bind="JobCommunity" @bind:event="onchange">
+                        <option value="">--</option>
+                        @foreach (var item in CommunityItems)
+                        {
+                            <option value="@item.Value">@item.Text</option>
+                        }
+                    </select>
+                </div>
+                <div class="job-field">
+                    <label>Phase</label>
+                    <input @bind="JobPhase" @bind:event="onchange" />
+                </div>
+                <div class="job-field">
+                    <label>Model</label>
+                    <input @bind="JobModel" @bind:event="onchange" />
+                </div>
+                <div class="job-field" style="grid-column: span 3;">
+                    <label>Notes</label>
+                    <textarea @bind="JobNotes" @bind:event="onchange"></textarea>
+                </div>
+            </div>
+
+            <div class="split-container">
+                <div class="tree-panel">
+                    <HfTreeGrid TValue="AssemblyNode"
+                                DataSource="@AssemblyTreeData"
+                                IdMapping="NodeID"
+                                ParentIdMapping="ParentID"
+                                TreeColumnIndex="0"
+                                AllowSelection="true"
+                                Height="520px"
+                                RowSelected="OnAssemblySelected">
+                        <HfTreeGridColumn Field="Node" HeaderText="Assemblies" Width="260px" />
+                        <HfTreeGridColumn Field="EstAssemblyID" Visible="false" />
+                    </HfTreeGrid>
+                </div>
+                <div class="grid-panel">
+                    <div class="subtabs">
+                        <button class="@(sectionTab == 0 ? "active" : "")" @onclick="() => sectionTab = 0">Purchasing</button>
+                        <button class="@(sectionTab == 1 ? "active" : "")" @onclick="() => sectionTab = 1">Billing</button>
+                        <button class="@(sectionTab == 2 ? "active" : "")" @onclick="() => sectionTab = 2">RFQ's</button>
+                    </div>
+
+                    @if (sectionTab == 0)
+                    {
+                        <HfGrid @ref="ItemsGrid"
+                                TValue="EstimateItemRow"
+                                DataSource="@ItemsView"
+                                AllowSelection="true"
+                                AllowSorting="true"
+                                AllowFiltering="true"
+                                AllowResizing="true"
+                                Height="480px"
+                                FilterSettingsRef="@itemsFilterSettings"
+                                PageSettingsRef="@itemsPageSettings"
+                                SelectionSettingsRef="@itemsSelectionSettings"
+                                EditSettingsRef="@itemsEditSettings"
+                                EventsRef="@itemsGridEvents">
+                            <HfGridColumnsBase>
+                                <HfGridColumn Field="@nameof(EstimateItemRow.EstItemID)" Visible="false" IsPrimaryKey="true" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.EstPhase)" HeaderText="Phase" Width="90px" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.EstItem)" HeaderText="Item" Width="90px" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.ItemDesc)" HeaderText="Description" Width="240px" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.POIndex)" HeaderText="PO Index" Width="90px" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.JCCostCode)" HeaderText="Cost Code" Width="90px" />
+                                <HfGridColumn Field="@nameof(EstimateItemRow.JCCategory)" HeaderText="Category" Width="90px" />
+
+                                @if (ShowBudgetColumns)
+                                {
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.BudgetVendorName)" HeaderText="Budget Vendor" Width="140px" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.BudgetQty)" HeaderText="Budget Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.BudgetRate)" HeaderText="Budget Rate" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.BudgetPretax)" HeaderText="Budget Pretax" Width="110px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                                }
+
+                                @if (ShowPOColumns)
+                                {
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.POVendorName)" HeaderText="PO Vendor" Width="140px" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.POQty)" HeaderText="PO Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.PORate)" HeaderText="PO Rate" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.POPretax)" HeaderText="PO Pretax" Width="110px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                                    <HfGridColumn Field="@nameof(EstimateItemRow.PONumber)" HeaderText="PO #" Width="100px" />
+                                }
+
+                                <HfGridColumn Field="@nameof(EstimateItemRow.RowState)" Visible="false" />
+                            </HfGridColumnsBase>
+                        </HfGrid>
+                        <div class="note" style="margin-top:6px;">Editing items updates Budget/PO totals on save.</div>
+                    }
+                    else if (sectionTab == 1)
+                    {
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <HfGrid TValue="ContractRow" DataSource="@ContractData" Height="440px" AllowSorting="true">
+                                <HfGridColumnsBase>
+                                    <HfGridColumn Field="@nameof(ContractRow.BillingItemID)" Visible="false" IsPrimaryKey="true" />
+                                    <HfGridColumn Field="@nameof(ContractRow.Description)" HeaderText="Description" Width="180px" />
+                                    <HfGridColumn Field="@nameof(ContractRow.Price)" HeaderText="Price" Width="90px" Format="C2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(ContractRow.TaxGroup)" HeaderText="Tax Group" Width="90px" />
+                                    <HfGridColumn Field="@nameof(ContractRow.RevenueAccount)" HeaderText="Account" Width="90px" />
+                                </HfGridColumnsBase>
+                            </HfGrid>
+
+                            <HfGrid TValue="InvoiceRow" DataSource="@InvoiceData" Height="440px" AllowSorting="true">
+                                <HfGridColumnsBase>
+                                    <HfGridColumn Field="@nameof(InvoiceRow.Invoice)" HeaderText="Invoice" Width="90px" />
+                                    <HfGridColumn Field="@nameof(InvoiceRow.InvoiceDate)" HeaderText="Date" Width="100px" />
+                                    <HfGridColumn Field="@nameof(InvoiceRow.Description)" HeaderText="Description" Width="180px" />
+                                    <HfGridColumn Field="@nameof(InvoiceRow.Amount)" HeaderText="Amount" Width="90px" Format="C2" TextAlign="TextAlign.Right" />
+                                    <HfGridColumn Field="@nameof(InvoiceRow.PostedDate)" HeaderText="Posted" Width="110px" />
+                                </HfGridColumnsBase>
+                            </HfGrid>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="note">RFQ view placeholder. Use Purchasing view to manage items.</div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="text-align:center; padding:40px; color:#6c757d;">
+                <p>VB6 screenshot not available in this build.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+    [Parameter] public string? Job { get; set; }
+
+    private readonly DbWrapperSqlServer db = new();
+    private const int DivisionID = 1;
+
+    private int activeTab = 1;
+    private int sectionTab = 0;
+
+    private bool mDirty = false;
+    private bool HideCancelledItems = false;
+
+    private string JobNumber = "";
+    private string JobDescription = "";
+    private string JobAddress = "";
+    private string JobCommunity = "";
+    private string JobPhase = "";
+    private string JobModel = "";
+    private string JobNotes = "";
+
+    private FCEMode ModeValue = FCEMode.fceBudget;
+
+    private List<ComboItem> CommunityItems = new();
+    private List<AssemblyNode> AssemblyTreeData = new();
+    private long SelectedAssemblyId = 0;
+
+    private List<EstimateItemRow> ItemsData = new();
+    private List<ContractRow> ContractData = new();
+    private List<InvoiceRow> InvoiceData = new();
+
+    private HfGrid<EstimateItemRow>? ItemsGrid;
+
+    private HfFilterSettings itemsFilterSettings = new() { Type = FilterType.Menu };
+    private HfPageSettings itemsPageSettings = new() { PageSize = 40 };
+    private HfSelectionSettings itemsSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+    private HfEditSettings itemsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
+    private HfGridEvents<EstimateItemRow> itemsGridEvents = new();
+
+    private bool ShowBudgetColumns => ModeValue != FCEMode.fcePO;
+    private bool ShowPOColumns => ModeValue == FCEMode.fcePO || ModeValue == FCEMode.fceBudget;
+
+    private IEnumerable<EstimateItemRow> ItemsView =>
+        HideCancelledItems
+            ? ItemsData.Where(x => !x.BudgetDeleted && !x.PODeleted)
+            : ItemsData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        itemsGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<EstimateItemRow>>(this, OnItemCellSave);
+        ModeValue = ParseMode(Mode);
+        await LoadCommunitiesAsync();
+
+        if (!string.IsNullOrWhiteSpace(Job))
+        {
+            JobNumber = Job!;
+            await LoadJobAsync(JobNumber);
+        }
+    }
+
+    private FCEMode ParseMode(string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode)) return FCEMode.fceBudget;
+        return mode.Trim().ToLower() switch
+        {
+            "quote" => FCEMode.fceQuote,
+            "budget" => FCEMode.fceBudget,
+            "po" => FCEMode.fcePO,
+            "contract" => FCEMode.fceContract,
+            "bids" => FCEMode.fceBids,
+            "billing" => FCEMode.fceBilling,
+            _ => FCEMode.fceBudget
+        };
+    }
+
+    private async Task LoadCommunitiesAsync()
+    {
+        var rows = await db.QueryAsync("SELECT Description, Area FROM tblLocality ORDER BY Description");
+        CommunityItems = rows.Select(r => new ComboItem
+        {
+            Text = r["Description"]?.ToString() ?? "",
+            Value = r["Area"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadJobAsync(string jobNo)
+    {
+        var rows = await db.QueryAsync(
+            "SELECT Job_No, Description, Municipal_Address, Community, CommunityPhase, Model, Notes FROM tblJobs WHERE DivisionID=@DivisionID AND Job_No=@Job",
+            new { DivisionID, Job = jobNo });
+        if (rows.Any())
+        {
+            var r = rows.First();
+            JobNumber = r["Job_No"]?.ToString() ?? "";
+            JobDescription = r["Description"]?.ToString() ?? "";
+            JobAddress = r["Municipal_Address"]?.ToString() ?? "";
+            JobCommunity = r["Community"]?.ToString() ?? "";
+            JobPhase = r["CommunityPhase"]?.ToString() ?? "";
+            JobModel = r["Model"]?.ToString() ?? "";
+            JobNotes = r["Notes"]?.ToString() ?? "";
+        }
+        await LoadAssembliesAsync();
+        await LoadContractAsync();
+        await LoadInvoicesAsync();
+        mDirty = false;
+    }
+
+    private async Task LoadAssembliesAsync()
+    {
+        AssemblyTreeData.Clear();
+        var root = new AssemblyNode { NodeID = 1, ParentID = null, Node = "Assemblies", EstAssemblyID = 0 };
+        AssemblyTreeData.Add(root);
+
+        var rows = await db.QueryAsync(
+            "SELECT EstAssemblyID, HFDescription FROM EstimateAssemblies WHERE DivisionID=@DivisionID AND Job=@Job ORDER BY HFDescription",
+            new { DivisionID, Job = JobNumber });
+
+        var id = 2;
+        foreach (var r in rows)
+        {
+            AssemblyTreeData.Add(new AssemblyNode
+            {
+                NodeID = id++,
+                ParentID = 1,
+                Node = r["HFDescription"]?.ToString() ?? "Assembly",
+                EstAssemblyID = Convert.ToInt64(r["EstAssemblyID"] ?? 0)
+            });
+        }
+    }
+
+    private async Task OnAssemblySelected(TreeRowSelectEventArgs<AssemblyNode> args)
+    {
+        if (args.Data == null || args.Data.EstAssemblyID == 0) return;
+        SelectedAssemblyId = args.Data.EstAssemblyID;
+        await LoadItemsAsync(SelectedAssemblyId);
+    }
+
+    private async Task LoadItemsAsync(long estAssemblyId)
+    {
+        ItemsData.Clear();
+        var rows = await db.QueryAsync(@"
+            SELECT EstItemID, EstPhase, EstItem, ItemDesc, POIndex, JCCostCode, JCCategory,
+                   BudgetVendorName, BudgetQty, BudgetRate, BudgetPretax, BudgetTaxGroup,
+                   POVendorName, POQty, PORate, POPretax, PONumber, BudgetDeleted, PODeleted
+            FROM EstimatedItems
+            WHERE DivisionID=@DivisionID AND EstAssemblyID=@EstAssemblyID",
+            new { DivisionID, EstAssemblyID = estAssemblyId });
+
+        foreach (var r in rows)
+        {
+            ItemsData.Add(new EstimateItemRow
+            {
+                EstItemID = Convert.ToInt64(r["EstItemID"] ?? 0),
+                EstPhase = r["EstPhase"]?.ToString() ?? "",
+                EstItem = r["EstItem"]?.ToString() ?? "",
+                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
+                POIndex = r["POIndex"]?.ToString() ?? "",
+                JCCostCode = r["JCCostCode"]?.ToString() ?? "",
+                JCCategory = r["JCCategory"]?.ToString() ?? "",
+                BudgetVendorName = r["BudgetVendorName"]?.ToString() ?? "",
+                BudgetQty = ToDouble(r["BudgetQty"]),
+                BudgetRate = ToDouble(r["BudgetRate"]),
+                BudgetPretax = ToDouble(r["BudgetPretax"]),
+                BudgetTaxGroup = r["BudgetTaxGroup"]?.ToString() ?? "",
+                POVendorName = r["POVendorName"]?.ToString() ?? "",
+                POQty = ToDouble(r["POQty"]),
+                PORate = ToDouble(r["PORate"]),
+                POPretax = ToDouble(r["POPretax"]),
+                PONumber = r["PONumber"]?.ToString() ?? "",
+                BudgetDeleted = ToBool(r["BudgetDeleted"]),
+                PODeleted = ToBool(r["PODeleted"])
+            });
+        }
+    }
+
+    private async Task LoadContractAsync()
+    {
+        var rows = await db.QueryAsync(
+            "SELECT BillingItemID, Description, Price, TaxGroup, RevenueAccount FROM BillingItems WHERE Job=@Job",
+            new { Job = JobNumber });
+
+        ContractData = rows.Select(r => new ContractRow
+        {
+            BillingItemID = Convert.ToInt64(r["BillingItemID"] ?? 0),
+            Description = r["Description"]?.ToString() ?? "",
+            Price = ToDouble(r["Price"]),
+            TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+            RevenueAccount = r["RevenueAccount"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadInvoicesAsync()
+    {
+        var rows = await db.QueryAsync(
+            "SELECT Invoice, InvoiceDate, Description, Amount, PostedDate FROM ARInvoices WHERE DivisionID=@DivisionID AND Job=@Job",
+            new { DivisionID, Job = JobNumber });
+
+        InvoiceData = rows.Select(r => new InvoiceRow
+        {
+            Invoice = r["Invoice"]?.ToString() ?? "",
+            InvoiceDate = r["InvoiceDate"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? "",
+            Amount = ToDouble(r["Amount"]),
+            PostedDate = r["PostedDate"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task OnOpenClick()
+    {
+        var job = await JSRuntime.InvokeAsync<string>("prompt", "Enter job/quote number", JobNumber);
+        if (!string.IsNullOrWhiteSpace(job))
+        {
+            JobNumber = job.Trim();
+            await LoadJobAsync(JobNumber);
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveDataAsync();
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (ModeValue != FCEMode.fceQuote || string.IsNullOrWhiteSpace(JobNumber)) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete quote {JobNumber}?");
+        if (!confirm) return;
+
+        await db.ExecuteAsync("DELETE FROM tblJobs WHERE DivisionID=@DivisionID AND Job_No=@Job", new { DivisionID, Job = JobNumber });
+        await db.ExecuteAsync("DELETE FROM tblCustomers WHERE DivisionID=@DivisionID AND Job_No=@Job", new { DivisionID, Job = JobNumber });
+        await db.ExecuteAsync("DELETE FROM EstimateAssemblies WHERE DivisionID=@DivisionID AND Job=@Job", new { DivisionID, Job = JobNumber });
+        await db.ExecuteAsync("DELETE FROM EstimateItems WHERE DivisionID=@DivisionID AND Job=@Job", new { DivisionID, Job = JobNumber });
+
+        JobNumber = "";
+        JobDescription = "";
+        JobAddress = "";
+        JobCommunity = "";
+        JobPhase = "";
+        JobModel = "";
+        JobNotes = "";
+        ItemsData.Clear();
+        AssemblyTreeData.Clear();
+        mDirty = false;
+    }
+
+    private async Task OnGenerateClick() => await JSRuntime.InvokeVoidAsync("alert", "Generate is not implemented in this build.");
+    private async Task OnRepriceClick() => await JSRuntime.InvokeVoidAsync("alert", "Refresh costs is not implemented in this build.");
+    private async Task OnPreviewClick() => await JSRuntime.InvokeVoidAsync("alert", "Preview is not implemented in this build.");
+    private async Task OnToggleBudgetsClick()
+    {
+        var target = (ModeValue == FCEMode.fcePO) ? "budget" : "po";
+        await JSRuntime.InvokeVoidAsync("alert", $"Switch to {target} view not implemented in this build.");
+    }
+
+    private void OnItemCellSave(CellSaveArgs<EstimateItemRow> args)
+    {
+        if (args.Data == null) return;
+        var row = args.Data;
+
+        if (args.ColumnName == nameof(EstimateItemRow.BudgetQty) || args.ColumnName == nameof(EstimateItemRow.BudgetRate))
+        {
+            row.BudgetPretax = row.BudgetQty * row.BudgetRate;
+        }
+        if (args.ColumnName == nameof(EstimateItemRow.POQty) || args.ColumnName == nameof(EstimateItemRow.PORate))
+        {
+            row.POPretax = row.POQty * row.PORate;
+        }
+
+        row.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    private async Task SaveDataAsync()
+    {
+        if (!mDirty) return;
+        if (string.IsNullOrWhiteSpace(JobNumber)) return;
+
+        await db.ExecuteAsync(@"
+            UPDATE tblJobs
+            SET Description=@Description,
+                Notes=@Notes,
+                Community=@Community,
+                CommunityPhase=@CommunityPhase,
+                Model=@Model,
+                Municipal_Address=@Address
+            WHERE DivisionID=@DivisionID AND Job_No=@Job",
+            new
+            {
+                DivisionID,
+                Job = JobNumber,
+                Description = JobDescription,
+                Notes = JobNotes,
+                Community = JobCommunity,
+                CommunityPhase = JobPhase,
+                Model = JobModel,
+                Address = JobAddress
+            });
+
+        foreach (var row in ItemsData.Where(x => x.RowState == "DIRTY"))
+        {
+            await db.ExecuteAsync(@"
+                UPDATE EstimateItems SET
+                    POIndex=@POIndex,
+                    JCCostCode=@JCCostCode,
+                    JCCategory=@JCCategory,
+                    BudgetQty=@BudgetQty,
+                    BudgetRate=@BudgetRate,
+                    BudgetPretax=@BudgetPretax,
+                    POQty=@POQty,
+                    PORate=@PORate,
+                    POPretax=@POPretax
+                WHERE DivisionID=@DivisionID AND EstItemID=@EstItemID",
+                new
+                {
+                    DivisionID,
+                    row.EstItemID,
+                    row.POIndex,
+                    row.JCCostCode,
+                    row.JCCategory,
+                    row.BudgetQty,
+                    row.BudgetRate,
+                    row.BudgetPretax,
+                    row.POQty,
+                    row.PORate,
+                    row.POPretax
+                });
+
+            row.RowState = "CLEAN";
+        }
+
+        mDirty = false;
+    }
+
+    private static double ToDouble(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        return Convert.ToDouble(value);
+    }
+
+    private static bool ToBool(object? value)
+    {
+        if (value == null || value == DBNull.Value) return false;
+        var s = value.ToString() ?? "";
+        return s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1";
+    }
+
+    public enum FCEMode
+    {
+        fceQuote = 1,
+        fceBudget,
+        fcePO,
+        fceContract,
+        fceBids,
+        fceBilling
+    }
+
+    public class ComboItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    public class AssemblyNode
+    {
+        public int NodeID { get; set; }
+        public int? ParentID { get; set; }
+        public string Node { get; set; } = "";
+        public long EstAssemblyID { get; set; }
+    }
+
+    public class EstimateItemRow
+    {
+        public long EstItemID { get; set; }
+        public string EstPhase { get; set; } = "";
+        public string EstItem { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string BudgetVendorName { get; set; } = "";
+        public double BudgetQty { get; set; }
+        public double BudgetRate { get; set; }
+        public double BudgetPretax { get; set; }
+        public string BudgetTaxGroup { get; set; } = "";
+        public string POVendorName { get; set; } = "";
+        public double POQty { get; set; }
+        public double PORate { get; set; }
+        public double POPretax { get; set; }
+        public string PONumber { get; set; } = "";
+        public bool BudgetDeleted { get; set; }
+        public bool PODeleted { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    public class ContractRow
+    {
+        public long BillingItemID { get; set; }
+        public string Description { get; set; } = "";
+        public double Price { get; set; }
+        public string TaxGroup { get; set; } = "";
+        public string RevenueAccount { get; set; } = "";
+    }
+
+    public class InvoiceRow
+    {
+        public string Invoice { get; set; } = "";
+        public string InvoiceDate { get; set; } = "";
+        public string Description { get; set; } = "";
+        public double Amount { get; set; }
+        public string PostedDate { get; set; } = "";
+    }
+}
+```

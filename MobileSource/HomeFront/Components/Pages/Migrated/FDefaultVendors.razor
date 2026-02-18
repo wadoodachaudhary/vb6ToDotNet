@@ -1,0 +1,523 @@
+@page "/default-vendor-opus"
+
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Dynamic
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<PageTitle>Default Vendors</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .tbar-btn:hover {
+        background: #e8e8e8;
+    }
+
+    .tbar-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+        text-align: center;
+        font-size: 12px;
+    }
+
+    .dirty-cell {
+        background-color: #fff3cd !important;
+    }
+
+    .poindex-cell {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .poindex-icon {
+        width: 16px;
+        height: 16px;
+    }
+
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        padding: 40px;
+    }
+</style>
+
+<!-- Toolbar -->
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="() => SaveData(false)" disabled="@(!_isDirty)">
+        <img src="images/32/save.ico" class="tbar-icon" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" @onclick="ShowFindDialog">
+        <img src="images/32/ViewVilter2.ico" class="tbar-icon" />
+        <span class="tool-label">Find</span>
+    </button>
+</div>
+
+<div class="default-vendors-container">
+    @if (_isLoading)
+    {
+        <div class="loading-spinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <HfGrid @ref="_grid"
+                TValue="ExpandoObject"
+                DataSource="@_gridData"
+                AllowSelection="true"
+                AllowResizing="true"
+                AllowSorting="true"
+                Height="calc(100vh - 200px)"
+                Width="1600px">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="POIndexDisplay"
+                              HeaderText="PO Index"
+                              IsPrimaryKey="true"
+                              AllowEditing="false"
+                              Width="200px">
+                    <Template Context="dvPoi">
+                        @{
+                            var dvPoiData = dvPoi as IDictionary<string, object>;
+                            <div class="poindex-cell">
+                                <span>@dvPoiData?["POIndexDisplay"]</span>
+                            </div>
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="Area_GBL"
+                              HeaderText="Global Default"
+                              Width="200px"
+                              AllowEditing="true">
+                    <Template Context="dvGbl">
+                        @{
+                            var dvGblData = dvGbl as IDictionary<string, object>;
+                            var dvGblKey = "Area_GBL";
+                            var dvGblCell = dvGblData?.ContainsKey(dvGblKey) == true ? dvGblData[dvGblKey] as VendorCell : null;
+                            <div class="@(dvGblCell?.IsDirty == true ? "dirty-cell" : "")">
+                                @(dvGblCell?.VendorName ?? "")
+                            </div>
+                        }
+                    </Template>
+                </HfGridColumn>
+                @foreach (var area in _areas)
+                {
+                    var areaCode = area.AreaCode;
+                    var areaDesc = area.Description;
+                    <HfGridColumn Field="@($"Area_{areaCode}")"
+                                  HeaderText="@areaDesc"
+                                  Width="200px"
+                                  AllowEditing="true">
+                        <Template Context="dvArea">
+                            @{
+                                var dvAreaData = dvArea as IDictionary<string, object>;
+                                var dvAreaKey = $"Area_{areaCode}";
+                                var dvAreaCell = dvAreaData?.ContainsKey(dvAreaKey) == true ? dvAreaData[dvAreaKey] as VendorCell : null;
+                                <div class="@(dvAreaCell?.IsDirty == true ? "dirty-cell" : "")">
+                                    @(dvAreaCell?.VendorName ?? "")
+                                </div>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                }
+            </HfGridColumnsBase>
+        </HfGrid>
+    }
+</div>
+
+@* Save Confirmation Dialog *@
+<HfDialog @bind-Visible="@_showSavePrompt"
+          Width="400px"
+          Header="Save Changes"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <ChildContent>
+        <p>This data has changed.</p>
+        <p>Do you want to save the changes?</p>
+    </ChildContent>
+    <FooterContent>
+        <button class="btn btn-primary me-2" @onclick="OnSaveYes">Yes</button>
+        <button class="btn btn-secondary me-2" @onclick="OnSaveNo">No</button>
+        <button class="btn btn-secondary" @onclick="OnSaveCancel">Cancel</button>
+    </FooterContent>
+</HfDialog>
+
+@* Error Dialog *@
+<HfDialog @bind-Visible="@_showErrorDialog"
+          Width="300px"
+          Header="Error"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <ChildContent>
+        <p>@_errorMessage</p>
+    </ChildContent>
+    <FooterContent>
+        <button class="btn btn-primary" @onclick="@(() => _showErrorDialog = false)">OK</button>
+    </FooterContent>
+</HfDialog>
+
+@* Find Dialog *@
+<HfDialog @bind-Visible="@_showFindDialog"
+          Width="350px"
+          Header="Find"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <ChildContent>
+        <div class="form-group">
+            <label for="searchText">Search for:</label>
+            <input type="text" id="searchText" @bind="_findText" @bind:event="oninput" class="form-control" />
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <button class="btn btn-primary me-2" @onclick="FindNext">Find Next</button>
+        <button class="btn btn-secondary" @onclick="@(() => _showFindDialog = false)">Close</button>
+    </FooterContent>
+</HfDialog>
+
+@code {
+    private DbWrapperSqlServer DbHelper = new();
+    private HfGrid<ExpandoObject>? _grid;
+    private List<ExpandoObject> _gridData = new();
+    private List<AreaInfo> _areas = new();
+    private List<POIndexInfo> _poIndexes = new();
+    private bool _isDirty = false;
+    private bool _isLoading = true;
+    private bool _showSavePrompt = false;
+    private bool _showErrorDialog = false;
+    private bool _showFindDialog = false;
+    private string _errorMessage = string.Empty;
+    private string _findText = string.Empty;
+    private int _findIndex = 0;
+    private int _divisionId;
+    private TaskCompletionSource<SaveResult>? _savePromptResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _divisionId = await GetCurrentDivisionId();
+        await CleanupOrphanRecords();
+        await LoadData();
+        _isLoading = false;
+    }
+
+    public void Dispose()
+    {
+    }
+
+    private async Task<int> GetCurrentDivisionId()
+    {
+        return 1;
+    }
+
+    private async Task CleanupOrphanRecords()
+    {
+        try
+        {
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor
+                WHERE DivisionID = @DivisionId
+                AND POIndex IN (
+                    SELECT a.POIndex FROM POAreaVendor a
+                    LEFT OUTER JOIN tblPOIndex b ON a.POIndex = b.POIndex AND a.DivisionID = b.DivisionID
+                    WHERE b.POIndex IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor
+                WHERE DivisionID = @DivisionId
+                AND ISNULL(Area, '') <> ''
+                AND Area IN (
+                    SELECT a.Area FROM POAreaVendor a
+                    LEFT OUTER JOIN tblLocality b ON a.Area = b.Area
+                    WHERE b.Area IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor
+                WHERE DivisionID = @DivisionId
+                AND Vendor IN (
+                    SELECT a.Vendor FROM POAreaVendor a
+                    LEFT OUTER JOIN tblVendors b ON a.Vendor = b.Vendor_ID AND a.DivisionID = b.DivisionID
+                    WHERE b.Vendor_ID IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task LoadData()
+    {
+        var poIndexRows = (await DbHelper.QueryAsync(@"
+            SELECT POIndex, Description
+            FROM tblPOIndex
+            WHERE DivisionID = @DivisionId
+            ORDER BY POIndex", new { DivisionId = _divisionId })).ToList();
+
+        var areaRows = (await DbHelper.QueryAsync(@"
+            SELECT l.Area AS AreaCode, l.Description
+            FROM tblLocality l
+            JOIN DivisionCommunities d ON d.Community = l.Area
+            WHERE l.Area <> 'N/A'
+            AND l.Inactive = 0
+            AND ISNULL(l.Area, '') <> ''
+            AND d.DivisionID = @DivisionId
+            ORDER BY l.Description", new { DivisionId = _divisionId })).ToList();
+
+        _areas = areaRows.Select(a => new AreaInfo
+        {
+            AreaCode = a["AreaCode"]?.ToString() ?? "",
+            Description = a["Description"]?.ToString() ?? ""
+        }).ToList();
+
+        var vendorAssignments = await DbHelper.QueryAsync(@"
+            SELECT l.Area AS AreaCode, pav.POIndex, pav.Vendor AS VendorId, v.Vendor_Name AS VendorName
+            FROM POAreaVendor pav
+            JOIN tblVendors v ON pav.Vendor = v.Vendor_ID AND v.DivisionID = pav.DivisionID
+            LEFT OUTER JOIN tblLocality l ON pav.Area = l.Area
+            WHERE pav.DivisionID = @DivisionId
+            AND (l.Inactive = 0 OR l.Area IS NULL)
+            ORDER BY pav.POIndex", new { DivisionId = _divisionId });
+
+        _gridData = new List<ExpandoObject>();
+        foreach (var poi in poIndexRows)
+        {
+            dynamic row = new ExpandoObject();
+            var dict = (IDictionary<string, object>)row;
+            dict["POIndex"] = poi["POIndex"]?.ToString() ?? "";
+            dict["POIndexDisplay"] = (poi["POIndex"]?.ToString() ?? "") == (poi["Description"]?.ToString() ?? "")
+                ? poi["POIndex"]?.ToString() ?? ""
+                : (poi["POIndex"]?.ToString() ?? "") + " " + (poi["Description"]?.ToString() ?? "");
+
+            dict["Area_GBL"] = new VendorCell();
+            foreach (var area in _areas)
+            {
+                dict["Area_" + area.AreaCode] = new VendorCell();
+            }
+            _gridData.Add(row);
+        }
+
+        foreach (var assignment in vendorAssignments)
+        {
+            var matchRow = _gridData.FirstOrDefault(r =>
+            {
+                var d = (IDictionary<string, object>)r;
+                return (d["POIndex"]?.ToString() ?? "") == (assignment["POIndex"]?.ToString() ?? "");
+            });
+            if (matchRow != null)
+            {
+                var dict = (IDictionary<string, object>)matchRow;
+                var areaCode = assignment["AreaCode"]?.ToString();
+                var key = string.IsNullOrEmpty(areaCode) ? "Area_GBL" : "Area_" + areaCode;
+                if (dict.ContainsKey(key))
+                {
+                    dict[key] = new VendorCell
+                    {
+                        VendorId = assignment["VendorId"]?.ToString() ?? "",
+                        VendorName = assignment["VendorName"]?.ToString() ?? "",
+                        IsDirty = false
+                    };
+                }
+            }
+        }
+    }
+
+    public async Task<bool> SaveData(bool prompt = true)
+    {
+        if (!_isDirty)
+            return true;
+        if (prompt)
+        {
+            _savePromptResult = new TaskCompletionSource<SaveResult>();
+            _showSavePrompt = true;
+            StateHasChanged();
+            var result = await _savePromptResult.Task;
+            _showSavePrompt = false;
+            switch (result)
+            {
+                case SaveResult.No:
+                    return true;
+                case SaveResult.Cancel:
+                    return false;
+            }
+        }
+        try
+        {
+            foreach (var row in _gridData)
+            {
+                var dict = (IDictionary<string, object>)row;
+                var poIndex = dict["POIndex"]?.ToString();
+                foreach (var area in _areas)
+                {
+                    var key = $"Area_{area.AreaCode}";
+                    if (dict.TryGetValue(key, out var value) && value is VendorCell cell && cell.IsDirty)
+                    {
+                        DbHelper.SqlExec(@"
+                            DELETE FROM POAreaVendor
+                            WHERE DivisionID = @DivisionId
+                            AND Area = @Area
+                            AND POIndex = @POIndex",
+                            new { DivisionId = _divisionId, Area = area.AreaCode, POIndex = poIndex });
+
+                        if (!string.IsNullOrWhiteSpace(cell.VendorId))
+                        {
+                            var vendorExists = await DbHelper.QueryAsync(@"
+                                SELECT Vendor_ID FROM tblVendors
+                                WHERE Vendor_ID = @VendorId AND DivisionID = @DivisionId",
+                                new { VendorId = cell.VendorId, DivisionId = _divisionId });
+                            if (!vendorExists.Any())
+                            {
+                                _errorMessage = "Unknown vendor";
+                                _showErrorDialog = true;
+                                return false;
+                            }
+                            DbHelper.SqlExec(@"
+                                INSERT INTO POAreaVendor (DivisionID, Area, POIndex, Vendor)
+                                VALUES (@DivisionId, @Area, @POIndex, @VendorId)",
+                                new
+                                {
+                                    DivisionId = _divisionId,
+                                    Area = area.AreaCode,
+                                    POIndex = poIndex,
+                                    VendorId = cell.VendorId
+                                });
+                        }
+                        cell.IsDirty = false;
+                    }
+                }
+            }
+            _isDirty = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex) when (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+    }
+
+    private void ShowFindDialog()
+    {
+        _showFindDialog = true;
+        _findIndex = 0;
+    }
+
+    private void FindNext()
+    {
+        if (string.IsNullOrWhiteSpace(_findText))
+            return;
+        var searchLower = _findText.ToLower();
+        for (int i = _findIndex; i < _gridData.Count; i++)
+        {
+            var dict = (IDictionary<string, object>)_gridData[i];
+
+            if (dict["POIndexDisplay"]?.ToString()?.ToLower().Contains(searchLower) == true)
+            {
+                _findIndex = i + 1;
+                return;
+            }
+
+            foreach (var area in _areas)
+            {
+                var key = $"Area_{area.AreaCode}";
+                if (dict.TryGetValue(key, out var value) && value is VendorCell cell)
+                {
+                    if (cell.VendorName?.ToLower().Contains(searchLower) == true ||
+                        cell.VendorId?.ToLower().Contains(searchLower) == true)
+                    {
+                        _findIndex = i + 1;
+                        return;
+                    }
+                }
+            }
+        }
+        _findIndex = 0;
+    }
+
+    private void OnSaveYes() => _savePromptResult?.SetResult(SaveResult.Yes);
+    private void OnSaveNo() => _savePromptResult?.SetResult(SaveResult.No);
+    private void OnSaveCancel() => _savePromptResult?.SetResult(SaveResult.Cancel);
+
+    private enum SaveResult
+    {
+        Yes,
+        No,
+        Cancel
+    }
+
+    public class VendorCell
+    {
+        public string VendorId { get; set; } = string.Empty;
+        public string VendorName { get; set; } = string.Empty;
+        public bool IsDirty { get; set; } = false;
+    }
+
+    public class AreaInfo
+    {
+        public string AreaCode { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class POIndexInfo
+    {
+        public string POIndex { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class VendorInfo
+    {
+        public string VendorId { get; set; } = string.Empty;
+        public string VendorName { get; set; } = string.Empty;
+        public string? Trade { get; set; }
+        public string? City { get; set; }
+        public string? Phone { get; set; }
+    }
+}

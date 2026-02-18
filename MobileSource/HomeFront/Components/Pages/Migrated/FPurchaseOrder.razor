@@ -1,0 +1,938 @@
+@page "/purchase-order"
+@rendermode InteractiveServer
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@inject IJSRuntime JS
+
+<PageTitle>Purchase Order</PageTitle>
+
+<div class="po-container">
+    <div class="po-toolbar">
+        <HfButton CssClass="tbar-btn" OnClick="OnNew">New</HfButton>
+        <HfButton CssClass="tbar-btn" OnClick="OnOpen">Open</HfButton>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked" OnClick="OnSave">Save</HfButton>
+        <span class="tbar-sep"></span>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked">One Time</HfButton>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked">Item</HfButton>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked">Assembly</HfButton>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked">Custom</HfButton>
+        <span class="tbar-sep"></span>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked" OnClick="OnPreview">Preview</HfButton>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked" OnClick="OnSend">Email</HfButton>
+        <span class="tbar-sep"></span>
+        <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked" OnClick="OnDelete">Cancel</HfButton>
+    </div>
+
+    <div class="po-header">
+        <div class="po-header-left">
+            <div class="form-row">
+                <label>Vendor</label>
+                <HfTextBox @bind-Value="VendorName" Enabled="@(!FieldsLocked)" @bind-Value:after="OnVendorChanged" />
+            </div>
+            <div class="form-row">
+                <label>Address</label>
+                <HfTextBox @bind-Value="Address" Multiline="true" Rows="4" Enabled="false" />
+            </div>
+            <div class="form-row">
+                <label>Ship Via</label>
+                <HfTextBox @bind-Value="ShipVia" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Free On Board</label>
+                <HfTextBox @bind-Value="FOB" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Recipient</label>
+                <HfTextBox @bind-Value="DeliveryRecipient" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Email/Fax</label>
+                <HfTextBox @bind-Value="DeliveryAddress" Enabled="@(!FieldsLocked)" @bind-Value:after="OnDeliveryAddressChanged" />
+            </div>
+        </div>
+
+        <div class="po-header-right">
+            <div class="po-title">PURCHASE ORDER</div>
+
+            <div class="form-row">
+                <label>PO Number</label>
+                <HfTextBox @bind-Value="PONumber" Enabled="false" CssClass="po-number" />
+            </div>
+            <div class="form-row">
+                <label>Date Issued</label>
+                <InputDate @bind-Value="DateIssued" class="date-input" disabled="@FieldsLocked" />
+            </div>
+            <div class="form-row">
+                <label>Ordered By</label>
+                <HfTextBox @bind-Value="OrderedBy" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Due Date</label>
+                <InputDate @bind-Value="DateDue" class="date-input" disabled="@FieldsLocked" />
+            </div>
+            <div class="form-row">
+                <label>Job</label>
+                <HfTextBox @bind-Value="Job" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>PO Index</label>
+                <HfTextBox @bind-Value="POIndex" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Retainage %</label>
+                <HfNumericTextBox TValue="decimal" @bind-Value="RetainagePercent" Enabled="@(!FieldsLocked)" Format="N2" />
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <HfTextBox @bind-Value="PODescription" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="form-row">
+                <label>Scope of Work</label>
+                <HfTextBox @bind-Value="StandardText" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+            <div class="approval-text">@ApprovalText</div>
+            <div class="sendvia-text">Send via: @SendViaText</div>
+        </div>
+    </div>
+
+    <div class="po-grid">
+        <div class="grid-toolbar">
+            <HfButton CssClass="tbar-btn" Disabled="@FieldsLocked" OnClick="AddItem">Add Item</HfButton>
+        </div>
+
+        <HfGrid TValue="PurchaseOrderItem"
+                DataSource="@VisibleItems"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                Height="420px">
+            <HfGridColumnsBase>
+                <HfGridColumn HeaderText="" Width="70px">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <button class="grid-btn" @onclick="() => DeleteItem(row)" disabled="@FieldsLocked">Delete</button>
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.Description)" HeaderText="Description" Width="280px">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <input class="grid-input" @bind="row.Description" @bind:after="() => OnItemChanged(row)" disabled="@FieldsLocked" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.OrderQty)" HeaderText="Order Qty" Width="90px" TextAlign="TextAlign.Right">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <input type="number" step="0.01" class="grid-input" @bind="row.OrderQty" @bind:after="() => OnItemChanged(row)" disabled="@FieldsLocked" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.OrderUOM)" HeaderText="UOM" Width="70px">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <input class="grid-input" @bind="row.OrderUOM" @bind:after="() => OnItemChanged(row)" disabled="@FieldsLocked" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.Rate)" HeaderText="Rate" Width="90px" TextAlign="TextAlign.Right">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <input type="number" step="0.01" class="grid-input" @bind="row.Rate" @bind:after="() => OnItemChanged(row)" disabled="@FieldsLocked" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.Pretax)" HeaderText="Pretax" Width="100px" TextAlign="TextAlign.Right" Format="N2" />
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.TaxGroup)" HeaderText="Tax Group" Width="90px">
+                    <Template>
+                        @{
+                            var row = (PurchaseOrderItem)context;
+                        }
+                        <input class="grid-input" value="@row.TaxGroup" @onchange="async e => await OnTaxGroupChanged(row, e)" disabled="@FieldsLocked" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(PurchaseOrderItem.Total)" HeaderText="Total" Width="110px" TextAlign="TextAlign.Right" Format="N2" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <div class="po-footer">
+        <div class="footer-left">
+            <div class="form-row">
+                <label>Terms</label>
+                <HfTextBox @bind-Value="Terms" Multiline="true" Rows="3" Enabled="@(!FieldsLocked)" @bind-Value:after="MarkDirty" />
+            </div>
+        </div>
+        <div class="footer-right">
+            <div class="total-row">
+                <span>Subtotal</span>
+                <span>@SubtotalLabel</span>
+            </div>
+            <div class="total-row">
+                <span>Tax</span>
+                <span>@TaxLabel</span>
+            </div>
+            <div class="total-row total-bold">
+                <span>Total</span>
+                <span>@TotalLabel</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .po-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .po-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border: 1px solid #d7d7d7;
+        background: #f8f9fa;
+        border-radius: 4px;
+        flex-wrap: wrap;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+    }
+
+    .tbar-sep {
+        width: 1px;
+        height: 28px;
+        background: #d7d7d7;
+        margin: 0 4px;
+    }
+
+    .po-header {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        padding: 12px;
+        border: 1px solid #e0e0e0;
+        background: #fffbe7;
+    }
+
+    .po-header-left, .po-header-right {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .po-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #403a2c;
+        text-align: center;
+        margin-bottom: 8px;
+    }
+
+    .po-number {
+        font-weight: 700;
+        text-align: center;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .form-row label {
+        font-weight: 600;
+        color: #4f4f4f;
+        text-align: right;
+    }
+
+    .date-input {
+        padding: 4px 6px;
+        border: 1px solid #c9c9c9;
+        border-radius: 4px;
+    }
+
+    .approval-text {
+        color: #1c3b94;
+        font-size: 13px;
+        padding-top: 4px;
+    }
+
+    .sendvia-text {
+        color: #1c3b94;
+        font-size: 13px;
+    }
+
+    .po-grid {
+        border: 1px solid #e0e0e0;
+        padding: 8px;
+        background: #fff;
+    }
+
+    .grid-toolbar {
+        margin-bottom: 6px;
+    }
+
+    .grid-input {
+        width: 100%;
+        padding: 2px 4px;
+        border: 1px solid #c9c9c9;
+        border-radius: 3px;
+    }
+
+    .grid-btn {
+        padding: 2px 6px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+
+    .po-footer {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid #e0e0e0;
+        background: #fffbe7;
+    }
+
+    .footer-right {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: flex-end;
+    }
+
+    .total-row {
+        display: flex;
+        width: 100%;
+        justify-content: space-between;
+        font-size: 14px;
+    }
+
+    .total-bold {
+        font-weight: 700;
+        font-size: 15px;
+    }
+</style>
+
+@code {
+    private readonly DbWrapperSqlServer db = new();
+    private const int DivisionId = 1;
+
+    private bool FieldsLocked = true;
+    private bool IsNew;
+    private bool Dirty;
+    private bool IsLoading;
+
+    private string PONumber = "";
+    private string POIndex = "";
+    private string VendorId = "";
+    private string VendorName = "";
+    private string Address = "";
+    private string ShipVia = "";
+    private string FOB = "";
+    private string DeliveryRecipient = "";
+    private string DeliveryAddress = "";
+    private DateTime? DateIssued = DateTime.Today;
+    private DateTime? DateDue = DateTime.Today;
+    private string OrderedBy = "";
+    private string Job = "";
+    private decimal RetainagePercent;
+    private string PODescription = "";
+    private string StandardText = "";
+    private string Terms = "";
+    private string ApprovalText = "";
+    private string SendViaText = "Print";
+
+    private double Subtotal;
+    private double TaxTotal;
+    private double GrandTotal;
+
+    private string SubtotalLabel => Subtotal.ToString("#,##0.00");
+    private string TaxLabel => TaxTotal.ToString("#,##0.00");
+    private string TotalLabel => GrandTotal.ToString("#,##0.00");
+
+    private readonly List<PurchaseOrderItem> Items = new();
+
+    private IEnumerable<PurchaseOrderItem> VisibleItems => Items.Where(i => !i.IsDeleted).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDefaultPOIndexAsync();
+        ResetForm();
+        FieldsLocked = true;
+        CalculateTotals();
+    }
+
+    private async Task LoadDefaultPOIndexAsync()
+    {
+        try
+        {
+            var value = await db.ExecuteScalarAsync<string>(
+                "SELECT TOP 1 optionvalue FROM appoptions WHERE DivisionID=@DivisionID AND optionname='DefaultPOIndex'",
+                new { DivisionID = DivisionId });
+            POIndex = string.IsNullOrWhiteSpace(value) ? "99 Manual PO" : value;
+        }
+        catch
+        {
+            POIndex = "99 Manual PO";
+        }
+    }
+
+    private void ResetForm()
+    {
+        VendorId = "";
+        VendorName = "";
+        Address = "";
+        ShipVia = "";
+        FOB = "";
+        DeliveryRecipient = "";
+        DeliveryAddress = "";
+        DateIssued = DateTime.Today;
+        DateDue = DateTime.Today;
+        OrderedBy = "";
+        Job = "";
+        RetainagePercent = 0;
+        PODescription = "";
+        StandardText = "";
+        Terms = "";
+        ApprovalText = "";
+        SendViaText = "Print";
+        PONumber = "";
+        Items.Clear();
+        Items.Add(new PurchaseOrderItem());
+        Dirty = false;
+        IsNew = false;
+        CalculateTotals();
+    }
+
+    private void MarkDirty()
+    {
+        Dirty = true;
+    }
+
+    private async Task OnVendorChanged()
+    {
+        await LoadVendorAsync();
+        Dirty = true;
+    }
+
+    private async Task LoadVendorAsync()
+    {
+        if (string.IsNullOrWhiteSpace(VendorName))
+        {
+            VendorId = "";
+            Address = "";
+            return;
+        }
+
+        var sql = @"
+            SELECT TOP 1 v.Vendor_ID, v.Vendor_Name, v.Addr1, v.Addr2, v.City, v.State, v.Zip, e.Email
+            FROM tblVendors v
+            LEFT JOIN ContactPurchasingEmails e ON v.Vendor_ID = e.VendorCode AND v.DivisionID = e.DivisionID
+            WHERE v.DivisionID=@DivisionID
+              AND (v.Vendor_ID=@Value OR v.Vendor_Name=@Value)";
+        var rows = await db.QueryAsync(sql, new { DivisionID = DivisionId, Value = VendorName });
+        if (!rows.Any()) return;
+
+        var row = rows.First();
+        VendorId = row["Vendor_ID"]?.ToString() ?? "";
+        VendorName = row["Vendor_Name"]?.ToString() ?? VendorName;
+        var addr1 = row["Addr1"]?.ToString() ?? "";
+        var addr2 = row["Addr2"]?.ToString() ?? "";
+        var city = row["City"]?.ToString() ?? "";
+        var state = row["State"]?.ToString() ?? "";
+        var zip = row["Zip"]?.ToString() ?? "";
+        Address = $"{addr1}{(string.IsNullOrWhiteSpace(addr2) ? "" : "\n" + addr2)}\n{city} {state}\n{zip}".Trim();
+        DeliveryAddress = row["Email"]?.ToString() ?? DeliveryAddress;
+        UpdateSendVia();
+    }
+
+    private void OnDeliveryAddressChanged()
+    {
+        UpdateSendVia();
+        Dirty = true;
+    }
+
+    private void UpdateSendVia()
+    {
+        if (string.IsNullOrWhiteSpace(DeliveryAddress)) SendViaText = "Print";
+        else if (DeliveryAddress.Contains("@", StringComparison.OrdinalIgnoreCase)) SendViaText = "Email";
+        else SendViaText = "Fax";
+    }
+
+    private void AddItem()
+    {
+        Items.Add(new PurchaseOrderItem
+        {
+            RowState = RowState.New,
+            Job_No = Job,
+            OrderQty = 0,
+            Rate = 0
+        });
+        Dirty = true;
+    }
+
+    private void DeleteItem(PurchaseOrderItem item)
+    {
+        item.IsDeleted = true;
+        item.RowState = RowState.Deleted;
+        Dirty = true;
+        CalculateTotals();
+    }
+
+    private void OnItemChanged(PurchaseOrderItem item)
+    {
+        RecalculateItem(item);
+        MarkItemDirty(item);
+        CalculateTotals();
+    }
+
+    private async Task OnTaxGroupChanged(PurchaseOrderItem item, ChangeEventArgs e)
+    {
+        item.TaxGroup = e.Value?.ToString() ?? "";
+        await LoadTaxRatesAsync(item);
+        RecalculateItem(item);
+        MarkItemDirty(item);
+        CalculateTotals();
+    }
+
+    private async Task LoadTaxRatesAsync(PurchaseOrderItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.TaxGroup))
+        {
+            item.JCTaxRate = 0;
+            item.NJCTaxRate = 0;
+            return;
+        }
+
+        var rows = await db.QueryAsync(
+            "SELECT JCRate, NJCRate FROM TaxGroups WHERE DivisionID=@DivisionID AND TaxGroup=@TaxGroup",
+            new { DivisionID = DivisionId, TaxGroup = item.TaxGroup });
+
+        if (!rows.Any()) return;
+        var row = rows.First();
+        item.JCTaxRate = Convert.ToDouble(row["JCRate"] ?? 0);
+        item.NJCTaxRate = Convert.ToDouble(row["NJCRate"] ?? 0);
+    }
+
+    private void RecalculateItem(PurchaseOrderItem item)
+    {
+        item.Pretax = Math.Round(item.OrderQty * item.Rate, 2);
+        item.JCTax = Math.Round(item.Pretax * item.JCTaxRate / 100, 2);
+        item.NJCTax = Math.Round(item.Pretax * item.NJCTaxRate / 100, 2);
+        item.TotalTax = item.JCTax + item.NJCTax;
+        item.Total = item.Pretax + item.TotalTax;
+    }
+
+    private void MarkItemDirty(PurchaseOrderItem item)
+    {
+        if (item.RowState == RowState.Unchanged)
+            item.RowState = RowState.Modified;
+        Dirty = true;
+    }
+
+    private void CalculateTotals()
+    {
+        Subtotal = Items.Where(i => !i.IsDeleted).Sum(i => i.Pretax);
+        TaxTotal = Items.Where(i => !i.IsDeleted).Sum(i => i.TotalTax);
+        GrandTotal = Subtotal + TaxTotal;
+    }
+
+    private async Task OnNew()
+    {
+        if (!await ConfirmSaveIfDirty()) return;
+
+        ResetForm();
+        FieldsLocked = false;
+        IsNew = true;
+
+        if (!string.IsNullOrWhiteSpace(Job) && !string.IsNullOrWhiteSpace(POIndex))
+        {
+            PONumber = await CreatePONumberAsync(Job, POIndex);
+        }
+
+        Dirty = true;
+    }
+
+    private async Task<string> CreatePONumberAsync(string job, string poIndex)
+    {
+        try
+        {
+            var value = await db.ExecuteScalarAsync<string>(
+                "SELECT dbo.Purch_CreatePONumber(@DivisionID,@Job,@POIndex)",
+                new { DivisionID = DivisionId, Job = job, POIndex = poIndex });
+            if (!string.IsNullOrWhiteSpace(value)) return value;
+        }
+        catch
+        {
+        }
+
+        return $"PO{DateTime.Now:yyyyMMddHHmmss}";
+    }
+
+    private async Task OnOpen()
+    {
+        if (!await ConfirmSaveIfDirty()) return;
+
+        var po = await JS.InvokeAsync<string>("prompt", "Enter PO Number");
+        if (string.IsNullOrWhiteSpace(po)) return;
+
+        PONumber = po.Trim();
+        await LoadPOAsync();
+    }
+
+    private async Task LoadPOAsync()
+    {
+        var sql = @"
+            SELECT p.PONumber, p.PODate, p.POIndex, p.Job, p.Vendor, v.Vendor_Name, p.Description,
+                   p.StandardText, p.DeliveryRecipient, p.DeliveryAddress, p.DueDate, p.ShipVia, p.FOB,
+                   p.Terms, p.OrderedBy, p.RetainagePercent, p.Status, p.ApprovedBy, p.ApprovedDate
+            FROM POMaster p
+            LEFT JOIN tblVendors v ON p.Vendor = v.Vendor_ID AND p.DivisionID = v.DivisionID
+            WHERE p.DivisionID=@DivisionID AND p.PONumber=@PONumber AND p.Cancelled=0";
+        var rows = await db.QueryAsync(sql, new { DivisionID = DivisionId, PONumber });
+
+        if (!rows.Any())
+        {
+            await JS.InvokeVoidAsync("alert", "Purchase order not found.");
+            return;
+        }
+
+        var row = rows.First();
+        VendorId = row["Vendor"]?.ToString() ?? "";
+        VendorName = row["Vendor_Name"]?.ToString() ?? "";
+        DateIssued = row["PODate"] as DateTime?;
+        DateDue = row["DueDate"] as DateTime?;
+        POIndex = row["POIndex"]?.ToString() ?? "";
+        PODescription = row["Description"]?.ToString() ?? "";
+        StandardText = row["StandardText"]?.ToString() ?? "";
+        ShipVia = row["ShipVia"]?.ToString() ?? "";
+        FOB = row["FOB"]?.ToString() ?? "";
+        Terms = row["Terms"]?.ToString() ?? "";
+        OrderedBy = row["OrderedBy"]?.ToString() ?? "";
+        DeliveryRecipient = row["DeliveryRecipient"]?.ToString() ?? "";
+        DeliveryAddress = row["DeliveryAddress"]?.ToString() ?? "";
+        Job = row["Job"]?.ToString() ?? "";
+        RetainagePercent = Convert.ToDecimal(row["RetainagePercent"] ?? 0);
+        ApprovalText = row["Status"]?.ToString() == "Pending"
+            ? "APPROVAL REQUIRED"
+            : $"Approved by {row["ApprovedBy"]}: {Convert.ToDateTime(row["ApprovedDate"] ?? DateTime.Now):MMM d, yyyy}";
+
+        await LoadVendorAsync();
+
+        Items.Clear();
+        var itemsSql = @"
+            SELECT ItemSeq, Description, Comments, OrderQty, OrderUOM, TakeoffQty, TakeoffUOM, Rate, Pretax,
+                   TaxGroup, JCTax, JCTaxRate, NJCTax, NJCTaxRate, Job, JCExtra, JCCostCode, JCCategory,
+                   EstPhase, EstItem, EstItemID
+            FROM POItems
+            WHERE DivisionID=@DivisionID AND PONumber=@PONumber
+            ORDER BY ItemSeq";
+        var itemRows = await db.QueryAsync(itemsSql, new { DivisionID = DivisionId, PONumber });
+        foreach (var itemRow in itemRows)
+        {
+            var item = new PurchaseOrderItem
+            {
+                Seq = Convert.ToInt32(itemRow["ItemSeq"] ?? 0),
+                Description = itemRow["Description"]?.ToString() ?? "",
+                Comments = itemRow["Comments"]?.ToString() ?? "",
+                OrderQty = Convert.ToDouble(itemRow["OrderQty"] ?? 0),
+                OrderUOM = itemRow["OrderUOM"]?.ToString() ?? "",
+                TakeoffQty = Convert.ToDouble(itemRow["TakeoffQty"] ?? 0),
+                TakeoffUOM = itemRow["TakeoffUOM"]?.ToString() ?? "",
+                Rate = Convert.ToDouble(itemRow["Rate"] ?? 0),
+                Pretax = Convert.ToDouble(itemRow["Pretax"] ?? 0),
+                TaxGroup = itemRow["TaxGroup"]?.ToString() ?? "",
+                JCTax = Convert.ToDouble(itemRow["JCTax"] ?? 0),
+                JCTaxRate = Convert.ToDouble(itemRow["JCTaxRate"] ?? 0),
+                NJCTax = Convert.ToDouble(itemRow["NJCTax"] ?? 0),
+                NJCTaxRate = Convert.ToDouble(itemRow["NJCTaxRate"] ?? 0),
+                Job_No = itemRow["Job"]?.ToString() ?? "",
+                JCExtra = itemRow["JCExtra"]?.ToString() ?? "",
+                JCCostCode = itemRow["JCCostCode"]?.ToString() ?? "",
+                JCCategory = itemRow["JCCategory"]?.ToString() ?? "",
+                EstPhase = itemRow["EstPhase"]?.ToString() ?? "",
+                EstItem = itemRow["EstItem"]?.ToString() ?? "",
+                EstItemID = Convert.ToInt64(itemRow["EstItemID"] ?? 0)
+            };
+            RecalculateItem(item);
+            item.RowState = RowState.Unchanged;
+            Items.Add(item);
+        }
+
+        if (!Items.Any()) Items.Add(new PurchaseOrderItem());
+
+        CalculateTotals();
+        FieldsLocked = false;
+        IsNew = false;
+        Dirty = false;
+    }
+
+    private async Task OnSave()
+    {
+        await SaveDataAsync();
+    }
+
+    private async Task<bool> SaveDataAsync()
+    {
+        if (!Dirty) return true;
+        if (!ValidateData()) return false;
+
+        if (IsNew)
+        {
+            var insertSql = @"
+                INSERT INTO POMaster(PONumber,DivisionID,POIndex,Job,Vendor,Description,StandardText,
+                    DeliveryRecipient,DeliveryAddress,DueDate,ShipVia,FOB,Terms,OrderedBy,PODate,RetainagePercent)
+                VALUES(@PONumber,@DivisionID,@POIndex,@Job,@Vendor,@Description,@StandardText,
+                    @DeliveryRecipient,@DeliveryAddress,@DueDate,@ShipVia,@FOB,@Terms,@OrderedBy,@PODate,@RetainagePercent)";
+            await db.ExecuteAsync(insertSql, new
+            {
+                PONumber,
+                DivisionID = DivisionId,
+                POIndex,
+                Job,
+                Vendor = VendorId,
+                Description = PODescription,
+                StandardText,
+                DeliveryRecipient,
+                DeliveryAddress,
+                DueDate = DateDue,
+                ShipVia,
+                FOB,
+                Terms,
+                OrderedBy,
+                PODate = DateIssued,
+                RetainagePercent
+            });
+        }
+        else
+        {
+            var updateSql = @"
+                UPDATE POMaster SET Description=@Description, StandardText=@StandardText, ShipVia=@ShipVia,
+                    POIndex=@POIndex, FOB=@FOB, Terms=@Terms, OrderedBy=@OrderedBy, PODate=@PODate,
+                    DueDate=@DueDate, DeliveryRecipient=@DeliveryRecipient, DeliveryAddress=@DeliveryAddress,
+                    RetainagePercent=@RetainagePercent
+                WHERE DivisionID=@DivisionID AND PONumber=@PONumber";
+            await db.ExecuteAsync(updateSql, new
+            {
+                PONumber,
+                DivisionID = DivisionId,
+                Description = PODescription,
+                StandardText,
+                ShipVia,
+                POIndex,
+                FOB,
+                Terms,
+                OrderedBy,
+                PODate = DateIssued,
+                DueDate = DateDue,
+                DeliveryRecipient,
+                DeliveryAddress,
+                RetainagePercent
+            });
+        }
+
+        await SaveItemsAsync();
+
+        Dirty = false;
+        IsNew = false;
+        return true;
+    }
+
+    private async Task SaveItemsAsync()
+    {
+        foreach (var item in Items)
+        {
+            if (item.IsDeleted)
+            {
+                if (item.Seq > 0)
+                {
+                    await db.ExecuteAsync(
+                        "DELETE FROM POItems WHERE DivisionID=@DivisionID AND PONumber=@PONumber AND ItemSeq=@Seq",
+                        new { DivisionID = DivisionId, PONumber, Seq = item.Seq });
+                }
+                continue;
+            }
+
+            RecalculateItem(item);
+
+            if (item.RowState == RowState.New)
+            {
+                var insertSql = @"
+                    INSERT INTO POItems(PONumber,DivisionID,Description,Comments,OrderQty,OrderUOM,TakeoffQty,TakeoffUOM,
+                        Rate,Pretax,TaxGroup,JCTax,JCTaxRate,NJCTax,NJCTaxRate,Job,JCExtra,JCCostCode,JCCategory,EstPhase,EstItem,EstItemID)
+                    VALUES(@PONumber,@DivisionID,@Description,@Comments,@OrderQty,@OrderUOM,@TakeoffQty,@TakeoffUOM,
+                        @Rate,@Pretax,@TaxGroup,@JCTax,@JCTaxRate,@NJCTax,@NJCTaxRate,@Job,@JCExtra,@JCCostCode,@JCCategory,@EstPhase,@EstItem,@EstItemID)";
+                await db.ExecuteAsync(insertSql, new
+                {
+                    PONumber,
+                    DivisionID = DivisionId,
+                    item.Description,
+                    item.Comments,
+                    item.OrderQty,
+                    item.OrderUOM,
+                    item.TakeoffQty,
+                    item.TakeoffUOM,
+                    item.Rate,
+                    item.Pretax,
+                    item.TaxGroup,
+                    item.JCTax,
+                    item.JCTaxRate,
+                    item.NJCTax,
+                    item.NJCTaxRate,
+                    Job = item.Job_No,
+                    item.JCExtra,
+                    item.JCCostCode,
+                    item.JCCategory,
+                    item.EstPhase,
+                    item.EstItem,
+                    item.EstItemID
+                });
+                item.RowState = RowState.Unchanged;
+            }
+            else if (item.RowState == RowState.Modified)
+            {
+                var updateSql = @"
+                    UPDATE POItems SET Description=@Description, Comments=@Comments, OrderQty=@OrderQty, OrderUOM=@OrderUOM,
+                        TakeoffQty=@TakeoffQty, TakeoffUOM=@TakeoffUOM, Rate=@Rate, Pretax=@Pretax, TaxGroup=@TaxGroup,
+                        JCTax=@JCTax, JCTaxRate=@JCTaxRate, NJCTax=@NJCTax, NJCTaxRate=@NJCTaxRate,
+                        Job=@Job, JCExtra=@JCExtra, JCCostCode=@JCCostCode, JCCategory=@JCCategory, EstPhase=@EstPhase, EstItem=@EstItem
+                    WHERE DivisionID=@DivisionID AND PONumber=@PONumber AND ItemSeq=@Seq";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    DivisionID = DivisionId,
+                    PONumber,
+                    Seq = item.Seq,
+                    item.Description,
+                    item.Comments,
+                    item.OrderQty,
+                    item.OrderUOM,
+                    item.TakeoffQty,
+                    item.TakeoffUOM,
+                    item.Rate,
+                    item.Pretax,
+                    item.TaxGroup,
+                    item.JCTax,
+                    item.JCTaxRate,
+                    item.NJCTax,
+                    item.NJCTaxRate,
+                    Job = item.Job_No,
+                    item.JCExtra,
+                    item.JCCostCode,
+                    item.JCCategory,
+                    item.EstPhase,
+                    item.EstItem
+                });
+                item.RowState = RowState.Unchanged;
+            }
+        }
+    }
+
+    private bool ValidateData()
+    {
+        if (string.IsNullOrWhiteSpace(Job))
+        {
+            JS.InvokeVoidAsync("alert", "A Job number is required.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(VendorId))
+        {
+            JS.InvokeVoidAsync("alert", "A Vendor is required.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task OnDelete()
+    {
+        if (IsNew)
+        {
+            ResetForm();
+            FieldsLocked = true;
+            return;
+        }
+
+        var confirm = await JS.InvokeAsync<bool>("confirm", $"Cancel purchase order {PONumber}?");
+        if (!confirm) return;
+
+        await db.ExecuteAsync(
+            "UPDATE POMaster SET Cancelled=1 WHERE DivisionID=@DivisionID AND PONumber=@PONumber",
+            new { DivisionID = DivisionId, PONumber });
+
+        ResetForm();
+        FieldsLocked = true;
+    }
+
+    private async Task OnPreview()
+    {
+        await JS.InvokeVoidAsync("alert", "Preview not implemented in this view.");
+    }
+
+    private async Task OnSend()
+    {
+        await JS.InvokeVoidAsync("alert", "Send not implemented in this view.");
+    }
+
+    private async Task<bool> ConfirmSaveIfDirty()
+    {
+        if (!Dirty) return true;
+        var confirm = await JS.InvokeAsync<bool>("confirm", "This data has changed. Save changes?");
+        if (!confirm) return true;
+        return await SaveDataAsync();
+    }
+
+    public class PurchaseOrderItem
+    {
+        public int Seq { get; set; }
+        public long EstItemID { get; set; }
+        public string Job_No { get; set; } = "";
+        public string JCExtra { get; set; } = "";
+        public string EstPhase { get; set; } = "";
+        public string EstItem { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public double OrderQty { get; set; }
+        public double Rate { get; set; }
+        public double Pretax { get; set; }
+        public string TaxGroup { get; set; } = "";
+        public double JCTaxRate { get; set; }
+        public double NJCTaxRate { get; set; }
+        public double JCTax { get; set; }
+        public double NJCTax { get; set; }
+        public double TotalTax { get; set; }
+        public double Total { get; set; }
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public bool IsDeleted { get; set; }
+        public RowState RowState { get; set; } = RowState.Unchanged;
+    }
+
+    public enum RowState
+    {
+        Unchanged,
+        New,
+        Modified,
+        Deleted
+    }
+}

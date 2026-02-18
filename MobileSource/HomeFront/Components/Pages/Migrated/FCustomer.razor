@@ -1,0 +1,676 @@
+@page "/customer"
+@page "/customer/{CustomerId}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using System.Linq
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Customer - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-btn.danger { color: #dc3545; border-color: #dc3545; }
+    .page-title { margin-bottom: 16px; font-size: 20px; font-weight: 600; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel-card { border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; background: #fff; }
+    .section-title { font-weight: 700; color: #0d6efd; margin: 4px 0 12px; font-size: 13px; }
+    .form-field { margin-bottom: 10px; display: flex; align-items: flex-start; gap: 8px; }
+    .form-field label { min-width: 120px; text-align: right; font-weight: 600; font-size: 13px; padding-top: 6px; }
+    .form-field label.required { color: #0d6efd; }
+    .form-field input, .form-field select, .form-field textarea {
+        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+    }
+    .form-field textarea { resize: vertical; }
+    .contacts-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; margin-bottom: 8px; }
+    .contacts-actions { display: flex; gap: 6px; }
+</style>
+
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+        <span>Open</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span>Save</span>
+    </button>
+</div>
+
+<h3 class="page-title">Customer</h3>
+
+<div class="form-grid">
+    <div class="panel-card">
+        <div class="form-field">
+            <label class="required">Customer</label>
+            <input type="text" maxlength="50" @bind="Customer" @bind:event="oninput" @bind:after="MarkDirty" disabled="@(!CustomerEditable)" />
+        </div>
+        <div class="form-field">
+            <label>Description</label>
+            <input type="text" maxlength="60" @bind="Description" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+        <div class="form-field">
+            <label>Status</label>
+            <select @bind="Status" @bind:after="MarkDirty">
+                @foreach (var s in StatusOptions)
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+        <div class="form-field">
+            <label>Comments</label>
+            <textarea rows="4" maxlength="4000" @bind="Comments" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
+        </div>
+    </div>
+
+    <div class="panel-card">
+        <div class="form-field">
+            <label>Phone</label>
+            <input type="text" maxlength="25" @bind="Phone" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+        <div class="form-field">
+            <label>Fax</label>
+            <input type="text" maxlength="25" @bind="Fax" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+        <div class="section-title">Billing Address</div>
+        <div class="form-field">
+            <label>Address</label>
+            <textarea rows="3" maxlength="150" @bind="Address" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
+        </div>
+        <div class="form-field">
+            <label>City</label>
+            <input type="text" maxlength="50" @bind="City" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+        <div class="form-field">
+            <label>State/Province</label>
+            <input type="text" maxlength="20" @bind="Province" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+        <div class="form-field">
+            <label>Postal</label>
+            <input type="text" maxlength="10" @bind="Postal" @bind:event="oninput" @bind:after="MarkDirty" />
+        </div>
+    </div>
+</div>
+
+<div class="contacts-header">
+    <h5 style="margin:0;">Contacts</h5>
+    <div class="contacts-actions">
+        <button class="tbar-btn" @onclick="AddContact">Add</button>
+        <button class="tbar-btn danger" disabled="@(SelectedContact == null)" @onclick="DeleteContact">Delete</button>
+    </div>
+</div>
+
+<HfGrid @ref="ContactsGrid"
+        TValue="ContactRow"
+        DataSource="@ContactsData"
+        AllowSelection="true"
+        AllowSorting="true"
+        AllowResizing="true"
+        Height="350px"
+        SelectionSettingsRef="@contactSelection"
+        EditSettingsRef="@contactEditSettings"
+        EventsRef="@contactGridEvents">
+    <HfGridColumnsBase>
+        <HfGridColumn Field="@nameof(ContactRow.ContactID)" Visible="false" IsPrimaryKey="true" />
+        <HfGridColumn Field="@nameof(ContactRow.Role)" HeaderText="Role" Width="120px">
+            <EditTemplate>
+                @{
+                    var data = (ContactRow)context;
+                    <select @bind="data.Role" @bind:after="() => MarkContactDirty(data)">
+                        <option value=""></option>
+                        @foreach (var opt in RoleOptions)
+                        {
+                            <option value="@opt.Value">@opt.Text</option>
+                        }
+                    </select>
+                }
+            </EditTemplate>
+        </HfGridColumn>
+        <HfGridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="160px" />
+        <HfGridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px" />
+        <HfGridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Cell" Width="120px" />
+        <HfGridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px" />
+        <HfGridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="220px" />
+        <HfGridColumn Field="@nameof(ContactRow.SendVia)" HeaderText="Send Via" Width="90px">
+            <Template>
+                @{
+                    var data = (ContactRow)context;
+                    <span>@GetSendViaText(data.SendVia)</span>
+                }
+            </Template>
+            <EditTemplate>
+                @{
+                    var data = (ContactRow)context;
+                    <select @bind="data.SendVia" @bind:after="() => MarkContactDirty(data)">
+                        @foreach (var opt in SendViaOptions)
+                        {
+                            <option value="@opt.Value">@opt.Text</option>
+                        }
+                    </select>
+                }
+            </EditTemplate>
+        </HfGridColumn>
+        <HfGridColumn Field="@nameof(ContactRow.SmsAddress)" HeaderText="SMS Address" Width="160px">
+            <Template>
+                @{
+                    var data = (ContactRow)context;
+                    var display = SmsCarriers.FirstOrDefault(x => x.Value == data.SmsAddress)?.Text ?? data.SmsAddress;
+                    <span>@display</span>
+                }
+            </Template>
+            <EditTemplate>
+                @{
+                    var data = (ContactRow)context;
+                    <select @bind="data.SmsAddress" @bind:after="() => MarkContactDirty(data)">
+                        <option value=""></option>
+                        @foreach (var opt in SmsCarriers)
+                        {
+                            <option value="@opt.Value">@opt.Text</option>
+                        }
+                    </select>
+                }
+            </EditTemplate>
+        </HfGridColumn>
+    </HfGridColumnsBase>
+</HfGrid>
+
+@code {
+    [Parameter] public string? CustomerId { get; set; }
+
+    private readonly DbWrapperSqlServer db = new();
+    private const int DivisionId = 1;
+
+    private bool mDirty;
+    private string mCustomer = "";
+    private bool CustomerEditable = true;
+
+    private string Customer = "";
+    private string Description = "";
+    private string Comments = "";
+    private string Address = "";
+    private string City = "";
+    private string Province = "";
+    private string Postal = "";
+    private string Phone = "";
+    private string Fax = "";
+    private string Status = "Active";
+
+    private readonly List<string> StatusOptions = new() { "Active", "Inactive" };
+
+    private List<ContactRow> ContactsData = new();
+    private ContactRow? SelectedContact;
+    private readonly HashSet<long> DeletedContactIds = new();
+
+    private List<ComboItem> RoleOptions = new();
+    private List<ComboItem> SmsCarriers = new();
+    private readonly List<ComboIntItem> SendViaOptions = new()
+    {
+        new ComboIntItem { Value = 1, Text = "Print" },
+        new ComboIntItem { Value = 3, Text = "Email" },
+        new ComboIntItem { Value = 4, Text = "Fax" }
+    };
+
+    private HfGrid<ContactRow>? ContactsGrid;
+    private readonly HfSelectionSettings contactSelection = new() { Type = SelectionType.Single, Mode = SelectionMode.Row, EnableToggle = true };
+    private readonly HfEditSettings contactEditSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private readonly HfGridEvents<ContactRow> contactGridEvents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        contactGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ContactRow>>(this, OnContactSelected);
+        contactGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<ContactRow>>(this, OnContactDeselected);
+        contactGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ContactRow>>(this, OnContactCellSaved);
+
+        await LoadLookupDataAsync();
+
+        if (!string.IsNullOrWhiteSpace(CustomerId) && CustomerId != "?")
+        {
+            mCustomer = CustomerId!;
+            await LoadDataAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && string.IsNullOrWhiteSpace(mCustomer))
+        {
+            await OpenCustomerAsync();
+        }
+    }
+
+    private async Task LoadLookupDataAsync()
+    {
+        try
+        {
+            var carriers = await db.QueryAsync("select address,name from smscarriers order by name");
+            SmsCarriers = carriers.Select(r => new ComboItem
+            {
+                Value = r["address"]?.ToString() ?? "",
+                Text = r["name"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch
+        {
+            SmsCarriers = new List<ComboItem>();
+        }
+
+        string roles = "";
+        try
+        {
+            roles = await db.ExecuteScalarAsync<string>("SELECT TOP 1 Value FROM AppOptions WHERE Name='CustomerContactRoles'");
+        }
+        catch
+        {
+            roles = "";
+        }
+
+        if (string.IsNullOrWhiteSpace(roles))
+            roles = "Sales|Estimator|Accounting|Other";
+
+        RoleOptions = roles.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                           .Select(r => r.Trim())
+                           .Where(r => !string.IsNullOrWhiteSpace(r))
+                           .Select(r => new ComboItem { Value = r, Text = r })
+                           .ToList();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var rows = await db.QueryAsync(
+            "select * from arcustomers where divisionid=@DivisionID and arcustomer=@Customer",
+            new { DivisionID = DivisionId, Customer = mCustomer });
+
+        if (rows.Count == 0)
+        {
+            mCustomer = "";
+            Customer = "";
+            Description = "";
+            Comments = "";
+            Address = "";
+            City = "";
+            Province = "";
+            Postal = "";
+            Phone = "";
+            Fax = "";
+            Status = "Active";
+            ContactsData = new List<ContactRow>();
+            CustomerEditable = true;
+        }
+        else
+        {
+            var row = rows[0];
+            Customer = row["arcustomer"]?.ToString() ?? "";
+            mCustomer = Customer;
+            Description = row["description"]?.ToString() ?? "";
+            Comments = row["comments"]?.ToString() ?? "";
+            Address = CombineAddress(row["billaddr1"]?.ToString(), row["billaddr2"]?.ToString());
+            City = row["billcity"]?.ToString() ?? "";
+            Province = row["billprovince"]?.ToString() ?? "";
+            Postal = row["billpostalcode"]?.ToString() ?? "";
+            Phone = row["phone1"]?.ToString() ?? "";
+            Fax = row["fax1"]?.ToString() ?? "";
+            Status = IsTrue(row["Inactive"]) ? "Inactive" : "Active";
+            CustomerEditable = false;
+            await LoadContactsAsync();
+        }
+
+        mDirty = false;
+        DeletedContactIds.Clear();
+        StateHasChanged();
+    }
+
+    private async Task LoadContactsAsync()
+    {
+        ContactsData = new List<ContactRow>();
+        if (string.IsNullOrWhiteSpace(mCustomer)) return;
+
+        var rows = await db.QueryAsync(
+            "select * from contacts where contacttypeid=99 and arcustomer=@Customer order by firstname",
+            new { Customer = mCustomer });
+
+        foreach (var r in rows)
+        {
+            ContactsData.Add(new ContactRow
+            {
+                ContactID = SafeLong(r["ContactID"]),
+                Role = r["Role"]?.ToString() ?? "",
+                Name = r["FirstName"]?.ToString() ?? "",
+                Phone = r["WorkPhone"]?.ToString() ?? "",
+                Cell = r["CellPhone"]?.ToString() ?? "",
+                Fax = r["Fax"]?.ToString() ?? "",
+                Email = r["Email"]?.ToString() ?? "",
+                SendVia = SafeInt(r["CommModeID"], 1),
+                SmsAddress = r["SmsAddress"]?.ToString() ?? "",
+                RowState = "CLEAN"
+            });
+        }
+    }
+
+    private async Task OnOpenClick() => await OpenCustomerAsync();
+
+    private async Task OpenCustomerAsync()
+    {
+        if (!await ConfirmSaveAsync()) return;
+        var input = await JSRuntime.InvokeAsync<string>("prompt", "Enter customer code:", Customer);
+        if (string.IsNullOrWhiteSpace(input)) return;
+        mCustomer = input.Trim();
+        await LoadDataAsync();
+    }
+
+    private async Task OnSaveClick() => await SaveDataAsync(false);
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Customer has changed. Save these changes?");
+            if (!confirm) return true;
+        }
+
+        Customer = Customer?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(Customer))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Customer is required.");
+            return false;
+        }
+
+        var (addr1, addr2) = SplitAddress(Address);
+        Phone = FormatPhone(Phone);
+        Fax = FormatPhone(Fax);
+        var inactive = Status == "Inactive";
+
+        if (string.IsNullOrWhiteSpace(mCustomer))
+        {
+            var insertSql = @"
+                INSERT arcustomers(arcustomer,description,comments,billaddr1,billaddr2,billcity,billprovince,billpostalcode,phone1,fax1,divisionid,Inactive)
+                VALUES(@Customer,@Description,@Comments,@Addr1,@Addr2,@City,@Province,@Postal,@Phone,@Fax,@DivisionID,@Inactive)";
+            await db.ExecuteAsync(insertSql, new
+            {
+                Customer,
+                Description,
+                Comments,
+                Addr1 = addr1,
+                Addr2 = addr2,
+                City,
+                Province,
+                Postal,
+                Phone,
+                Fax,
+                DivisionID = DivisionId,
+                Inactive = inactive
+            });
+            mCustomer = Customer;
+            CustomerEditable = false;
+        }
+        else
+        {
+            var updateSql = @"
+                UPDATE arcustomers SET
+                    description=@Description,
+                    comments=@Comments,
+                    billaddr1=@Addr1,
+                    billaddr2=@Addr2,
+                    billcity=@City,
+                    billprovince=@Province,
+                    billpostalcode=@Postal,
+                    phone1=@Phone,
+                    fax1=@Fax,
+                    Inactive=@Inactive
+                WHERE arcustomer=@Customer AND divisionid=@DivisionID";
+            await db.ExecuteAsync(updateSql, new
+            {
+                Customer = mCustomer,
+                Description,
+                Comments,
+                Addr1 = addr1,
+                Addr2 = addr2,
+                City,
+                Province,
+                Postal,
+                Phone,
+                Fax,
+                Inactive = inactive,
+                DivisionID = DivisionId
+            });
+        }
+
+        await SaveContactsAsync();
+        mDirty = false;
+        StateHasChanged();
+        return true;
+    }
+
+    private async Task SaveContactsAsync()
+    {
+        var cust = string.IsNullOrWhiteSpace(mCustomer) ? Customer : mCustomer;
+        if (string.IsNullOrWhiteSpace(cust)) return;
+
+        foreach (var id in DeletedContactIds)
+        {
+            await db.ExecuteAsync("DELETE FROM Contacts WHERE ContactID=@Id", new { Id = id });
+        }
+        DeletedContactIds.Clear();
+
+        foreach (var row in ContactsData)
+        {
+            if (row.RowState != "DIRTY") continue;
+            if (IsContactEmpty(row)) { row.RowState = "CLEAN"; continue; }
+
+            row.Phone = FormatPhone(row.Phone);
+            row.Cell = FormatPhone(row.Cell);
+            row.Fax = FormatPhone(row.Fax);
+
+            if (row.ContactID == 0)
+            {
+                var insertSql = @"
+                    INSERT INTO Contacts(ContactTypeID,UserID,ARCustomer,Role,FirstName,WorkPhone,CellPhone,Fax,Email,CommModeID,SmsAddress)
+                    OUTPUT INSERTED.ContactID
+                    VALUES(99,@UserID,@ARCustomer,@Role,@FirstName,@WorkPhone,@CellPhone,@Fax,@Email,@CommModeID,@SmsAddress)";
+                var newId = await db.ExecuteScalarAsync<long>(insertSql, new
+                {
+                    UserID = cust,
+                    ARCustomer = cust,
+                    row.Role,
+                    FirstName = row.Name,
+                    WorkPhone = row.Phone,
+                    CellPhone = row.Cell,
+                    row.Fax,
+                    row.Email,
+                    CommModeID = row.SendVia,
+                    SmsAddress = row.SmsAddress
+                });
+                row.ContactID = newId;
+            }
+            else
+            {
+                var updateSql = @"
+                    UPDATE Contacts SET
+                        Role=@Role,
+                        FirstName=@FirstName,
+                        WorkPhone=@WorkPhone,
+                        CellPhone=@CellPhone,
+                        Fax=@Fax,
+                        Email=@Email,
+                        CommModeID=@CommModeID,
+                        SmsAddress=@SmsAddress
+                    WHERE ContactID=@ContactID";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    row.Role,
+                    FirstName = row.Name,
+                    WorkPhone = row.Phone,
+                    CellPhone = row.Cell,
+                    row.Fax,
+                    row.Email,
+                    CommModeID = row.SendVia,
+                    row.SmsAddress,
+                    row.ContactID
+                });
+            }
+
+            row.RowState = "CLEAN";
+        }
+    }
+
+    private async Task<bool> ConfirmSaveAsync()
+    {
+        if (!mDirty) return true;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Customer has changed. Save these changes?");
+        if (!confirm) return true;
+        return await SaveDataAsync(false);
+    }
+
+    private void AddContact()
+    {
+        ContactsData.Add(new ContactRow { SendVia = 1, RowState = "DIRTY" });
+        mDirty = true;
+    }
+
+    private async Task DeleteContact()
+    {
+        if (SelectedContact == null) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Delete selected contact?");
+        if (!confirm) return;
+
+        if (SelectedContact.ContactID != 0)
+            DeletedContactIds.Add(SelectedContact.ContactID);
+
+        ContactsData.Remove(SelectedContact);
+        SelectedContact = null;
+        mDirty = true;
+    }
+
+    private void OnContactSelected(RowSelectEventArgs<ContactRow> args) => SelectedContact = args.Data;
+    private void OnContactDeselected(RowSelectEventArgs<ContactRow> args) => SelectedContact = null;
+
+    private void OnContactCellSaved(CellSaveArgs<ContactRow> args)
+    {
+        if (args.Data == null) return;
+        MarkContactDirty(args.Data);
+    }
+
+    private void MarkDirty() { mDirty = true; }
+    private void MarkDirty(ChangeEventArgs _)
+    {
+        mDirty = true;
+    }
+
+    private void MarkContactDirty(ContactRow row)
+    {
+        row.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    private static string CombineAddress(string? addr1, string? addr2)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(addr1)) parts.Add(addr1.Trim());
+        if (!string.IsNullOrWhiteSpace(addr2)) parts.Add(addr2.Trim());
+        return string.Join("\n", parts);
+    }
+
+    private static (string Line1, string Line2) SplitAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return ("", "");
+        var lines = address.Replace("\r\n", "\n").Split('\n');
+        var line1 = lines.Length > 0 ? lines[0].Trim() : "";
+        var line2 = lines.Length > 1 ? string.Join("\n", lines.Skip(1)).Trim() : "";
+        return (line1, line2);
+    }
+
+    private static string FormatPhone(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        return digits.Length == 10
+            ? $"({digits[..3]}) {digits.Substring(3, 3)}-{digits.Substring(6)}"
+            : value.Trim();
+    }
+
+    private static bool IsTrue(object? val)
+    {
+        var s = val?.ToString() ?? "";
+        return s.Equals("true", StringComparison.OrdinalIgnoreCase) || s == "1";
+    }
+
+    private static long SafeLong(object? val) =>
+        val == null || val == DBNull.Value ? 0 : Convert.ToInt64(val);
+
+    private static int SafeInt(object? val, int def = 0) =>
+        val == null || val == DBNull.Value || !int.TryParse(val.ToString(), out var i) ? def : i;
+
+    private string GetSendViaText(int value) =>
+        SendViaOptions.FirstOrDefault(x => x.Value == value)?.Text ?? value.ToString();
+
+    private static bool IsContactEmpty(ContactRow row) =>
+        string.IsNullOrWhiteSpace(row.Role) &&
+        string.IsNullOrWhiteSpace(row.Name) &&
+        string.IsNullOrWhiteSpace(row.Phone) &&
+        string.IsNullOrWhiteSpace(row.Cell) &&
+        string.IsNullOrWhiteSpace(row.Fax) &&
+        string.IsNullOrWhiteSpace(row.Email) &&
+        string.IsNullOrWhiteSpace(row.SmsAddress);
+
+    public class ContactRow
+    {
+        public long ContactID { get; set; }
+        public string Role { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public int SendVia { get; set; } = 1;
+        public string SmsAddress { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    public class ComboItem
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
+    public class ComboIntItem
+    {
+        public int Value { get; set; }
+        public string Text { get; set; } = "";
+    }
+}

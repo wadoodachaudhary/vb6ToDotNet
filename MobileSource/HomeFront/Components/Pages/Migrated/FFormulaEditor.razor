@@ -1,0 +1,1113 @@
+```razor
+@page "/formula-editor"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.Text.RegularExpressions
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Formula Editor</PageTitle>
+
+<style>
+    .formula-editor-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 120px);
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    /* Top panels area */
+    .top-panels {
+        display: flex;
+        flex: 0 0 auto;
+        min-height: 200px;
+        max-height: 40%;
+        border-bottom: 3px solid #c9c9c9;
+        resize: vertical;
+        overflow: hidden;
+    }
+
+    .panel-variables, .panel-formulas, .panel-functions {
+        overflow: auto;
+        border: 1px solid #dee2e6;
+        background: #fff;
+    }
+
+    .panel-variables {
+        flex: 1;
+        border-right: 3px solid #c9c9c9;
+        min-width: 150px;
+        resize: horizontal;
+        overflow: auto;
+    }
+
+    .panel-formulas {
+        flex: 1;
+        border-right: 3px solid #c9c9c9;
+        min-width: 150px;
+        resize: horizontal;
+        overflow: auto;
+    }
+
+    .panel-functions {
+        flex: 1;
+        min-width: 150px;
+        overflow: auto;
+    }
+
+    /* Panel items */
+    .panel-header {
+        font-weight: bold;
+        padding: 4px 8px;
+        background: #f0f0f0;
+        border-bottom: 1px solid #dee2e6;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .panel-header:hover {
+        background: #e0e0e0;
+    }
+
+    .panel-item {
+        padding: 3px 8px 3px 20px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .panel-item:hover {
+        background: #cce5ff;
+    }
+
+    .panel-item.selected {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .group-header {
+        font-weight: bold;
+        padding: 4px 8px;
+        background: #f8f8f8;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .group-header:hover {
+        background: #e8e8e8;
+    }
+
+    .group-header .toggle {
+        display: inline-block;
+        width: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #666;
+        margin-right: 4px;
+    }
+
+    /* Formula text area */
+    .formula-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .formula-area textarea {
+        flex: 1;
+        width: 100%;
+        border: none;
+        border-top: 1px solid #dee2e6;
+        padding: 8px;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 13px;
+        resize: none;
+        outline: none;
+    }
+
+    .formula-area textarea:focus {
+        box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.15);
+    }
+
+    /* Button bar */
+    .button-bar {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+        gap: 8px;
+    }
+
+    .button-bar .spacer {
+        flex: 1;
+    }
+
+    .btn-nav {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 80px;
+    }
+
+    .btn-nav:hover {
+        background: #e9ecef;
+    }
+
+    .btn-nav.primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .btn-nav.primary:hover {
+        background: #0b5ed7;
+    }
+
+    /* Context menu */
+    .context-menu-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+    }
+
+    .context-menu {
+        position: fixed;
+        z-index: 1000;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 160px;
+        padding: 4px 0;
+    }
+
+    .context-menu button {
+        display: block;
+        width: 100%;
+        padding: 6px 16px;
+        border: none;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .context-menu button:hover:not(:disabled) {
+        background: #e9ecef;
+    }
+
+    .context-menu button:disabled {
+        color: #adb5bd;
+        cursor: default;
+    }
+
+    .context-menu hr {
+        margin: 4px 0;
+        border: none;
+        border-top: 1px solid #dee2e6;
+    }
+
+    /* Dialog */
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+    }
+
+    .dialog-header button:hover {
+        color: #212529;
+    }
+
+    .dialog-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .dialog-body input {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    /* Tooltip */
+    .panel-item[title] {
+        position: relative;
+    }
+</style>
+
+<div class="formula-editor-container">
+    @* ── Top Three Panels ─────────────────────────────────── *@
+    <div class="top-panels" style="height: @(TopPanelHeight)px;">
+        @* Variables Panel *@
+        <div class="panel-variables" @oncontextmenu="OnVariablesContextMenu" @oncontextmenu:preventDefault>
+            <div class="panel-header">Variables</div>
+            @foreach (var v in VariablesList)
+            {
+                <div class="panel-item @(SelectedVariable == v ? "selected" : "")"
+                     title="@v.Help"
+                     @onclick="() => SelectVariable(v)"
+                     @ondblclick="() => InsertVariable(v)">
+                    @v.Name
+                </div>
+            }
+        </div>
+
+        @* Formulas Panel *@
+        <div class="panel-formulas" @oncontextmenu="OnFormulasContextMenu" @oncontextmenu:preventDefault>
+            <div class="panel-header">Formulas</div>
+            @foreach (var f in FormulasList)
+            {
+                <div class="panel-item @(SelectedFormula == f ? "selected" : "")"
+                     title="@f.Text"
+                     @onclick="() => SelectFormula(f)"
+                     @ondblclick="() => InsertFormula(f)">
+                    @f.Name
+                </div>
+            }
+        </div>
+
+        @* Functions Panel *@
+        <div class="panel-functions" @oncontextmenu="OnFunctionsContextMenu" @oncontextmenu:preventDefault>
+            @foreach (var group in FunctionGroups)
+            {
+                <div class="group-header" @onclick="() => ToggleFunctionGroup(group)">
+                    <span class="toggle">@(group.Expanded ? "▼" : "▶")</span>
+                    @group.Name
+                </div>
+                @if (group.Expanded)
+                {
+                    @foreach (var fn in group.Functions)
+                    {
+                        <div class="panel-item @(SelectedFunction == fn ? "selected" : "")"
+                             title="@fn.Description"
+                             @onclick="() => SelectFunction(fn)"
+                             @ondblclick="() => InsertFunction(fn)">
+                            @fn.DisplayName
+                        </div>
+                    }
+                }
+            }
+        </div>
+    </div>
+
+    @* ── Formula Text Area ────────────────────────────────── *@
+    <div class="formula-area">
+        <textarea @bind="FormulaText" @bind:event="oninput" @ref="formulaTextArea"
+                  placeholder="Enter formula here..."></textarea>
+    </div>
+
+    @* ── Button Bar ───────────────────────────────────────── *@
+    <div class="button-bar">
+        <button class="btn-nav" @onclick="OnTestClick">
+            &amp;Test
+        </button>
+        <div class="spacer"></div>
+        <button class="btn-nav primary" @onclick="OnOkClick">
+            &amp;OK
+        </button>
+        <button class="btn-nav" @onclick="OnCancelClick">
+            &amp;Cancel
+        </button>
+    </div>
+</div>
+
+@* ── Context Menu ─────────────────────────────────────────── *@
+@if (IsContextMenuVisible)
+{
+    <div class="context-menu-overlay" @onclick="CloseContextMenu"></div>
+    <div class="context-menu" style="left: @(ContextMenuX)px; top: @(ContextMenuY)px;">
+        <button disabled="@(!CanInsert)" @onclick="OnContextInsert">Insert</button>
+        <hr />
+        <button disabled="@(!CanRename)" @onclick="OnContextRename">Rename</button>
+        <button disabled="@(!CanNew)" @onclick="OnContextNew">New</button>
+        <button disabled="@(!CanEdit)" @onclick="OnContextEdit">Edit</button>
+        <hr />
+        <button disabled="@(!CanDelete)" @onclick="OnContextDelete">Delete</button>
+    </div>
+}
+
+@* ── Rename Dialog ────────────────────────────────────────── *@
+@if (IsRenameDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsRenameDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Rename</span>
+                <button @onclick="() => IsRenameDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">New Name:</label>
+                <input @bind="RenameText" placeholder="Enter new name..." />
+            </div>
+            <div class="dialog-footer">
+                <button class="btn-nav primary" @onclick="OnRenameConfirm">OK</button>
+                <button class="btn-nav" @onclick="() => IsRenameDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── New Formula Dialog ───────────────────────────────────── *@
+@if (IsNewFormulaDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsNewFormulaDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>New Formula</span>
+                <button @onclick="() => IsNewFormulaDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">Formula Name:</label>
+                <input @bind="NewFormulaName" placeholder="Enter formula name..." />
+            </div>
+            <div class="dialog-footer">
+                <button class="btn-nav primary" @onclick="OnNewFormulaConfirm">OK</button>
+                <button class="btn-nav" @onclick="() => IsNewFormulaDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Sub-Formula Editor Dialog ────────────────────────────── *@
+@if (IsSubFormulaEditorVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" style="min-width:600px; max-width:800px; max-height:90vh;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Formula Editor - @SubFormulaName</span>
+                <button @onclick="OnSubFormulaCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <textarea @bind="SubFormulaText" rows="12"
+                          style="width:100%; font-family:Consolas,monospace; font-size:13px; padding:8px; border:1px solid #ced4da; border-radius:4px; resize:vertical;"
+                          placeholder="Enter formula text..."></textarea>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn-nav primary" @onclick="OnSubFormulaOk">OK</button>
+                <button class="btn-nav" @onclick="OnSubFormulaCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Variable Editor Dialog ───────────────────────────────── *@
+@if (IsVariableEditorVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsVariableEditorVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>@(string.IsNullOrEmpty(EditVariableOriginalName) ? "New Variable" : "Edit Variable")</span>
+                <button @onclick="() => IsVariableEditorVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block; margin-bottom:4px; font-weight:500;">Name:</label>
+                    <input @bind="EditVariableName" placeholder="Variable name" />
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:4px; font-weight:500;">Help Text:</label>
+                    <input @bind="EditVariableHelp" placeholder="Help text" />
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn-nav primary" @onclick="OnVariableEditorOk">OK</button>
+                <button class="btn-nav" @onclick="() => IsVariableEditorVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Component Parameters (for modal-like usage) ===
+    [Parameter] public string? FormulaName { get; set; }
+    [Parameter] public string? InitialText { get; set; }
+    [Parameter] public EventCallback<string?> OnClose { get; set; }
+
+    // === State ===
+    private string FormulaText = "";
+    private bool mCancel = false;
+    private int TopPanelHeight = 250;
+    private ElementReference formulaTextArea;
+
+    // === Variables ===
+    private List<VariableItem> VariablesList = new();
+    private VariableItem? SelectedVariable;
+
+    // === Formulas ===
+    private List<FormulaItem> FormulasList = new();
+    private FormulaItem? SelectedFormula;
+
+    // === Functions ===
+    private List<FunctionGroup> FunctionGroups = new();
+    private FunctionEntry? SelectedFunction;
+
+    // === Context Menu ===
+    private bool IsContextMenuVisible = false;
+    private double ContextMenuX;
+    private double ContextMenuY;
+    private ContextTarget ActiveContextTarget = ContextTarget.None;
+    private bool CanInsert, CanRename, CanNew, CanEdit, CanDelete;
+
+    // === Rename Dialog ===
+    private bool IsRenameDialogVisible = false;
+    private string RenameText = "";
+    private string RenameOriginalName = "";
+    private ContextTarget RenameTarget = ContextTarget.None;
+
+    // === New Formula Dialog ===
+    private bool IsNewFormulaDialogVisible = false;
+    private string NewFormulaName = "";
+
+    // === Sub-Formula Editor ===
+    private bool IsSubFormulaEditorVisible = false;
+    private string SubFormulaName = "";
+    private string SubFormulaText = "";
+
+    // === Variable Editor ===
+    private bool IsVariableEditorVisible = false;
+    private string EditVariableName = "";
+    private string EditVariableHelp = "";
+    private string EditVariableOriginalName = "";
+
+    // === Enums ===
+    private enum ContextTarget { None, Variables, Formulas, Functions }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        FormulaText = InitialText ?? "";
+        LoadFunctions();
+        await LoadVariablesAsync();
+        await LoadFormulasAsync();
+    }
+
+    // === Public API for modal usage ===
+    public async Task<(bool Ok, string Text)> EditFormulaAsync(string name, string text)
+    {
+        FormulaName = name;
+        FormulaText = text;
+        mCancel = false;
+        LoadFunctions();
+        await LoadVariablesAsync();
+        await LoadFormulasAsync();
+        StateHasChanged();
+        // In Blazor, modal behavior is handled differently; return current state
+        return (!mCancel, FormulaText);
+    }
+
+    // === Button Handlers ===
+    private async Task OnOkClick()
+    {
+        mCancel = false;
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync(FormulaText);
+    }
+
+    private async Task OnCancelClick()
+    {
+        mCancel = true;
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync(null);
+    }
+
+    private async Task OnTestClick()
+    {
+        // Placeholder for formula test functionality
+        await JSRuntime.InvokeVoidAsync("alert", "Formula Test:\n\n" + FormulaText);
+    }
+
+    // === Selection ===
+    private void SelectVariable(VariableItem v) => SelectedVariable = v;
+    private void SelectFormula(FormulaItem f) => SelectedFormula = f;
+    private void SelectFunction(FunctionEntry fn) => SelectedFunction = fn;
+
+    // === Double-click Insert ===
+    private async Task InsertVariable(VariableItem v)
+    {
+        var insertText = $"[{v.Name}]";
+        await InsertTextAtCursor(insertText);
+    }
+
+    private async Task InsertFormula(FormulaItem f)
+    {
+        var insertText = $"{{{f.Name}}}";
+        await InsertTextAtCursor(insertText);
+    }
+
+    private async Task InsertFunction(FunctionEntry fn)
+    {
+        var insertText = fn.DisplayName.Trim();
+        await InsertTextAtCursor(insertText);
+    }
+
+    private async Task InsertTextAtCursor(string text)
+    {
+        // In Blazor, we append to the formula text (cursor position management requires JS interop)
+        FormulaText += text;
+        StateHasChanged();
+        try
+        {
+            await formulaTextArea.FocusAsync();
+        }
+        catch { }
+    }
+
+    // === Context Menu: Variables ===
+    private void OnVariablesContextMenu(MouseEventArgs e)
+    {
+        ActiveContextTarget = ContextTarget.Variables;
+        CanInsert = true;
+        CanRename = SelectedVariable != null;
+        CanNew = true;
+        CanEdit = SelectedVariable != null;
+        CanDelete = SelectedVariable != null;
+        ShowContextMenu(e);
+    }
+
+    // === Context Menu: Formulas ===
+    private void OnFormulasContextMenu(MouseEventArgs e)
+    {
+        ActiveContextTarget = ContextTarget.Formulas;
+        CanInsert = SelectedFormula != null;
+        CanRename = SelectedFormula != null;
+        CanNew = true;
+        CanEdit = SelectedFormula != null;
+        CanDelete = SelectedFormula != null;
+        ShowContextMenu(e);
+    }
+
+    // === Context Menu: Functions ===
+    private void OnFunctionsContextMenu(MouseEventArgs e)
+    {
+        ActiveContextTarget = ContextTarget.Functions;
+        CanInsert = SelectedFunction != null;
+        CanRename = false;
+        CanNew = false;
+        CanEdit = false;
+        CanDelete = false;
+        ShowContextMenu(e);
+    }
+
+    private void ShowContextMenu(MouseEventArgs e)
+    {
+        ContextMenuX = e.ClientX;
+        ContextMenuY = e.ClientY;
+        IsContextMenuVisible = true;
+    }
+
+    private void CloseContextMenu()
+    {
+        IsContextMenuVisible = false;
+    }
+
+    // === Context Menu Actions ===
+    private async Task OnContextInsert()
+    {
+        CloseContextMenu();
+        switch (ActiveContextTarget)
+        {
+            case ContextTarget.Variables when SelectedVariable != null:
+                await InsertVariable(SelectedVariable);
+                break;
+            case ContextTarget.Formulas when SelectedFormula != null:
+                await InsertFormula(SelectedFormula);
+                break;
+            case ContextTarget.Functions when SelectedFunction != null:
+                await InsertFunction(SelectedFunction);
+                break;
+        }
+    }
+
+    private void OnContextRename()
+    {
+        CloseContextMenu();
+        RenameTarget = ActiveContextTarget;
+        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
+        {
+            RenameOriginalName = SelectedVariable.Name;
+            RenameText = SelectedVariable.Name;
+            IsRenameDialogVisible = true;
+        }
+        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
+        {
+            RenameOriginalName = SelectedFormula.Name;
+            RenameText = SelectedFormula.Name;
+            IsRenameDialogVisible = true;
+        }
+    }
+
+    private async Task OnRenameConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(RenameText))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Name cannot be empty.");
+            return;
+        }
+
+        try
+        {
+            if (RenameTarget == ContextTarget.Variables)
+            {
+                var sql = $"UPDATE variables SET name=@NewName WHERE name=@OldName";
+                await db.ExecuteAsync(sql, new { NewName = RenameText, OldName = RenameOriginalName });
+
+                // Update references in formulas and assembly details
+                var updateSql = $@"
+                    UPDATE formulas SET text = REPLACE(text, @OldRef, @NewRef);
+                    UPDATE tblphaseitem SET formula = REPLACE(formula, @OldRef, @NewRef);
+                    UPDATE tbldbassemblydetails SET formula = REPLACE(formula, @OldRef, @NewRef);";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    OldRef = $"[{RenameOriginalName}]",
+                    NewRef = $"[{RenameText}]"
+                });
+
+                await LoadVariablesAsync();
+            }
+            else if (RenameTarget == ContextTarget.Formulas)
+            {
+                var sql = $"UPDATE formulas SET name=@NewName WHERE name=@OldName";
+                await db.ExecuteAsync(sql, new { NewName = RenameText, OldName = RenameOriginalName });
+
+                var updateSql = $@"
+                    UPDATE formulas SET text = REPLACE(text, @OldRef, @NewRef);
+                    UPDATE tblphaseitem SET formula = REPLACE(formula, @OldRef, @NewRef);
+                    UPDATE tbldbassemblydetails SET formula = REPLACE(formula, @OldRef, @NewRef);";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    OldRef = $"{{{RenameOriginalName}}}",
+                    NewRef = $"{{{RenameText}}}"
+                });
+
+                await LoadFormulasAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            var entityType = RenameTarget == ContextTarget.Variables ? "variable" : "formula";
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"There is already a {entityType} named {RenameText}. Please specify a unique name.");
+        }
+
+        IsRenameDialogVisible = false;
+    }
+
+    private void OnContextNew()
+    {
+        CloseContextMenu();
+        if (ActiveContextTarget == ContextTarget.Variables)
+        {
+            EditVariableOriginalName = "";
+            EditVariableName = "";
+            EditVariableHelp = "";
+            IsVariableEditorVisible = true;
+        }
+        else if (ActiveContextTarget == ContextTarget.Formulas)
+        {
+            NewFormulaName = "";
+            IsNewFormulaDialogVisible = true;
+        }
+    }
+
+    private async Task OnNewFormulaConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(NewFormulaName))
+        {
+            IsNewFormulaDialogVisible = false;
+            return;
+        }
+
+        try
+        {
+            await db.ExecuteAsync("INSERT INTO formulas(name) VALUES(@Name)", new { Name = NewFormulaName });
+            await LoadFormulasAsync();
+
+            // Select the new formula and open editor
+            var newFormula = FormulasList.FirstOrDefault(f =>
+                f.Name.Equals(NewFormulaName, StringComparison.OrdinalIgnoreCase));
+            if (newFormula != null)
+            {
+                SelectedFormula = newFormula;
+                OpenSubFormulaEditor(newFormula);
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"A formula named {NewFormulaName} already exists. You must specify a unique name.");
+        }
+
+        IsNewFormulaDialogVisible = false;
+    }
+
+    private async Task OnContextEdit()
+    {
+        CloseContextMenu();
+        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
+        {
+            EditVariableOriginalName = SelectedVariable.Name;
+            EditVariableName = SelectedVariable.Name;
+            EditVariableHelp = SelectedVariable.Help;
+            IsVariableEditorVisible = true;
+        }
+        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
+        {
+            // Load formula text from DB
+            var rows = await db.QueryAsync("SELECT text FROM formulas WHERE name=@Name",
+                new { Name = SelectedFormula.Name });
+            var text = rows.FirstOrDefault()?["text"]?.ToString() ?? "";
+            SelectedFormula.Text = text;
+            OpenSubFormulaEditor(SelectedFormula);
+        }
+    }
+
+    private void OpenSubFormulaEditor(FormulaItem formula)
+    {
+        SubFormulaName = formula.Name;
+        SubFormulaText = formula.Text;
+        IsSubFormulaEditorVisible = true;
+    }
+
+    private async Task OnSubFormulaOk()
+    {
+        // Save the sub-formula text
+        var formula = FormulasList.FirstOrDefault(f =>
+            f.Name.Equals(SubFormulaName, StringComparison.OrdinalIgnoreCase));
+        if (formula != null)
+        {
+            formula.Text = SubFormulaText;
+            await db.ExecuteAsync("UPDATE formulas SET text=@Text WHERE name=@Name",
+                new { Text = SubFormulaText, Name = SubFormulaName });
+        }
+        IsSubFormulaEditorVisible = false;
+    }
+
+    private void OnSubFormulaCancel()
+    {
+        IsSubFormulaEditorVisible = false;
+    }
+
+    private async Task OnVariableEditorOk()
+    {
+        if (string.IsNullOrWhiteSpace(EditVariableName))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Variable name is required.");
+            return;
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(EditVariableOriginalName))
+            {
+                // New variable
+                await db.ExecuteAsync("INSERT INTO variables(name, help) VALUES(@Name, @Help)",
+                    new { Name = EditVariableName, Help = EditVariableHelp });
+            }
+            else
+            {
+                // Update existing
+                await db.ExecuteAsync("UPDATE variables SET name=@Name, help=@Help WHERE name=@OldName",
+                    new { Name = EditVariableName, Help = EditVariableHelp, OldName = EditVariableOriginalName });
+            }
+            await LoadVariablesAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving variable: {ex.Message}");
+        }
+
+        IsVariableEditorVisible = false;
+    }
+
+    private async Task OnContextDelete()
+    {
+        CloseContextMenu();
+        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                $"Are you sure you want to delete {SelectedVariable.Name}?");
+            if (confirm)
+            {
+                await db.ExecuteAsync("DELETE FROM variables WHERE name=@Name",
+                    new { Name = SelectedVariable.Name });
+                SelectedVariable = null;
+                await LoadVariablesAsync();
+            }
+        }
+        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                $"Are you sure you want to delete {SelectedFormula.Name}?");
+            if (confirm)
+            {
+                await db.ExecuteAsync("DELETE FROM formulas WHERE name=@Name",
+                    new { Name = SelectedFormula.Name });
+                SelectedFormula = null;
+                await LoadFormulasAsync();
+            }
+        }
+    }
+
+    // === Function Group Toggle ===
+    private void ToggleFunctionGroup(FunctionGroup group)
+    {
+        group.Expanded = !group.Expanded;
+    }
+
+    // === Load Variables from DB ===
+    private async Task LoadVariablesAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT name, help FROM variables ORDER BY name");
+            VariablesList = rows.Select(r => new VariableItem
+            {
+                Name = r["name"]?.ToString() ?? "",
+                Help = r["help"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadVariables error: {ex.Message}");
+            VariablesList = new();
+        }
+    }
+
+    // === Load Formulas from DB ===
+    private async Task LoadFormulasAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT name, text FROM formulas ORDER BY name");
+            FormulasList = rows.Select(r => new FormulaItem
+            {
+                Name = r["name"]?.ToString() ?? "",
+                Text = r["text"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadFormulas error: {ex.Message}");
+            FormulasList = new();
+        }
+    }
+
+    // === Load Functions (static definitions from VB6) ===
+    private void LoadFunctions()
+    {
+        FunctionGroups = new List<FunctionGroup>
+        {
+            new FunctionGroup
+            {
+                Name = "Operators",
+                Expanded = false,
+                Functions = new List<FunctionEntry>
+                {
+                    new("+", ""),
+                    new("-", ""),
+                    new("*", ""),
+                    new("/", ""),
+                    new("^", "Exponent. IE: 3 squared could be expressed as 3^2"),
+                    new("%", "Modulus. Returns the remainder of a division operation")
+                }
+            },
+            new FunctionGroup
+            {
+                Name = "Comparisons",
+                Expanded = false,
+                Functions = new List<FunctionEntry>
+                {
+                    new("=", ""), new(">", ""), new("<", ""),
+                    new("<=", ""), new(">=", ""), new("<>", "")
+                }
+            },
+            new FunctionGroup
+            {
+                Name = "Numeric Functions",
+                Expanded = false,
+                Functions = new List<FunctionEntry>
+                {
+                    new("ABS ( numeric )", "Returns the absolute (positive) value of the specified numeric expression."),
+                    new("ARCCOS ( numeric )", "Returns the angle, in radians, whose cosine is the specified numeric expression; also called arccosine."),
+                    new("ARCSIN ( numeric )", "Returns the angle, in radians, whose sine is the specified numeric expression. Also called arcsine."),
+                    new("ARCTAN ( numeric )", "Returns the angle in radians whose tangent is a specified numeric expression. Also called arctangent."),
+                    new("AVG ( numeric , numeric [, numeric] )", "Returns the average of the 2 or 3 specified values."),
+                    new("CEILING ( numeric )", "Returns the smallest integer greater than, or equal to, the specified numeric expression."),
+                    new("COS ( numeric )", "Returns the trigonometric cosine of the specified angle, in radians."),
+                    new("COT ( numeric )", "Returns the trigonometric cotangent of the specified angle, in radians."),
+                    new("DEGREES ( numeric )", "Returns the corresponding angle in degrees for an angle specified in radians."),
+                    new("EXP ( numeric )", "Returns the exponential value of the specified expression."),
+                    new("FLOOR ( numeric )", "Returns the largest integer less than or equal to the specified numeric expression."),
+                    new("LOG ( numeric )", "Returns the natural logarithm of the specified numeric expression."),
+                    new("LOG10 ( numeric )", "Returns the base-10 logarithm of the specified numeric expression."),
+                    new("MAX ( numeric , numeric [, numeric] )", "Returns the maximum of the 2 or 3 specified values."),
+                    new("MIN ( numeric , numeric [, numeric] )", "Returns the minimum of the 2 or 3 specified values."),
+                    new("MOD ( value , divisor )", "Returns the integer remainder of value divided by divisor."),
+                    new("PI ( )", "Returns the constant value of PI."),
+                    new("POWER ( numeric , y )", "Returns the value of the specified expression to the specified power."),
+                    new("RADIANS ( numeric )", "Returns radians when a numeric expression, in degrees, is entered."),
+                    new("ROUND ( numeric , length )", "Returns a numeric value, rounded to the specified length or precision."),
+                    new("ROUNDTO ( value , method , multiplier )", "Returns a numeric value, rounded to the specified length or precision using a specific method.\nMethod = 1, 0, -1 = round up, round closest, round down."),
+                    new("SIN ( numeric )", "Returns the trigonometric sine of the specified angle, in radians."),
+                    new("SQRT ( numeric )", "Returns the square root of the specified numeric value."),
+                    new("SQUARE ( numeric )", "Returns the square of the specified numeric value."),
+                    new("TAN ( numeric )", "Returns the tangent of the input expression."),
+                    new("TRUNC( value , decimals )", "Returns value with the specified number of decimal places.\nIf decimals is negative, value is truncated to the left of the decimal point.\n\n   TRUNC(1538.3518, 3) = 1538.3510\n   TRUNC(1538.3518, 1) = 1538.3000\n   TRUNC(1538.3518, 0) = 1538.0000\n   TRUNC(1538.3518, -1) = 1530.0000\n   TRUNC(1538.3518, -3) = 1000.0000")
+                }
+            },
+            new FunctionGroup
+            {
+                Name = "Text Functions",
+                Expanded = false,
+                Functions = new List<FunctionEntry>
+                {
+                    new("CHAR ( integer )", "Converts an int ASCII code to a character."),
+                    new("CHARINDEX ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
+                    new("INSTR ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
+                    new("LEFT ( text , integer )", "Returns the left part of a character string with the specified number of characters."),
+                    new("LEN ( text )", "Returns the number of characters in text, excluding trailing blanks."),
+                    new("LOWER ( text )", "Returns a character expression after converting uppercase character data to lowercase."),
+                    new("LTRIM ( text )", "Returns a character expression after it removes leading blanks."),
+                    new("PATINDEX ( '%pattern%' , expression )", "Returns the starting position of the first occurrence of a pattern in a specified expression, or zeros if the pattern is not found."),
+                    new("REPLACE ( text , pattern , replacement )", "Replaces all occurrences of a specified string value with another string value."),
+                    new("REPLICATE ( text , integer )", "Repeats a string value a specified number of times."),
+                    new("RIGHT ( text , integer )", "Returns the right part of a character string with the specified number of characters."),
+                    new("RTRIM ( text )", "Returns a character string after truncating all trailing blanks."),
+                    new("SPACE ( text )", "Returns a string of repeated spaces."),
+                    new("STR ( numeric [ , length [ , decimals ] ] )", "Returns character data converted from numeric data."),
+                    new("SUBSTRING ( text , start , length )", "Returns part of a text string."),
+                    new("UPPER ( text )", "Returns a character expression with lowercase character data converted to uppercase.")
+                }
+            },
+            new FunctionGroup
+            {
+                Name = "Other Functions",
+                Expanded = false,
+                Functions = new List<FunctionEntry>
+                {
+                    new("PI", ""),
+                    new("e", ""),
+                    new("Rnd", "Returns a random number valued between 0 and 1"),
+                    new("IF( expression, truevalue, falsevalue)", ""),
+                    new("AssemblyOrderQty ( community, assembly, model, optionid, phase, item )", "Returns the total order quantity of a phase/item in an assembly."),
+                    new("AssemblyTakeoffQty ( community, assembly, model, optionid, phase, item )", "Returns the total takeoff quantity of a phase/item in an assembly."),
+                    new("TotalOrderQty ( poindex, costcode, phase, item )", "Returns the total order quantity of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items."),
+                    new("TotalTakeoffQty ( poindex, costcode, phase, item )", "Returns the total takeoff quantity of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items."),
+                    new("TotalCost ( poindex, costcode, phase, item )", "Returns the total cost of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items.")
+                }
+            }
+        };
+    }
+
+    // === Formula Text Change — replace curly quotes ===
+    private void OnFormulaTextChanged(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString() ?? "";
+        // Replace curly/smart quotes with standard ASCII equivalents
+        s = s.Replace('\u0093', '"')  // left double quote
+             .Replace('\u0094', '"')  // right double quote
+             .Replace('\u0098', '"')  // another smart quote variant
+             .Replace('\u0096', '-'); // en dash
+        FormulaText = s;
+    }
+
+    // === Models ===
+    public class VariableItem
+    {
+        public string Name { get; set; } = "";
+        public string Help { get; set; } = "";
+    }
+
+    public class FormulaItem
+    {
+        public string Name { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
+    public class FunctionGroup
+    {
+        public string Name { get; set; } = "";
+        public bool Expanded { get; set; } = false;
+        public List<FunctionEntry> Functions { get; set; } = new();
+    }
+
+    public class FunctionEntry
+    {
+        public string DisplayName { get; set; } = "";
+        public string Description { get; set; } = "";
+
+        public FunctionEntry() { }
+        public FunctionEntry(string displayName, string description)
+        {
+            DisplayName = displayName;
+            Description = description;
+        }
+    }
+}
+```

@@ -1,0 +1,227 @@
+@using System;
+@using System.ComponentModel;
+@using System.Diagnostics;
+@using System.IO;
+@using System.Linq;
+@using System.Reflection;
+
+@code {
+    
+    public enum VersionInfoStrings
+    {
+        Language = 0,
+        Comments = 1,
+        CompanyName = 2,
+        FileDescription = 3,
+        FileVersion = 4,
+        InternalName = 5,
+        LegalCopyright = 6,
+        LegalTrademarks = 7,
+        OriginalFilename = 8,
+        ProductName = 9,
+        ProductVersion = 10,
+        PrivateBuild = 11,
+        SpecialBuild = 12,
+        LegalTrademarks1 = 13,
+        LegalTrademarks2 = 14
+    }
+
+    private string m_PathName;
+    private bool m_Available;
+    private string m_StrucVer;
+    private string m_FileVer;
+    private string m_ProdVer;
+    private string m_FileFlags;
+    private string m_FileOS;
+    private string m_FileType;
+    private string m_FileSubType;
+    private string m_VerLanguage;
+    private string m_VerComments;
+    private string m_VerCompany;
+    private string m_VerDescription;
+    private string m_VerFileVer;
+    private string m_VerInternalName;
+    private string m_VerCopyright;
+    private string m_VerTrademarks;
+    private string m_VerOrigFilename;
+    private string m_VerProductName;
+    private string m_VerProductVer;
+    private string m_VerPrivateBuild;
+    private string m_VerSpecialBuild;
+    private string m_VerTrademarks1;
+    private string m_VerTrademarks2;
+
+    [Parameter]
+    public string FullPathName
+    {
+        get => m_PathName;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                m_PathName = Path.GetFullPath(value);
+                Refresh();
+            }
+        }
+    }
+
+    public bool Available => m_Available;
+    public string FileFlags => m_FileFlags;
+    public string FileOS => m_FileOS;
+    public string FileType => m_FileType;
+    public string FileSubType => m_FileSubType;
+    public string VerFile => m_FileVer;
+    public string VerProduct => m_ProdVer;
+    public string VerStructure => m_StrucVer;
+
+    public string Comments => m_VerComments;
+    public string CompanyName => m_VerCompany;
+    public string FileDescription => m_VerDescription;
+    public string FileVersion => m_VerFileVer;
+    public string InternalName => m_VerInternalName;
+    public string Language => m_VerLanguage;
+    public string LegalCopyright => m_VerCopyright;
+    public string LegalTrademarks => m_VerTrademarks;
+    public string OriginalFilename => m_VerOrigFilename;
+    public string ProductName => m_VerProductName;
+    public string ProductVersion => m_VerProductVer;
+    public string PrivateBuild => m_VerPrivateBuild;
+    public string SpecialBuild => m_VerSpecialBuild;
+
+    public string PredefinedName(VersionInfoStrings which)
+    {
+        return which switch
+        {
+            VersionInfoStrings.Language => "Language",
+            VersionInfoStrings.Comments => "Comments",
+            VersionInfoStrings.CompanyName => "Company Name",
+            VersionInfoStrings.FileDescription => "File Description",
+            VersionInfoStrings.FileVersion => "File Version",
+            VersionInfoStrings.InternalName => "Internal Name",
+            VersionInfoStrings.LegalCopyright => "Legal Copyright",
+            VersionInfoStrings.LegalTrademarks => "Legal Trademarks",
+            VersionInfoStrings.OriginalFilename => "Original Filename",
+            VersionInfoStrings.ProductName => "Product Name",
+            VersionInfoStrings.ProductVersion => "Product Version",
+            VersionInfoStrings.PrivateBuild => "Private Build",
+            VersionInfoStrings.SpecialBuild => "Special Build",
+            VersionInfoStrings.LegalTrademarks1 => "LegalTrademarks1",
+            VersionInfoStrings.LegalTrademarks2 => "LegalTrademarks2",
+            _ => ""
+        };
+    }
+
+    public string PredefinedValue(VersionInfoStrings which)
+    {
+        return which switch
+        {
+            VersionInfoStrings.Language => m_VerLanguage,
+            VersionInfoStrings.Comments => m_VerComments,
+            VersionInfoStrings.CompanyName => m_VerCompany,
+            VersionInfoStrings.FileDescription => m_VerDescription,
+            VersionInfoStrings.FileVersion => m_VerFileVer,
+            VersionInfoStrings.InternalName => m_VerInternalName,
+            VersionInfoStrings.LegalCopyright => m_VerCopyright,
+            VersionInfoStrings.LegalTrademarks => m_VerTrademarks,
+            VersionInfoStrings.OriginalFilename => m_VerOrigFilename,
+            VersionInfoStrings.ProductName => m_VerProductName,
+            VersionInfoStrings.ProductVersion => m_VerProductVer,
+            VersionInfoStrings.PrivateBuild => m_VerPrivateBuild,
+            VersionInfoStrings.SpecialBuild => m_VerSpecialBuild,
+            VersionInfoStrings.LegalTrademarks1 => m_VerTrademarks1,
+            VersionInfoStrings.LegalTrademarks2 => m_VerTrademarks2,
+            _ => ""
+        };
+    }
+
+    public void Refresh()
+    {
+        if (string.IsNullOrEmpty(m_PathName) || !File.Exists(m_PathName))
+        {
+            m_Available = false;
+            return;
+        }
+
+        try
+        {
+            var versionInfo = FileVersionInfo.GetVersionInfo(m_PathName);
+
+            m_Available = true;
+
+            m_StrucVer = ""; // Not used in .NET
+
+            // File Version
+            m_FileVer = FormatVersion(versionInfo.FileMajorPart, versionInfo.FileMinorPart, versionInfo.FileBuildPart, versionInfo.FilePrivatePart);
+
+            // Product Version
+            m_ProdVer = FormatVersion(versionInfo.ProductMajorPart, versionInfo.ProductMinorPart, versionInfo.ProductBuildPart, versionInfo.ProductPrivatePart);
+
+            // File Flags
+            m_FileFlags = GetFileFlags(versionInfo);
+
+            // OS
+            m_FileOS = "Unknown"; // .NET does not expose this directly
+
+            // File Type
+            m_FileType = GetFileType(versionInfo);
+
+            // File SubType
+            m_FileSubType = ""; // Not available in .NET
+
+            // Predefined values
+            m_VerLanguage = versionInfo.Language;
+            m_VerComments = versionInfo.Comments;
+            m_VerCompany = versionInfo.CompanyName;
+            m_VerDescription = versionInfo.FileDescription;
+            m_VerFileVer = versionInfo.FileVersion;
+            m_VerInternalName = versionInfo.InternalName;
+            m_VerCopyright = versionInfo.LegalCopyright;
+            m_VerTrademarks = versionInfo.LegalTrademarks;
+            m_VerOrigFilename = versionInfo.OriginalFilename;
+            m_VerProductName = versionInfo.ProductName;
+            m_VerProductVer = versionInfo.ProductVersion;
+            m_VerPrivateBuild = versionInfo.PrivateBuild;
+            m_VerSpecialBuild = versionInfo.SpecialBuild;
+            m_VerTrademarks1 = ""; // Not available in .NET
+            m_VerTrademarks2 = ""; // Not available in .NET
+        }
+        catch
+        {
+            m_Available = false;
+        }
+    }
+
+    private string FormatVersion(int major, int minor, int build, int privatePart)
+    {
+        if (major == 0 && minor == 0 && build == 0 && privatePart == 0)
+            return "";
+        return $"{major}.{minor:00}.{build:00}{privatePart:00}";
+    }
+
+    private string GetFileFlags(FileVersionInfo vi)
+    {
+        var flags = "";
+        if (vi.IsDebug) flags += "Debug ";
+        if (vi.IsPreRelease) flags += "PreRel ";
+        if (vi.IsPatched) flags += "Patched ";
+        if (vi.IsPrivateBuild) flags += "Private ";
+        if (vi.IsSpecialBuild) flags += "Special ";
+        return flags.Trim();
+    }
+
+    private string GetFileType(FileVersionInfo vi)
+    {
+        // .NET does not expose file type, so guess by extension
+        var ext = Path.GetExtension(m_PathName)?.ToLowerInvariant();
+        return ext switch
+        {
+            ".exe" => "Application",
+            ".dll" => "DLL",
+            ".drv" => "Driver",
+            ".fon" => "Font",
+            ".vxd" => "VxD",
+            ".lib" => "Lib",
+            _ => "Unknown"
+        };
+    }
+}

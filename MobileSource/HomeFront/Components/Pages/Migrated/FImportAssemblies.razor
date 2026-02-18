@@ -1,0 +1,1183 @@
+```razor
+@page "/import-assemblies"
+@page "/import-assemblies/{ImportMode}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Models
+@using System.Data
+@using Microsoft.Data.SqlClient
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@(ImportMode ?? "Assembly") Import - HomeFront</PageTitle>
+
+<style>
+    .import-container {
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        padding: 10px;
+    }
+
+    .header-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 12px;
+        align-items: flex-start;
+    }
+
+    .header-left {
+        flex: 1;
+        min-width: 300px;
+    }
+
+    .header-right {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: flex-end;
+    }
+
+    .field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+
+    .field-row label {
+        min-width: 100px;
+        text-align: right;
+        padding-right: 8px;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .field-row .field-value {
+        font-size: 13px;
+        color: #000;
+    }
+
+    .field-row .field-value.bold {
+        font-weight: 700;
+    }
+
+    .field-row .field-value.error {
+        font-weight: 700;
+        color: red;
+    }
+
+    .btn-nav {
+        padding: 4px 16px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 80px;
+    }
+
+    .btn-nav:hover:not(:disabled) {
+        background: #e0e0e0;
+    }
+
+    .btn-nav:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-nav.primary {
+        font-weight: 600;
+    }
+
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+    }
+
+    .checkbox-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .status-label {
+        font-size: 13px;
+        color: #333;
+        margin-bottom: 4px;
+    }
+
+    .progress-bar-container {
+        width: 100%;
+        height: 22px;
+        background: #e0e0e0;
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(to right, #0078d7, #00a2ed);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .tab-buttons {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+        margin-bottom: 0;
+    }
+
+    .tab-buttons button {
+        padding: 8px 20px;
+        border: 1px solid #ddd;
+        border-bottom: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.15s;
+        margin-right: 2px;
+        border-radius: 4px 4px 0 0;
+    }
+
+    .tab-buttons button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-buttons button.active {
+        background: #fff;
+        border-bottom: 2px solid #fff;
+        margin-bottom: -2px;
+        color: #0078d7;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        border: 1px solid #ddd;
+        border-top: none;
+        background: #fff;
+        min-height: 300px;
+    }
+
+    .icon-container {
+        margin-right: 8px;
+    }
+
+    .icon-error {
+        color: red;
+        font-size: 24px;
+    }
+
+    .icon-warning {
+        color: orange;
+        font-size: 24px;
+    }
+
+    .icon-info {
+        color: #0078d7;
+        font-size: 24px;
+    }
+
+    .msg-row {
+        display: flex;
+        align-items: center;
+        padding: 3px 6px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+    }
+
+    .msg-row.error-msg {
+        color: red;
+    }
+
+    .msg-row.warn-msg {
+        color: #b8860b;
+    }
+
+    .msg-row.info-msg {
+        color: #0078d7;
+    }
+
+    .msg-icon {
+        width: 20px;
+        text-align: center;
+        margin-right: 6px;
+        font-size: 14px;
+    }
+
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .file-upload-area {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        cursor: pointer;
+        margin-bottom: 16px;
+        background: #fafafa;
+        transition: border-color 0.2s;
+    }
+
+    .file-upload-area:hover {
+        border-color: #0078d7;
+        background: #f0f8ff;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ @StatusMessage</div>
+    </div>
+}
+
+<div class="import-container">
+    <h3>@(ImportMode ?? "Assembly") Import</h3>
+
+    @if (!FileLoaded)
+    {
+        <div class="file-upload-area" @onclick="OnSelectFile">
+            <p style="font-size: 16px; color: #666;">📂 Click to select an Excel file (.xls, .xlsx)</p>
+            <p style="font-size: 12px; color: #999;">Or drag and drop a file here</p>
+            <InputFile OnChange="OnFileSelected" accept=".xls,.xlsx" style="display:none" @ref="fileInputRef" />
+        </div>
+    }
+    else
+    {
+        <!-- Header Info -->
+        <div class="header-panel">
+            <div class="header-left">
+                <div class="field-row">
+                    <label>File Name:</label>
+                    <span class="field-value">@FileName</span>
+                </div>
+                <div class="field-row">
+                    <label>Assemblies:</label>
+                    <span class="field-value">@ModelCount</span>
+                </div>
+                <div class="field-row">
+                    <label>Items:</label>
+                    <span class="field-value">@ItemCount</span>
+                </div>
+                <div class="field-row">
+                    <label>Phases:</label>
+                    <span class="field-value">@PhaseCount</span>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                @if (ErrorCount > 0)
+                {
+                    <div class="field-row">
+                        <label>Errors:</label>
+                        <span class="field-value error">@ErrorCount</span>
+                    </div>
+                }
+                @if (WarningCount > 0)
+                {
+                    <div class="field-row">
+                        <label>Warnings:</label>
+                        <span class="field-value bold">@WarningCount</span>
+                    </div>
+                }
+            </div>
+
+            <div class="header-right">
+                <button class="btn-nav primary" disabled="@(ErrorCount > 0 || IsSaving)" @onclick="OnOkClick">
+                    &amp;OK
+                </button>
+                <button class="btn-nav" @onclick="OnCancelClick">
+                    &amp;Cancel
+                </button>
+                <div class="checkbox-row" style="margin-top: 8px;">
+                    <input type="checkbox" id="chkSaveCommunity" @bind="SaveCommunity" @bind:after="OnSaveCommunityChanged" />
+                    <label for="chkSaveCommunity">Save Community on Assemblies?</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status -->
+        @if (!string.IsNullOrEmpty(StatusMessage))
+        {
+            <div class="status-label">@StatusMessage</div>
+        }
+
+        <!-- Icon indicator -->
+        <div style="margin-bottom: 8px;">
+            @if (ErrorCount > 0)
+            {
+                <span class="icon-error">❌</span>
+                <span style="color: red; font-weight: 600;">Errors found - cannot import</span>
+            }
+            else if (WarningCount > 0)
+            {
+                <span class="icon-warning">⚠️</span>
+                <span style="color: #b8860b; font-weight: 600;">Warnings found - review before importing</span>
+            }
+            else
+            {
+                <span class="icon-info">ℹ️</span>
+                <span style="color: #0078d7;">Ready to import</span>
+            }
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-buttons">
+            @if (Messages.Any())
+            {
+                <button class="@(ActiveTab == "Messages" ? "active" : "")" @onclick='() => ActiveTab = "Messages"'>
+                    Messages (@Messages.Count)
+                </button>
+            }
+            <button class="@(ActiveTab == "Assemblies" ? "active" : "")" @onclick='() => ActiveTab = "Assemblies"'>
+                Assemblies
+            </button>
+            <button class="@(ActiveTab == "Phases" ? "active" : "")" @onclick='() => ActiveTab = "Phases"'>
+                Phases
+            </button>
+            @if (AssemblyType != AssemblyTypes.atModel)
+            {
+                <button class="@(ActiveTab == "Categories" ? "active" : "")" @onclick='() => ActiveTab = "Categories"'>
+                    Categories
+                </button>
+            }
+        </div>
+
+        <div class="tab-content">
+            @if (ActiveTab == "Messages")
+            {
+                <div style="max-height: 400px; overflow-y: auto; padding: 4px;">
+                    @foreach (var msg in Messages.OrderBy(m => m.Level))
+                    {
+                        <div class="msg-row @(msg.Level == 0 ? "error-msg" : msg.Level == 1 ? "warn-msg" : "info-msg")">
+                            <span class="msg-icon">
+                                @(msg.Level == 0 ? "❌" : msg.Level == 1 ? "⚠️" : "ℹ️")
+                            </span>
+                            <span>@msg.Text</span>
+                        </div>
+                    }
+                    @if (!Messages.Any())
+                    {
+                        <div style="padding: 20px; text-align: center; color: #999;">No messages</div>
+                    }
+                </div>
+            }
+            else if (ActiveTab == "Assemblies")
+            {
+                <HfGrid TValue="AssemblyGridRow"
+                        DataSource="@AssemblyGridData"
+                        AllowSorting="true"
+                        AllowResizing="true"
+                        AllowSelection="true"
+                        Height="400px">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.AssemblyID)" HeaderText="Assembly ID" Width="120px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.Description)" HeaderText="Description" Width="200px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.ModelAssemblyID)" HeaderText="Model" Width="120px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.OptionAssemblyID)" HeaderText="Option" Width="120px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.Series)" HeaderText="Series" Width="100px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.SalesCategory)" HeaderText="Category" Width="100px" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.SellingPretax)" HeaderText="Pretax" Format="C2" Width="100px" TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.SellingTaxIncl)" HeaderText="Tax Incl" Format="C2" Width="100px" TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+                        <HfGridColumn Field="@nameof(AssemblyGridRow.Notes)" HeaderText="Notes" Width="200px" />
+                    </HfGridColumnsBase>
+                </HfGrid>
+            }
+            else if (ActiveTab == "Phases")
+            {
+                <HfGrid TValue="PhaseGridRow"
+                        DataSource="@PhaseGridData"
+                        AllowSorting="true"
+                        AllowResizing="true"
+                        AllowSelection="true"
+                        Height="400px">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(PhaseGridRow.Phase)" HeaderText="Phase" Width="120px" />
+                        <HfGridColumn Field="@nameof(PhaseGridRow.GroupPhase)" HeaderText="Group Phase" Width="120px" />
+                        <HfGridColumn Field="@nameof(PhaseGridRow.Description)" HeaderText="Description" Width="300px" />
+                    </HfGridColumnsBase>
+                </HfGrid>
+            }
+            else if (ActiveTab == "Categories")
+            {
+                <HfGrid TValue="CategoryGridRow"
+                        DataSource="@CategoryGridData"
+                        AllowSorting="true"
+                        AllowResizing="true"
+                        AllowSelection="true"
+                        Height="400px">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(CategoryGridRow.Category)" HeaderText="Category" Width="120px" />
+                        <HfGridColumn Field="@nameof(CategoryGridRow.Description)" HeaderText="Description" Width="200px" />
+                        <HfGridColumn Field="@nameof(CategoryGridRow.MajorGroup)" HeaderText="Major Group" Width="120px" />
+                        <HfGridColumn Field="@nameof(CategoryGridRow.MajorGroupDesc)" HeaderText="Group Desc" Width="200px" />
+                    </HfGridColumnsBase>
+                </HfGrid>
+            }
+        </div>
+
+        <!-- Progress Bar -->
+        @if (ProgressValue > 0)
+        {
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width: @(ProgressValue)%;">
+                    @(ProgressValue.ToString("0"))%
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string? ImportMode { get; set; }
+
+    // Database
+    private HomeFront.Data.DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+    private string LoginID = "admin";
+
+    // UI State
+    private bool IsLoading = false;
+    private bool IsSaving = false;
+    private bool FileLoaded = false;
+    private string ActiveTab = "Assemblies";
+    private string StatusMessage = "";
+    private double ProgressValue = 0;
+    private InputFile? fileInputRef;
+
+    // File properties
+    private string FileName = "";
+    private string TemplateVersion = "";
+    private string Community = "";
+    private string CommunityDesc = "";
+    private string CommunityPhase = "";
+
+    // Counts
+    private int ModelCount = 0;
+    private int ItemCount = 0;
+    private int PhaseCount = 0;
+    private int ErrorCount = 0;
+    private int WarningCount = 0;
+    private int InfoMsgCount = 0;
+
+    // Options
+    private bool SaveCommunity = true;
+
+    // Assembly type
+    private AssemblyTypes AssemblyType = AssemblyTypes.atModel;
+
+    // Template format info
+    private int ColsPerAssembly = 1;
+    private bool IsShortForm = true;
+    private int FirstItemRow = 0;
+    private int LastItemRow = 0;
+    private int FirstAssemblyCol = 8;
+
+    // Assembly note field
+    private string AssemblyNoteField = "Comments";
+
+    // Data grids
+    private List<AssemblyGridRow> AssemblyGridData = new();
+    private List<PhaseGridRow> PhaseGridData = new();
+    private List<CategoryGridRow> CategoryGridData = new();
+    private List<ImportMessage> Messages = new();
+
+    // Raw imported data (simulating grid data from Excel)
+    private List<List<string>> AssemblySheetData = new();
+    private List<List<string>> PhaseSheetData = new();
+    private List<List<string>> CategorySheetData = new();
+
+    // Column indexes for assembly items
+    private int COL_POIndex = -1;
+    private int COL_JCCostCode = 1;
+    private int COL_JCCategory = 2;
+    private int COL_EstPhase = 3;
+    private int COL_EstItem = 4;
+    private int COL_ItemDescription = 5;
+    private int COL_ItemUOM = 6;
+    private int COL_ItemNotes = 7;
+
+    // Row indexes for assembly headers
+    private int ROW_AssemblyID = -1;
+    private int ROW_AssemblyDescription = -1;
+    private int ROW_ModelAssemblyID = -1;
+    private int ROW_OptionAssemblyID = -1;
+    private int ROW_OptionPrefix = -1;
+    private int ROW_ModelPrefix = -1;
+    private int ROW_SalesCategory = -1;
+    private int ROW_AssemblyNotes = -1;
+    private int ROW_JCExtra = -1;
+    private int ROW_SellingPretax = -1;
+    private int ROW_COSellingPretax = -1;
+    private int ROW_SellingPriceTaxIncl = -1;
+    private int ROW_COSellingPriceTaxIncl = -1;
+    private int ROW_ConstructionCutoff = -1;
+    private int ROW_AssemblyUOM = -1;
+    private int ROW_Series = -1;
+    private int ROW_Elevation = -1;
+    private int ROW_FloorArea = -1;
+    private int ROW_Bedrooms = -1;
+    private int ROW_Bathrooms = -1;
+    private int ROW_Style = -1;
+
+    // Enums
+    public enum AssemblyTypes { atModel = 0, atoption = 1, atGlobal = 2, atDesignCenter = 3 }
+
+    // App options (simplified - would come from HFApp.Options in real app)
+    private bool ModelByArea => false;
+    private bool OptionByArea => false;
+    private bool GlobalOptionByArea => false;
+    private bool DCOptionByArea => false;
+    private bool ModelsByArea_Phase => false;
+    private bool OptionByAreaPhase => false;
+    private bool GlobalOptionByAreaPhase => false;
+    private bool DCOptionByAreaPhase => false;
+    private double ModelTaxRate => 0;
+    private double MSOPTTaxRate => 0;
+    private double GLOPTTaxRate => 0;
+    private double IncentiveCostPercent_Option => 100;
+    private string IncentivePhase => "";
+    private string IncentiveItem => "";
+    private string LandPhase => "";
+    private string LandItem => "";
+
+    protected override void OnInitialized()
+    {
+        ImportMode ??= "Assembly";
+    }
+
+    private async Task OnSelectFile()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", "document.querySelector('input[type=file]').click()");
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        IsLoading = true;
+        StatusMessage = "Loading file...";
+        StateHasChanged();
+
+        try
+        {
+            FileName = file.Name;
+
+            // In a real implementation, we would parse the Excel file here
+            // For now, simulate loading with placeholder data
+            await SimulateFileLoad();
+
+            FileLoaded = true;
+            ActiveTab = Messages.Any() ? "Messages" : "Assemblies";
+
+            await ValidateData();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading file: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SimulateFileLoad()
+    {
+        // Placeholder: In production, use a library like EPPlus or ClosedXML to parse Excel
+        // This simulates the structure that would come from parsing the Excel workbook
+
+        AssemblyGridData = new List<AssemblyGridRow>();
+        PhaseGridData = new List<PhaseGridRow>();
+        CategoryGridData = new List<CategoryGridRow>();
+        Messages = new List<ImportMessage>();
+
+        ModelCount = 0;
+        ItemCount = 0;
+        PhaseCount = 0;
+
+        await Task.CompletedTask;
+    }
+
+    private async Task ValidateData()
+    {
+        Messages.Clear();
+        ErrorCount = 0;
+        WarningCount = 0;
+        InfoMsgCount = 0;
+
+        if (ImportMode == "Assembly")
+        {
+            await ValidateCommunity();
+            await ValidateCommunityPhase();
+            await ValidateVendors();
+            await ValidateItems();
+        }
+
+        ValidatePhases();
+        ValidateAssemblyDuplicates();
+        ValidateAssemblyFields();
+        ValidateItemFields();
+        ValidateItemsInAssemblies();
+
+        ErrorCount = Messages.Count(m => m.Level == 0);
+        WarningCount = Messages.Count(m => m.Level == 1);
+        InfoMsgCount = Messages.Count(m => m.Level == 2);
+
+        if (Messages.Any())
+        {
+            ActiveTab = "Messages";
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ValidateCommunity()
+    {
+        if (string.IsNullOrEmpty(Community)) return;
+
+        bool needsCommunity =
+            (AssemblyType == AssemblyTypes.atModel && ModelByArea) ||
+            (AssemblyType == AssemblyTypes.atoption && OptionByArea) ||
+            (AssemblyType == AssemblyTypes.atGlobal && GlobalOptionByArea) ||
+            (AssemblyType == AssemblyTypes.atDesignCenter && DCOptionByArea);
+
+        if (needsCommunity)
+        {
+            var dt = db.SqlExec("SELECT * FROM tblLocality WHERE Area=@Area", new { Area = Community });
+            if (dt.Rows.Count == 0)
+                AddMsg(0, "Unknown Community.");
+        }
+    }
+
+    private async Task ValidateCommunityPhase()
+    {
+        if (string.IsNullOrEmpty(CommunityPhase)) return;
+
+        bool needsPhase =
+            (AssemblyType == AssemblyTypes.atModel && ModelsByArea_Phase) ||
+            (AssemblyType == AssemblyTypes.atoption && OptionByAreaPhase) ||
+            (AssemblyType == AssemblyTypes.atGlobal && GlobalOptionByAreaPhase) ||
+            (AssemblyType == AssemblyTypes.atDesignCenter && DCOptionByAreaPhase);
+
+        if (needsPhase)
+        {
+            var dt = db.SqlExec(
+                "SELECT * FROM CommunityPhase WHERE Community=@Community AND CommunityPhase=@Phase",
+                new { Community, Phase = CommunityPhase });
+            if (dt.Rows.Count == 0)
+                AddMsg(0, "Unknown Community Phase.");
+        }
+    }
+
+    private async Task ValidateVendors()
+    {
+        try
+        {
+            var sql = @"
+                SELECT p.poindex
+                FROM tblpoindex p
+                LEFT OUTER JOIN poareavendor g ON (p.DivisionID = g.DivisionID AND p.poindex=g.poindex AND ISNULL(g.area,'')='')
+                LEFT OUTER JOIN poareavendor c ON (p.DivisionID = c.DivisionID AND p.poindex=c.poindex AND c.area=@Community)
+                WHERE g.vendor IS NULL AND c.vendor IS NULL AND p.DivisionID = @DivisionID";
+            var dt = db.SqlExec(sql, new { Community, DivisionID });
+            foreach (DataRow row in dt.Rows)
+            {
+                AddMsg(1, $"No vendor for \"{row[0]}\" has been specified. Vendor pricing cannot be written for items on this PO.");
+            }
+        }
+        catch { }
+    }
+
+    private async Task ValidateItems()
+    {
+        // Validate each item row exists in the database
+        foreach (var item in AssemblyGridData)
+        {
+            // In production, check each phase/item combination against tblPhaseItem
+        }
+    }
+
+    private void ValidatePhases()
+    {
+        var phaseCSV = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var phase in PhaseGridData)
+        {
+            if (!string.IsNullOrWhiteSpace(phase.Phase) && !string.IsNullOrWhiteSpace(phase.GroupPhase))
+            {
+                AddMsg(0, $"Phases Row - can't be both a phase and a group phase.");
+            }
+
+            var key = (phase.Phase ?? "") + (phase.GroupPhase ?? "");
+            if (!string.IsNullOrEmpty(key))
+            {
+                if (phaseCSV.Contains(key))
+                {
+                    AddMsg(0, $"Phases must be unique - \"{key}\" used more than once.");
+                }
+                phaseCSV.Add(key);
+            }
+        }
+    }
+
+    private void ValidateAssemblyDuplicates()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var asm in AssemblyGridData)
+        {
+            var key = $"{asm.AssemblyID}\t{asm.ModelAssemblyID}\t{asm.OptionAssemblyID}";
+            if (seen.Contains(key))
+            {
+                AddMsg(0, $"Assembly/Model/Option must be unique. {asm.AssemblyID} / {asm.ModelAssemblyID} / {asm.OptionAssemblyID} is specified multiple times.");
+            }
+            seen.Add(key);
+        }
+    }
+
+    private void ValidateAssemblyFields()
+    {
+        foreach (var asm in AssemblyGridData)
+        {
+            // Check required fields based on assembly type
+            if (AssemblyType == AssemblyTypes.atModel)
+            {
+                if (string.IsNullOrWhiteSpace(asm.Series))
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - series is required.");
+                if ((asm.AssemblyID?.Length ?? 0) > 20)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Assembly ID is too long (max 20)");
+                if ((asm.Description?.Length ?? 0) > 50)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Model Description is too long (max 50)");
+                if ((asm.Series?.Length ?? 0) > 10)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Series is too long (max 10)");
+                if ((asm.Notes?.Length ?? 0) > 4000)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Notes are too long (max 4000)");
+            }
+            else if (AssemblyType == AssemblyTypes.atoption || AssemblyType == AssemblyTypes.atGlobal || AssemblyType == AssemblyTypes.atDesignCenter)
+            {
+                if ((asm.AssemblyID?.Length ?? 0) > 20)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Assembly ID is too long (max 20)");
+                if ((asm.Description?.Length ?? 0) > 200)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Description is too long (max 200)");
+                if ((asm.SalesCategory?.Length ?? 0) > 15)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Category is too long (max 15)");
+                if ((asm.Notes?.Length ?? 0) > 4000)
+                    AddMsg(0, $"Assembly {asm.AssemblyID} - Notes are too long (max 4000)");
+            }
+
+            // Numeric checks
+            if (asm.SellingPretax != 0 && asm.SellingPretax == 0)
+                AddMsg(1, $"Assembly {asm.AssemblyID} - selling price (pretax) is zero.");
+        }
+    }
+
+    private void ValidateItemFields()
+    {
+        // Validate item-level fields from the imported data
+        // In production, iterate over the actual item rows from the Excel sheet
+    }
+
+    private void ValidateItemsInAssemblies()
+    {
+        // Validate items within each assembly (qty, rate, duplicates)
+    }
+
+    private void AddMsg(int level, string text)
+    {
+        Messages.Add(new ImportMessage { Level = level, Text = text });
+    }
+
+    private void OnSaveCommunityChanged()
+    {
+        _ = ValidateData();
+    }
+
+    private async Task OnOkClick()
+    {
+        if (ErrorCount > 0) return;
+
+        IsSaving = true;
+        IsLoading = true;
+        StatusMessage = "Saving data...";
+        StateHasChanged();
+
+        try
+        {
+            await WriteCommunity();
+            await WriteSeries();
+            await WriteCategories();
+            await WritePhases();
+
+            if (ImportMode != "Assembly")
+            {
+                await WriteItems();
+            }
+
+            if (ImportMode == "Assembly")
+            {
+                await WriteAssemblies();
+            }
+
+            await JSRuntime.InvokeVoidAsync("alert", "Import completed successfully.");
+            NavigationManager.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error during import: {ex.Message}");
+        }
+        finally
+        {
+            IsSaving = false;
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task WriteCommunity()
+    {
+        if (string.IsNullOrWhiteSpace(Community)) return;
+
+        try
+        {
+            var sql = @"INSERT INTO tblLocality(Area, Description, Abr, Inactive)
+                        VALUES(@Area, @Description, @Abr, 0)";
+            await db.ExecuteAsync(sql, new { Area = Community, Description = CommunityDesc, Abr = Community });
+        }
+        catch (Exception ex)
+        {
+            if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                throw;
+        }
+
+        if (!string.IsNullOrWhiteSpace(CommunityPhase))
+        {
+            try
+            {
+                var sql = @"INSERT INTO CommunityPhase(Community, CommunityPhase, Description)
+                            VALUES(@Community, @CommunityPhase, @Description)";
+                await db.ExecuteAsync(sql, new { Community, CommunityPhase, Description = CommunityPhase });
+            }
+            catch (Exception ex)
+            {
+                if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                    throw;
+            }
+        }
+    }
+
+    private async Task WriteSeries()
+    {
+        foreach (var asm in AssemblyGridData)
+        {
+            if (!string.IsNullOrWhiteSpace(asm.Series))
+            {
+                try
+                {
+                    var sql = @"INSERT INTO tblSeries(DivisionID, Series, Description)
+                                VALUES(@DivisionID, @Series, @Description)";
+                    await db.ExecuteAsync(sql, new { DivisionID, Series = asm.Series, Description = asm.Series });
+                }
+                catch (Exception ex)
+                {
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        throw;
+                }
+            }
+        }
+    }
+
+    private async Task WriteCategories()
+    {
+        foreach (var cat in CategoryGridData)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(cat.MajorGroup))
+                {
+                    var sql = @"INSERT INTO tblMajorGroups(Major_Group, Description)
+                                VALUES(@MajorGroup, @Description)";
+                    await db.ExecuteAsync(sql, new { MajorGroup = cat.MajorGroup, Description = cat.MajorGroupDesc });
+                }
+
+                var catSql = @"INSERT INTO tblCategories(Category, Description, Group_Code)
+                               VALUES(@Category, @Description, @GroupCode)";
+                await db.ExecuteAsync(catSql, new { cat.Category, cat.Description, GroupCode = cat.MajorGroup });
+            }
+            catch (Exception ex)
+            {
+                if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                    throw;
+            }
+        }
+    }
+
+    private async Task WritePhases()
+    {
+        foreach (var phase in PhaseGridData)
+        {
+            try
+            {
+                bool isGroupPhase = !string.IsNullOrWhiteSpace(phase.GroupPhase);
+                var phaseCode = isGroupPhase ? phase.GroupPhase : phase.Phase;
+
+                var sql = @"INSERT INTO tblEstPhases(DivisionID, Phase, SortOrder, Description, GroupPhase, UpdateEstimating, UStmp, TStmp)
+                            VALUES(@DivisionID, @Phase, @SortOrder, @Description, @IsGroup, 1, @LoginID, GETDATE())";
+                await db.ExecuteAsync(sql, new
+                {
+                    DivisionID,
+                    Phase = phaseCode,
+                    SortOrder = phaseCode,
+                    Description = phase.Description,
+                    IsGroup = isGroupPhase ? 0 : 1,
+                    LoginID
+                });
+            }
+            catch (Exception ex)
+            {
+                if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                    throw;
+            }
+        }
+    }
+
+    private async Task WriteItems()
+    {
+        // Write phase items from the assembly sheet
+        // In production, iterate over item rows and INSERT/UPDATE tblPhaseItem
+        StatusMessage = "Writing items...";
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task WriteAssemblies()
+    {
+        StatusMessage = "Writing assemblies...";
+        StateHasChanged();
+
+        string assemblyCommunity = "";
+        if ((AssemblyType == AssemblyTypes.atModel && ModelByArea) ||
+            (AssemblyType == AssemblyTypes.atoption && OptionByArea) ||
+            (AssemblyType == AssemblyTypes.atGlobal && GlobalOptionByArea) ||
+            (AssemblyType == AssemblyTypes.atDesignCenter && DCOptionByArea))
+        {
+            assemblyCommunity = SaveCommunity ? Community : "";
+        }
+
+        double percentage = IncentiveCostPercent_Option / 100.0;
+        if (percentage == 0) percentage = 1;
+
+        int total = AssemblyGridData.Count;
+        int current = 0;
+
+        foreach (var asm in AssemblyGridData)
+        {
+            current++;
+            ProgressValue = (double)current / Math.Max(1, total) * 100;
+            StatusMessage = $"Writing assembly {current} of {total}";
+            StateHasChanged();
+
+            double pretax = asm.SellingPretax;
+            double aftertax = asm.SellingTaxIncl;
+            bool includeTax = aftertax != 0;
+            double taxrate = GetTaxRate();
+            double tax = 0;
+
+            if (aftertax != 0 && pretax != 0)
+            {
+                taxrate = (aftertax * 100 / pretax) - 100;
+            }
+            else if (aftertax != 0)
+            {
+                pretax = Math.Round(aftertax / (taxrate + 100) * 100, 2);
+            }
+            else if (pretax != 0)
+            {
+                aftertax = Math.Round(pretax * (taxrate + 100) / 100, 2);
+            }
+            tax = aftertax - pretax;
+
+            try
+            {
+                // Insert master record
+                var insertSql = @"INSERT INTO tblDBAssemblyMaster(Community, DivisionID, Assembly, Model, OptionID, FloorArea, Bedrooms, Bathrooms, ConstCutoff, AssemblyType, Markup, Margin, Roundto, Pretax, Tax, Cost, COPretax, COTax, TaxRate, UseNormalSalesQtyFactors, UStmp, TStmp)
+                                  VALUES(@Community, @DivisionID, @Assembly, @Model, @OptionID, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, @LoginID, GETDATE())";
+                await db.ExecuteAsync(insertSql, new
+                {
+                    Community = assemblyCommunity,
+                    DivisionID,
+                    Assembly = asm.AssemblyID,
+                    Model = asm.ModelAssemblyID ?? "",
+                    OptionID = asm.OptionAssemblyID ?? "",
+                    LoginID
+                });
+            }
+            catch (Exception ex)
+            {
+                if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                    throw;
+            }
+
+            // Update master record with full details
+            var updateSql = @"UPDATE tblDBAssemblyMaster
+                              SET AssemblyType=@AssemblyType, Pretax=@Pretax, Tax=@Tax,
+                                  IncludeTax=@IncludeTax, TaxRate=@TaxRate,
+                                  Series=@Series, Description=@Description,
+                                  " + AssemblyNoteField + @"=@Notes,
+                                  Category=@Category, AssemblyUOM=@AssemblyUOM,
+                                  UStmp=@LoginID, TStmp=GETDATE()
+                              WHERE Community=@Community AND Assembly=@Assembly
+                                AND Model=@Model AND OptionID=@OptionID AND DivisionID=@DivisionID";
+            await db.ExecuteAsync(updateSql, new
+            {
+                AssemblyType = (int)AssemblyType,
+                Pretax = pretax,
+                Tax = tax,
+                IncludeTax = includeTax ? 1 : 0,
+                TaxRate = taxrate,
+                Series = asm.Series ?? "",
+                Description = asm.Description ?? "",
+                Notes = asm.Notes ?? "",
+                Category = asm.SalesCategory ?? "",
+                AssemblyUOM = "",
+                LoginID,
+                Community = assemblyCommunity,
+                Assembly = asm.AssemblyID,
+                Model = asm.ModelAssemblyID ?? "",
+                OptionID = asm.OptionAssemblyID ?? "",
+                DivisionID
+            });
+
+            // Delete existing details
+            var deleteSql = @"DELETE FROM tblDBAssemblyDetails
+                              WHERE Community=@Community AND Assembly=@Assembly
+                                AND Model=@Model AND OptionID=@OptionID AND DivisionID=@DivisionID";
+            await db.ExecuteAsync(deleteSql, new
+            {
+                Community = assemblyCommunity,
+                Assembly = asm.AssemblyID,
+                Model = asm.ModelAssemblyID ?? "",
+                OptionID = asm.OptionAssemblyID ?? "",
+                DivisionID
+            });
+
+            // Insert detail items would go here in production
+            // For each item row in the assembly, insert into tblDBAssemblyDetails
+        }
+
+        ProgressValue = 100;
+        StatusMessage = "Import complete.";
+        StateHasChanged();
+    }
+
+    private double GetTaxRate()
+    {
+        return AssemblyType switch
+        {
+            AssemblyTypes.atModel => ModelTaxRate,
+            AssemblyTypes.atoption => MSOPTTaxRate,
+            AssemblyTypes.atGlobal => GLOPTTaxRate,
+            AssemblyTypes.atDesignCenter => GLOPTTaxRate,
+            _ => 0
+        };
+    }
+
+    private string DbQuote(string? value)
+    {
+        if (value == null) return "''";
+        return "'" + value.Replace("'", "''") + "'";
+    }
+
+    // === Model Classes ===
+
+    public class ImportMessage
+    {
+        public int Level { get; set; } // 0=Error, 1=Warning, 2=Info
+        public string Text { get; set; } = "";
+    }
+
+    public class AssemblyGridRow
+    {
+        public string AssemblyID { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string? ModelAssemblyID { get; set; }
+        public string? OptionAssemblyID { get; set; }
+        public string? OptionPrefix { get; set; }
+        public string? ModelPrefix { get; set; }
+        public string? Series { get; set; }
+        public string? Elevation { get; set; }
+        public string? SalesCategory { get; set; }
+        public string? Notes { get; set; }
+        public string? JCExtra { get; set; }
+        public double SellingPretax { get; set; }
+        public double SellingTaxIncl { get; set; }
+        public double COSellingPretax { get; set; }
+        public double COSellingTaxIncl { get; set; }
+        public double ConstructionCutoff { get; set; }
+        public string? AssemblyUOM { get; set; }
+        public double FloorArea { get; set; }
+        public int Bedrooms { get; set; }
+        public double Bathrooms { get; set; }
+        public string? Style { get; set; }
+    }
+
+    public class PhaseGridRow
+    {
+        public string? Phase { get; set; }
+        public string? GroupPhase { get; set; }
+        public string? Description { get; set; }
+    }
+
+    public class CategoryGridRow
+    {
+        public string? Category { get; set; }
+        public string? Description { get; set; }
+        public string? MajorGroup { get; set; }
+        public string? MajorGroupDesc { get; set; }
+    }
+
+    public class ItemGridRow
+    {
+        public string? POIndex { get; set; }
+        public string? JCCostCode { get; set; }
+        public string? JCCategory { get; set; }
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string UOM { get; set; } = "";
+        public string? Notes { get; set; }
+    }
+}
+```

@@ -1,0 +1,463 @@
+```razor
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Collections.Generic
+@using System.Data
+@using System.Linq
+@using System.Text.RegularExpressions
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+@* 
+    MFormulas.razor – Blazor service-component converted from VB6 MFormulas.bas
+    This is a non-visual, injectable utility component.
+    Usage: <MFormulas @ref="formulas" /> then call formulas.ResolveFormula(...), etc.
+*@
+
+@code {
+    private DbWrapperSqlServer db = new();
+    private string AppProductName = "HomeFront";
+
+    // ── ResolveFormula ───────────────────────────────────────────────────
+    /// <summary>
+    /// Resolves a raw formula by replacing {formulaname} tokens with their
+    /// definitions from the Formulas table. Detects circular references.
+    /// </summary>
+    public async Task<string> ResolveFormula(string rawFormula)
+    {
+        if (string.IsNullOrEmpty(rawFormula))
+            return "";
+
+        var originalFormula = rawFormula;
+        var fnames = new List<string>();
+        int i = 0;
+
+        rawFormula = rawFormula.Replace("\r", " ").Replace("\n", " ").Trim();
+
+        while (rawFormula.Contains("{"))
+        {
+            var name = ParseToken(ParseToken(rawFormula, 2, "{"), 1, "}");
+            if (string.IsNullOrEmpty(name))
+                break;
+
+            i++;
+            fnames.Add(name);
+
+            if (i > 30)
+            {
+                await JSRuntime.InvokeVoidAsync("alert",
+                    $"Formula cannot be resolved.\n\n{originalFormula}\n\nCall Stack:\n{string.Join("\n", fnames)}");
+                return "";
+            }
+
+            var dt = db.SqlExec(
+                "SELECT text FROM Formulas WHERE name = @Name",
+                new { Name = name });
+
+            if (dt.Rows.Count == 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Unknown formula {name}");
+                return "";
+            }
+
+            var formulaText = dt.Rows[0][0]?.ToString() ?? "";
+            rawFormula = rawFormula.Replace(
+                "{" + name + "}",
+                "(" + formulaText + ")",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return rawFormula;
+    }
+
+    // ── PrefixFunction ───────────────────────────────────────────────────
+    /// <summary>
+    /// Replaces FunctionName with dbo.FunctionName using word-boundary regex.
+    /// First strips any existing "dbo." prefix the user may have typed.
+    /// </summary>
+    private string PrefixFunction(string formula, string functionName)
+    {
+        // Remove any existing "dbo." prefix
+        formula = formula.Replace(
+            "dbo." + functionName, functionName,
+            StringComparison.OrdinalIgnoreCase);
+
+        // Add dbo. prefix using word boundaries (process matches in reverse)
+        var re = new Regex(@"\b" + Regex.Escape(functionName) + @"\b",
+            RegexOptions.IgnoreCase);
+        var matches = re.Matches(formula);
+
+        for (int m = matches.Count - 1; m >= 0; m--)
+        {
+            var match = matches[m];
+            if (!string.IsNullOrWhiteSpace(match.Value))
+            {
+                formula = formula.Substring(0, match.Index)
+                    + "dbo." + functionName
+                    + formula.Substring(match.Index + match.Length);
+            }
+        }
+
+        return formula;
+    }
+
+    // ── ParseVariables ───────────────────────────────────────────────────
+    /// <summary>
+    /// Extracts variable names from a resolved formula.
+    /// Variables are enclosed in [brackets]. Returns a Chr(1)-delimited list.
+    /// </summary>
+    public string ParseVariables(string resolvedFormula)
+    {
+        if (string.IsNullOrEmpty(resolvedFormula))
+            return "";
+
+        var list = new List<string>();
+
+        while (resolvedFormula.Contains("["))
+        {
+            var name = ParseToken(ParseToken(resolvedFormula, 2, "["), 1, "]");
+            if (string.IsNullOrEmpty(name))
+                break;
+
+            list.Add(name);
+
+            var before = resolvedFormula;
+            resolvedFormula = resolvedFormula.Replace(
+                "[" + name + "]", "",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (before == resolvedFormula)
+                break;
+        }
+
+        return string.Join("\x01", list);
+    }
+
+    // ── LoadVariables ────────────────────────────────────────────────────
+    /// <summary>
+    /// Loads variable definitions from the database into a list of VariableRow objects.
+    /// variableList is a Chr(1)-delimited list of variable names (without brackets).
+    /// </summary>
+    public async Task<List<VariableRow>> LoadVariables(
+        bool clear,
+        List<VariableRow> existingVariables,
+        string variableList)
+    {
+        var variables = clear ? new List<VariableRow>() : new List<VariableRow>(existingVariables);
+
+        if (string.IsNullOrEmpty(variableList))
+            return variables;
+
+        var names = variableList.Split('\x01');
+
+        foreach (var name in names)
+        {
+            if (string.IsNullOrEmpty(name))
+                continue;
+
+            // Skip if already present
+            if (variables.Any(v => v.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var row = new VariableRow { Name = name };
+
+            var dt = db.SqlExec(
+                "SELECT * FROM variables WHERE name = @Name",
+                new { Name = name });
+
+            if (dt.Rows.Count == 0)
+            {
+                row.Min = -1E+18;
+                row.Max = 1E+18;
+            }
+            else
+            {
+                var dr = dt.Rows[0];
+                var listOfValues = (" |" + (dr["listofvalues"]?.ToString() ?? "").Trim()).Trim();
+
+                if (listOfValues == "|")
+                {
+                    row.Value = ToDouble(dr["defaultvalue"]);
+                    row.UOM = dr["uom"]?.ToString() ?? "";
+                    row.OriginalUOM = dr["uom"]?.ToString() ?? "";
+                    row.Min = ToDouble(dr["minimumvalue"]);
+                    row.Max = ToDouble(dr["maximumvalue"]);
+                }
+                else
+                {
+                    var parts = listOfValues.Split('|');
+                    row.ValueText = parts.Length > 1 ? parts[1] : "";
+                    row.ListOfValues = listOfValues;
+                }
+
+                row.Help = dr["help"]?.ToString() ?? "";
+                row.ConditionName = dr["ConditionName"]?.ToString() ?? "";
+                row.ConditionType = dr["ConditionType"]?.ToString() ?? "";
+                row.ConditionUOM = dr["ConditionUOM"]?.ToString() ?? "";
+            }
+
+            variables.Add(row);
+        }
+
+        return variables;
+    }
+
+    // ── CalcFormula ──────────────────────────────────────────────────────
+    /// <summary>
+    /// Evaluates a resolved formula by substituting variable values and
+    /// computing the result. Uses DataTable.Compute for expression evaluation.
+    /// </summary>
+    public async Task<double> CalcFormula(
+        List<VariableRow> variables,
+        string resolvedFormula,
+        bool quiet)
+    {
+        var s = resolvedFormula;
+
+        try
+        {
+            // Replace [VariableName] with value
+            foreach (var v in variables)
+            {
+                if (!string.IsNullOrEmpty(v.ListOfValues))
+                {
+                    s = s.Replace(
+                        "[" + v.Name + "]",
+                        "'" + (v.ValueText ?? "") + "'",
+                        StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    s = s.Replace(
+                        "[" + v.Name + "]",
+                        v.Value.ToString("G"),
+                        StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(s))
+                return 0;
+
+            // Evaluate using DataTable.Compute as a simple expression evaluator
+            var result = EvaluateExpression(s);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            if (!quiet)
+            {
+                if (ex is InvalidCastException || ex.Message.Contains("type mismatch", StringComparison.OrdinalIgnoreCase))
+                {
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        $"Formula returns '{s}'. It must return a number.");
+                }
+                else if (ex.Message.Contains("Divide by zero", StringComparison.OrdinalIgnoreCase))
+                {
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        "Divide by zero error encountered.");
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        $"Error Evaluating Formula:\n{ex.Message}\n\n{s}");
+                }
+            }
+            throw new IndexOutOfRangeException("Formula evaluation failed.", ex);
+        }
+    }
+
+    // ── OLDCalcFormula ───────────────────────────────────────────────────
+    /// <summary>
+    /// Legacy formula calculator that builds a SQL SELECT statement.
+    /// Retained for backward compatibility; prefer CalcFormula.
+    /// </summary>
+    public async Task<double> OLDCalcFormula(
+        List<VariableRow> variables,
+        string resolvedFormula,
+        bool quiet)
+    {
+        var s = resolvedFormula;
+
+        try
+        {
+            foreach (var v in variables)
+            {
+                if (!string.IsNullOrEmpty(v.ListOfValues))
+                {
+                    s = s.Replace(
+                        "[" + v.Name + "]",
+                        "'" + (v.ValueText ?? "").Replace("'", "''") + "'",
+                        StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    s = s.Replace(
+                        "[" + v.Name + "]",
+                        "CAST(" + v.Value.ToString("G") + " AS FLOAT)",
+                        StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(s))
+                return 0;
+
+            s = PrefixFunction(s, "RNDTO");
+            s = PrefixFunction(s, "MIN");
+            s = PrefixFunction(s, "MAX");
+            s = PrefixFunction(s, "AVG");
+            s = PrefixFunction(s, "TRUNC");
+            s = PrefixFunction(s, "MOD");
+
+            var sql = "SELECT " + s;
+            var dt = db.SqlExec(sql);
+
+            if (dt.Rows.Count > 0 && dt.Rows[0][0] != DBNull.Value)
+                return Convert.ToDouble(dt.Rows[0][0]);
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            if (!quiet)
+            {
+                if (ex is InvalidCastException)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        $"Formula returns '{s}'. It must return a number.");
+                }
+                else if (ex.Message.Contains("Divide by zero", StringComparison.OrdinalIgnoreCase))
+                {
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        "Divide by zero error encountered.");
+                }
+                else
+                {
+                    var sqlServerMsg = ExtractSqlServerMessage(ex.Message);
+                    await JSRuntime.InvokeVoidAsync("alert",
+                        $"Error Evaluating Formula:\n{sqlServerMsg}\n\n{s}");
+                }
+            }
+            throw new IndexOutOfRangeException("Formula evaluation failed.", ex);
+        }
+    }
+
+    // ── FormulaHasLookups ────────────────────────────────────────────────
+    /// <summary>
+    /// Returns true if the resolved formula references lookup fields
+    /// (TotalTakeoffQty, TotalOrderQty, TotalCost).
+    /// </summary>
+    public bool FormulaHasLookups(string resolvedFormula)
+    {
+        if (string.IsNullOrEmpty(resolvedFormula))
+            return false;
+
+        return resolvedFormula.Contains("TotalTakeoffQty", StringComparison.Ordinal)
+            || resolvedFormula.Contains("TotalOrderQty", StringComparison.Ordinal)
+            || resolvedFormula.Contains("TotalCost", StringComparison.Ordinal);
+    }
+
+    // ── Helper: ParseToken ───────────────────────────────────────────────
+    /// <summary>
+    /// Mimics VB6 Parse() function. Returns the nth (1-based) segment
+    /// when splitting by delimiter. If index is 0 or omitted, returns count.
+    /// </summary>
+    private string ParseToken(string input, int index, string delimiter)
+    {
+        if (string.IsNullOrEmpty(input))
+            return "";
+
+        var parts = input.Split(new[] { delimiter }, StringSplitOptions.None);
+
+        if (index <= 0)
+            return parts.Length.ToString();
+
+        return index <= parts.Length ? parts[index - 1] : "";
+    }
+
+    // ── Helper: EvaluateExpression ───────────────────────────────────────
+    /// <summary>
+    /// Evaluates a mathematical expression string using DataTable.Compute.
+    /// Supports basic arithmetic: +, -, *, /, %, parentheses.
+    /// </summary>
+    private double EvaluateExpression(string expression)
+    {
+        // Clean up expression for DataTable.Compute compatibility
+        var cleanExpr = expression.Trim();
+
+        // Replace common SQL/VB functions with compatible alternatives
+        // DataTable.Compute supports: +, -, *, /, %, IIF, LEN, ISNULL, CONVERT, etc.
+        // For more complex formulas, a dedicated expression parser would be needed.
+
+        try
+        {
+            var dt = new DataTable();
+            var result = dt.Compute(cleanExpr, null);
+            return Convert.ToDouble(result);
+        }
+        catch
+        {
+            // Fallback: try via SQL if DataTable.Compute fails
+            try
+            {
+                var sqlDt = db.SqlExec("SELECT " + expression);
+                if (sqlDt.Rows.Count > 0 && sqlDt.Rows[0][0] != DBNull.Value)
+                    return Convert.ToDouble(sqlDt.Rows[0][0]);
+            }
+            catch
+            {
+                // Re-throw original for caller to handle
+            }
+            throw;
+        }
+    }
+
+    // ── Helper: ExtractSqlServerMessage ──────────────────────────────────
+    private string ExtractSqlServerMessage(string errorDescription)
+    {
+        const string marker = "[SQL Server]";
+        var idx = errorDescription.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (idx >= 0)
+        {
+            var afterMarker = errorDescription.Substring(idx + marker.Length);
+            var nextIdx = afterMarker.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (nextIdx >= 0)
+                return afterMarker.Substring(nextIdx + marker.Length).Trim();
+            return afterMarker.Trim();
+        }
+        return errorDescription;
+    }
+
+    // ── Helper: ToDouble ─────────────────────────────────────────────────
+    private double ToDouble(object? val)
+    {
+        if (val == null || val == DBNull.Value)
+            return 0;
+        if (double.TryParse(val.ToString(), out var result))
+            return result;
+        return 0;
+    }
+
+    // ── Model: VariableRow ───────────────────────────────────────────────
+    /// <summary>
+    /// Represents a formula variable with its properties, replacing the
+    /// VB6 VSFlexGrid row-based variable storage.
+    /// </summary>
+    public class VariableRow
+    {
+        public string Name { get; set; } = "";
+        public double Value { get; set; }
+        public string ValueText { get; set; } = "";
+        public string UOM { get; set; } = "";
+        public string OriginalUOM { get; set; } = "";
+        public double Min { get; set; } = -1E+18;
+        public double Max { get; set; } = 1E+18;
+        public string ListOfValues { get; set; } = "";
+        public string Help { get; set; } = "";
+        public string ConditionName { get; set; } = "";
+        public string ConditionType { get; set; } = "";
+        public string ConditionUOM { get; set; } = "";
+    }
+}
+```

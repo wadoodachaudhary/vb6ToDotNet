@@ -1,0 +1,727 @@
+@page "/migrator/vendor-pricelist-opus"
+
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Dynamic
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Vendor Item Prices</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .tbar-btn:hover {
+        background: #e8e8e8;
+    }
+
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+        text-align: center;
+        font-size: 12px;
+    }
+
+    .toolbar-sep {
+        width: 1px;
+        height: 28px;
+        background: #dee2e6;
+        margin: 0 4px;
+    }
+
+    .vendor-prices-container {
+        height: calc(100vh - 120px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .main-content {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+
+    .tree-panel {
+        width: 500px;
+        min-width: 300px;
+        border-right: 1px solid #dee2e6;
+        overflow-y: auto;
+        background: white;
+        margin-right: 8px;
+        padding: 4px;
+    }
+
+    .grid-panel {
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .status-bar {
+        height: 24px;
+        background: #f0f0f0;
+        border-top: 1px solid #ccc;
+        padding: 3px 8px;
+        font-size: 12px;
+        color: #555;
+    }
+
+    /* Tree styling */
+    .hf-tree ul {
+        list-style: none;
+        padding-left: 18px;
+        margin: 0;
+    }
+
+    .hf-tree > ul {
+        padding-left: 0;
+    }
+
+    .hf-tree li {
+        padding: 2px 0;
+    }
+
+    .hf-tree .tree-node {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 14px;
+        user-select: none;
+    }
+
+    .hf-tree .tree-node:hover {
+        background-color: #e8f0fe;
+    }
+
+    .hf-tree .tree-node.selected {
+        background-color: #cce5ff;
+        font-weight: 600;
+    }
+
+    .hf-tree .tree-toggle {
+        width: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #666;
+    }
+
+    .view-select {
+        padding: 4px 8px;
+        border: 1px solid #c9c9c9;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #fff;
+    }
+</style>
+
+<div class="vendor-prices-container">
+
+    <!-- Toolbar -->
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" @onclick="NewPricelist_Click">
+            <img src="images/32/PricebookNew.ico" class="tbar-icon" />
+            <span class="tool-label">New</span>
+        </button>
+        <button class="tbar-btn" @onclick="Save_Click">
+            <img src="images/32/save.ico" class="tbar-icon" />
+            <span class="tool-label">Save</span>
+        </button>
+        <div class="toolbar-sep"></div>
+
+        <label style="font-size:13px; margin-right:4px;">View:</label>
+        <select class="view-select" @onchange="OnViewChanged">
+            @foreach (var view in Views)
+            {
+                <option value="@view.Index" selected="@(view.Index == CurrentViewIndex)">@view.Name</option>
+            }
+        </select>
+
+        <div class="toolbar-sep"></div>
+        <button class="tbar-btn" @onclick="Preview_Click">
+            <img src="images/32/ChangeView.ico" class="tbar-icon" />
+            <span class="tool-label">Preview</span>
+        </button>
+        <button class="tbar-btn" @onclick="Export_Click">
+            <img src="images/32/PricebookExport.ico" class="tbar-icon" />
+            <span class="tool-label">Export</span>
+        </button>
+        <button class="tbar-btn" @onclick="Import_Click">
+            <img src="images/32/PricebookImport.ico" class="tbar-icon" />
+            <span class="tool-label">Import</span>
+        </button>
+        <button class="tbar-btn" @onclick="Forecasting_Click">
+            <img src="images/32/Forecast.ico" class="tbar-icon" />
+            <span class="tool-label">Forecasting</span>
+        </button>
+    </div>
+
+    <!-- Main split layout -->
+    <div class="main-content">
+
+        <!-- Left: Tree Panel -->
+        <div class="tree-panel">
+            <div class="hf-tree">
+                <ul>
+                    @foreach (var node in TreeNodes)
+                    {
+                        @RenderTreeNode(node)
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <!-- Right: Price Grid -->
+        <div class="grid-panel">
+            <HfGrid @ref="PriceGrid"
+                    TValue="VendorPriceViewModel"
+                    DataSource="@PriceData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="calc(100vh - 220px)">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.PriceLink)" HeaderText="Price Group"
+                                  Width="100px" TextAlign="TextAlign.Center" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.VendorName)" HeaderText="Vendor"
+                                  Width="380px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Community)" HeaderText="@CommunityLabel"
+                                  Width="140px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.CommunityPhase)" HeaderText="@CommunityPhaseLabel"
+                                  Width="140px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Assembly)" HeaderText="Assembly"
+                                  Width="260px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.ItemDesc)" HeaderText="Description"
+                                  Width="320px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.SKU)" HeaderText="Part #"
+                                  Width="120px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last3)" HeaderText="Last3"
+                                  Format="@DecimalFormat" Visible="false"
+                                  Width="100px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry3)" HeaderText="Expiry3" Format="d"
+                                  Visible="false" Width="110px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last2)" HeaderText="Last2"
+                                  Format="@DecimalFormat" Visible="false"
+                                  Width="100px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry2)" HeaderText="Expiry2" Format="d"
+                                  Visible="false" Width="110px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last1)" HeaderText="Last1"
+                                  Format="@DecimalFormat" Visible="false"
+                                  Width="100px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry1)" HeaderText="Expiry1" Format="d"
+                                  Visible="false" Width="110px" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Current)" HeaderText="Current"
+                                  Format="@DecimalFormat"
+                                  Width="110px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Next1)" HeaderText="Next1"
+                                  Format="@DecimalFormat"
+                                  Width="100px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Effective1)" HeaderText="Eff.1" Format="d"
+                                  Width="110px" />
+                    <HfGridColumn Field="Forecast1" HeaderText="F1" Format="@DecimalFormat"
+                                  Width="90px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="Forecast2" HeaderText="F2" Format="@DecimalFormat"
+                                  Width="90px" TextAlign="TextAlign.Right" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        @StatusMessage
+    </div>
+</div>
+
+@code {
+    private DbWrapperSqlServer db = new();
+    private HfGrid<VendorPriceViewModel>? PriceGrid;
+    private List<VendorPriceViewModel> PriceData = new();
+    private List<TreeNodeModel> TreeNodes = new();
+    private TreeNodeModel? SelectedNode;
+    private int CurrentViewIndex = 0;
+    private int Decimals = 2;
+    private string StatusMessage = "Ready";
+    private bool IsDirty;
+    private string CommunityLabel => "Community";
+    private string CommunityPhaseLabel => "Phase";
+    private string CD_Community = "Community";
+    private string DecimalFormat => $"N{Decimals}";
+
+    // Render tree node recursively
+    private RenderFragment RenderTreeNode(TreeNodeModel node) => __builder =>
+    {
+        <li>
+            <span class="tree-node @(SelectedNode == node ? "selected" : "")"
+                  @onclick="() => OnTreeNodeClicked(node)"
+                  @onclick:stopPropagation="true">
+                @if (node.Children?.Any() == true)
+                {
+                    <span class="tree-toggle" @onclick="() => ToggleNode(node)" @onclick:stopPropagation="true">
+                        @(node.Expanded ? "▼" : "▶")
+                    </span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+                @node.Name
+            </span>
+            @if (node.Expanded && node.Children?.Any() == true)
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderTreeNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private void ToggleNode(TreeNodeModel node)
+    {
+        node.Expanded = !node.Expanded;
+    }
+
+    private async Task OnTreeNodeClicked(TreeNodeModel node)
+    {
+        SelectedNode = node;
+        await LoadItemsAsync(node);
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var idx))
+        {
+            CurrentViewIndex = idx;
+            await LoadTreeAsync(true);
+        }
+    }
+
+    // View definitions
+    private readonly List<ViewDefinition> Views = new()
+    {
+        new ViewDefinition(0, "Assembly", "Community,CommunityPhase,Assembly,CostCode",
+            "(Community + ' - ' + CommunityDesc) as CommunityDisplay,(CommunityPhase + ' - ' + CommunityPhaseDesc) as CommunityPhaseDisplay,(Assembly + ' - ' + AssemblyDesc) as AssemblyDisplay,(CostCode + ' - ' + CostCodeDesc) as CostCodeDisplay",
+            "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc"),
+        new ViewDefinition(1, "Vendor", "Vendor,CommunityDesc,CommunityPhase,Assembly",
+            "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+            "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc"),
+        new ViewDefinition(2, "Purchase Order", "POIndex,CommunityDesc,CommunityPhase,Assembly",
+            "POIndex + ' -' + POIndexDescription,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+            "POIndex + ' -' + POIndexDescription,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc"),
+        new ViewDefinition(3, "Cost Code", "CostCode,CommunityDesc,CommunityPhase,Assembly",
+            "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+            "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+        await LoadTreeAsync(true);
+    }
+
+    private async Task LoadSettings()
+    {
+        CurrentViewIndex = 0;
+        Decimals = 2;
+    }
+
+    private async Task LoadTreeAsync(bool clear = true)
+    {
+        if (clear) TreeNodes.Clear();
+        var currentView = Views[CurrentViewIndex];
+        var keyFields = currentView.KeyFields;
+        var displayFields = currentView.DisplayFields;
+        var orderFields = currentView.OrderByFields;
+
+        var sql = $@"
+        SELECT DISTINCT
+            {keyFields},
+            {displayFields}
+        FROM VendorPrices
+        WHERE DivisionID IN (0, @DivisionID)
+        Order by {orderFields}";
+
+        var parameters = new { DivisionID = 1 };
+        var rootItems = await db.QueryAsync(sql, parameters);
+
+        var Init = "XX";
+        var level0ID = currentView.KeyFields.Split(',')[0].Trim();
+        var prevLevel0 = Init;
+        var nodeLevel0 = new TreeNodeModel();
+        var level0Children = new List<TreeNodeModel>();
+
+        var level1ID = currentView.KeyFields.Split(',').Length > 1 ? currentView.KeyFields.Split(',')[1].Trim() : "";
+        var prevLevel1 = Init;
+        var nodeLevel1 = new TreeNodeModel();
+        var level1Children = new List<TreeNodeModel>();
+
+        var level2ID = currentView.KeyFields.Split(',').Length > 2 ? currentView.KeyFields.Split(',')[2].Trim() : "";
+        var prevLevel2 = Init;
+        var nodeLevel2 = new TreeNodeModel();
+        var level2Children = new List<TreeNodeModel>();
+
+        var level3ID = currentView.KeyFields.Split(',').Length > 3 ? currentView.KeyFields.Split(',')[3].Trim() : "";
+        var prevLevel3 = Init;
+
+        var displayParts = currentView.DisplayFields.Split(',');
+
+        foreach (var item in rootItems)
+        {
+            var level0 = item[level0ID]?.ToString() ?? "";
+            if (level0 != prevLevel0)
+            {
+                if (prevLevel0 != Init)
+                {
+                    nodeLevel0.Children = level0Children;
+                    level0Children = new List<TreeNodeModel>();
+                }
+                var displayValue = GetDisplayValue(item, displayParts, 0);
+                if (displayValue == "- global -")
+                    displayValue = $"Global (any {CD_Community})";
+                nodeLevel0 = new TreeNodeModel
+                {
+                    Name = displayValue,
+                    WhereClause = $"{level0ID}='{level0}'",
+                    HasChildren = true
+                };
+                TreeNodes.Add(nodeLevel0);
+                prevLevel0 = level0;
+                prevLevel1 = Init;
+                prevLevel2 = Init;
+                prevLevel3 = Init;
+            }
+
+            if (!string.IsNullOrEmpty(level1ID))
+            {
+                var level1 = item[level1ID]?.ToString() ?? "";
+                if (level1 != prevLevel1)
+                {
+                    if (prevLevel1 != Init)
+                    {
+                        nodeLevel1.Children = level1Children;
+                        level1Children = new List<TreeNodeModel>();
+                    }
+                    nodeLevel1 = new TreeNodeModel
+                    {
+                        Name = GetDisplayValue(item, displayParts, 1),
+                        WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{level1}'",
+                        HasChildren = !string.IsNullOrEmpty(level2ID)
+                    };
+                    prevLevel1 = level1;
+                    prevLevel2 = Init;
+                    prevLevel3 = Init;
+                    level0Children.Add(nodeLevel1);
+                }
+
+                if (!string.IsNullOrEmpty(level2ID))
+                {
+                    var level2 = item[level2ID]?.ToString() ?? "";
+                    if (level2 != prevLevel2)
+                    {
+                        if (prevLevel2 != Init)
+                        {
+                            nodeLevel2.Children = level2Children;
+                            level2Children = new List<TreeNodeModel>();
+                        }
+                        nodeLevel2 = new TreeNodeModel
+                        {
+                            Name = GetDisplayValue(item, displayParts, 2),
+                            WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{prevLevel1}' AND {level2ID}='{level2}'",
+                            HasChildren = !string.IsNullOrEmpty(level3ID)
+                        };
+                        prevLevel2 = level2;
+                        prevLevel3 = Init;
+                        level1Children.Add(nodeLevel2);
+                    }
+
+                    if (!string.IsNullOrEmpty(level3ID))
+                    {
+                        var level3 = item[level3ID]?.ToString() ?? "";
+                        if (level3 != prevLevel3)
+                        {
+                            var nodeLevel3 = new TreeNodeModel
+                            {
+                                Name = GetDisplayValue(item, displayParts, 3),
+                                WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{prevLevel1}' AND {level2ID}='{prevLevel2}' AND {level3ID}='{level3}'"
+                            };
+                            prevLevel3 = level3;
+                            level2Children.Add(nodeLevel3);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Close remaining open nodes
+        if (!string.IsNullOrEmpty(level2ID))
+            nodeLevel2.Children = level2Children;
+        if (!string.IsNullOrEmpty(level1ID))
+            nodeLevel1.Children = level1Children;
+        nodeLevel0.Children = level0Children;
+
+        StateHasChanged();
+    }
+
+    private string GetDisplayValue(dynamic item, string[] displayParts, int level)
+    {
+        if (level >= displayParts.Length) return "";
+        var expr = displayParts[level].Trim();
+        // Extract the alias (after " as ") if it exists
+        var asIdx = expr.IndexOf(" as ", StringComparison.OrdinalIgnoreCase);
+        if (asIdx >= 0)
+        {
+            var alias = expr.Substring(asIdx + 4).Trim();
+            var dict = item as IDictionary<string, object>;
+            return dict?[alias]?.ToString()?.Trim() ?? "";
+        }
+        // Otherwise use as column name directly
+        var dictFallback = item as IDictionary<string, object>;
+        return dictFallback?[expr]?.ToString()?.Trim() ?? "";
+    }
+
+    private async Task LoadItemsAsync(TreeNodeModel currentSelectedNode)
+    {
+        StatusMessage = "Loading vendor prices...";
+        StateHasChanged();
+        try
+        {
+            PriceData.Clear();
+
+            var sql = @"
+            SELECT v.*, g.PriceGroupDesc
+            FROM VendorPrices v
+            LEFT OUTER JOIN PriceGroups g
+                ON v.PriceLink = g.PriceGroup
+               AND g.DivisionID = @DivisionID";
+
+            string? whereClause = null;
+            try
+            {
+                whereClause = currentSelectedNode?.WhereClause;
+            }
+            catch
+            {
+            }
+
+            if (!string.IsNullOrWhiteSpace(whereClause))
+            {
+                var cleanWhere = whereClause.Trim().StartsWith("AND ")
+                    ? whereClause.Trim().Substring(4).Trim()
+                    : whereClause.Trim();
+                sql += $@"
+                WHERE ISNULL(Vendor, '') <> ''
+                  AND {cleanWhere}
+                  AND v.DivisionID IN (0, @DivisionID)";
+            }
+            else
+            {
+                sql += @"
+                WHERE v.DivisionID IN (0, @DivisionID)";
+            }
+
+            var parameters = new { DivisionID = 1 };
+            var result = await db.QueryAsync(sql, parameters);
+
+            foreach (var row in result)
+            {
+                var item = new VendorPriceViewModel
+                {
+                    PriceLink = Convert.ToInt64(row["PriceLink"] ?? 0),
+                    PriceGroupDesc = row["PriceGroupDesc"]?.ToString() ?? "",
+                    ItemType = row["ItemType"]?.ToString(),
+                    PriceLevel = (row["PriceLevel"]?.ToString() ?? "")
+                        .Replace("Community", CommunityLabel),
+                    Vendor = row["Vendor"]?.ToString(),
+                    VendorName = row["VendorName"]?.ToString(),
+                    Community = row["Community"]?.ToString(),
+                    CommunityPhase = row["CommunityPhase"]?.ToString(),
+                    CommunityDesc = row["CommunityDesc"]?.ToString(),
+                    TaxGroup = row["TaxGroup"]?.ToString(),
+                    SKU = row["PartNumber"]?.ToString(),
+                    Item = row["Item"]?.ToString(),
+                    ItemNumber = row["ItemNumber"]?.ToString(),
+                    OrderUOM = row["OrderUOM"]?.ToString(),
+                    Phase = row["Phase"]?.ToString(),
+                    POIndex = row["POIndex"]?.ToString(),
+                    POIndexDescription = row["POIndexDescription"]?.ToString(),
+                    CostCode = row["CostCode"]?.ToString(),
+                    CostCodeDesc = row["CostCodeDesc"]?.ToString(),
+                    ItemDesc = row["ItemDesc"]?.ToString(),
+                    Assembly = row["Assembly"]?.ToString(),
+                    Model = row["Model"]?.ToString(),
+                    AssemblyDesc = row["AssemblyDesc"]?.ToString(),
+                    Last3 = Convert.ToDecimal(row["Last3"] ?? 0m),
+                    Expiry3 = row["Expiry3"] as DateTime?,
+                    Last2 = Convert.ToDecimal(row["Last2"] ?? 0m),
+                    Expiry2 = row["Expiry2"] as DateTime?,
+                    Last1 = Convert.ToDecimal(row["Last1"] ?? 0m),
+                    Expiry1 = row["Expiry1"] as DateTime?,
+                    Current = Convert.ToDecimal(row["CurrentCost"] ?? 0m),
+                    Next1 = Convert.ToDecimal(row["Next1"] ?? 0m),
+                    Effective1 = row["Effective1"] as DateTime?,
+                    Next2 = Convert.ToDecimal(row["Next2"] ?? 0m),
+                    Effective2 = row["Effective2"] as DateTime?,
+                    Forecast1 = Convert.ToDecimal(row["Forecast1"] ?? 0m),
+                    Forecast2 = Convert.ToDecimal(row["Forecast2"] ?? 0m),
+                    Forecast3 = Convert.ToDecimal(row["Forecast3"] ?? 0m),
+                    Forecast4 = Convert.ToDecimal(row["Forecast4"] ?? 0m),
+                    Forecast5 = Convert.ToDecimal(row["Forecast5"] ?? 0m),
+                    Forecast6 = Convert.ToDecimal(row["Forecast6"] ?? 0m),
+                    Forecast7 = Convert.ToDecimal(row["Forecast7"] ?? 0m),
+                    Forecast8 = Convert.ToDecimal(row["Forecast8"] ?? 0m),
+                    Forecast9 = Convert.ToDecimal(row["Forecast9"] ?? 0m),
+                    Forecast10 = Convert.ToDecimal(row["Forecast10"] ?? 0m),
+                    Forecast11 = Convert.ToDecimal(row["Forecast11"] ?? 0m),
+                    Forecast12 = Convert.ToDecimal(row["Forecast12"] ?? 0m),
+                    HasLinkedPriceGroup = Convert.ToInt64(row["PriceLink"] ?? 0) != 0
+                };
+                PriceData.Add(item);
+            }
+
+            StatusMessage = $"Loaded {PriceData.Count} price records";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading prices: {ex.Message}";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    // Toolbar actions
+    private async Task NewPricelist_Click() { }
+    private async Task Save_Click() { }
+    private async Task Preview_Click() { }
+    private async Task Export_Click() { }
+    private async Task Import_Click() { }
+    private async Task Forecasting_Click() { }
+
+    // Models
+    public class ViewDefinition
+    {
+        public int Index { get; }
+        public string Name { get; }
+        public string KeyFields { get; }
+        public string DisplayFields { get; }
+        public string OrderByFields { get; }
+
+        public ViewDefinition(int index, string name, string keys, string displays, string order)
+        {
+            Index = index;
+            Name = name;
+            KeyFields = keys;
+            DisplayFields = displays;
+            OrderByFields = order;
+        }
+    }
+
+    public class TreeNodeModel
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public bool HasChildren { get; set; }
+        public bool Expanded { get; set; }
+        public string? WhereClause { get; set; }
+        public string? KeyFieldName { get; set; }
+        public string? DisplayFieldName { get; set; }
+        public bool IsGlobalOrSpecial { get; set; }
+        public List<TreeNodeModel>? Children { get; set; }
+    }
+
+    public class VendorPriceViewModel
+    {
+        public bool HasLinkedPriceGroup { get; set; }
+        public string? ItemType { get; set; }
+        public string? PriceLevel { get; set; }
+        public string? TaxGroup { get; set; }
+        public string? Item { get; set; }
+        public string? ItemNumber { get; set; }
+        public string? OrderUOM { get; set; }
+        public string? Phase { get; set; }
+        public string? POIndex { get; set; }
+        public string? POIndexDescription { get; set; }
+        public string? CostCode { get; set; }
+        public string? CostCodeDesc { get; set; }
+        public string? Model { get; set; }
+        public string? AssemblyDesc { get; set; }
+        public decimal Next2 { get; set; }
+        public DateTime? Effective2 { get; set; }
+        public long PriceLink { get; set; }
+        public string PriceGroupDesc { get; set; } = string.Empty;
+        public string? Vendor { get; set; }
+        public string? VendorName { get; set; }
+        public string? Community { get; set; }
+        public string? CommunityPhase { get; set; }
+        public string? CommunityDesc { get; set; }
+        public string? Assembly { get; set; }
+        public string? ItemDesc { get; set; }
+        public string? SKU { get; set; }
+        public decimal? Last3 { get; set; }
+        public DateTime? Expiry3 { get; set; }
+        public decimal? Last2 { get; set; }
+        public DateTime? Expiry2 { get; set; }
+        public decimal? Last1 { get; set; }
+        public DateTime? Expiry1 { get; set; }
+        public decimal? Current { get; set; }
+        public decimal? Next1 { get; set; }
+        public DateTime? Effective1 { get; set; }
+        public decimal? Forecast1 { get; set; }
+        public decimal? Forecast2 { get; set; }
+        public decimal? Forecast3 { get; set; }
+        public decimal? Forecast4 { get; set; }
+        public decimal? Forecast5 { get; set; }
+        public decimal? Forecast6 { get; set; }
+        public decimal? Forecast7 { get; set; }
+        public decimal? Forecast8 { get; set; }
+        public decimal? Forecast9 { get; set; }
+        public decimal? Forecast10 { get; set; }
+        public decimal? Forecast11 { get; set; }
+        public decimal? Forecast12 { get; set; }
+    }
+}

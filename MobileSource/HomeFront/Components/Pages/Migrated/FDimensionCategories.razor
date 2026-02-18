@@ -1,0 +1,810 @@
+```razor
+@page "/dimension-categories"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Dimension Categories</PageTitle>
+
+<style>
+    .dim-cat-container {
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        padding: 10px;
+    }
+
+    .toolbar-row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        margin-bottom: 6px;
+    }
+
+    .main-panels {
+        display: flex;
+        gap: 4px;
+        height: calc(100vh - 200px);
+        min-height: 400px;
+    }
+
+    .panel-categories {
+        flex: 5;
+        min-width: 200px;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+    .panel-units {
+        flex: 1;
+        min-width: 100px;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+    .panel-rooms {
+        flex: 3;
+        min-width: 200px;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+    .panel-header {
+        background: #f0f0f0;
+        padding: 6px 10px;
+        font-weight: 600;
+        font-size: 12px;
+        border-bottom: 1px solid #dee2e6;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .grid-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .grid-table th {
+        background: #e8e8e8;
+        padding: 4px 8px;
+        text-align: left;
+        border-bottom: 2px solid #ccc;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        font-weight: 600;
+        font-size: 11px;
+    }
+
+    .grid-table td {
+        padding: 3px 8px;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+    }
+
+    .grid-table tr:hover td {
+        background: #e8f0fe;
+    }
+
+    .grid-table tr.selected td {
+        background: #cce5ff;
+        font-weight: 500;
+    }
+
+    .grid-table tr.new-row td {
+        color: #999;
+        font-style: italic;
+    }
+
+    .btn-nav {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 13px;
+        margin-left: 8px;
+    }
+
+    .btn-nav:hover:not(:disabled) {
+        background: #e0e0e0;
+    }
+
+    .btn-nav:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-clear {
+        padding: 4px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .btn-clear:hover {
+        background: #e0e0e0;
+    }
+
+    .footer-row {
+        display: flex;
+        justify-content: flex-end;
+        padding: 10px 0;
+        gap: 8px;
+    }
+
+    .uom-input {
+        width: 100%;
+        padding: 2px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+        box-sizing: border-box;
+    }
+
+    .uom-input:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
+    }
+
+    .checkbox-cell {
+        text-align: center;
+    }
+
+    .checkbox-cell input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        cursor: pointer;
+    }
+
+    .combo-select {
+        width: 100%;
+        padding: 2px 4px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+        box-sizing: border-box;
+    }
+</style>
+
+<div class="dim-cat-container">
+    <h4 style="margin-bottom: 10px;">Dimension Categories</h4>
+
+    <!-- Clear All button row -->
+    <div class="toolbar-row">
+        <button class="btn-clear" @onclick="OnClearAllClick">Clear &amp;All</button>
+    </div>
+
+    <!-- Main three-panel layout -->
+    <div class="main-panels">
+        <!-- Categories Panel -->
+        <div class="panel-categories">
+            <div class="panel-header">Categories</div>
+            <table class="grid-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Group</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < CategoriesData.Count; i++)
+                    {
+                        var idx = i;
+                        var cat = CategoriesData[idx];
+                        <tr class="@(SelectedCategoryIndex == idx ? "selected" : "")"
+                            @onclick="() => OnCategoryRowClick(idx)">
+                            <td>@cat.Category</td>
+                            <td>@cat.GroupDescription</td>
+                            <td>@cat.CategoryDescription</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Units Panel -->
+        <div class="panel-units">
+            <div class="panel-header">UOM</div>
+            <table class="grid-table">
+                <thead>
+                    <tr>
+                        <th>UOM</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < UnitsData.Count; i++)
+                    {
+                        var idx = i;
+                        var unit = UnitsData[idx];
+                        var isLastRow = idx == UnitsData.Count - 1;
+                        <tr class="@(SelectedUnitIndex == idx ? "selected" : "") @(isLastRow ? "new-row" : "")"
+                            @onclick="() => OnUnitRowClick(idx)">
+                            <td>
+                                @if (isLastRow)
+                                {
+                                    @if (UomComboList.Any())
+                                    {
+                                        <select class="combo-select"
+                                                value="@unit.UOM"
+                                                @onchange="(e) => OnNewUomChanged(e)">
+                                            <option value="">(new...)</option>
+                                            @foreach (var uom in UomComboList)
+                                            {
+                                                <option value="@uom">@uom</option>
+                                            }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        <input class="uom-input" type="text" value="@unit.UOM"
+                                               placeholder="(new...)"
+                                               @onchange="(e) => OnNewUomChanged(e)" />
+                                    }
+                                }
+                                else
+                                {
+                                    @unit.UOM
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Rooms Panel -->
+        <div class="panel-rooms">
+            <div class="panel-header">Rooms</div>
+            <table class="grid-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px; text-align: center;">✓</th>
+                        <th>Room</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < RoomsData.Count; i++)
+                    {
+                        var idx = i;
+                        var room = RoomsData[idx];
+                        <tr>
+                            <td class="checkbox-cell">
+                                <input type="checkbox" checked="@room.Selected"
+                                       disabled="@(!CanEditRooms)"
+                                       @onchange="(e) => OnRoomCheckedChanged(idx, e)" />
+                            </td>
+                            <td>@room.Room</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Footer buttons -->
+    <div class="footer-row">
+        <button class="btn-nav" disabled="@(!mDirty)" @onclick="OnSaveClick">&amp;Save</button>
+        <button class="btn-nav" @onclick="OnCloseClick">&amp;Close</button>
+    </div>
+</div>
+
+@* ── Confirm Save Dialog ── *@
+@if (ShowConfirmDialog)
+{
+    <div style="position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"
+         @onclick="() => OnConfirmDialogResponse(null)">
+        <div style="background:#fff; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.2); min-width:400px; max-width:500px; padding:0; overflow:hidden;"
+             @onclick:stopPropagation="true">
+            <div style="padding:14px 20px; font-weight:600; font-size:15px; border-bottom:1px solid #dee2e6;">
+                Dimension Categories
+            </div>
+            <div style="padding:20px;">
+                <p>This data has changed.</p>
+                <p>Do you want to save these changes?</p>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 20px; border-top:1px solid #dee2e6; background:#f8f9fa;">
+                <button class="btn-nav" @onclick="() => OnConfirmDialogResponse(true)">Yes</button>
+                <button class="btn-nav" @onclick="() => OnConfirmDialogResponse(false)">No</button>
+                <button class="btn-nav" @onclick="() => OnConfirmDialogResponse(null)">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Delete UOM Confirm Dialog ── *@
+@if (ShowDeleteUomDialog)
+{
+    <div style="position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"
+         @onclick="() => { ShowDeleteUomDialog = false; }">
+        <div style="background:#fff; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.2); min-width:400px; max-width:500px; padding:0; overflow:hidden;"
+             @onclick:stopPropagation="true">
+            <div style="padding:14px 20px; font-weight:600; font-size:15px; border-bottom:1px solid #dee2e6;">
+                Dimension Categories
+            </div>
+            <div style="padding:20px;">
+                <p>Are you sure you want to delete this UOM from this category?</p>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 20px; border-top:1px solid #dee2e6; background:#f8f9fa;">
+                <button class="btn-nav" @onclick="OnDeleteUomConfirmed">Yes</button>
+                <button class="btn-nav" @onclick="() => { ShowDeleteUomDialog = false; }">No</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Constants ===
+    private const string SRCFILE = "FDimensionCategories::";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === State ===
+    private bool mDirty = false;
+    private string mCategory = "";
+    private string mUOM = "";
+
+    // === Dialog State ===
+    private bool ShowConfirmDialog = false;
+    private TaskCompletionSource<bool?>? _confirmDialogTcs;
+    private bool ShowDeleteUomDialog = false;
+
+    // === Data ===
+    private List<CategoryRow> CategoriesData = new();
+    private List<UnitRow> UnitsData = new();
+    private List<RoomRow> RoomsData = new();
+    private List<string> UomComboList = new();
+
+    // === Selection ===
+    private int SelectedCategoryIndex = -1;
+    private int SelectedUnitIndex = -1;
+
+    private bool CanEditRooms => !string.IsNullOrEmpty(mUOM) && SelectedUnitIndex >= 0 && SelectedUnitIndex < UnitsData.Count - 1;
+
+    // === Models ===
+    public class CategoryRow
+    {
+        public string Category { get; set; } = "";
+        public string GroupDescription { get; set; } = "";
+        public string CategoryDescription { get; set; } = "";
+    }
+
+    public class UnitRow
+    {
+        public string UOM { get; set; } = "";
+    }
+
+    public class RoomRow
+    {
+        public string RoomID { get; set; } = "";
+        public string Room { get; set; } = "";
+        public bool Selected { get; set; }
+    }
+
+    // === Dirty Property ===
+    private bool Dirty
+    {
+        get => mDirty;
+        set => mDirty = value;
+    }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUomComboList();
+        await LoadCategories();
+        await LoadRooms("");
+
+        if (CategoriesData.Count > 0)
+        {
+            SelectedCategoryIndex = 0;
+            await LoadUnits(CategoriesData[0].Category);
+        }
+    }
+
+    // === Load UOM Combo List ===
+    private async Task LoadUomComboList()
+    {
+        try
+        {
+            var sql = $"SELECT DISTINCT ISNULL(AssemblyUOM,'') FROM tblDBAssemblyMaster WHERE ISNULL(AssemblyUOM,'')<>'' AND divisionid={DivisionID} ORDER BY 1";
+            var rows = await db.QueryAsync(sql);
+            UomComboList = rows
+                .Select(r => r.Values.FirstOrDefault()?.ToString()?.Trim() ?? "")
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadUomComboList error: {ex.Message}");
+        }
+    }
+
+    // === GetComboList (VB6 equivalent) ===
+    private string GetComboList(string sql, bool limitToList = true)
+    {
+        try
+        {
+            var dt = db.SqlExec(sql);
+            var s = "";
+            foreach (DataRow row in dt.Rows)
+            {
+                var val = (row[0]?.ToString() ?? "").Trim();
+                if (!string.IsNullOrEmpty(val))
+                    s += "|" + val;
+            }
+            if (limitToList && s.Length > 0)
+                s = s.Substring(1);
+            if (s == "|")
+                s = "";
+            return s;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GetComboList error: {ex.Message}");
+            return "";
+        }
+    }
+
+    // === Load Categories ===
+    private async Task LoadCategories()
+    {
+        try
+        {
+            CategoriesData.Clear();
+            var sql = @"
+                SELECT c.Category, g.description AS GroupDescription, c.Description AS CategoryDescription
+                FROM tblMajorGroups g
+                JOIN tblCategories c ON g.major_group = c.group_code
+                ORDER BY g.description, c.description";
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                CategoriesData.Add(new CategoryRow
+                {
+                    Category = row["Category"]?.ToString() ?? "",
+                    GroupDescription = row["GroupDescription"]?.ToString() ?? "",
+                    CategoryDescription = row["CategoryDescription"]?.ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadCategories error: {ex.Message}");
+        }
+    }
+
+    // === Load Units ===
+    private async Task LoadUnits(string category)
+    {
+        mCategory = category;
+        UnitsData.Clear();
+
+        try
+        {
+            var sql = $@"
+                SELECT DISTINCT c.uom
+                FROM RoomMaster r
+                JOIN RoomMasterSubCategory c ON r.roomid = c.roomid AND c.subcategory = '{EscapeSql(mCategory)}'
+                WHERE ISNULL(r.inactive, 0) = 0 AND r.divisionid = {DivisionID}
+                ORDER BY c.uom";
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                UnitsData.Add(new UnitRow
+                {
+                    UOM = row["uom"]?.ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadUnits error: {ex.Message}");
+        }
+
+        // If we have units and rooms were loaded, but no unit is selected, clear rooms
+        if (UnitsData.Count == 0 && RoomsData.Count > 0)
+        {
+            foreach (var room in RoomsData)
+                room.Selected = false;
+        }
+
+        // Add empty row for new entry
+        UnitsData.Add(new UnitRow { UOM = "" });
+
+        if (UnitsData.Count > 1)
+        {
+            SelectedUnitIndex = 0;
+            await LoadRooms(UnitsData[0].UOM);
+        }
+        else
+        {
+            SelectedUnitIndex = UnitsData.Count - 1;
+            mUOM = "";
+            await LoadRooms("");
+        }
+
+        Dirty = false;
+    }
+
+    // === Load Rooms ===
+    private async Task LoadRooms(string uom)
+    {
+        mUOM = uom;
+        RoomsData.Clear();
+
+        try
+        {
+            var sql = $@"
+                SELECT r.roomid, r.room,
+                       CAST(CASE WHEN c.roomid IS NULL THEN 0 ELSE 1 END AS bit) AS selected
+                FROM RoomMaster r
+                LEFT OUTER JOIN RoomMasterSubCategory c ON r.roomid = c.roomid
+                    AND c.subcategory = '{EscapeSql(mCategory)}'
+                    AND c.uom = '{EscapeSql(mUOM)}'
+                WHERE ISNULL(r.inactive, 0) = 0 AND r.divisionid = {DivisionID}
+                ORDER BY r.Room";
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                RoomsData.Add(new RoomRow
+                {
+                    RoomID = row["roomid"]?.ToString() ?? "",
+                    Room = row["room"]?.ToString() ?? "",
+                    Selected = Convert.ToBoolean(row["selected"])
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadRooms error: {ex.Message}");
+        }
+
+        Dirty = false;
+    }
+
+    // === Category Row Click ===
+    private async Task OnCategoryRowClick(int index)
+    {
+        if (index == SelectedCategoryIndex) return;
+
+        // Save before changing if dirty
+        if (mDirty)
+        {
+            var saveResult = await SaveData(false);
+            if (!saveResult) return;
+        }
+
+        SelectedCategoryIndex = index;
+        mCategory = "";
+        mUOM = "";
+
+        if (index >= 0 && index < CategoriesData.Count)
+        {
+            await LoadUnits(CategoriesData[index].Category);
+        }
+    }
+
+    // === Unit Row Click ===
+    private async Task OnUnitRowClick(int index)
+    {
+        if (index == SelectedUnitIndex) return;
+
+        // Save before changing if dirty
+        if (mDirty)
+        {
+            var saveResult = await SaveData(false);
+            if (!saveResult) return;
+        }
+
+        SelectedUnitIndex = index;
+
+        if (index >= 0 && index < UnitsData.Count)
+        {
+            await LoadRooms(UnitsData[index].UOM);
+        }
+    }
+
+    // === Room Checkbox Changed ===
+    private void OnRoomCheckedChanged(int index, ChangeEventArgs e)
+    {
+        if (index >= 0 && index < RoomsData.Count)
+        {
+            RoomsData[index].Selected = (bool)(e.Value ?? false);
+            Dirty = true;
+        }
+    }
+
+    // === New UOM Changed ===
+    private async Task OnNewUomChanged(ChangeEventArgs e)
+    {
+        var newUom = e.Value?.ToString()?.Trim() ?? "";
+        if (string.IsNullOrEmpty(newUom)) return;
+
+        // Check for duplicates
+        for (int i = 0; i < UnitsData.Count - 1; i++)
+        {
+            if (string.Equals(UnitsData[i].UOM, newUom, StringComparison.OrdinalIgnoreCase))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "This UOM already exists for this category.");
+                return;
+            }
+        }
+
+        // Set the last row's UOM
+        var lastIndex = UnitsData.Count - 1;
+        UnitsData[lastIndex].UOM = newUom;
+        mUOM = newUom;
+
+        // Add a new empty row
+        UnitsData.Add(new UnitRow { UOM = "" });
+
+        SelectedUnitIndex = lastIndex;
+        Dirty = true;
+        StateHasChanged();
+    }
+
+    // === Clear All Click ===
+    private void OnClearAllClick()
+    {
+        foreach (var room in RoomsData)
+            room.Selected = false;
+        Dirty = true;
+    }
+
+    // === Save Click ===
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    // === Close Click ===
+    private async Task OnCloseClick()
+    {
+        if (mDirty)
+        {
+            var result = await SaveData(true);
+            if (!result) return;
+        }
+        Dirty = false;
+        NavigationManager.NavigateTo("/");
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty)
+            return true;
+
+        if (prompt)
+        {
+            var dialogResult = await ShowConfirmSaveDialog();
+            if (dialogResult == null) // Cancel
+                return false;
+            if (dialogResult == false) // No
+                return true;
+            // Yes - continue to save
+        }
+
+        try
+        {
+            var sql = "";
+            sql += $"DELETE c FROM roommastersubcategory c JOIN roommaster r ON c.roomid = r.roomid\n";
+            sql += $"WHERE c.Subcategory = '{EscapeSql(mCategory)}' AND c.uom = '{EscapeSql(mUOM)}'\n";
+            sql += $"AND r.divisionid = {DivisionID}\n";
+
+            foreach (var room in RoomsData)
+            {
+                if (room.Selected && !string.IsNullOrEmpty(mUOM))
+                {
+                    sql += $"INSERT RoomMasterSubCategory(SubCategory, UOM, RoomID) VALUES('{EscapeSql(mCategory)}', '{EscapeSql(mUOM)}', {room.RoomID})\n";
+                }
+            }
+
+            await db.ExecuteAsync(sql);
+            Dirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                // Resume next equivalent - ignore duplicate errors
+                Dirty = false;
+                return true;
+            }
+            else
+            {
+                Console.WriteLine($"{SRCFILE}SaveData error: {ex.Message}");
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+                return false;
+            }
+        }
+    }
+
+    // === Delete UOM (Shift+Delete on units grid) ===
+    private async Task OnDeleteUomClick()
+    {
+        if (SelectedUnitIndex < 0 || SelectedUnitIndex >= UnitsData.Count - 1) return;
+        ShowDeleteUomDialog = true;
+    }
+
+    private async Task OnDeleteUomConfirmed()
+    {
+        ShowDeleteUomDialog = false;
+
+        if (SelectedUnitIndex < 0 || SelectedUnitIndex >= UnitsData.Count - 1) return;
+
+        try
+        {
+            var sql = $"DELETE RoomMasterSubCategory WHERE Subcategory = '{EscapeSql(mCategory)}' AND uom = '{EscapeSql(mUOM)}'";
+            mUOM = "";
+            await db.ExecuteAsync(sql);
+
+            UnitsData.RemoveAt(SelectedUnitIndex);
+
+            if (UnitsData.Count > 1)
+            {
+                SelectedUnitIndex = 0;
+                await LoadRooms(UnitsData[0].UOM);
+            }
+            else
+            {
+                SelectedUnitIndex = 0;
+                mUOM = "";
+                await LoadRooms("");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"DeleteUom error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting UOM: {ex.Message}");
+        }
+    }
+
+    // === Confirm Save Dialog ===
+    private async Task<bool?> ShowConfirmSaveDialog()
+    {
+        ShowConfirmDialog = true;
+        _confirmDialogTcs = new TaskCompletionSource<bool?>();
+        StateHasChanged();
+        var result = await _confirmDialogTcs.Task;
+        ShowConfirmDialog = false;
+        StateHasChanged();
+        return result;
+    }
+
+    private void OnConfirmDialogResponse(bool? response)
+    {
+        _confirmDialogTcs?.TrySetResult(response);
+    }
+
+    // === Helpers ===
+    private string EscapeSql(string value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+}
+```

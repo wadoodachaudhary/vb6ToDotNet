@@ -1,0 +1,1024 @@
+@page "/user-management"
+@rendermode InteractiveServer
+
+@using System.Data
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>HomeFront - User Management</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+
+    .tab-buttons { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 0; }
+    .tab-buttons button {
+        padding: 10px 24px; border: none; background: #f0f0f0;
+        cursor: pointer; font-size: 14px; transition: background 0.2s;
+    }
+    .tab-buttons button:hover { background: #e0e0e0; }
+    .tab-buttons button.active {
+        background: #fff; border-bottom: 2px solid #0d6efd;
+        margin-bottom: -2px; color: #0d6efd; font-weight: bold;
+    }
+    .tab-content {
+        padding: 16px; border: 1px solid #ddd; border-top: none; background: #fff;
+    }
+
+    .form-section {
+        border: 1px solid #dee2e6; border-radius: 6px; padding: 16px;
+        background: #fff; margin-bottom: 16px;
+    }
+    .form-row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+    .form-row label { min-width: 140px; text-align: right; font-weight: 500; font-size: 13px; }
+    .form-row input, .form-row select {
+        flex: 1; max-width: 300px; padding: 5px 10px;
+        border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+    }
+    .form-row input:focus, .form-row select:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+
+    .user-type-section { margin-top: 12px; }
+    .user-type-section label { font-size: 13px; margin-right: 16px; cursor: pointer; }
+    .user-type-section input[type="radio"] { margin-right: 4px; }
+
+    .permissions-frame {
+        border: 1px solid #dee2e6; border-radius: 4px; padding: 12px;
+        background: #fafafa; margin-bottom: 12px;
+    }
+    .permissions-frame h6 { margin-bottom: 10px; font-weight: 600; color: #495057; }
+    .check-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px;
+    }
+    .check-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .check-item input[type="checkbox"] { width: 15px; height: 15px; }
+
+    .sub-tab-buttons { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 12px; }
+    .sub-tab-buttons button {
+        padding: 6px 16px; border: none; background: #eee;
+        cursor: pointer; font-size: 12px; transition: background 0.15s;
+    }
+    .sub-tab-buttons button:hover { background: #ddd; }
+    .sub-tab-buttons button.active {
+        background: #fff; border-bottom: 2px solid #0d6efd;
+        margin-bottom: -1px; color: #0d6efd; font-weight: 600;
+    }
+</style>
+
+<h3 style="margin-bottom: 16px;">HomeFront - User Management</h3>
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnFirstClick" disabled="@(!ButtonsEnabled)">
+        <span>⏮</span><span class="tool-label">First</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnPreviousClick" disabled="@(!ButtonsEnabled)">
+        <span>◀</span><span class="tool-label">Previous</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnNextClick" disabled="@(!ButtonsEnabled)">
+        <span>▶</span><span class="tool-label">Next</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnLastClick" disabled="@(!ButtonsEnabled)">
+        <span>⏭</span><span class="tool-label">Last</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnAddClick" disabled="@(!ButtonsEnabled)">
+        <span>➕</span><span class="tool-label">Add</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnDeleteClick" disabled="@(!ButtonsEnabled)">
+        <span>🗑️</span><span class="tool-label">Delete</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnSaveClick" disabled="@(ButtonsEnabled)">
+        <span>💾</span><span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnCancelClick" disabled="@(ButtonsEnabled)">
+        <span>↩️</span><span class="tool-label">Undo</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnRefreshClick" disabled="@(!ButtonsEnabled)">
+        <span>🔄</span><span class="tool-label">Refresh</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnCloseClick" disabled="@(!ButtonsEnabled)">
+        <span>❌</span><span class="tool-label">Close</span>
+    </button>
+</div>
+
+@* ── MAIN TABS ─────────────────────────────────────────── *@
+<div class="tab-buttons">
+    <button class="@(MainTab == 0 ? "active" : "")" @onclick="() => MainTab = 0">General Information</button>
+    <button class="@(MainTab == 1 ? "active" : "")" @onclick="() => MainTab = 1">Permissions / Privileges</button>
+</div>
+
+<div class="tab-content">
+    @if (MainTab == 0)
+    {
+        @* ── GENERAL INFORMATION TAB ─────────────────────────── *@
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="form-section">
+                <div class="form-row">
+                    <label>Login</label>
+                    <input type="text" @bind="UserId" @bind:event="oninput" maxlength="10"
+                           @onkeydown="OnUserIdKeyDown" disabled="@(!FieldsEnabled)" />
+                    <button class="tbar-btn" @onclick="OnPickUser" title="Search User">🔍</button>
+                </div>
+                <div class="form-row">
+                    <label>User Name</label>
+                    <input type="text" @bind="UserName" @onfocus="OnFieldFocus" disabled="@(!FieldsEnabled)" />
+                </div>
+                <div class="form-row">
+                    <label>Designation</label>
+                    <input type="text" @bind="Designation" @onfocus="OnFieldFocus" disabled="@(!FieldsEnabled)" />
+                </div>
+                <div class="form-row">
+                    <label>Office</label>
+                    <input type="text" @bind="Office" @onfocus="OnFieldFocus" disabled="@(!FieldsEnabled)" />
+                </div>
+                <div class="form-row">
+                    <label>Password</label>
+                    <input type="password" @bind="UserPassword" @onfocus="OnFieldFocus" disabled="@(!FieldsEnabled)" />
+                </div>
+                <div class="form-row">
+                    <label>Home Page Report</label>
+                    <input type="text" @bind="HomePage" disabled="@(!FieldsEnabled)" />
+                    <button class="tbar-btn" @onclick="OnBrowseHomePage" title="Browse">📂</button>
+                </div>
+                <div class="form-row">
+                    <label>PO Approval Max</label>
+                    <input type="text" @bind="MaxPOAmount" disabled="@(!FieldsEnabled)" style="max-width:150px;" />
+                </div>
+
+                <div style="margin-top: 12px;">
+                    <button class="btn btn-outline-primary btn-sm" @onclick="OnAssignCommunities"
+                            style="@(UserAccess == 4 ? "" : "display:none;")">
+                        Assign Communities
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm" @onclick="OnAssignDivisions" style="margin-left:8px;">
+                        Assign Divisions
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="OnCopyUserPermissions" style="margin-left:8px;">
+                        Copy User Permissions
+                    </button>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h6>User Type:</h6>
+                <div class="user-type-section">
+                    @for (int i = 1; i <= 7; i++)
+                    {
+                        var idx = i;
+                        <div style="margin-bottom: 4px;">
+                            <label>
+                                <input type="radio" name="userType" value="@idx"
+                                       checked="@(UserAccess == idx)"
+                                       @onchange="() => OnUserTypeChanged(idx)" />
+                                @GetUserTypeLabel(idx)
+                            </label>
+                        </div>
+                    }
+                </div>
+                <div style="margin-top: 16px;">
+                    <button class="btn btn-outline-info btn-sm" @onclick="OnSetDefaultPermissions">
+                        Set Default Permissions/Privileges for Selected HomeFront User Type
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (MainTab == 1)
+    {
+        @* ── PERMISSIONS / PRIVILEGES TAB ─────────────────────── *@
+        <div class="sub-tab-buttons">
+            <button class="@(PermTab == 0 ? "active" : "")" @onclick="() => PermTab = 0">File Menu</button>
+            <button class="@(PermTab == 1 ? "active" : "")" @onclick="() => PermTab = 1">Tasks Menu</button>
+            <button class="@(PermTab == 2 ? "active" : "")" @onclick="() => PermTab = 2">Setup Menu</button>
+            <button class="@(PermTab == 3 ? "active" : "")" @onclick="() => PermTab = 3">Inquiry Menu</button>
+            <button class="@(PermTab == 4 ? "active" : "")" @onclick="() => PermTab = 4">Reports Menu</button>
+            <button class="@(PermTab == 5 ? "active" : "")" @onclick="() => PermTab = 5">Tools Menu</button>
+            <button class="@(PermTab == 6 ? "active" : "")" @onclick="() => PermTab = 6">Main Menu Bar</button>
+            <button class="@(PermTab == 7 ? "active" : "")" @onclick="() => PermTab = 7">Customer Info</button>
+            <button class="@(PermTab == 8 ? "active" : "")" @onclick="() => PermTab = 8">Precision Builder</button>
+            <button class="@(PermTab == 9 ? "active" : "")" @onclick="() => PermTab = 9">Workticket</button>
+        </div>
+
+        @if (PermTab == 0)
+        {
+            <div class="permissions-frame">
+                <h6>File Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Open Database" @bind-Value="Check1_FileOpenData" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Database Utilities" @bind-Value="Check1_FileDataUtil" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 1)
+        {
+            <div class="permissions-frame">
+                <h6>Tasks Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Enter Deposits" @bind-Value="Check1_TaskEntDep" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Enter Mortgage" @bind-Value="Check1_TaskEntMort" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Deposits" @bind-Value="Check1_TaskPostDep" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Mortgage" @bind-Value="Check1_TaskPostMort" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Process Lot Inventory" @bind-Value="Check1_TaskProcessLot" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="View/Update Lot Inventory" @bind-Value="Check1_TaskUpdLot" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Lot Inventory" @bind-Value="Check1_TaskPostLot" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Process Sales Closing" @bind-Value="Check1_TaskProcessSales" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Process Commission" @bind-Value="Check1_TaskProcessComm" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="View/Update Unposted Commission" @bind-Value="Check1_TaskUpdComm" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Commission" @bind-Value="Check1_TaskPostComm" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="View/Update Unposted Adjustments" @bind-Value="Check1_TaskUpdAdj" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Adjustments" @bind-Value="Check1_TaskPostAdj" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Create Job Quotes" @bind-Value="Check1_TaskEntQuote" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Update Totals to Job Cost" @bind-Value="Check1_TaskUpdTotalJobCost" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Update Address Info to Job Cost" @bind-Value="Check1_TaskUpdAddrJobCost" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Update Date Info to Timberline" @bind-Value="Check1_TaskUpdDatesTL" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Import Timberline Custom Fields" @bind-Value="Check1_TaskImportTLCustom" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Synchronize Customer Date List" @bind-Value="Check1_TaskSyncDate" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Synchronize Color Selection Items" @bind-Value="Check1_TaskSyncGroup" OnChanged="OnCheckChanged" />
+                </div>
+                <h6 style="margin-top:12px;">Project Builder Settings</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Allow User to Create Schedules?" @bind-Value="Check0_CreateSchedule" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Allow User to Modify Actual End Dates?" @bind-Value="Check0_EditActualEndDate" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Allow Users to View all Schedules" @bind-Value="Check0_ViewAllSchedules" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 2)
+        {
+            <div class="permissions-frame">
+                <h6>Setup Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Customer Information" @bind-Value="Check1_SetupCustomer" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Community" @bind-Value="Check1_SetupCommunity" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Model" @bind-Value="Check1_SetupModel" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Series" @bind-Value="Check1_SetupSeries" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Major Groups" @bind-Value="Check1_SetupMajorGroup" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Category" @bind-Value="Check1_SetupCategory" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Model Specific Option" @bind-Value="Check1_SetupModelOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Global Option" @bind-Value="Check1_SetupGlobalOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Design Center Area" @bind-Value="Check1_SetupDCArea" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Design Center Option" @bind-Value="Check1_SetupDCOption" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Jobs" @bind-Value="Check1_SetupJobs" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Construction Cut Off" @bind-Value="Check1_SetupConstStatus" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Project Managers" @bind-Value="Check1_SetupProjectManager" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Sales Persons" @bind-Value="Check1_SetupSalesperson" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Customer Service Person" @bind-Value="Check1_SetupCustSrvPerson" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Law Firms" @bind-Value="Check1_SetupLawFirms" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Lending Companies" @bind-Value="Check1_SetupLendingCompany" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Developers" @bind-Value="Check1_SetupDevelopers" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Lot Inventory" @bind-Value="Check1_SetupLotInventory" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="TL Date List" @bind-Value="Check1_SetupTLDateList" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Group Template/Color Sheet" @bind-Value="Check1_SetupGroupTemplate" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Milestone" @bind-Value="Check1_MileStoneMenu" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Parking Stall" @bind-Value="Check1_ParkingStallMenu" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 3)
+        {
+            <div class="permissions-frame">
+                <h6>Inquiry Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Model/Options" @bind-Value="Check1_InqModelOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Global Options" @bind-Value="Check1_InqGlobalOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Design Center Options" @bind-Value="Check1_InqDCOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="New Deposits" @bind-Value="Check1_InqNewDeposits" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Posted Deposits" @bind-Value="Check1_InqPostDeposits" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="New Mortgage Advance" @bind-Value="Check1_InqNewMortgage" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Posted Mortgage Advance" @bind-Value="Check1_InqPostMortgage" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Locked Customer" @bind-Value="Check1_InqLockedCustomer" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 4)
+        {
+            <div class="permissions-frame">
+                <h6>Reports Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Report Manager" @bind-Value="Check1_ReportsRepMan" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 5)
+        {
+            <div class="permissions-frame">
+                <h6>Tools Menu Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="User Administration" @bind-Value="Check1_ToolsUsrAdmin" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Customer Maintenance" @bind-Value="Check1_ToolsCustMaintain" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Administration and Maintenance" @bind-Value="Check1_ToolsAdminMaintain" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Customer's Report Package" @bind-Value="Check1_ToolsCustRepPackage" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="System Settings" @bind-Value="Check1_ToolsSystemSetup" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Commission Settings" @bind-Value="Check1_ToolsCommSettings" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Lot Status" @bind-Value="Check1_ToolsLotStatus" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Field Validation" @bind-Value="Check1_ToolsFieldVal" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="GST/PST Rebate Settings" @bind-Value="Check1_ToolsGSTPSTRebate" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Custom Descriptions" @bind-Value="Check1_ToolsCustDesc" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Timberline Field Descriptions" @bind-Value="Check1_ToolsTLFieldDesc" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Work In Progress Descriptions" @bind-Value="Check1_ToolsWorkInProgress" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 6)
+        {
+            <div class="permissions-frame">
+                <h6>Main Menu Bar Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Tasks Menu" @bind-Value="Check1_TasksMenu" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Setup Menu" @bind-Value="Check1_SetupMenu" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Reports Menu" @bind-Value="Check1_ReportsMenu" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Inquiry Menu" @bind-Value="Check1_InquiryMenu" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Tools Menu" @bind-Value="Check1_ToolsMenu" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 7)
+        {
+            @* Customer Information sub-tabs *@
+            <div class="sub-tab-buttons">
+                <button class="@(CustInfoSubTab == 0 ? "active" : "")" @onclick="() => CustInfoSubTab = 0">General Permissions 1</button>
+                <button class="@(CustInfoSubTab == 1 ? "active" : "")" @onclick="() => CustInfoSubTab = 1">General Permissions 2</button>
+                <button class="@(CustInfoSubTab == 2 ? "active" : "")" @onclick="() => CustInfoSubTab = 2">Customer Info Tabs</button>
+            </div>
+
+            @if (CustInfoSubTab == 0)
+            {
+                <div class="permissions-frame">
+                    <h6>General Permissions 1</h6>
+                    <div class="check-grid">
+                        <CheckItem Label="Show Change Order?" @bind-Value="Check0_ShowCO" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Design Center?" @bind-Value="Check0_ShowDC" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Spec/Show Home?" @bind-Value="Check0_UpdSpecShow" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update to TL?" @bind-Value="Check0_UpdToTL" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update from TL?" @bind-Value="Check0_UpdFromTL" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Interior Color Info?" @bind-Value="Check0_UPDCustomerGroups" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Delete Customer?" @bind-Value="Check0_DeleteCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Create New Customer?" @bind-Value="Check0_CreateNewCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Addition of Addendums?" @bind-Value="Check0_AddAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Addition of Change Orders?" @bind-Value="Check0_AddCO" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Change Grid Layout?" @bind-Value="Check0_ChangeGridLayout" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Addition of Customer Dates?" @bind-Value="Check0_AddCustomerDates" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Addition of Design Center?" @bind-Value="Check0_AddDC" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="BarCode Entry?" @bind-Value="Check0_BarcodeEntry" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Contract Summary?" @bind-Value="Check0_UpdContractSummary" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Create Jobs?" @bind-Value="Check0_CreateJob" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Approve Customer on CO?" @bind-Value="Check0_ApproveCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Purchase?" @bind-Value="Check0_PurchaseCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Deleted Items?" @bind-Value="Check0_UpdDeletedItems" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Builder Approve?" @bind-Value="Check0_BldrApproveCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update TL Job" @bind-Value="Check0_UPDTLJob" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Customer Dates" @bind-Value="Check0_UPDCustomerDates" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Addendum" @bind-Value="Check0_UPDAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Change Order" @bind-Value="Check0_UPDCO" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Design Center" @bind-Value="Check0_UPDDC" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Customer" @bind-Value="Check0_UPDCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Change Dates" @bind-Value="Check0_ChangeDate" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Copy Customer?" @bind-Value="Check0_CopyCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Sales Override?" @bind-Value="Check0_SalesOverride" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Custom Pricing?" @bind-Value="Check0_CustomPricing" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Add CO to Locked Change Orders" @bind-Value="Check0_AllowAddCO_LOCKCO" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Deletion of Change Orders?" @bind-Value="Check0_AllowDelCO" OnChanged="OnCheckChanged" />
+                    </div>
+                </div>
+            }
+            else if (CustInfoSubTab == 1)
+            {
+                <div class="permissions-frame">
+                    <h6>General Permissions 2</h6>
+                    <div class="check-grid">
+                        <CheckItem Label="Access to All Menu Items when Customer form is open?" @bind-Value="Check0_AccessMenu" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Cost Information?" @bind-Value="Check0_UpdateCostInfo" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Update Construction Status?" @bind-Value="Check0_UpdateConstStatus" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Un Approve Change Order?" @bind-Value="Check0_UnApproveCO" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Uncheck Purchased on Customers?" @bind-Value="Check0_UnPurchase" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Sales Managers Default Pick List View is Pending Customers?" @bind-Value="Check0_PendingCustomerPick" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Modify Custom Option Comments after Quote Complete?" @bind-Value="Check0_ModifyCustom" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Prompt for Change Order Approval?" @bind-Value="Check0_PromptforCOApproval" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Reverse Top Tab Order for Dates and Contract Details?" @bind-Value="Check0_ReverseCustDateTab" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Allow Edits to Quote Complete Custom Options?" @bind-Value="Check0_EditCompletedCustom" OnChanged="OnCheckChanged" />
+                    </div>
+                </div>
+            }
+            else if (CustInfoSubTab == 2)
+            {
+                <div class="permissions-frame">
+                    <h6>Customer Info Tabs</h6>
+                    <div class="check-grid">
+                        <CheckItem Label="Show Buyer Info?" @bind-Value="Check0_ShowBuyerInfo" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Home Info?" @bind-Value="Check0_ShowHomeInfo" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Selections?" @bind-Value="Check0_ShowSelections" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Dates?" @bind-Value="Check0_ShowDates" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Addendums?" @bind-Value="Check0_ShowAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Change Order?" @bind-Value="Check0_ShowChangeOrder" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Design Center?" @bind-Value="Check0_ShowDesignCenter" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Contract Summary?" @bind-Value="Check0_ShowContractSummary" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Accounting Info?" @bind-Value="Check0_ShowAccountingInfo" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Show Deleted Items?" @bind-Value="Check0_ShowDeletedItems" OnChanged="OnCheckChanged" />
+                        <CheckItem Label="Lot Premiums?" @bind-Value="Check0_ShowLotPremium" OnChanged="OnCheckChanged" />
+                    </div>
+                </div>
+            }
+        }
+        else if (PermTab == 8)
+        {
+            <div class="permissions-frame">
+                <h6>Precision Builder Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Access to Precision Builder?" @bind-Value="Check0_OpenEstimating" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Access Marketing Worksheets?" @bind-Value="Check0_OpenMarketingWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Access Estimating Worksheets?" @bind-Value="Check0_OpenEstimatingWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Publish Worksheets?" @bind-Value="Check0_PublishWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Synchronize from Timberline?" @bind-Value="Check0_PostToTimberline" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post Budgets to Accounting?" @bind-Value="Check0_PostBudgets" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Post POs to Accounting?" @bind-Value="Check0_PostCommitments" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Send POs?" @bind-Value="Check0_SendPO" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Edit Item Database?" @bind-Value="Check0_EditItemDb" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Edit Assemblies?" @bind-Value="Check0_EditAssemblies" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Setup Default Vendors?" @bind-Value="Check0_SetupDefaultVendor" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Setup PO Indexes?" @bind-Value="Check0_SetupPoIndex" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Setup Vendors?" @bind-Value="Check0_SetupVendors" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Setup Vendor Pricing?" @bind-Value="Check0_SetupVendorPricing" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Create/Edit Budgets" @bind-Value="Check1_IssueBudgets" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Create/Edit Purchase Orders" @bind-Value="Check1_IssuePOs" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Generate Purchase Orders Only" @bind-Value="Check1_GeneratePOs" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Access Options Menu" @bind-Value="Check1_PrecisionBldrOptions" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Limit Attachment Classifications to the List" @bind-Value="Check1_LimitAttachmentClasses" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+        else if (PermTab == 9)
+        {
+            <div class="permissions-frame">
+                <h6>Workticket Permissions</h6>
+                <div class="check-grid">
+                    <CheckItem Label="Change grid layouts" @bind-Value="Check0_WTEditGridLayouts" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Field Approve Tickets" @bind-Value="Check0_WTFieldApprove" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Customer Approve Tickets" @bind-Value="Check0_WTCustomerApprove" OnChanged="OnCheckChanged" />
+                    <CheckItem Label="Office Approve Tickets" @bind-Value="Check0_WTOfficeApprove" OnChanged="OnCheckChanged" />
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    // ── Database ──────────────────────────────────────────────
+    private DbWrapperSqlServer db = new();
+
+    // ── State ─────────────────────────────────────────────────
+    private int MainTab = 0;
+    private int PermTab = 0;
+    private int CustInfoSubTab = 0;
+    private bool ButtonsEnabled = true;
+    private bool FieldsEnabled = true;
+    private bool myEditFlag = false;
+    private bool myAddNewFlag = false;
+    private bool myDataChanged = false;
+    private bool mySearchFlag = false;
+    private bool vrecnew = false;
+    private int currentRecordIndex = 0;
+    private List<Dictionary<string, object>> allUsers = new();
+
+    // ── User Fields ───────────────────────────────────────────
+    private string UserId = "";
+    private string UserName = "";
+    private string Designation = "";
+    private string Office = "";
+    private string UserPassword = "";
+    private string HomePage = "";
+    private string MaxPOAmount = "";
+    private int UserAccess = 4;
+
+    // ── Check0 fields (boolean permissions mapped to DB columns) ──
+    private bool Check0_ShowCO, Check0_ShowDC, Check0_AllowDelCO;
+    private bool Check0_UpdSpecShow, Check0_UpdToTL, Check0_UpdFromTL, Check0_UPDCustomerGroups;
+    private bool Check0_DeleteCustomer, Check0_CreateNewCustomer;
+    private bool Check0_AddAddendum, Check0_AddCO, Check0_ChangeGridLayout, Check0_AddCustomerDates, Check0_AddDC;
+    private bool Check0_BarcodeEntry, Check0_UpdContractSummary, Check0_CreateJob;
+    private bool Check0_ApproveCustomer, Check0_PurchaseCustomer, Check0_UpdDeletedItems;
+    private bool Check0_BldrApproveCustomer, Check0_UPDTLJob;
+    private bool Check0_UPDCustomerDates, Check0_UPDAddendum, Check0_UPDCO, Check0_UPDDC, Check0_UPDCustomer;
+    private bool Check0_ChangeDate, Check0_CopyCustomer, Check0_SalesOverride, Check0_CustomPricing;
+    private bool Check0_AllowAddCO_LOCKCO;
+    private bool Check0_ShowBuyerInfo, Check0_ShowHomeInfo, Check0_ShowSelections, Check0_ShowDates;
+    private bool Check0_ShowAddendum, Check0_ShowChangeOrder, Check0_ShowDesignCenter;
+    private bool Check0_ShowContractSummary, Check0_ShowAccountingInfo, Check0_ShowDeletedItems, Check0_ShowLotPremium;
+    private bool Check0_AccessMenu, Check0_UpdateCostInfo, Check0_UpdateConstStatus;
+    private bool Check0_UnApproveCO, Check0_UnPurchase, Check0_PendingCustomerPick;
+    private bool Check0_OpenEstimating, Check0_OpenMarketingWorksheets, Check0_OpenEstimatingWorksheets;
+    private bool Check0_PublishWorksheets, Check0_PostToTimberline;
+    private bool Check0_CreateSchedule, Check0_EditActualEndDate, Check0_ViewAllSchedules;
+    private bool Check0_PostBudgets, Check0_PostCommitments, Check0_SendPO, Check0_EditItemDb;
+    private bool Check0_EditAssemblies, Check0_SetupDefaultVendor, Check0_SetupPoIndex;
+    private bool Check0_SetupVendors, Check0_SetupVendorPricing;
+    private bool Check0_ModifyCustom, Check0_PromptforCOApproval, Check0_ReverseCustDateTab, Check0_EditCompletedCustom;
+    private bool Check0_WTEditGridLayouts, Check0_WTFieldApprove, Check0_WTCustomerApprove, Check0_WTOfficeApprove;
+
+    // ── Check1 fields (boolean permissions mapped to DB columns) ──
+    private bool Check1_FileOpenData, Check1_FileDataUtil;
+    private bool Check1_TaskEntDep, Check1_TaskEntMort, Check1_TaskPostDep, Check1_TaskPostMort;
+    private bool Check1_TaskProcessLot, Check1_TaskUpdLot, Check1_TaskPostLot;
+    private bool Check1_TaskProcessSales, Check1_TaskProcessComm, Check1_TaskUpdComm, Check1_TaskPostComm;
+    private bool Check1_TaskUpdAdj, Check1_TaskPostAdj, Check1_TaskEntQuote;
+    private bool Check1_TaskUpdTotalJobCost, Check1_TaskUpdAddrJobCost, Check1_TaskUpdDatesTL;
+    private bool Check1_TaskImportTLCustom, Check1_TaskSyncDate, Check1_TaskSyncGroup;
+    private bool Check1_SetupCustomer, Check1_SetupCommunity, Check1_SetupModel, Check1_SetupSeries;
+    private bool Check1_SetupMajorGroup, Check1_SetupCategory, Check1_SetupModelOptions, Check1_SetupGlobalOptions;
+    private bool Check1_SetupDCArea, Check1_SetupDCOption, Check1_SetupJobs, Check1_SetupConstStatus;
+    private bool Check1_SetupProjectManager, Check1_SetupSalesperson, Check1_SetupCustSrvPerson;
+    private bool Check1_SetupLawFirms, Check1_SetupLendingCompany, Check1_SetupDevelopers;
+    private bool Check1_SetupLotInventory, Check1_SetupTLDateList, Check1_SetupGroupTemplate;
+    private bool Check1_MileStoneMenu, Check1_ParkingStallMenu;
+    private bool Check1_InqModelOptions, Check1_InqGlobalOptions, Check1_InqDCOptions;
+    private bool Check1_InqNewDeposits, Check1_InqPostDeposits, Check1_InqNewMortgage, Check1_InqPostMortgage;
+    private bool Check1_InqLockedCustomer;
+    private bool Check1_ReportsRepMan;
+    private bool Check1_ToolsUsrAdmin, Check1_ToolsCustMaintain, Check1_ToolsAdminMaintain;
+    private bool Check1_ToolsCustRepPackage, Check1_ToolsSystemSetup, Check1_ToolsCommSettings;
+    private bool Check1_ToolsLotStatus, Check1_ToolsFieldVal, Check1_ToolsGSTPSTRebate;
+    private bool Check1_ToolsCustDesc, Check1_ToolsTLFieldDesc, Check1_ToolsWorkInProgress;
+    private bool Check1_TasksMenu, Check1_SetupMenu, Check1_ReportsMenu, Check1_InquiryMenu, Check1_ToolsMenu;
+    private bool Check1_IssueBudgets, Check1_IssuePOs, Check1_GeneratePOs, Check1_PrecisionBldrOptions;
+    private bool Check1_LimitAttachmentClasses;
+
+    // ── Lifecycle ─────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAsync();
+        if (allUsers.Count > 0)
+        {
+            currentRecordIndex = 0;
+            LoadCurrentRecord();
+        }
+        else
+        {
+            vrecnew = true;
+            FieldsEnabled = false;
+        }
+    }
+
+    // ── Data Loading ──────────────────────────────────────────
+    private async Task LoadUsersAsync()
+    {
+        try
+        {
+            var sql = "SELECT * FROM User_Manager ORDER BY User_ID";
+            allUsers = (await db.QueryAsync(sql)).ToList();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading users: {ex.Message}");
+        }
+    }
+
+    private void LoadCurrentRecord()
+    {
+        if (currentRecordIndex < 0 || currentRecordIndex >= allUsers.Count) return;
+        var row = allUsers[currentRecordIndex];
+
+        UserId = row["User_ID"]?.ToString() ?? "";
+        UserName = row.ContainsKey("User_Name") ? row["User_Name"]?.ToString() ?? "" : "";
+        Designation = row.ContainsKey("Designation") ? row["Designation"]?.ToString() ?? "" : "";
+        Office = row.ContainsKey("Office") ? row["Office"]?.ToString() ?? "" : "";
+        HomePage = row.ContainsKey("HomePage") ? row["HomePage"]?.ToString() ?? "" : "";
+        MaxPOAmount = row.ContainsKey("maxpoamount") && row["maxpoamount"] != null && row["maxpoamount"] != DBNull.Value
+            ? Convert.ToDecimal(row["maxpoamount"]).ToString("C2") : "";
+        UserAccess = row.ContainsKey("User_Access") && row["User_Access"] != null && row["User_Access"] != DBNull.Value
+            ? Convert.ToInt32(row["User_Access"]) : 4;
+
+        // Decrypt password - simplified, just show empty for security
+        UserPassword = "";
+
+        // Load all Check0 fields
+        Check0_ShowCO = GetBool(row, "ShowCO");
+        Check0_ShowDC = GetBool(row, "ShowDC");
+        Check0_AllowDelCO = GetBool(row, "AllowDelCO");
+        Check0_UpdSpecShow = GetBool(row, "UpdSpecShow");
+        Check0_UpdToTL = GetBool(row, "UpdToTL");
+        Check0_UpdFromTL = GetBool(row, "UpdFromTL");
+        Check0_UPDCustomerGroups = GetBool(row, "UPDCustomerGroups");
+        Check0_DeleteCustomer = GetBool(row, "DeleteCustomer");
+        Check0_CreateNewCustomer = GetBool(row, "CreateNewCustomer");
+        Check0_AddAddendum = GetBool(row, "AddAddendum");
+        Check0_AddCO = GetBool(row, "AddCO");
+        Check0_ChangeGridLayout = GetBool(row, "ChangeGridLayout");
+        Check0_AddCustomerDates = GetBool(row, "AddCustomerDates");
+        Check0_AddDC = GetBool(row, "AddDC");
+        Check0_BarcodeEntry = GetBool(row, "BarcodeEntry");
+        Check0_UpdContractSummary = GetBool(row, "UpdContractSummary");
+        Check0_CreateJob = GetBool(row, "CreateJob");
+        Check0_ApproveCustomer = GetBool(row, "ApproveCustomer");
+        Check0_PurchaseCustomer = GetBool(row, "PurchaseCustomer");
+        Check0_UpdDeletedItems = GetBool(row, "UpdDeletedItems");
+        Check0_BldrApproveCustomer = GetBool(row, "BldrApproveCustomer");
+        Check0_UPDTLJob = GetBool(row, "UPDTLJob");
+        Check0_UPDCustomerDates = GetBool(row, "UPDCustomerDates");
+        Check0_UPDAddendum = GetBool(row, "UPDAddendum");
+        Check0_UPDCO = GetBool(row, "UPDCO");
+        Check0_UPDDC = GetBool(row, "UPDDC");
+        Check0_UPDCustomer = GetBool(row, "UPDCustomer");
+        Check0_ChangeDate = GetBool(row, "ChangeDate");
+        Check0_CopyCustomer = GetBool(row, "CopyCustomer");
+        Check0_SalesOverride = GetBool(row, "SalesOverride");
+        Check0_CustomPricing = GetBool(row, "CustomPricing");
+        Check0_AllowAddCO_LOCKCO = GetBool(row, "AllowAddCO_LOCKCO");
+        Check0_ShowBuyerInfo = GetBool(row, "ShowBuyerInfo");
+        Check0_ShowHomeInfo = GetBool(row, "ShowHomeInfo");
+        Check0_ShowSelections = GetBool(row, "ShowSelections");
+        Check0_ShowDates = GetBool(row, "ShowDates");
+        Check0_ShowAddendum = GetBool(row, "ShowAddendum");
+        Check0_ShowChangeOrder = GetBool(row, "ShowChangeOrder");
+        Check0_ShowDesignCenter = GetBool(row, "ShowDesignCenter");
+        Check0_ShowContractSummary = GetBool(row, "ShowContractSummary");
+        Check0_ShowAccountingInfo = GetBool(row, "ShowAccountingInfo");
+        Check0_ShowDeletedItems = GetBool(row, "ShowDeletedItems");
+        Check0_ShowLotPremium = GetBool(row, "ShowLotPremium");
+        Check0_AccessMenu = GetBool(row, "AccessMenu");
+        Check0_UpdateCostInfo = GetBool(row, "UpdateCostInfo");
+        Check0_UpdateConstStatus = GetBool(row, "UpdateConstStatus");
+        Check0_UnApproveCO = GetBool(row, "UnApproveCO");
+        Check0_UnPurchase = GetBool(row, "UnPurchase");
+        Check0_PendingCustomerPick = GetBool(row, "PendingCustomerPick");
+        Check0_OpenEstimating = GetBool(row, "OpenEstimating");
+        Check0_OpenMarketingWorksheets = GetBool(row, "OpenMarketingWorksheets");
+        Check0_OpenEstimatingWorksheets = GetBool(row, "OpenEstimatingWorksheets");
+        Check0_PublishWorksheets = GetBool(row, "PublishWorksheets");
+        Check0_PostToTimberline = GetBool(row, "PostToTimberline");
+        Check0_CreateSchedule = GetBool(row, "CreateSchedule");
+        Check0_EditActualEndDate = GetBool(row, "EditActualEndDate");
+        Check0_ViewAllSchedules = GetBool(row, "ViewAllSchedules");
+        Check0_PostBudgets = GetBool(row, "PostBudgets");
+        Check0_PostCommitments = GetBool(row, "PostCommitments");
+        Check0_SendPO = GetBool(row, "SendPO");
+        Check0_EditItemDb = GetBool(row, "EditItemDb");
+        Check0_EditAssemblies = GetBool(row, "EditAssemblies");
+        Check0_SetupDefaultVendor = GetBool(row, "SetupDefaultVendor");
+        Check0_SetupPoIndex = GetBool(row, "SetupPoIndex");
+        Check0_SetupVendors = GetBool(row, "SetupVendors");
+        Check0_SetupVendorPricing = GetBool(row, "SetupVendorPricing");
+        Check0_ModifyCustom = GetBool(row, "ModifyCustom");
+        Check0_PromptforCOApproval = GetBool(row, "PromptforCOApproval");
+        Check0_ReverseCustDateTab = GetBool(row, "ReverseCustDateTab");
+        Check0_EditCompletedCustom = GetBool(row, "EditCompletedCustom");
+        Check0_WTEditGridLayouts = GetBool(row, "WTEditGridLayouts");
+        Check0_WTFieldApprove = GetBool(row, "WTFieldApprove");
+        Check0_WTCustomerApprove = GetBool(row, "WTCustomerApprove");
+        Check0_WTOfficeApprove = GetBool(row, "WTOfficeApprove");
+
+        // Load all Check1 fields
+        Check1_FileOpenData = GetBool(row, "FileOpenData");
+        Check1_FileDataUtil = GetBool(row, "FileDataUtil");
+        Check1_TaskEntDep = GetBool(row, "TaskEntDep");
+        Check1_TaskEntMort = GetBool(row, "TaskEntMort");
+        Check1_TaskPostDep = GetBool(row, "TaskPostDep");
+        Check1_TaskPostMort = GetBool(row, "TaskPostMort");
+        Check1_TaskProcessLot = GetBool(row, "TaskProcessLot");
+        Check1_TaskUpdLot = GetBool(row, "TaskUpdLot");
+        Check1_TaskPostLot = GetBool(row, "TaskPostLot");
+        Check1_TaskProcessSales = GetBool(row, "TaskProcessSales");
+        Check1_TaskProcessComm = GetBool(row, "TaskProcessComm");
+        Check1_TaskUpdComm = GetBool(row, "TaskUpdComm");
+        Check1_TaskPostComm = GetBool(row, "TaskPostComm");
+        Check1_TaskUpdAdj = GetBool(row, "TaskUpdAdj");
+        Check1_TaskPostAdj = GetBool(row, "TaskPostAdj");
+        Check1_TaskEntQuote = GetBool(row, "TaskEntQuote");
+        Check1_TaskUpdTotalJobCost = GetBool(row, "TaskUpdTotalJobCost");
+        Check1_TaskUpdAddrJobCost = GetBool(row, "TaskUpdAddrJobCost");
+        Check1_TaskUpdDatesTL = GetBool(row, "TaskUpdDatesTL");
+        Check1_TaskImportTLCustom = GetBool(row, "TaskImportTLCustom");
+        Check1_TaskSyncDate = GetBool(row, "TaskSyncDate");
+        Check1_TaskSyncGroup = GetBool(row, "TaskSyncGroup");
+        Check1_SetupCustomer = GetBool(row, "SetupCustomer");
+        Check1_SetupCommunity = GetBool(row, "SetupCommunity");
+        Check1_SetupModel = GetBool(row, "SetupModel");
+        Check1_SetupSeries = GetBool(row, "SetupSeries");
+        Check1_SetupMajorGroup = GetBool(row, "SetupMajorGroup");
+        Check1_SetupCategory = GetBool(row, "SetupCategory");
+        Check1_SetupModelOptions = GetBool(row, "SetupModelOptions");
+        Check1_SetupGlobalOptions = GetBool(row, "SetupGlobalOptions");
+        Check1_SetupDCArea = GetBool(row, "SetupDCArea");
+        Check1_SetupDCOption = GetBool(row, "SetupDCOption");
+        Check1_SetupJobs = GetBool(row, "SetupJobs");
+        Check1_SetupConstStatus = GetBool(row, "SetupConstStatus");
+        Check1_SetupProjectManager = GetBool(row, "SetupProjectManager");
+        Check1_SetupSalesperson = GetBool(row, "SetupSalesperson");
+        Check1_SetupCustSrvPerson = GetBool(row, "SetupCustSrvPerson");
+        Check1_SetupLawFirms = GetBool(row, "SetupLawFirms");
+        Check1_SetupLendingCompany = GetBool(row, "SetupLendingCompany");
+        Check1_SetupDevelopers = GetBool(row, "SetupDevelopers");
+        Check1_SetupLotInventory = GetBool(row, "SetupLotInventory");
+        Check1_SetupTLDateList = GetBool(row, "SetupTLDateList");
+        Check1_SetupGroupTemplate = GetBool(row, "SetupGroupTemplate");
+        Check1_MileStoneMenu = GetBool(row, "MileStoneMenu");
+        Check1_ParkingStallMenu = GetBool(row, "ParkingStallMenu");
+        Check1_InqModelOptions = GetBool(row, "InqModelOptions");
+        Check1_InqGlobalOptions = GetBool(row, "InqGlobalOptions");
+        Check1_InqDCOptions = GetBool(row, "InqDCOptions");
+        Check1_InqNewDeposits = GetBool(row, "InqNewDeposits");
+        Check1_InqPostDeposits = GetBool(row, "InqPostDeposits");
+        Check1_InqNewMortgage = GetBool(row, "InqNewMortgage");
+        Check1_InqPostMortgage = GetBool(row, "InqPostMortgage");
+        Check1_InqLockedCustomer = GetBool(row, "InqLockedCustomer");
+        Check1_ReportsRepMan = GetBool(row, "ReportsRepMan");
+        Check1_ToolsUsrAdmin = GetBool(row, "ToolsUsrAdmin");
+        Check1_ToolsCustMaintain = GetBool(row, "ToolsCustMaintain");
+        Check1_ToolsAdminMaintain = GetBool(row, "ToolsAdminMaintain");
+        Check1_ToolsCustRepPackage = GetBool(row, "ToolsCustRepPackage");
+        Check1_ToolsSystemSetup = GetBool(row, "ToolsSystemSetup");
+        Check1_ToolsCommSettings = GetBool(row, "ToolsCommSettings");
+        Check1_ToolsLotStatus = GetBool(row, "ToolsLotStatus");
+        Check1_ToolsFieldVal = GetBool(row, "ToolsFieldVal");
+        Check1_ToolsGSTPSTRebate = GetBool(row, "ToolsGSTPSTRebate");
+        Check1_ToolsCustDesc = GetBool(row, "ToolsCustDesc");
+        Check1_ToolsTLFieldDesc = GetBool(row, "ToolsTLFieldDesc");
+        Check1_ToolsWorkInProgress = GetBool(row, "ToolsWorkInProgress");
+        Check1_TasksMenu = GetBool(row, "TasksMenu");
+        Check1_SetupMenu = GetBool(row, "SetupMenu");
+        Check1_ReportsMenu = GetBool(row, "ReportsMenu");
+        Check1_InquiryMenu = GetBool(row, "InquiryMenu");
+        Check1_ToolsMenu = GetBool(row, "ToolsMenu");
+        Check1_IssueBudgets = GetBool(row, "IssueBudgets");
+        Check1_IssuePOs = GetBool(row, "IssuePOs");
+        Check1_GeneratePOs = GetBool(row, "GeneratePOs");
+        Check1_PrecisionBldrOptions = GetBool(row, "PrecisionBldrOptions");
+        Check1_LimitAttachmentClasses = GetBool(row, "LimitAttachmentClasses");
+
+        myEditFlag = false;
+        myAddNewFlag = false;
+        myDataChanged = false;
+        SetButtons(true);
+    }
+
+    private static bool GetBool(Dictionary<string, object> row, string key)
+    {
+        if (!row.ContainsKey(key) || row[key] == null || row[key] == DBNull.Value)
+            return false;
+        var val = row[key];
+        if (val is bool b) return b;
+        if (val is int i) return i != 0;
+        if (val is long l) return l != 0;
+        if (val is short s) return s != 0;
+        if (val is decimal d) return d != 0m;
+        var str = val.ToString()?.Trim();
+        if (string.IsNullOrEmpty(str)) return false;
+        return str == "1" || str.Equals("true", StringComparison.OrdinalIgnoreCase) || str.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SetButtons(bool enabled)
+    {
+        ButtonsEnabled = enabled;
+        FieldsEnabled = !enabled;
+    }
+
+    private void ClearAllPermissions()
+    {
+        Check0_ShowCO = false; Check0_ShowDC = false; Check0_AllowDelCO = false; Check0_UpdSpecShow = false; Check0_UpdToTL = false; Check0_UpdFromTL = false;
+        Check0_UPDCustomerGroups = false; Check0_DeleteCustomer = false; Check0_CreateNewCustomer = false; Check0_AddAddendum = false; Check0_AddCO = false; Check0_ChangeGridLayout = false;
+        Check0_AddCustomerDates = false; Check0_AddDC = false; Check0_BarcodeEntry = false; Check0_UpdContractSummary = false; Check0_CreateJob = false; Check0_ApproveCustomer = false;
+        Check0_PurchaseCustomer = false; Check0_UpdDeletedItems = false; Check0_BldrApproveCustomer = false; Check0_UPDTLJob = false; Check0_UPDCustomerDates = false; Check0_UPDAddendum = false;
+        Check0_UPDCO = false; Check0_UPDDC = false; Check0_UPDCustomer = false; Check0_ChangeDate = false; Check0_CopyCustomer = false; Check0_SalesOverride = false; Check0_CustomPricing = false;
+        Check0_AllowAddCO_LOCKCO = false; Check0_ShowBuyerInfo = false; Check0_ShowHomeInfo = false; Check0_ShowSelections = false; Check0_ShowDates = false; Check0_ShowAddendum = false;
+        Check0_ShowChangeOrder = false; Check0_ShowDesignCenter = false; Check0_ShowContractSummary = false; Check0_ShowAccountingInfo = false; Check0_ShowDeletedItems = false; Check0_ShowLotPremium = false;
+        Check0_AccessMenu = false; Check0_UpdateCostInfo = false; Check0_UpdateConstStatus = false; Check0_UnApproveCO = false; Check0_UnPurchase = false; Check0_PendingCustomerPick = false;
+        Check0_OpenEstimating = false; Check0_OpenMarketingWorksheets = false; Check0_OpenEstimatingWorksheets = false; Check0_PublishWorksheets = false; Check0_PostToTimberline = false;
+        Check0_CreateSchedule = false; Check0_EditActualEndDate = false; Check0_ViewAllSchedules = false; Check0_PostBudgets = false; Check0_PostCommitments = false; Check0_SendPO = false;
+        Check0_EditItemDb = false; Check0_EditAssemblies = false; Check0_SetupDefaultVendor = false; Check0_SetupPoIndex = false; Check0_SetupVendors = false; Check0_SetupVendorPricing = false;
+        Check0_ModifyCustom = false; Check0_PromptforCOApproval = false; Check0_ReverseCustDateTab = false; Check0_EditCompletedCustom = false; Check0_WTEditGridLayouts = false; Check0_WTFieldApprove = false;
+        Check0_WTCustomerApprove = false; Check0_WTOfficeApprove = false;
+
+        Check1_FileOpenData = false; Check1_FileDataUtil = false; Check1_TaskEntDep = false; Check1_TaskEntMort = false; Check1_TaskPostDep = false; Check1_TaskPostMort = false;
+        Check1_TaskProcessLot = false; Check1_TaskUpdLot = false; Check1_TaskPostLot = false; Check1_TaskProcessSales = false; Check1_TaskProcessComm = false; Check1_TaskUpdComm = false;
+        Check1_TaskPostComm = false; Check1_TaskUpdAdj = false; Check1_TaskPostAdj = false; Check1_TaskEntQuote = false; Check1_TaskUpdTotalJobCost = false; Check1_TaskUpdAddrJobCost = false;
+        Check1_TaskUpdDatesTL = false; Check1_TaskImportTLCustom = false; Check1_TaskSyncDate = false; Check1_TaskSyncGroup = false; Check1_SetupCustomer = false; Check1_SetupCommunity = false;
+        Check1_SetupModel = false; Check1_SetupSeries = false; Check1_SetupMajorGroup = false; Check1_SetupCategory = false; Check1_SetupModelOptions = false; Check1_SetupGlobalOptions = false;
+        Check1_SetupDCArea = false; Check1_SetupDCOption = false; Check1_SetupJobs = false; Check1_SetupConstStatus = false; Check1_SetupProjectManager = false; Check1_SetupSalesperson = false;
+        Check1_SetupCustSrvPerson = false; Check1_SetupLawFirms = false; Check1_SetupLendingCompany = false; Check1_SetupDevelopers = false; Check1_SetupLotInventory = false; Check1_SetupTLDateList = false;
+        Check1_SetupGroupTemplate = false; Check1_MileStoneMenu = false; Check1_ParkingStallMenu = false; Check1_InqModelOptions = false; Check1_InqGlobalOptions = false; Check1_InqDCOptions = false;
+        Check1_InqNewDeposits = false; Check1_InqPostDeposits = false; Check1_InqNewMortgage = false; Check1_InqPostMortgage = false; Check1_InqLockedCustomer = false; Check1_ReportsRepMan = false;
+        Check1_ToolsUsrAdmin = false; Check1_ToolsCustMaintain = false; Check1_ToolsAdminMaintain = false; Check1_ToolsCustRepPackage = false; Check1_ToolsSystemSetup = false; Check1_ToolsCommSettings = false;
+        Check1_ToolsLotStatus = false; Check1_ToolsFieldVal = false; Check1_ToolsGSTPSTRebate = false; Check1_ToolsCustDesc = false; Check1_ToolsTLFieldDesc = false; Check1_ToolsWorkInProgress = false;
+        Check1_TasksMenu = false; Check1_SetupMenu = false; Check1_ReportsMenu = false; Check1_InquiryMenu = false; Check1_ToolsMenu = false; Check1_IssueBudgets = false; Check1_IssuePOs = false;
+        Check1_GeneratePOs = false; Check1_PrecisionBldrOptions = false; Check1_LimitAttachmentClasses = false;
+    }
+
+    private void ClearFields()
+    {
+        UserId = "";
+        UserName = "";
+        Designation = "";
+        Office = "";
+        UserPassword = "";
+        HomePage = "";
+        MaxPOAmount = "";
+        UserAccess = 4;
+        ClearAllPermissions();
+    }
+
+    private void OnCheckChanged()
+    {
+        myDataChanged = true;
+        if (!myEditFlag)
+            myEditFlag = true;
+        SetButtons(false);
+    }
+
+    private async Task OnSaveClick()
+    {
+        // TODO: persist changes to database.
+        myDataChanged = false;
+        myEditFlag = false;
+        myAddNewFlag = false;
+        SetButtons(true);
+        FieldsEnabled = false;
+        await Task.CompletedTask;
+    }
+
+    private void OnCancelClick()
+    {
+        myDataChanged = false;
+        myEditFlag = false;
+        myAddNewFlag = false;
+        LoadCurrentRecord();
+        SetButtons(true);
+        FieldsEnabled = false;
+    }
+
+    private async Task OnRefreshClick()
+    {
+        await LoadUsersAsync();
+        if (allUsers.Count > 0)
+        {
+            currentRecordIndex = Math.Min(currentRecordIndex, allUsers.Count - 1);
+            LoadCurrentRecord();
+        }
+        SetButtons(true);
+        FieldsEnabled = false;
+    }
+
+    private void OnCloseClick() => NavigationManager.NavigateTo("/");
+
+    private Task OnUserIdKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            OnPickUser();
+        return Task.CompletedTask;
+    }
+
+    private void OnPickUser()
+    {
+        // TODO: implement user search/picker UI.
+    }
+
+    private void OnFieldFocus()
+    {
+        if (!FieldsEnabled) return;
+        OnCheckChanged();
+    }
+
+    private void OnBrowseHomePage()
+    {
+        // TODO: implement report picker.
+    }
+
+    private void OnAssignCommunities() { }
+    private void OnAssignDivisions() { }
+    private void OnCopyUserPermissions() { }
+
+    private void OnUserTypeChanged(int idx)
+    {
+        UserAccess = idx;
+        OnCheckChanged();
+    }
+
+    private static string GetUserTypeLabel(int idx) => idx switch
+    {
+        1 => "System Admin",
+        2 => "Administrator",
+        3 => "Manager",
+        4 => "User",
+        5 => "Limited User",
+        6 => "Read Only",
+        7 => "External",
+        _ => $"User Type {idx}"
+    };
+
+    private void OnSetDefaultPermissions()
+    {
+        // TODO: load default permissions per user type.
+        ClearAllPermissions();
+        OnCheckChanged();
+    }
+
+    // ── Navigation ────────────────────────────────────────────
+    private void OnFirstClick()
+    {
+        if (allUsers.Count == 0) return;
+        currentRecordIndex = 0;
+        LoadCurrentRecord();
+    }
+
+    private void OnPreviousClick()
+    {
+        if (currentRecordIndex > 0)
+        {
+            currentRecordIndex--;
+            LoadCurrentRecord();
+        }
+    }
+
+    private void OnNextClick()
+    {
+        if (currentRecordIndex < allUsers.Count - 1)
+        {
+            currentRecordIndex++;
+            LoadCurrentRecord();
+        }
+    }
+
+    private void OnLastClick()
+    {
+        if (allUsers.Count == 0) return;
+        currentRecordIndex = allUsers.Count - 1;
+        LoadCurrentRecord();
+    }
+
+    // ── Add ───────────────────────────────────────────────────
+    private void OnAddClick()
+    {
+        myAddNewFlag = true;
+        UserId = "";
+        UserName = "";
+        Designation = "";
+        Office = "";
+        UserPassword = "";
+        HomePage = "";
+        MaxPOAmount = "";
+        UserAccess = 4;
+        ClearAllPermissions();
+        Check0_ShowCO = true;
+        Check0_ShowDC = true;
+        SetButtons(false);
+        FieldsEnabled = true;
+    }
+
+    // ── Delete ────────────────────────────────────────────────
+    private async Task OnDeleteClick()
+    {
+        if (string.IsNullOrWhiteSpace(UserId)) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Really want to Delete the selected user?");
+        if (!confirm) return;
+
+        try
+        {
+            await db.ExecuteAsync("DELETE FROM User_Manager WHERE User_ID = @UserId", new { UserId });
+            await LoadUsersAsync();
+
+            if (allUsers.Count == 0)
+            {
+                ClearFields();
+                currentRecordIndex = 0;
+            }
+            else
+            {
+                currentRecordIndex = Math.Min(currentRecordIndex, allUsers.Count - 1);
+                LoadCurrentRecord();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Delete failed: {ex.Message}");
+        }
+    }
+}

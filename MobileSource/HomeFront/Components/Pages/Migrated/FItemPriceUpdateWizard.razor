@@ -1,0 +1,868 @@
+```razor
+@page "/item-price-update-wizard"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Item Pricing Wizard</PageTitle>
+
+<style>
+    .wizard-container {
+        max-width: 640px;
+        margin: 0 auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .wizard-header {
+        background: linear-gradient(to right, #f8f9fa, #e9ecef);
+        padding: 16px 20px;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .wizard-header-icon {
+        width: 48px;
+        height: 48px;
+        background: #0d6efd;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 24px;
+    }
+
+    .wizard-header-text h4 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .wizard-header-text p {
+        margin: 4px 0 0;
+        font-size: 12px;
+        color: #6c757d;
+    }
+
+    .wizard-body {
+        padding: 20px;
+        min-height: 280px;
+    }
+
+    .wizard-footer {
+        border-top: 1px solid #dee2e6;
+        padding: 12px 20px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        background: #f8f9fa;
+    }
+
+    .wizard-footer button {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .wizard-footer button:hover:not(:disabled) {
+        background: #e9ecef;
+    }
+
+    .wizard-footer button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .wizard-footer button.btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .wizard-footer button.btn-primary:hover:not(:disabled) {
+        background: #0b5ed7;
+    }
+
+    .step-section {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .step-icon {
+        width: 36px;
+        height: 36px;
+        background: #e9ecef;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+    }
+
+    .step-content {
+        flex: 1;
+    }
+
+    .step-content h5 {
+        margin: 0 0 12px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .phase-grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        max-height: 220px;
+        overflow-y: auto;
+    }
+
+    .phase-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+    }
+
+    .phase-row:last-child {
+        border-bottom: none;
+    }
+
+    .phase-row:hover {
+        background: #f8f9fa;
+    }
+
+    .phase-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .all-phases-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .all-phases-check input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+    }
+
+    .radio-option input[type="radio"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .community-select {
+        margin-top: 12px;
+    }
+
+    .community-select label {
+        display: block;
+        font-size: 12px;
+        font-weight: 500;
+        color: #495057;
+        margin-bottom: 4px;
+    }
+
+    .community-select select {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+
+    .community-select select:disabled {
+        background: #e9ecef;
+    }
+
+    .estimating-section {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .estimating-section .step-section {
+        margin-bottom: 0;
+    }
+
+    .progress-section {
+        text-align: center;
+    }
+
+    .progress-section .status-text {
+        font-size: 13px;
+        color: #333;
+        margin-bottom: 12px;
+    }
+
+    .progress-bar-container {
+        width: 100%;
+        height: 24px;
+        background: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-bottom: 8px;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(to right, #0d6efd, #0b5ed7);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .progress-detail {
+        font-size: 12px;
+        color: #6c757d;
+    }
+</style>
+
+<div class="wizard-container">
+    @* ── Wizard Header ─────────────────────────────────────── *@
+    <div class="wizard-header">
+        <div class="wizard-header-icon">💲</div>
+        <div class="wizard-header-text">
+            <h4>Update Item Pricing</h4>
+            <p>The item pricing wizard will update the prices of your item database.</p>
+        </div>
+    </div>
+
+    @* ── Wizard Body ───────────────────────────────────────── *@
+    <div class="wizard-body">
+        @switch (CurrentFrame)
+        {
+            case 0:
+                @* ── Step 0: Select Phases ─────────────────────── *@
+                <div class="step-section">
+                    <div class="step-icon">📋</div>
+                    <div class="step-content">
+                        <h5>Which phases do you want to update?</h5>
+
+                        <div class="all-phases-check">
+                            <input type="checkbox" id="chkAllPhases"
+                                   checked="@AllPhasesChecked"
+                                   @onchange="OnAllPhasesChanged" />
+                            <label for="chkAllPhases">All Phases</label>
+                        </div>
+
+                        <div class="phase-grid-container">
+                            @foreach (var phase in PhasesList)
+                            {
+                                <div class="phase-row">
+                                    <input type="checkbox"
+                                           checked="@phase.IsChecked"
+                                           @onchange="(e) => OnPhaseCheckedChanged(phase, (bool)(e.Value ?? false))" />
+                                    <span>@phase.Phase</span>
+                                    <span style="color: #6c757d;">@phase.Description</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 1:
+                @* ── Step 1: Pricing Options ───────────────────── *@
+                <div class="step-section">
+                    <div class="step-icon">💰</div>
+                    <div class="step-content">
+                        <h5>What prices do you want to use?</h5>
+
+                        <div class="radio-group">
+                            <div class="radio-option">
+                                <input type="radio" id="optHighest" name="updateOption"
+                                       checked="@(UpdateOption == 0)"
+                                       @onchange="() => OnUpdateOptionChanged(0)" />
+                                <label for="optHighest">Use the highest price found in any community.</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" id="optDefault" name="updateOption"
+                                       checked="@(UpdateOption == 1)"
+                                       @onchange="() => OnUpdateOptionChanged(1)" />
+                                <label for="optDefault">Use the default vendor's price in the selected community.</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" id="optHighestCommunity" name="updateOption"
+                                       checked="@(UpdateOption == 2)"
+                                       @onchange="() => OnUpdateOptionChanged(2)" />
+                                <label for="optHighestCommunity">Use the highest price found in the selected community.</label>
+                            </div>
+                        </div>
+
+                        <div class="community-select">
+                            <label>Community</label>
+                            <select @bind="SelectedCommunityIndex" disabled="@(UpdateOption == 0)">
+                                @for (var i = 0; i < CommunityList.Count; i++)
+                                {
+                                    <option value="@i">@CommunityList[i].DisplayText</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (EstimatingAvailable)
+                        {
+                            <div class="estimating-section">
+                                <div class="step-section">
+                                    <div class="step-icon">🏗️</div>
+                                    <div class="step-content">
+                                        <h5>Do you want to update Timberline Estimating?</h5>
+                                        <div class="radio-group">
+                                            <div class="radio-option">
+                                                <input type="radio" id="optEstNo" name="estimatingOption"
+                                                       checked="@(!UpdateEstimating)"
+                                                       @onchange="() => UpdateEstimating = false" />
+                                                <label for="optEstNo">No, do not update Estimating.</label>
+                                            </div>
+                                            <div class="radio-option">
+                                                <input type="radio" id="optEstYes" name="estimatingOption"
+                                                       checked="@UpdateEstimating"
+                                                       @onchange="() => UpdateEstimating = true" />
+                                                <label for="optEstYes">Yes, make Estimating's price match HomeFront's.</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+                break;
+
+            case 2:
+                @* ── Step 2: Progress / Execute ────────────────── *@
+                <div class="step-section">
+                    <div class="step-icon">⚙️</div>
+                    <div class="step-content">
+                        <div class="progress-section">
+                            <div class="status-text">@StatusMessage</div>
+
+                            @if (ShowProgressBar)
+                            {
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar-fill" style="width: @(ProgressValue)%;">
+                                        @(ProgressValue)%
+                                    </div>
+                                </div>
+                                <div class="progress-detail">@ProgressDetail</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+                break;
+        }
+    </div>
+
+    @* ── Wizard Footer ─────────────────────────────────────── *@
+    <div class="wizard-footer">
+        <button @onclick="OnCancelClick">Cancel</button>
+        <button disabled="@(CurrentFrame <= 0)" @onclick="OnBackClick">&lt; Back</button>
+        <button disabled="@(CurrentFrame >= MaxFrame)" @onclick="OnNextClick">Next &gt;</button>
+        <button class="btn-primary"
+                disabled="@(CurrentFrame != MaxFrame || IsProcessing)"
+                @onclick="OnFinishClick">
+            @(IsProcessing ? "Processing..." : "Finish")
+        </button>
+    </div>
+</div>
+
+@code {
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === Wizard State ===
+    private int CurrentFrame = 0;
+    private const int MaxFrame = 2;
+    private bool IsProcessing = false;
+
+    // === Step 0: Phases ===
+    private List<PhaseItem> PhasesList = new();
+    private bool AllPhasesChecked = true;
+
+    // === Step 1: Pricing Options ===
+    private int UpdateOption = 0; // 0=highest any, 1=default vendor, 2=highest in community
+    private List<CommunityComboItem> CommunityList = new();
+    private int SelectedCommunityIndex = 0;
+    private bool EstimatingAvailable = false;
+    private bool UpdateEstimating = false;
+
+    // === Step 2: Progress ===
+    private string StatusMessage = "The pricing wizard is ready to proceed.";
+    private bool ShowProgressBar = false;
+    private int ProgressValue = 0;
+    private string ProgressDetail = "";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPhasesAsync();
+    }
+
+    // === Load Phases ===
+    private async Task LoadPhasesAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT Phase, Description FROM tblEstPhases WHERE DivisionID = @DivisionID AND GroupPhase = 0 ORDER BY Phase",
+                new { DivisionID });
+
+            PhasesList = rows.Select(r => new PhaseItem
+            {
+                Phase = r["Phase"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                IsChecked = true
+            }).ToList();
+
+            AllPhasesChecked = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPhasesAsync error: {ex.Message}");
+        }
+    }
+
+    // === Load Communities (called when entering Step 1) ===
+    private async Task LoadCommunitiesAsync()
+    {
+        try
+        {
+            CommunityList.Clear();
+            CommunityList.Add(new CommunityComboItem
+            {
+                DisplayText = "Global Pricing",
+                KeyValue = ""
+            });
+
+            var sql = @"
+                SELECT ISNULL(l.Area,'') + ' -- ' + ISNULL(l.Description,'') AS DisplayText,
+                       ISNULL(l.Area,'') AS KeyValue,
+                       '' AS CommunityPhase
+                  FROM tblLocality l
+                 WHERE l.Inactive <> 1
+                UNION ALL
+                SELECT ISNULL(l.Area,'') + '.' + ISNULL(p.CommunityPhase,'') + ' -- ' + ISNULL(l.Description,'') + ISNULL(' ' + p.Description,'') AS DisplayText,
+                       ISNULL(l.Area,'') AS KeyValue,
+                       ISNULL(p.CommunityPhase,'') AS CommunityPhase
+                  FROM tblLocality l
+                       JOIN CommunityPhase p ON l.Area = p.Community
+                 WHERE l.Inactive <> 1
+                ORDER BY 1";
+
+            var rows = await db.QueryAsync(sql);
+            foreach (var r in rows)
+            {
+                CommunityList.Add(new CommunityComboItem
+                {
+                    DisplayText = r["DisplayText"]?.ToString() ?? "",
+                    KeyValue = r["KeyValue"]?.ToString() ?? "",
+                    CommunityPhase = r["CommunityPhase"]?.ToString() ?? ""
+                });
+            }
+
+            SelectedCommunityIndex = 0;
+
+            // Check if Estimating database is available
+            try
+            {
+                var estCheck = await db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM EstimatingItems WHERE DivisionID = @DivisionID",
+                    new { DivisionID });
+                EstimatingAvailable = true;
+            }
+            catch
+            {
+                EstimatingAvailable = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadCommunitiesAsync error: {ex.Message}");
+        }
+    }
+
+    // === Phase Checkbox Handlers ===
+    private void OnAllPhasesChanged(ChangeEventArgs e)
+    {
+        AllPhasesChecked = (bool)(e.Value ?? false);
+        foreach (var phase in PhasesList)
+        {
+            phase.IsChecked = AllPhasesChecked;
+        }
+    }
+
+    private void OnPhaseCheckedChanged(PhaseItem phase, bool isChecked)
+    {
+        phase.IsChecked = isChecked;
+        UpdateAllPhasesState();
+    }
+
+    private void UpdateAllPhasesState()
+    {
+        if (PhasesList.All(p => p.IsChecked))
+            AllPhasesChecked = true;
+        else if (PhasesList.All(p => !p.IsChecked))
+            AllPhasesChecked = false;
+        else
+            AllPhasesChecked = false; // indeterminate — Blazor doesn't support tri-state natively
+    }
+
+    // === Update Option Handler ===
+    private void OnUpdateOptionChanged(int option)
+    {
+        UpdateOption = option;
+    }
+
+    // === Navigation Handlers ===
+    private void OnCancelClick()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private void OnBackClick()
+    {
+        if (CurrentFrame > 0)
+            CurrentFrame--;
+    }
+
+    private async Task OnNextClick()
+    {
+        if (CurrentFrame < MaxFrame)
+        {
+            CurrentFrame++;
+            if (CurrentFrame == 1)
+            {
+                await LoadCommunitiesAsync();
+            }
+            else if (CurrentFrame == 2)
+            {
+                StatusMessage = "The pricing wizard is ready to proceed.";
+                ShowProgressBar = false;
+                ProgressValue = 0;
+                ProgressDetail = "";
+            }
+        }
+    }
+
+    private async Task OnFinishClick()
+    {
+        if (IsProcessing) return;
+        IsProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await SaveDataAsync();
+            if (success)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Item pricing update completed successfully.");
+                NavigationManager.NavigateTo("/");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Build Selected Phases Clause ===
+    private string GetSelectedPhases()
+    {
+        if (AllPhasesChecked)
+            return "";
+
+        var selected = PhasesList
+            .Where(p => p.IsChecked)
+            .Select(p => $"'{p.Phase.Replace("'", "''")}'");
+
+        return string.Join(",", selected);
+    }
+
+    // === Get Selected Community ===
+    private (string Community, string CommunityPhase) GetSelectedCommunity()
+    {
+        if (SelectedCommunityIndex < 0 || SelectedCommunityIndex >= CommunityList.Count)
+            return ("", "");
+
+        var item = CommunityList[SelectedCommunityIndex];
+        return (item.KeyValue, item.CommunityPhase);
+    }
+
+    // === Save / Execute ===
+    private async Task<bool> SaveDataAsync()
+    {
+        try
+        {
+            var phases = GetSelectedPhases();
+            var (community, communityPhase) = GetSelectedCommunity();
+
+            StatusMessage = "Querying vendor pricelists...";
+            ShowProgressBar = false;
+            StateHasChanged();
+            await Task.Delay(50); // Allow UI to update
+
+            string sql;
+            string phaseFilter = string.IsNullOrEmpty(phases) ? "" : $" AND Phase IN({phases})";
+
+            switch (UpdateOption)
+            {
+                case 0: // Highest price in any community
+                    sql = $@"
+                        UPDATE tblPhaseItem
+                        SET Price = (SELECT MAX(current_cost)
+                                       FROM tblVendorCost
+                                      WHERE tblVendorCost.Phase = tblPhaseItem.Phase
+                                        AND tblVendorCost.Item = tblPhaseItem.Item
+                                        AND tblVendorCost.DivisionID = {DivisionID})
+                        WHERE 0 <> (SELECT ISNULL(MAX(current_cost), 0)
+                                       FROM tblVendorCost
+                                      WHERE tblVendorCost.Phase = tblPhaseItem.Phase
+                                        AND tblVendorCost.Item = tblPhaseItem.Item
+                                        AND tblVendorCost.DivisionID = {DivisionID})
+                        {phaseFilter}
+                        AND DivisionID = {DivisionID}";
+                    await db.ExecuteAsync(sql);
+                    break;
+
+                case 1: // Default vendor in selected community
+                    sql = $@"
+                        UPDATE tblPhaseItem
+                        SET Price = Current_Cost
+                        FROM tblVendorCost c
+                        JOIN tblPhaseItem i ON c.DivisionID = i.DivisionID
+                            AND c.Phase = i.Phase AND c.Item = i.Item
+                        WHERE c.Vendor = dbo.Purch_GetCommunityVendor(c.Community, i.POIndex, {DivisionID})
+                        {(string.IsNullOrEmpty(phases) ? "" : $" AND i.Phase IN({phases})")}
+                        AND c.Community = '{community.Replace("'", "''")}'
+                        AND c.CommunityPhase = '{communityPhase.Replace("'", "''")}'
+                        AND c.Assembly = ''
+                        AND c.Model = ''
+                        AND c.DivisionID = {DivisionID}";
+                    await db.ExecuteAsync(sql);
+                    break;
+
+                case 2: // Highest cost in selected community
+                    sql = $@"
+                        UPDATE tblPhaseItem
+                        SET Price = (SELECT MAX(Current_Cost)
+                                       FROM tblVendorCost
+                                      WHERE ISNULL(Community, '') = '{community.Replace("'", "''")}'
+                                        AND ISNULL(CommunityPhase, '') = '{communityPhase.Replace("'", "''")}'
+                                        AND ISNULL(Assembly, '') = ''
+                                        AND ISNULL(Model, '') = ''
+                                        AND tblVendorCost.Phase = tblPhaseItem.Phase
+                                        AND tblVendorCost.Item = tblPhaseItem.Item
+                                        AND tblVendorCost.DivisionID = {DivisionID})
+                        WHERE 0 <> (SELECT ISNULL(MAX(Current_Cost), 0)
+                                       FROM tblVendorCost
+                                      WHERE ISNULL(Community, '') = '{community.Replace("'", "''")}'
+                                        AND ISNULL(CommunityPhase, '') = '{communityPhase.Replace("'", "''")}'
+                                        AND ISNULL(Assembly, '') = ''
+                                        AND ISNULL(Model, '') = ''
+                                        AND tblVendorCost.Phase = tblPhaseItem.Phase
+                                        AND tblVendorCost.Item = tblPhaseItem.Item
+                                        AND tblVendorCost.DivisionID = {DivisionID})
+                        {phaseFilter}
+                        AND DivisionID = {DivisionID}";
+                    await db.ExecuteAsync(sql);
+                    break;
+            }
+
+            // Update Estimating if requested
+            if (EstimatingAvailable && UpdateEstimating)
+            {
+                await UpdateEstimatingPricesAsync(phases);
+            }
+
+            StatusMessage = "Update complete.";
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                // Ignore duplicate errors, matching VB6 behavior
+                StatusMessage = "Update complete (some duplicates skipped).";
+                return true;
+            }
+
+            Console.WriteLine($"SaveDataAsync error: {ex.Message}");
+            StatusMessage = $"Error: {ex.Message}";
+            StateHasChanged();
+            return false;
+        }
+    }
+
+    private async Task UpdateEstimatingPricesAsync(string phases)
+    {
+        try
+        {
+            // Get count
+            var countSql = $"SELECT COUNT(*) FROM EstimatingItems WHERE DivisionID = {DivisionID}";
+            if (!string.IsNullOrEmpty(phases))
+                countSql += $" AND Phase IN({phases})";
+
+            var totalCount = await db.ExecuteScalarAsync<int>(countSql);
+            if (totalCount == 0) return;
+
+            // Get items
+            var itemsSql = $"SELECT * FROM EstimatingItems WHERE DivisionID = {DivisionID}";
+            if (!string.IsNullOrEmpty(phases))
+                itemsSql += $" AND Phase IN({phases})";
+
+            var items = await db.QueryAsync(itemsSql);
+
+            ShowProgressBar = true;
+            StatusMessage = "Updating Estimating prices...";
+            StateHasChanged();
+
+            int i = 0;
+            foreach (var row in items)
+            {
+                i++;
+                ProgressValue = (int)((double)i / totalCount * 100);
+                ProgressDetail = $"Item {i} of {totalCount}";
+
+                if (i % 10 == 0)
+                {
+                    StateHasChanged();
+                    await Task.Delay(1); // Allow UI to update
+                }
+
+                var costCategory = row["CostCategory"]?.ToString() ?? "";
+                var price = Math.Abs(Convert.ToDouble(row["Price"] ?? 0));
+                var phase = row["Phase"]?.ToString() ?? "";
+                var itemNumber = row["ItemNumber"]?.ToString() ?? "";
+                var priceLink = Convert.ToDouble(row["PriceLink"] ?? 0);
+
+                string setClause = costCategory switch
+                {
+                    "S" => $"sub_price = {price}",
+                    "L" => $"labor_price = {price}",
+                    "O" => $"other_price = {price}",
+                    "E" => $"equipment_price = {price}",
+                    _ => $"material_price = {price}"
+                };
+
+                var updateSql = $@"
+                    UPDATE DAT_PEI__DB_ITEM
+                    SET {setClause}
+                    WHERE Phase_Code = '{phase.Replace("'", "''")}'
+                      AND Item_Number = '{itemNumber.Replace("'", "''")}'";
+
+                try
+                {
+                    await db.ExecuteAsync(updateSql);
+                }
+                catch (Exception ex)
+                {
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        Console.WriteLine($"Estimating update error: {ex.Message}");
+                }
+
+                // Update price links
+                if (priceLink != 0)
+                {
+                    string? linkSql = costCategory switch
+                    {
+                        "M" => $"UPDATE DAT_PEI__DB_ITEM SET material_price = {price} WHERE mat_price_link = {priceLink}",
+                        "L" => $"UPDATE DAT_PEI__DB_ITEM SET labor_price = {price} WHERE lab_price_link = {priceLink}",
+                        "E" => $"UPDATE DAT_PEI__DB_ITEM SET equipment_price = {price} WHERE eq_price_link = {priceLink}",
+                        _ => null
+                    };
+
+                    if (linkSql != null)
+                    {
+                        try
+                        {
+                            await db.ExecuteAsync(linkSql);
+                        }
+                        catch (Exception ex)
+                        {
+                            if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                                Console.WriteLine($"Price link update error: {ex.Message}");
+                        }
+                    }
+                }
+            }
+
+            ProgressValue = 100;
+            ProgressDetail = $"Completed {totalCount} items.";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UpdateEstimatingPricesAsync error: {ex.Message}");
+        }
+    }
+
+    // === Models ===
+    public class PhaseItem
+    {
+        public string Phase { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool IsChecked { get; set; } = true;
+    }
+
+    public class CommunityComboItem
+    {
+        public string DisplayText { get; set; } = "";
+        public string KeyValue { get; set; } = "";
+        public string CommunityPhase { get; set; } = "";
+    }
+}
+```

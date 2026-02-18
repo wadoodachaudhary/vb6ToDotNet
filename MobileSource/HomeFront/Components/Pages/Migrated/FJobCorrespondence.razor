@@ -1,0 +1,896 @@
+```razor
+@page "/job-correspondence"
+@page "/job-correspondence/{Job}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using System.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Correspondence Log - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+
+    .priority-cell { cursor: pointer; user-select: none; text-align: center; }
+    .priority-high { color: #dc3545; font-weight: bold; }
+    .priority-low { color: #28a745; }
+    .priority-none { color: #6c757d; }
+
+    .email-icon { color: #0d6efd; cursor: pointer; }
+    .attachment-icon { color: #ffc107; }
+
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+
+    .dirty-row { background-color: #fff3cd !important; }
+
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 500px; max-width: 700px; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    .pick-list-item {
+        padding: 6px 12px; cursor: pointer; border-bottom: 1px solid #eee;
+    }
+    .pick-list-item:hover { background: #e9ecef; }
+    .pick-list-item.selected { background: #cce5ff; font-weight: 600; }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Correspondence...</div>
+    </div>
+}
+
+<div>
+    @* ── TOOLBAR ─────────────────────────────────────────── *@
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" @onclick="OnOpenClick">
+            <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+            <span class="tool-label">Open</span>
+        </button>
+        <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+            <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+            <span class="tool-label">Save</span>
+        </button>
+    </div>
+
+    <h3 style="margin-bottom: 16px;">Correspondence Log @(!string.IsNullOrEmpty(mJob) ? $"- Job {mJob}" : "")</h3>
+
+    @* ── MESSAGES GRID ─────────────────────────────────────── *@
+    <HfGrid @ref="MessagesGrid"
+            TValue="MessageRow"
+            DataSource="@MessagesData"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            AllowFiltering="true"
+            EnableHover="true"
+            Height="calc(100vh - 200px)"
+            FilterSettingsRef="@filterSettings"
+            PageSettingsRef="@pageSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EditSettingsRef="@editSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            <HfGridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false"
+                          IsPrimaryKey="true" AllowEditing="false" />
+
+            <HfGridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="50px"
+                          TextAlign="TextAlign.Center" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        var priorityClass = row.Priority switch
+                        {
+                            1 => "priority-high",
+                            2 => "priority-low",
+                            _ => "priority-none"
+                        };
+                        var priorityIcon = row.Priority switch
+                        {
+                            1 => "🔴",
+                            2 => "🔵",
+                            _ => "⚪"
+                        };
+                    }
+                    <span class="priority-cell @priorityClass"
+                          @onclick="() => OnPriorityClick(row)"
+                          @onclick:stopPropagation="true"
+                          title="Click to change priority">@priorityIcon</span>
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="50px"
+                          TextAlign="TextAlign.Center" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        if (row.MessageType == "Email")
+                        {
+                            <span class="email-icon" @ondblclick="() => OnOpenOriginal(row)"
+                                  title="Double-click to open original">✉️</span>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Attachments)" HeaderText="📎" Width="50px"
+                          TextAlign="TextAlign.Center" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        if (row.HasAttachments)
+                        {
+                            <span class="attachment-icon" title="Has attachments">📎</span>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Type" Width="100px">
+                <EditTemplate>
+                    @{
+                        var row = (MessageRow)context;
+                        if (row.MessageType == "Email")
+                        {
+                            <span>Email</span>
+                        }
+                        else
+                        {
+                            <select @bind="row.MessageType" @bind:after="() => MarkDirty(row)">
+                                <option value="Mail">Mail</option>
+                                <option value="Fax">Fax</option>
+                                <option value="Phone">Phone</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        }
+                    }
+                </EditTemplate>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="180px">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span>@row.Sender</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickContact(row, nameof(MessageRow.Sender))"
+                                    @onclick:stopPropagation="true">...</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="200px">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span title="@row.Recipients">@TruncateText(row.Recipients, 30)</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickContact(row, nameof(MessageRow.Recipients))"
+                                    @onclick:stopPropagation="true">...</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="180px">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span title="@row.RecipientsCC">@TruncateText(row.RecipientsCC, 25)</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickContact(row, nameof(MessageRow.RecipientsCC))"
+                                    @onclick:stopPropagation="true">...</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="180px">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span title="@row.RecipientsBCC">@TruncateText(row.RecipientsBCC, 25)</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickContact(row, nameof(MessageRow.RecipientsBCC))"
+                                    @onclick:stopPropagation="true">...</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="250px" />
+
+            <HfGridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="300px">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span title="@row.Body">@TruncateText(row.Body, 40)</span>
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px"
+                          AllowEditing="false" TextAlign="TextAlign.Right" />
+
+            <HfGridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent Date" Width="120px"
+                          Type="ColumnType.Date" Format="d">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span>@(row.SentDate?.ToString("MMM d, yyyy") ?? "")</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickDate(row, nameof(MessageRow.SentDate))"
+                                    @onclick:stopPropagation="true">📅</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received Date" Width="120px"
+                          Type="ColumnType.Date" Format="d">
+                <Template>
+                    @{
+                        var row = (MessageRow)context;
+                        <span>@(row.ReceivedDate?.ToString("MMM d, yyyy") ?? "")</span>
+                        @if (row.MessageType != "Email")
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
+                                    @onclick="() => OnPickDate(row, nameof(MessageRow.ReceivedDate))"
+                                    @onclick:stopPropagation="true">📅</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(MessageRow.RowState)" Visible="false" />
+        </HfGridColumnsBase>
+    </HfGrid>
+
+    @* New row button *@
+    <div style="margin-top: 8px;">
+        <button class="btn btn-outline-primary btn-sm" @onclick="OnAddNewRow">
+            ➕ Add New Message
+        </button>
+    </div>
+</div>
+
+@* ── Job Picker Dialog ──────────────────────────────────────── *@
+@if (IsJobPickerVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsJobPickerVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Job</span>
+                <button @onclick="() => IsJobPickerVisible = false">×</button>
+            </div>
+            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
+                @foreach (var job in JobPickerItems)
+                {
+                    <div class="pick-list-item @(job.JobNo == SelectedPickerJob ? "selected" : "")"
+                         @onclick="() => SelectedPickerJob = job.JobNo">
+                        <strong>@job.JobNo</strong> — @job.Description
+                        <br /><small style="color: #6c757d;">@job.Address | PM: @job.PM</small>
+                    </div>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnJobPickerConfirm"
+                        disabled="@(string.IsNullOrEmpty(SelectedPickerJob))">Select</button>
+                <button class="btn" @onclick="() => IsJobPickerVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Contact Picker Dialog ──────────────────────────────────── *@
+@if (IsContactPickerVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsContactPickerVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Contacts</span>
+                <button @onclick="() => IsContactPickerVisible = false">×</button>
+            </div>
+            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
+                @foreach (var contact in ContactPickerItems)
+                {
+                    <div class="pick-list-item @(SelectedContacts.Contains(contact.Name) ? "selected" : "")"
+                         @onclick="() => ToggleContact(contact.Name)">
+                        @contact.Name
+                    </div>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnContactPickerConfirm"
+                        disabled="@(!SelectedContacts.Any())">OK</button>
+                <button class="btn" @onclick="() => IsContactPickerVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Date Picker Dialog ─────────────────────────────────────── *@
+@if (IsDatePickerVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsDatePickerVisible = false">
+        <div class="dialog-panel" style="min-width: 300px;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Date</span>
+                <button @onclick="() => IsDatePickerVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <input type="date" @bind="PickedDate" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;" />
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnDatePickerConfirm">OK</button>
+                <button class="btn" @onclick="() => IsDatePickerVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Job { get; set; }
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string mJob = "";
+    private HfGrid<MessageRow>? MessagesGrid;
+
+    // === Grid Settings ===
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 50 };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<MessageRow> gridEvents = new();
+
+    // === Data ===
+    private List<MessageRow> MessagesData = new();
+
+    // === Job Picker ===
+    private bool IsJobPickerVisible = false;
+    private List<JobPickerItem> JobPickerItems = new();
+    private string SelectedPickerJob = "";
+
+    // === Contact Picker ===
+    private bool IsContactPickerVisible = false;
+    private List<ContactItem> ContactPickerItems = new();
+    private HashSet<string> SelectedContacts = new();
+    private MessageRow? ContactPickerTargetRow;
+    private string ContactPickerTargetField = "";
+
+    // === Date Picker ===
+    private bool IsDatePickerVisible = false;
+    private DateTime? PickedDate = DateTime.Today;
+    private MessageRow? DatePickerTargetRow;
+    private string DatePickerTargetField = "";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<MessageRow>>(this, OnCellSaved);
+
+        mJob = Job ?? "";
+        await LoadJob(mJob);
+    }
+
+    // === ShowForm (entry point, mirrors VB6) ===
+    public async Task ShowForm(string job)
+    {
+        mJob = job;
+        await LoadJob(mJob);
+    }
+
+    // === LoadJob ===
+    private async Task LoadJob(string job)
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (string.IsNullOrEmpty(job))
+            {
+                // Show job picker
+                var sql = @"
+                    SELECT DISTINCT j.Job_No AS JobNo, j.Description, j.Municipal_Address AS Address,
+                           j.PM, j.Purchaser, j.Estimator
+                    FROM tblJobs j
+                    WHERE divisionid = @DivisionID
+                      AND ISNULL(j.Inactive, 0) = 0
+                    ORDER BY j.Job_No";
+                var rows = await db.QueryAsync(sql, new { DivisionID });
+                JobPickerItems = rows.Select(r => new JobPickerItem
+                {
+                    JobNo = r["JobNo"]?.ToString() ?? "",
+                    Description = r["Description"]?.ToString() ?? "",
+                    Address = r["Address"]?.ToString() ?? "",
+                    PM = r["PM"]?.ToString() ?? ""
+                }).ToList();
+
+                IsLoading = false;
+                IsJobPickerVisible = true;
+                StateHasChanged();
+                return;
+            }
+
+            mJob = job;
+
+            // Load messages
+            var msgSql = @"
+                SELECT *
+                FROM messages
+                WHERE job = @Job
+                  AND ISNULL(rfiid, 0) = 0";
+            var msgRows = await db.QueryAsync(msgSql, new { Job = mJob });
+
+            MessagesData = msgRows.Select(r => new MessageRow
+            {
+                ID = r["ID"]?.ToString() ?? "",
+                MessageType = r["MessageType"]?.ToString() ?? "",
+                Priority = SafeInt(r["Priority"]),
+                HasAttachments = SafeInt(r["Attachments"]) > 0,
+                Sender = r["Sender"]?.ToString() ?? "",
+                Recipients = r["Recipients"]?.ToString() ?? "",
+                RecipientsCC = r["RecipientsCC"]?.ToString() ?? "",
+                RecipientsBCC = r["RecipientsBCC"]?.ToString() ?? "",
+                Subject = r["Subject"]?.ToString() ?? "",
+                Body = r["Body"]?.ToString() ?? "",
+                Size = SafeInt(r["Size"]) > 0 ? $"{SafeInt(r["Size"])} KB" : "",
+                SentDate = SafeDate(r["SentDate"]),
+                ReceivedDate = SafeDate(r["ReceivedDate"]),
+                RowState = "CLEAN",
+                IsDeleted = false
+            }).ToList();
+
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadJob error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading job: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === SaveData ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var answer = await JSRuntime.InvokeAsync<string>("eval",
+                "(() => { const r = confirm('This data has changed.\\n\\nDo you want to save these changes?'); return r ? 'Yes' : 'No'; })()");
+            if (answer == "No") return true;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Process deleted rows
+            var deletedRows = MessagesData.Where(r => r.IsDeleted && !string.IsNullOrEmpty(r.ID)).ToList();
+            foreach (var row in deletedRows)
+            {
+                await db.ExecuteAsync("DELETE FROM messages WHERE id = @Id", new { Id = row.ID });
+            }
+            MessagesData.RemoveAll(r => r.IsDeleted);
+
+            // Process dirty rows
+            foreach (var row in MessagesData.Where(r => r.RowState == "DIRTY"))
+            {
+                if (string.IsNullOrEmpty(row.ID))
+                {
+                    // Insert
+                    row.ID = Guid.NewGuid().ToString();
+                    var insertSql = @"
+                        INSERT INTO messages (job, rfiid, id, priority, messagetype, sender, recipients,
+                                              recipientscc, recipientsbcc, subject, body, sentdate, receiveddate)
+                        VALUES (@Job, 0, @Id, @Priority, @MessageType, @Sender, @Recipients,
+                                @RecipientsCC, @RecipientsBCC, @Subject, @Body, @SentDate, @ReceivedDate)";
+                    await db.ExecuteAsync(insertSql, new
+                    {
+                        Job = mJob,
+                        Id = row.ID,
+                        row.Priority,
+                        row.MessageType,
+                        row.Sender,
+                        row.Recipients,
+                        row.RecipientsCC,
+                        row.RecipientsBCC,
+                        row.Subject,
+                        row.Body,
+                        row.SentDate,
+                        row.ReceivedDate
+                    });
+                }
+                else
+                {
+                    // Update
+                    var updateSql = @"
+                        UPDATE messages SET
+                            priority = @Priority,
+                            messagetype = @MessageType,
+                            sender = @Sender,
+                            recipients = @Recipients,
+                            recipientscc = @RecipientsCC,
+                            recipientsbcc = @RecipientsBCC,
+                            subject = @Subject,
+                            body = @Body,
+                            sentdate = @SentDate,
+                            receiveddate = @ReceivedDate
+                        WHERE id = @Id";
+                    await db.ExecuteAsync(updateSql, new
+                    {
+                        Id = row.ID,
+                        row.Priority,
+                        row.MessageType,
+                        row.Sender,
+                        row.Recipients,
+                        row.RecipientsCC,
+                        row.RecipientsBCC,
+                        row.Subject,
+                        row.Body,
+                        row.SentDate,
+                        row.ReceivedDate
+                    });
+                }
+                row.RowState = "CLEAN";
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveData error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Toolbar Handlers ===
+    private async Task OnOpenClick()
+    {
+        if (!await SaveData(true)) return;
+        await LoadJob("");
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    // === Job Picker ===
+    private async Task OnJobPickerConfirm()
+    {
+        if (string.IsNullOrEmpty(SelectedPickerJob)) return;
+        IsJobPickerVisible = false;
+        await LoadJob(SelectedPickerJob);
+    }
+
+    // === Priority Click (cycles 0 → 1 → 2 → 0) ===
+    private void OnPriorityClick(MessageRow row)
+    {
+        if (row.MessageType == "Email") return;
+
+        row.Priority = row.Priority switch
+        {
+            0 => 1,
+            1 => 2,
+            2 => 0,
+            _ => 0
+        };
+        MarkDirty(row);
+    }
+
+    // === Open Original Email ===
+    private async Task OnOpenOriginal(MessageRow row)
+    {
+        if (row.MessageType != "Email" || string.IsNullOrEmpty(row.ID)) return;
+        // In VB6 this opened a .msg file via ShellFile
+        await JSRuntime.InvokeVoidAsync("alert", $"Would open original email: {row.ID}.msg");
+    }
+
+    // === Contact Picker ===
+    private async Task OnPickContact(MessageRow row, string field)
+    {
+        try
+        {
+            var sql = "SELECT * FROM addressbook ORDER BY name";
+            var rows = await db.QueryAsync(sql);
+            ContactPickerItems = rows.Select(r => new ContactItem
+            {
+                Name = r["name"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch
+        {
+            ContactPickerItems = new();
+        }
+
+        ContactPickerTargetRow = row;
+        ContactPickerTargetField = field;
+        SelectedContacts.Clear();
+        IsContactPickerVisible = true;
+    }
+
+    private void ToggleContact(string name)
+    {
+        if (SelectedContacts.Contains(name))
+            SelectedContacts.Remove(name);
+        else
+            SelectedContacts.Add(name);
+    }
+
+    private void OnContactPickerConfirm()
+    {
+        if (ContactPickerTargetRow == null || !SelectedContacts.Any())
+        {
+            IsContactPickerVisible = false;
+            return;
+        }
+
+        var contactString = string.Join("; ", SelectedContacts);
+
+        switch (ContactPickerTargetField)
+        {
+            case nameof(MessageRow.Sender):
+                ContactPickerTargetRow.Sender = contactString;
+                break;
+            case nameof(MessageRow.Recipients):
+                ContactPickerTargetRow.Recipients = contactString;
+                break;
+            case nameof(MessageRow.RecipientsCC):
+                ContactPickerTargetRow.RecipientsCC = contactString;
+                break;
+            case nameof(MessageRow.RecipientsBCC):
+                ContactPickerTargetRow.RecipientsBCC = contactString;
+                break;
+        }
+
+        MarkDirty(ContactPickerTargetRow);
+        IsContactPickerVisible = false;
+        StateHasChanged();
+    }
+
+    // === Date Picker ===
+    private void OnPickDate(MessageRow row, string field)
+    {
+        DatePickerTargetRow = row;
+        DatePickerTargetField = field;
+        PickedDate = field == nameof(MessageRow.SentDate) ? row.SentDate : row.ReceivedDate;
+        PickedDate ??= DateTime.Today;
+        IsDatePickerVisible = true;
+    }
+
+    private void OnDatePickerConfirm()
+    {
+        if (DatePickerTargetRow == null)
+        {
+            IsDatePickerVisible = false;
+            return;
+        }
+
+        switch (DatePickerTargetField)
+        {
+            case nameof(MessageRow.SentDate):
+                DatePickerTargetRow.SentDate = PickedDate;
+                break;
+            case nameof(MessageRow.ReceivedDate):
+                DatePickerTargetRow.ReceivedDate = PickedDate;
+                break;
+        }
+
+        MarkDirty(DatePickerTargetRow);
+        IsDatePickerVisible = false;
+        StateHasChanged();
+    }
+
+    // === Add New Row ===
+    private void OnAddNewRow()
+    {
+        var newRow = new MessageRow
+        {
+            ID = "",
+            Priority = 1,
+            MessageType = "Other",
+            ReceivedDate = DateTime.Today,
+            RowState = "DIRTY",
+            IsDeleted = false
+        };
+        MessagesData.Add(newRow);
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    // === Cell Save Event ===
+    private void OnCellSaved(CellSaveArgs<MessageRow> args)
+    {
+        if (args.Data != null)
+        {
+            // Validate dates
+            var column = args.ColumnName;
+            if (column == nameof(MessageRow.SentDate) || column == nameof(MessageRow.ReceivedDate))
+            {
+                // Date validation handled by type
+            }
+
+            MarkDirty(args.Data);
+        }
+    }
+
+    // === Helpers ===
+    private void MarkDirty(MessageRow row)
+    {
+        row.RowState = "DIRTY";
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    private string TruncateText(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text[..maxLength] + "...";
+    }
+
+    private int SafeInt(object? val, int def = 0)
+    {
+        if (val == null || val == DBNull.Value) return def;
+        var s = val.ToString() ?? "";
+        return int.TryParse(s, out var result) ? result : def;
+    }
+
+    private DateTime? SafeDate(object? val)
+    {
+        if (val == null || val == DBNull.Value) return null;
+        var s = val.ToString() ?? "";
+        return DateTime.TryParse(s, out var result) ? result : null;
+    }
+
+    // === Models ===
+    public class MessageRow
+    {
+        public string ID { get; set; } = "";
+        public int Priority { get; set; }
+        public string Original { get; set; } = "";
+        public bool HasAttachments { get; set; }
+        public string Attachments { get; set; } = "";
+        public string MessageType { get; set; } = "";
+        public string Sender { get; set; } = "";
+        public string Recipients { get; set; } = "";
+        public string RecipientsCC { get; set; } = "";
+        public string RecipientsBCC { get; set; } = "";
+        public string Subject { get; set; } = "";
+        public string Body { get; set; } = "";
+        public string Size { get; set; } = "";
+        public DateTime? SentDate { get; set; }
+        public DateTime? ReceivedDate { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+        public bool IsDeleted { get; set; }
+    }
+
+    public class JobPickerItem
+    {
+        public string JobNo { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Address { get; set; } = "";
+        public string PM { get; set; } = "";
+    }
+
+    public class ContactItem
+    {
+        public string Name { get; set; } = "";
+    }
+}
+```

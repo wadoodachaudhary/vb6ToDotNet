@@ -1,0 +1,583 @@
+```razor
+@page "/community-standards"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Linq
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@($"{CommunityLabel} Standards - HomeFront")</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 12px;
+        min-width: 70px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { width: 24px; height: 24px; margin-bottom: 4px; }
+    .tbar-btn.btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .tbar-btn.btn-primary:hover { background: #0b5ed7; }
+    .tbar-separator { width: 1px; height: 30px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+    .page-title { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
+    .grid-container { border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden; }
+    .cell-edit-btn {
+        padding: 1px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #fff;
+        font-size: 11px;
+        cursor: pointer;
+        margin-left: 6px;
+    }
+    .cell-edit-btn:hover { background: #e9ecef; }
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255,255,255,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .loading-spinner {
+        padding: 10px 16px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .picklist-header { margin-bottom: 8px; }
+    .search-box {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">Loading...</div>
+    </div>
+}
+
+<div class="toolbar-cntr">
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(SelectedRow == null)" @onclick="() => OpenPickList(SelectedRow)">
+        <span class="tool-label">Pick Item</span>
+    </button>
+    <button class="tbar-btn" disabled="@(SelectedRow == null)" @onclick="() => OpenNotes(SelectedRow)">
+        <span class="tool-label">Edit Notes</span>
+    </button>
+    <button class="tbar-btn" @onclick="ReloadData">
+        <span class="tool-label">Refresh</span>
+    </button>
+</div>
+
+<h3 class="page-title">@($"{CommunityLabel} Standards")</h3>
+
+<div class="grid-container">
+    <HfGrid @ref="CommunityGrid"
+            TValue="CommunityStandardRow"
+            DataSource="@Standards"
+            AllowPaging="true"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowGrouping="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            EnableHover="true"
+            Height="calc(100vh - 230px)"
+            GroupColumns="@(new List<string> { nameof(CommunityStandardRow.CommunityDesc) })"
+            ShowGroupExpandCollapse="true"
+            FilterSettingsRef="@filterSettings"
+            PageSettingsRef="@pageSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EditSettingsRef="@editSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            <HfGridColumn Field="@nameof(CommunityStandardRow.CommunityDesc)" Visible="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.Community)" HeaderText="@CommunityLabel" Visible="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.CommunityPhase)" HeaderText="@CommunityPhaseLabel" Visible="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.StdPhase)" HeaderText="Std Phase" Width="90px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.StdItem)" HeaderText="Std Item" Width="90px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.StdItemDesc)" HeaderText="Std Item Desc" Width="260px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.Phase)" HeaderText="Phase" Width="90px" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.Item)" HeaderText="Item" Width="90px" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.ItemDesc)" HeaderText="Item Desc" Width="260px" />
+            <HfGridColumn Field="@nameof(CommunityStandardRow.Notes)" HeaderText="Notes" Width="240px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CommunityStandardRow)context;
+                        <span title="@row.Notes">@TruncateText(row.Notes, 35)</span>
+                        <button class="cell-edit-btn" title="Edit notes"
+                                @onclick="() => OpenNotes(row)" @onclick:stopPropagation="true">✏️</button>
+                    }
+                </Template>
+            </HfGridColumn>
+            <HfGridColumn HeaderText="" Width="70px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CommunityStandardRow)context;
+                        <button class="cell-edit-btn" title="Pick item"
+                                @onclick="() => OpenPickList(row)" @onclick:stopPropagation="true">...</button>
+                    }
+                </Template>
+            </HfGridColumn>
+        </HfGridColumnsBase>
+    </HfGrid>
+</div>
+
+<HfDialog @bind-Visible="IsNotesDialogVisible" Header="Edit Notes" Width="600px"
+          IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
+    <ChildContent>
+        <textarea @bind="NotesEditText" rows="8"
+                  style="width:100%; padding:8px; border:1px solid #c9c9c9; border-radius:4px; resize:vertical;"></textarea>
+    </ChildContent>
+    <FooterContent>
+        <button class="tbar-btn btn-primary" @onclick="SaveNotes">OK</button>
+        <button class="tbar-btn" @onclick="@(() => IsNotesDialogVisible = false)">Cancel</button>
+    </FooterContent>
+</HfDialog>
+
+<HfDialog @bind-Visible="IsPickDialogVisible" Header="Select Item" Width="820px"
+          IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
+    <ChildContent>
+        <div class="picklist-header">
+            <input class="search-box" @bind="PickSearchTerm" @bind:event="oninput"
+                   placeholder="Search phase, item, description..." />
+        </div>
+        <HfGrid @ref="PickGrid"
+                TValue="PhaseItemPick"
+                DataSource="@FilteredPickList"
+                AllowPaging="true"
+                AllowSorting="true"
+                AllowFiltering="false"
+                AllowSelection="true"
+                Height="400px"
+                PageSettingsRef="@pickPageSettings"
+                SelectionSettingsRef="@pickSelectionSettings"
+                EventsRef="@pickGridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(PhaseItemPick.Phase)" HeaderText="Phase" Width="90px" />
+                <HfGridColumn Field="@nameof(PhaseItemPick.Item)" HeaderText="Item" Width="90px" />
+                <HfGridColumn Field="@nameof(PhaseItemPick.Description)" HeaderText="Description" Width="320px" />
+                <HfGridColumn Field="@nameof(PhaseItemPick.Notes)" HeaderText="Notes" Width="260px" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </ChildContent>
+    <FooterContent>
+        <button class="tbar-btn btn-primary" disabled="@(SelectedPickItem == null)" @onclick="ApplyPickSelection">Select</button>
+        <button class="tbar-btn" @onclick="@(() => IsPickDialogVisible = false)">Cancel</button>
+    </FooterContent>
+</HfDialog>
+
+@code {
+    private readonly DbWrapperSqlServer db = new();
+    private HfGrid<CommunityStandardRow>? CommunityGrid;
+    private HfGrid<PhaseItemPick>? PickGrid;
+
+    private bool IsLoading;
+    private bool mDirty;
+
+    private List<CommunityStandardRow> Standards = new();
+
+    private string CommunityLabel = "Community";
+    private string CommunityPhaseLabel => $"{CommunityLabel} Phase";
+    private int DivisionId = 1;
+    private bool CommunityStandardsArePhaseSpecific = true;
+
+    private CommunityStandardRow? SelectedRow;
+
+    private HfFilterSettings filterSettings = new() { Type = FilterType.Menu };
+    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = new[] { 25, 50, 100, 200 } };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<CommunityStandardRow> gridEvents = new();
+
+    private bool IsNotesDialogVisible;
+    private string NotesEditText = "";
+    private CommunityStandardRow? NotesEditingRow;
+
+    private bool IsPickDialogVisible;
+    private string PickSearchTerm = "";
+    private List<PhaseItemPick> PickList = new();
+    private PhaseItemPick? SelectedPickItem;
+    private CommunityStandardRow? PickTargetRow;
+
+    private HfPageSettings pickPageSettings = new() { PageSize = 20 };
+    private HfSelectionSettings pickSelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+    private HfGridEvents<PhaseItemPick> pickGridEvents = new();
+
+    private List<PhaseItemPick> FilteredPickList =>
+        string.IsNullOrWhiteSpace(PickSearchTerm)
+            ? PickList
+            : PickList.Where(p =>
+                    ContainsIgnoreCase(p.Phase, PickSearchTerm) ||
+                    ContainsIgnoreCase(p.Item, PickSearchTerm) ||
+                    ContainsIgnoreCase(p.Description, PickSearchTerm))
+                .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityStandardRow>>(this, OnRowSelected);
+        gridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityStandardRow>>(this, OnRowDeselected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CommunityStandardRow>>(this, OnCellSaved);
+
+        pickGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PhaseItemPick>>(this, OnPickRowSelected);
+
+        await LoadCustomDescriptionsAsync();
+        await LoadPickListAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadCustomDescriptionsAsync()
+    {
+        try
+        {
+            var label = await db.ExecuteScalarAsync<string>(
+                "SELECT ISNULL(NULLIF(custom_description,''),'Community') FROM customdescriptions WHERE item='Community'");
+            if (!string.IsNullOrWhiteSpace(label))
+                CommunityLabel = label.Trim();
+        }
+        catch
+        {
+            CommunityLabel = "Community";
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var sql = @"
+                SELECT c.Area Community,
+                       p.CommunityPhase,
+                       ISNULL(c.Description,'') + ISNULL(' ' + p.Description,'') CommunityDesc,
+                       ti.Phase StdPhase,
+                       ti.Item StdItem,
+                       ti.Description StdItemDesc,
+                       si.Phase,
+                       si.Item,
+                       si.Description ItemDesc,
+                       s.Notes
+                FROM tblLocality c
+                JOIN DivisionCommunities d ON d.Community = c.Area
+                LEFT OUTER JOIN CommunityPhase p ON (c.Area = p.Community AND 1=@PhaseSpecific)
+                LEFT OUTER JOIN CommunityStandardItems t ON (1=1)
+                JOIN tblPhaseItem ti ON (ti.DivisionID = @DivisionID AND t.Phase = ti.Phase AND t.Item = ti.Item)
+                LEFT OUTER JOIN CommunityStandards s
+                    ON (s.StdPhase=t.Phase AND s.StdItem=t.Item AND s.Community=c.Area AND s.CommunityPhase=ISNULL(p.CommunityPhase,''))
+                LEFT OUTER JOIN tblPhaseItem si ON (si.DivisionID = @DivisionID AND s.Phase=si.Phase AND s.Item=si.Item)
+                WHERE ISNULL(c.Inactive,0)=0 AND d.DivisionID = @DivisionID
+                UNION
+                SELECT c.Area Community,
+                       NULL CommunityPhase,
+                       ISNULL(c.Description,'') CommunityDesc,
+                       ti.Phase StdPhase,
+                       ti.Item StdItem,
+                       ti.Description StdItemDesc,
+                       si.Phase,
+                       si.Item,
+                       si.Description ItemDesc,
+                       s.Notes
+                FROM tblLocality c
+                JOIN DivisionCommunities d ON d.Community = c.Area
+                LEFT OUTER JOIN CommunityStandardItems t ON (1=1)
+                JOIN tblPhaseItem ti ON (ti.DivisionID = @DivisionID AND t.Phase = ti.Phase AND t.Item = ti.Item)
+                LEFT OUTER JOIN CommunityStandards s
+                    ON (s.StdPhase=t.Phase AND s.StdItem=t.Item AND s.Community=c.Area AND s.CommunityPhase='')
+                LEFT OUTER JOIN tblPhaseItem si ON (si.DivisionID = @DivisionID AND s.Phase=si.Phase AND s.Item=si.Item)
+                WHERE ISNULL(c.Inactive,0)=0 AND d.DivisionID = @DivisionID
+                ORDER BY 1,2,4,5";
+
+            var rows = await db.QueryAsync(sql, new
+            {
+                DivisionID = DivisionId,
+                PhaseSpecific = CommunityStandardsArePhaseSpecific ? 1 : 2
+            });
+
+            Standards = rows.Select(r => new CommunityStandardRow
+            {
+                Community = r["Community"]?.ToString() ?? "",
+                CommunityPhase = r["CommunityPhase"]?.ToString() ?? "",
+                CommunityDesc = r["CommunityDesc"]?.ToString() ?? "",
+                StdPhase = r["StdPhase"]?.ToString() ?? "",
+                StdItem = r["StdItem"]?.ToString() ?? "",
+                StdItemDesc = r["StdItemDesc"]?.ToString() ?? "",
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
+                Notes = r["Notes"]?.ToString() ?? "",
+                IsDirty = false
+            }).ToList();
+
+            mDirty = false;
+            SelectedRow = null;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading {CommunityLabel} standards: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPickListAsync()
+    {
+        var sql = @"SELECT Phase, Item, Description, ISNULL(Notes,'') Notes
+                    FROM tblPhaseItem
+                    WHERE DivisionID = @DivisionID
+                    ORDER BY Phase, Item";
+        var rows = await db.QueryAsync(sql, new { DivisionID = DivisionId });
+        PickList = rows.Select(r => new PhaseItemPick
+        {
+            Phase = r["Phase"]?.ToString() ?? "",
+            Item = r["Item"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? "",
+            Notes = r["Notes"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private void OnRowSelected(RowSelectEventArgs<CommunityStandardRow> args) => SelectedRow = args.Data;
+    private void OnRowDeselected(RowSelectEventArgs<CommunityStandardRow> args) => SelectedRow = null;
+
+    private void OnCellSaved(CellSaveArgs<CommunityStandardRow> args)
+    {
+        if (args.Data == null) return;
+        MarkDirty(args.Data);
+    }
+
+    private void MarkDirty(CommunityStandardRow row)
+    {
+        row.IsDirty = true;
+        mDirty = true;
+    }
+
+    private async Task OnSaveClick() => await SaveDataAsync(false);
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                $"{CommunityLabel} Standards have changed. Do you want to save these changes?");
+            if (!confirm) return true;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            foreach (var row in Standards.Where(r => r.IsDirty))
+            {
+                var insertSql = @"
+                    INSERT INTO CommunityStandards(Community,CommunityPhase,StdPhase,StdItem,Phase,Item,Notes)
+                    VALUES(@Community,@CommunityPhase,@StdPhase,@StdItem,@Phase,@Item,@Notes)";
+                try
+                {
+                    await db.ExecuteAsync(insertSql, new
+                    {
+                        row.Community,
+                        row.CommunityPhase,
+                        row.StdPhase,
+                        row.StdItem,
+                        row.Phase,
+                        row.Item,
+                        Notes = row.Notes ?? ""
+                    });
+                }
+                catch (Exception ex)
+                {
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        throw;
+                }
+
+                var notes = string.IsNullOrWhiteSpace(row.Item) ? "" : row.Notes ?? "";
+                var updateSql = @"
+                    UPDATE CommunityStandards
+                       SET Phase=@Phase,
+                           Item=@Item,
+                           Notes=@Notes
+                     WHERE Community=@Community
+                       AND CommunityPhase=@CommunityPhase
+                       AND StdPhase=@StdPhase
+                       AND StdItem=@StdItem";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    row.Community,
+                    row.CommunityPhase,
+                    row.StdPhase,
+                    row.StdItem,
+                    row.Phase,
+                    row.Item,
+                    Notes = notes
+                });
+
+                row.IsDirty = false;
+            }
+
+            await db.ExecuteAsync(
+                "DELETE FROM CommunityStandards WHERE ISNULL(Phase,'')='' AND ISNULL(Item,'')='' AND ISNULL(StdPhase,'')<>'' AND ISNULL(Community,'')<>''");
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReloadData()
+    {
+        if (mDirty)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "You have unsaved changes. Discard and reload?");
+            if (!confirm) return;
+        }
+        await LoadDataAsync();
+    }
+
+    private void OpenNotes(CommunityStandardRow? row)
+    {
+        var target = row ?? SelectedRow;
+        if (target == null) return;
+        NotesEditingRow = target;
+        NotesEditText = target.Notes ?? "";
+        IsNotesDialogVisible = true;
+    }
+
+    private void SaveNotes()
+    {
+        if (NotesEditingRow != null)
+        {
+            NotesEditingRow.Notes = NotesEditText ?? "";
+            MarkDirty(NotesEditingRow);
+        }
+        IsNotesDialogVisible = false;
+    }
+
+    private void OpenPickList(CommunityStandardRow? row)
+    {
+        var target = row ?? SelectedRow;
+        if (target == null) return;
+        PickTargetRow = target;
+        SelectedPickItem = null;
+        PickSearchTerm = "";
+        IsPickDialogVisible = true;
+    }
+
+    private void OnPickRowSelected(RowSelectEventArgs<PhaseItemPick> args) => SelectedPickItem = args.Data;
+
+    private async Task ApplyPickSelection()
+    {
+        if (PickTargetRow == null || SelectedPickItem == null) return;
+
+        PickTargetRow.Phase = SelectedPickItem.Phase;
+        PickTargetRow.Item = SelectedPickItem.Item;
+        PickTargetRow.ItemDesc = SelectedPickItem.Description;
+        PickTargetRow.Notes = SelectedPickItem.Notes;
+        MarkDirty(PickTargetRow);
+
+        IsPickDialogVisible = false;
+        if (CommunityGrid != null)
+            await CommunityGrid.Refresh();
+    }
+
+    private static bool ContainsIgnoreCase(string? source, string term) =>
+        !string.IsNullOrEmpty(source) &&
+        source.Contains(term, StringComparison.OrdinalIgnoreCase);
+
+    private static string TruncateText(string? text, int max) =>
+        string.IsNullOrWhiteSpace(text) ? "" :
+        text.Length <= max ? text : text.Substring(0, max) + "...";
+
+    public class CommunityStandardRow
+    {
+        public string Community { get; set; } = "";
+        public string CommunityPhase { get; set; } = "";
+        public string CommunityDesc { get; set; } = "";
+        public string StdPhase { get; set; } = "";
+        public string StdItem { get; set; } = "";
+        public string StdItemDesc { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public bool IsDirty { get; set; }
+    }
+
+    public class PhaseItemPick
+    {
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Notes { get; set; } = "";
+    }
+}
+```

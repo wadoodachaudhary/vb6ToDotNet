@@ -1,0 +1,659 @@
+@page "/create-invoice"
+@page "/create-invoice/{Job}"
+@page "/create-invoice/{Job}/{Invoice:long}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using System.Data
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Create Invoice - HomeFront</PageTitle>
+
+<style>
+    .invoice-page { padding: 16px; font-family: Arial, Helvetica, sans-serif; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px; }
+    .form-column { display: flex; flex-direction: column; gap: 10px; }
+    .form-field { display: flex; align-items: flex-start; gap: 8px; }
+    .form-field label { min-width: 110px; text-align: right; font-weight: 600; padding-top: 6px; font-size: 13px; }
+    .form-field input, .form-field textarea, .form-field select {
+        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+    }
+    .form-field textarea { min-height: 70px; resize: vertical; }
+    .grid-wrapper { margin-top: 6px; }
+    .button-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .grid-input, .grid-select { width: 100%; padding: 4px 6px; font-size: 12px; }
+</style>
+
+@if (_loadFailed)
+{
+    <div class="alert alert-warning">@_loadError</div>
+}
+else
+{
+    <div class="invoice-page">
+        <div class="header-row">
+            <h3>Create Invoice</h3>
+            <div style="font-size:12px;color:#6c757d;">Job: @_job  @if (_invoice > 0) { <span>| Invoice: @_invoice</span> }</div>
+        </div>
+
+        <div class="form-grid">
+            <div class="form-column">
+                <div class="form-field">
+                    <label>Invoice Date</label>
+                    <input type="date" @bind="InvoiceDate" @bind:format="yyyy-MM-dd" />
+                </div>
+                <div class="form-field">
+                    <label>Description</label>
+                    <input maxlength="50" @bind="Description" />
+                </div>
+                <div class="form-field">
+                    <label>Due Date</label>
+                    <input type="date" @bind="DueDate" @bind:format="yyyy-MM-dd" />
+                </div>
+                <div class="form-field">
+                    <label>Draw</label>
+                    <input type="number" step="0.01" @bind="Draw" />
+                </div>
+                <div class="form-field">
+                    <label>Terms</label>
+                    <textarea maxlength="50" rows="3" @bind="Terms"></textarea>
+                </div>
+            </div>
+
+            <div class="form-column">
+                <div class="form-field">
+                    <label>Notes</label>
+                    <textarea maxlength="50" rows="3" @bind="Notes"></textarea>
+                </div>
+                <div class="form-field">
+                    <label>Scope of work</label>
+                    <textarea maxlength="50" rows="3" @bind="Scope"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-wrapper">
+            <HfGrid @ref="ContractGrid"
+                    TValue="ContractRow"
+                    DataSource="@ContractRows"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="420px"
+                    RowHeight="32"
+                    SelectionSettingsRef="@selectionSettings"
+                    EditSettingsRef="@editSettings"
+                    EventsRef="@gridEvents">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(ContractRow.BillingItemID)" Visible="false" IsPrimaryKey="true" />
+                    <HfGridColumn Field="@nameof(ContractRow.Description)" HeaderText="Description" Width="220px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContractRow.Budget)" HeaderText="Budget" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.Changes)" HeaderText="Changes" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.Committed)" HeaderText="Committed" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.JTDCost)" HeaderText="JTDCost" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.Price)" HeaderText="Price" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.Billed)" HeaderText="Billed" Format="C2" Width="90px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.PercentComplete)" HeaderText="% Complete" Format="N2" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.Remaining)" HeaderText="Remaining" Format="C2" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.AmtToBill)" HeaderText="Amt To Bill" Format="C2" Width="100px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.HoldbackAmount)" HeaderText="Holdback Amt" Format="C2" Width="100px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.HoldbackRate)" HeaderText="Holdback %" Format="N2" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.TaxGroup)" HeaderText="Tax Group" Width="90px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContractRow)context;
+                                <select class="grid-select" @bind="row.TaxGroup" @bind:after="() => OnTaxGroupChanged(row)">
+                                    <option value=""></option>
+                                    @foreach (var tg in TaxGroups)
+                                    {
+                                        <option value="@tg.TaxGroup">@($"{tg.TaxGroup} - {tg.Description}")</option>
+                                    }
+                                </select>
+                            }
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContractRow.TaxRate)" HeaderText="Tax Rate" Format="N2" Width="80px" AllowEditing="false" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(ContractRow.RevenueAccount)" HeaderText="Revenue Acct" Width="110px">
+                        <EditTemplate>
+                            @{
+                                var row = (ContractRow)context;
+                                <select class="grid-select" @bind="row.RevenueAccount" @bind:after="() => OnRevenueAccountChanged(row)">
+                                    <option value=""></option>
+                                    @foreach (var acc in RevenueAccounts)
+                                    {
+                                        <option value="@acc.Account">@($"{acc.Account} - {acc.Description}")</option>
+                                    }
+                                </select>
+                            }
+                        </EditTemplate>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContractRow.RevenueAccountDesc)" HeaderText="Account Desc" Width="160px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContractRow.HoldbackTotalHeld)" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        <div class="button-bar">
+            <button class="btn btn-primary" @onclick="OnOkClick" disabled="@_saving">OK</button>
+            <button class="btn btn-secondary" @onclick="OnCancelClick">Cancel</button>
+            <button class="btn btn-success" @onclick="OnSavePrintClick" disabled="@_saving">Save &amp; Print</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Job { get; set; }
+    [Parameter] public long? Invoice { get; set; }
+    [Parameter] public string? ReturnUrl { get; set; }
+
+    private readonly DbWrapperSqlServer db = new();
+    private HfGrid<ContractRow>? ContractGrid;
+
+    private readonly HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+
+    private readonly HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+
+    private readonly HfGridEvents<ContractRow> gridEvents = new();
+
+    private string _job = "";
+    private long _invoice = 0;
+    private string _customer = "";
+    private bool _initialized;
+    private bool _loadFailed;
+    private string _loadError = "";
+    private bool _saving;
+
+    private const int DivisionID = 1;
+
+    private DateTime? InvoiceDate;
+    private DateTime? DueDate;
+    private string Description = "";
+    private decimal Draw = 0;
+    private string Terms = "";
+    private string Notes = "";
+    private string Scope = "";
+
+    private List<ContractRow> ContractRows = new();
+    private List<TaxGroupItem> TaxGroups = new();
+    private List<AccountItem> RevenueAccounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ContractRow>>(this, OnCellSaved);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var newJob = Job ?? "";
+        var newInvoice = Invoice ?? 0;
+        if (!_initialized || newJob != _job || newInvoice != _invoice)
+        {
+            _job = newJob;
+            _invoice = newInvoice;
+            await InitializeAsync();
+            _initialized = true;
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        _loadFailed = false;
+        _loadError = "";
+        ContractRows.Clear();
+
+        if (string.IsNullOrWhiteSpace(_job))
+        {
+            _loadFailed = true;
+            _loadError = "Job is required.";
+            return;
+        }
+
+        await LoadLookupsAsync();
+        _customer = await GetCustomerAsync();
+
+        if (string.IsNullOrWhiteSpace(_customer))
+        {
+            _loadFailed = true;
+            _loadError = "You must first specify a customer on this job.";
+            return;
+        }
+
+        await LoadDataAsync();
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        var tgRows = await db.QueryAsync("SELECT TaxGroup, Description, GroupRate FROM TaxGroups WHERE DivisionID=@DivisionID ORDER BY TaxGroup", new { DivisionID });
+        TaxGroups = tgRows.Select(r => new TaxGroupItem
+        {
+            TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? "",
+            GroupRate = ToDecimal(r["GroupRate"])
+        }).ToList();
+
+        var accRows = await db.QueryAsync("SELECT Account, Description FROM GLAccounts WHERE DivisionID=@DivisionID ORDER BY Account", new { DivisionID });
+        RevenueAccounts = accRows.Select(r => new AccountItem
+        {
+            Account = r["Account"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task<string> GetCustomerAsync()
+    {
+        var rows = await db.QueryAsync("SELECT ar_customer_deposit FROM tblcustomers WHERE job_no=@Job", new { Job = _job });
+        return rows.Count > 0 ? rows[0]["ar_customer_deposit"]?.ToString() ?? "" : "";
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (_invoice == 0)
+        {
+            InvoiceDate = DateTime.Today;
+            Description = "";
+            DueDate = null;
+            Terms = "";
+            Notes = "";
+            Scope = "";
+            Draw = 0;
+        }
+        else
+        {
+            var rows = await db.QueryAsync("SELECT * FROM arinvoices WHERE invoice=@Invoice", new { Invoice = _invoice });
+            if (rows.Count > 0)
+            {
+                var r = rows[0];
+                InvoiceDate = ToDate(r["invoicedate"]);
+                Description = r["description"]?.ToString() ?? "";
+                DueDate = ToDate(r["duedate"]);
+                Terms = r["terms"]?.ToString() ?? "";
+                Notes = r["notes"]?.ToString() ?? "";
+                Scope = r["scopeofwork"]?.ToString() ?? "";
+                Draw = ToDecimal(r["draw"]);
+            }
+        }
+
+        string sql;
+        if (_invoice == 0)
+        {
+            sql = @"
+select
+  b.BillingItemID,
+  b.Description,
+  SUM(CASE WHEN IsChange=0 and BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) Budget,
+  SUM(CASE WHEN IsChange=1 and BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) Changes,
+  SUM(CASE WHEN POGenBatch=0 or poDeleted=1 THEN 0 ELSE POPretax+POJCTax END) Commited,
+  0 JTDCost,
+  0 AmtThisPeriod,
+  b.Price,
+  b.amtbilled Billed,
+  ISNULL(NULLIF(b.holdbackrate,0),j.HoldBackRate) HoldBackRate,
+  t.taxgroup,
+  a.account,
+  a.description AccountDesc,
+  t.grouprate taxrate,
+  b.holdbacktotalheld
+from billingitems b
+left outer join estimateditems i on(b.BillingItemID=i.BillingItemID)
+join tbljobs j on(b.job=j.job_no and j.DivisionID=@DivisionID)
+left outer join taxgroups t on(t.DivisionID=@DivisionID and t.taxgroup = ISNULL(NULLIF(b.taxgroup,''),j.artaxgroup))
+left outer join glaccounts a on(a.DivisionID = j.DivisionID and a.account = ISNULL(NULLIF(b.revenueaccount,''),j.revenueaccount))
+where b.job=@Job
+group by b.BillingItemID,b.Description,b.CostCode,b.Category,b.Price,b.SortOrder,b.amtbilled,ISNULL(NULLIF(b.holdbackrate,0),j.HoldBackRate),
+         t.taxgroup,t.grouprate,b.holdbacktotalheld,a.account,a.description
+order by b.SortOrder,b.Description";
+        }
+        else
+        {
+            sql = @"
+select
+  b.BillingItemID,
+  ii.Description,
+  SUM(CASE WHEN IsChange=0 and BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) Budget,
+  SUM(CASE WHEN IsChange=1 and BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) Changes,
+  SUM(CASE WHEN POGenBatch=0 or poDeleted=1 THEN 0 ELSE POPretax+POJCTax END) Commited,
+  0 JTDCost,
+  ii.AmtThisPeriod,
+  ii.ContractAmt Price,
+  ii.PreviouslyBilled Billed,
+  ii.HoldBackRate,
+  ii.taxgroup,
+  ii.Revenueaccount Account,
+  a.description AccountDesc,
+  ii.taxrate,
+  ii.HoldBackTotalHeld
+from billingitems b
+left outer join estimateditems i on(b.BillingItemID=i.BillingItemID)
+join arinvoiceitems ii on (b.BillingItemID = ii.BillingItemID and ii.Invoice = @Invoice)
+join tbljobs j on(b.job=j.job_no)
+left outer join taxgroups t on(t.taxgroup = ii.taxgroup)
+left outer join glaccounts a on(a.account = ii.revenueaccount)
+where b.job=@Job
+group by b.BillingItemID,ii.Description,b.CostCode,b.Category,ii.ContractAmt,ii.AmtThisPeriod,ii.InvoiceItem,ii.PreviouslyBilled,ii.HoldBackRate,
+         ii.taxgroup,ii.Taxrate,ii.holdbacktotalheld,ii.Revenueaccount,a.description
+order by ii.InvoiceItem,ii.Description";
+        }
+
+        var items = await db.QueryAsync(sql, new { DivisionID, Job = _job, Invoice = _invoice });
+        ContractRows = items.Select(r =>
+        {
+            var row = new ContractRow
+            {
+                BillingItemID = ToLong(r["BillingItemID"]),
+                Description = r["Description"]?.ToString() ?? "",
+                Budget = ToDecimal(r["Budget"]),
+                Changes = ToDecimal(r["Changes"]),
+                Committed = ToDecimal(r["Commited"]),
+                JTDCost = ToDecimal(r["JTDCost"]),
+                Price = ToDecimal(r["Price"]),
+                Billed = ToDecimal(r["Billed"]),
+                AmtToBill = ToDecimal(r["AmtThisPeriod"]),
+                HoldbackRate = ToDecimal(r["HoldBackRate"]),
+                TaxGroup = r["taxgroup"]?.ToString() ?? "",
+                TaxRate = ToDecimal(r["taxrate"]),
+                RevenueAccount = r["Account"]?.ToString() ?? "",
+                RevenueAccountDesc = r["AccountDesc"]?.ToString() ?? "",
+                HoldbackTotalHeld = ToDecimal(r["holdbacktotalheld"])
+            };
+            UpdateFromAmtToBill(row);
+            return row;
+        }).ToList();
+    }
+
+    private async Task OnOkClick()
+    {
+        if (await SaveDataAsync())
+            NavigateAway();
+    }
+
+    private async Task OnSavePrintClick()
+    {
+        if (await SaveDataAsync())
+            await JSRuntime.InvokeVoidAsync("alert", "Print preview not implemented.");
+    }
+
+    private void OnCancelClick() => NavigateAway();
+
+    private void NavigateAway()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            NavigationManager.NavigateTo(ReturnUrl);
+        else
+            NavigationManager.NavigateTo("/");
+    }
+
+    private async Task<bool> SaveDataAsync()
+    {
+        if (_saving) return false;
+
+        if (InvoiceDate == null || string.IsNullOrWhiteSpace(Description))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Description and invoice date are required.");
+            return false;
+        }
+
+        foreach (var row in ContractRows)
+        {
+            if (row.AmtToBill != 0 && (string.IsNullOrWhiteSpace(row.RevenueAccount) || string.IsNullOrWhiteSpace(row.TaxGroup)))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Revenue Account and Tax Group are required.");
+                return false;
+            }
+        }
+
+        _saving = true;
+        try
+        {
+            if (_invoice == 0)
+            {
+                var insertSql = @"
+INSERT INTO arinvoices(DivisionID,invoicedate,description,Job,arcustomer,terms,scopeofwork,draw,DueDate,notes)
+VALUES(@DivisionID,@InvoiceDate,@Description,@Job,@Customer,@Terms,@Scope,@Draw,@DueDate,@Notes);
+SELECT CAST(SCOPE_IDENTITY() as bigint);";
+                _invoice = await db.ExecuteScalarAsync<long>(insertSql, new
+                {
+                    DivisionID,
+                    InvoiceDate = InvoiceDate,
+                    Description,
+                    Job = _job,
+                    Customer = _customer,
+                    Terms,
+                    Scope,
+                    Draw,
+                    DueDate,
+                    Notes
+                });
+            }
+            else
+            {
+                var updateSql = @"
+UPDATE arinvoices
+   SET InvoiceDate=@InvoiceDate,
+       Description=@Description,
+       Terms=@Terms,
+       ScopeofWork=@Scope,
+       Draw=@Draw,
+       DueDate=@DueDate,
+       Notes=@Notes
+ WHERE invoice=@Invoice";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    InvoiceDate,
+                    Description,
+                    Terms,
+                    Scope,
+                    Draw,
+                    DueDate,
+                    Notes,
+                    Invoice = _invoice
+                });
+            }
+
+            await db.ExecuteAsync("DELETE FROM arinvoiceitems WHERE invoice=@Invoice", new { Invoice = _invoice });
+
+            var resetTotalsSql = @"
+UPDATE billingitems
+   SET amtbilled=(SELECT SUM(amtthisperiod) FROM arinvoiceitems WHERE arinvoiceitems.billingitemid=billingitems.billingitemid),
+       holdbacktotalheld=(SELECT SUM(holdbackamount) FROM arinvoiceitems WHERE arinvoiceitems.billingitemid=billingitems.billingitemid)
+ WHERE job=@Job";
+            await db.ExecuteAsync(resetTotalsSql, new { Job = _job });
+
+            foreach (var row in ContractRows)
+            {
+                var holdbackTotalHeld = row.HoldbackTotalHeld + row.HoldbackAmount;
+                var tax = Math.Round((row.AmtToBill - row.HoldbackAmount) * row.TaxRate / 100m, 2);
+
+                var insertItemSql = @"
+INSERT INTO arinvoiceitems(DivisionID,invoice,billingitemid,description,contractamt,previouslybilled,amtthisperiod,percentbilled,amtremaining,holdbackamount,holdbackrate,HoldbackTotalHeld,taxgroup,taxrate,RevenueAccount,tax)
+VALUES(@DivisionID,@Invoice,@BillingItemID,@Description,@ContractAmt,@PreviouslyBilled,@AmtThisPeriod,@PercentBilled,@AmtRemaining,@HoldbackAmount,@HoldbackRate,@HoldbackTotalHeld,@TaxGroup,@TaxRate,@RevenueAccount,@Tax)";
+                await db.ExecuteAsync(insertItemSql, new
+                {
+                    DivisionID,
+                    Invoice = _invoice,
+                    BillingItemID = row.BillingItemID,
+                    Description = row.Description,
+                    ContractAmt = row.Price,
+                    PreviouslyBilled = row.Billed,
+                    AmtThisPeriod = row.AmtToBill,
+                    PercentBilled = row.PercentComplete,
+                    AmtRemaining = row.Remaining,
+                    HoldbackAmount = row.HoldbackAmount,
+                    HoldbackRate = row.HoldbackRate,
+                    HoldbackTotalHeld = holdbackTotalHeld,
+                    TaxGroup = row.TaxGroup,
+                    TaxRate = row.TaxRate,
+                    RevenueAccount = row.RevenueAccount,
+                    Tax = tax
+                });
+
+                var updateBillingSql = @"
+UPDATE billingitems
+   SET amtbilled=ISNULL(amtbilled,0)+@AmtThisPeriod,
+       HoldbackTotalHeld=@HoldbackTotalHeld
+ WHERE billingitemid=@BillingItemID";
+                await db.ExecuteAsync(updateBillingSql, new
+                {
+                    AmtThisPeriod = row.AmtToBill,
+                    HoldbackTotalHeld = holdbackTotalHeld,
+                    BillingItemID = row.BillingItemID
+                });
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving invoice: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnCellSaved(CellSaveArgs<ContractRow> args)
+    {
+        if (args.Data == null) return;
+        var row = args.Data;
+        var col = args.ColumnName ?? string.Empty;
+
+        switch (col)
+        {
+            case nameof(ContractRow.AmtToBill):
+                UpdateFromAmtToBill(row);
+                break;
+            case nameof(ContractRow.PercentComplete):
+                UpdateFromPercentComplete(row);
+                break;
+            case nameof(ContractRow.Remaining):
+                UpdateFromRemaining(row);
+                break;
+            case nameof(ContractRow.HoldbackAmount):
+                UpdateFromHoldbackAmount(row);
+                break;
+            case nameof(ContractRow.HoldbackRate):
+                UpdateFromHoldbackRate(row);
+                break;
+            case nameof(ContractRow.TaxGroup):
+                OnTaxGroupChanged(row);
+                break;
+            case nameof(ContractRow.RevenueAccount):
+                OnRevenueAccountChanged(row);
+                break;
+        }
+
+        _ = RefreshGridAsync();
+    }
+
+    private async Task RefreshGridAsync()
+    {
+        if (ContractGrid != null)
+            await ContractGrid.Refresh();
+    }
+
+    private void OnTaxGroupChanged(ContractRow row)
+    {
+        var tg = TaxGroups.FirstOrDefault(t => t.TaxGroup == row.TaxGroup);
+        if (tg != null)
+            row.TaxRate = tg.GroupRate;
+    }
+
+    private void OnRevenueAccountChanged(ContractRow row)
+    {
+        var acc = RevenueAccounts.FirstOrDefault(a => a.Account == row.RevenueAccount);
+        if (acc != null)
+            row.RevenueAccountDesc = acc.Description;
+    }
+
+    private void UpdateFromAmtToBill(ContractRow row)
+    {
+        row.PercentComplete = row.Price != 0 ? (row.Billed + row.AmtToBill) / row.Price * 100m : 0;
+        row.Remaining = row.Price - row.Billed - row.AmtToBill;
+        row.HoldbackAmount = Math.Round(row.AmtToBill * row.HoldbackRate / 100m, 2);
+    }
+
+    private void UpdateFromPercentComplete(ContractRow row)
+    {
+        row.AmtToBill = Math.Round((row.Price * row.PercentComplete / 100m) - row.Billed, 2);
+        row.Remaining = row.Price - row.Billed - row.AmtToBill;
+        row.HoldbackAmount = Math.Round(row.AmtToBill * row.HoldbackRate / 100m, 2);
+    }
+
+    private void UpdateFromRemaining(ContractRow row)
+    {
+        row.AmtToBill = row.Price - row.Billed - row.Remaining;
+        row.PercentComplete = row.Price != 0 ? (row.Billed + row.AmtToBill) / row.Price * 100m : 0;
+        row.HoldbackAmount = Math.Round(row.AmtToBill * row.HoldbackRate / 100m, 2);
+    }
+
+    private void UpdateFromHoldbackAmount(ContractRow row)
+    {
+        if (row.AmtToBill != 0)
+            row.HoldbackRate = row.HoldbackAmount / row.AmtToBill * 100m;
+    }
+
+    private void UpdateFromHoldbackRate(ContractRow row)
+    {
+        row.HoldbackAmount = Math.Round(row.AmtToBill * row.HoldbackRate / 100m, 2);
+    }
+
+    private static decimal ToDecimal(object? val) =>
+        val == null || val == DBNull.Value ? 0m : Convert.ToDecimal(val);
+
+    private static long ToLong(object? val) =>
+        val == null || val == DBNull.Value ? 0 : Convert.ToInt64(val);
+
+    private static DateTime? ToDate(object? val) =>
+        val == null || val == DBNull.Value ? null : Convert.ToDateTime(val);
+
+    public class ContractRow
+    {
+        public long BillingItemID { get; set; }
+        public string Description { get; set; } = "";
+        public decimal Budget { get; set; }
+        public decimal Changes { get; set; }
+        public decimal Committed { get; set; }
+        public decimal JTDCost { get; set; }
+        public decimal Price { get; set; }
+        public decimal Billed { get; set; }
+        public decimal PercentComplete { get; set; }
+        public decimal Remaining { get; set; }
+        public decimal AmtToBill { get; set; }
+        public decimal HoldbackAmount { get; set; }
+        public decimal HoldbackRate { get; set; }
+        public decimal HoldbackTotalHeld { get; set; }
+        public string TaxGroup { get; set; } = "";
+        public decimal TaxRate { get; set; }
+        public string RevenueAccount { get; set; } = "";
+        public string RevenueAccountDesc { get; set; } = "";
+    }
+
+    public class TaxGroupItem
+    {
+        public string TaxGroup { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal GroupRate { get; set; }
+    }
+
+    public class AccountItem
+    {
+        public string Account { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+}

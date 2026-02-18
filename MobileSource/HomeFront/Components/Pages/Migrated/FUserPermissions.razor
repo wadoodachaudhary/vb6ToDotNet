@@ -1,0 +1,1644 @@
+```razor
+@page "/user-permissions"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>User Permissions - HomeFront</PageTitle>
+
+<style>
+    .permissions-container {
+        display: flex;
+        height: calc(100vh - 80px);
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    /* Left panel - Groups and Users */
+    .left-panel {
+        width: 300px;
+        min-width: 200px;
+        max-width: 500px;
+        border-right: 3px solid #c9c9c9;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        resize: horizontal;
+    }
+
+    .panel-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .panel-header-label {
+        font-weight: 700;
+        color: #800080;
+        font-size: 13px;
+    }
+
+    .panel-toolbar {
+        display: flex;
+        gap: 4px;
+        margin-left: auto;
+    }
+
+    .tool-btn {
+        width: 28px;
+        height: 28px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        transition: background 0.15s;
+    }
+
+    .tool-btn:hover { background: #e9ecef; }
+    .tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .groups-section {
+        flex: 0 0 45%;
+        overflow: auto;
+        border-bottom: 3px solid #c9c9c9;
+    }
+
+    .users-section {
+        flex: 1;
+        overflow: auto;
+    }
+
+    .list-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        user-select: none;
+    }
+
+    .list-item:hover { background: #e8f0fe; }
+    .list-item.selected { background: #cce5ff; font-weight: 600; }
+
+    /* Right panel */
+    .right-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* Tab strip */
+    .tab-strip {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+        background: #f0f0f0;
+        flex-wrap: wrap;
+    }
+
+    .tab-strip button {
+        padding: 8px 16px;
+        border: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.2s;
+        white-space: nowrap;
+    }
+
+    .tab-strip button:hover { background: #e0e0e0; }
+
+    .tab-strip button.active {
+        background: #fff;
+        border-bottom: 2px solid #0d6efd;
+        margin-bottom: -2px;
+        color: #0d6efd;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        flex: 1;
+        overflow: auto;
+        padding: 10px;
+        background: #fff;
+    }
+
+    /* User page */
+    .user-page {
+        max-width: 800px;
+    }
+
+    .user-form-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        gap: 8px;
+    }
+
+    .user-form-row label {
+        min-width: 120px;
+        text-align: right;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .user-form-row input,
+    .user-form-row select {
+        flex: 1;
+        max-width: 300px;
+        padding: 4px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 13px;
+    }
+
+    .user-form-row input:focus,
+    .user-form-row select:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+        margin-left: 128px;
+    }
+
+    .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; }
+
+    .crm-seats-label {
+        color: #800080;
+        font-size: 12px;
+        margin-left: 8px;
+    }
+
+    .user-grids-row {
+        display: flex;
+        gap: 16px;
+        margin-top: 12px;
+    }
+
+    .user-grid-section {
+        flex: 1;
+    }
+
+    .user-grid-section h6 {
+        font-size: 12px;
+        color: #800080;
+        margin-bottom: 4px;
+    }
+
+    /* Permissions grid section */
+    .perm-section {
+        margin-bottom: 8px;
+    }
+
+    .perm-section-header {
+        font-weight: 700;
+        padding: 4px 8px;
+        background: #e9ecef;
+        border-radius: 3px;
+        margin-bottom: 4px;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .perm-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 8px 3px 24px;
+    }
+
+    .perm-item input[type="checkbox"] { width: 15px; height: 15px; }
+
+    /* Payables extra fields */
+    .payables-fields {
+        display: grid;
+        grid-template-columns: auto 1fr auto 1fr;
+        gap: 6px 10px;
+        align-items: center;
+        margin-bottom: 12px;
+        max-width: 600px;
+    }
+
+    .payables-fields label {
+        text-align: right;
+        font-size: 12px;
+    }
+
+    .payables-fields input {
+        padding: 3px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+        text-align: right;
+        max-width: 120px;
+    }
+
+    /* Sales extra fields */
+    .sales-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 12px;
+        max-width: 500px;
+    }
+
+    .sales-field-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .sales-field-row label {
+        min-width: 140px;
+        text-align: right;
+        font-size: 12px;
+    }
+
+    .sales-field-row input,
+    .sales-field-row select {
+        flex: 1;
+        padding: 3px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+
+    /* Purchasing extra fields */
+    .purchasing-fields {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .purchasing-fields label {
+        font-size: 12px;
+        text-align: right;
+        min-width: 140px;
+    }
+
+    .purchasing-fields input {
+        padding: 3px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+        text-align: right;
+        max-width: 120px;
+    }
+
+    /* Save button */
+    .save-bar {
+        padding: 8px 12px;
+        text-align: right;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .btn-save {
+        padding: 6px 20px;
+        background: #0d6efd;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .btn-save:hover { background: #0b5ed7; }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Loading */
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        font-size: 16px;
+        font-weight: 500;
+    }
+
+    /* Inline edit for group name */
+    .inline-edit-input {
+        width: 100%;
+        padding: 4px 8px;
+        border: 2px solid #0d6efd;
+        border-radius: 3px;
+        font-size: 13px;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">⏳ Loading...</div>
+}
+
+<div class="permissions-container">
+    @* ── LEFT PANEL: Groups + Users ──────────────────────── *@
+    <div class="left-panel">
+        @* Groups Section *@
+        <div class="panel-header">
+            <span class="panel-header-label">Groups</span>
+            <div class="panel-toolbar">
+                <button class="tool-btn" title="Delete Group" @onclick="DeleteGroup">🗑️</button>
+                <button class="tool-btn" title="Create New Group" @onclick="CreateGroup">➕</button>
+                <button class="tool-btn" title="Copy Group" @onclick="CopyGroup">📋</button>
+            </div>
+        </div>
+        <div class="groups-section">
+            @foreach (var group in Groups)
+            {
+                <div class="list-item @(SelectedGroup?.SecGroupID == group.SecGroupID ? "selected" : "")"
+                     @onclick="() => OnGroupSelected(group)">
+                    @if (EditingGroupId == group.SecGroupID)
+                    {
+                        <input class="inline-edit-input" @bind="EditingGroupDescription"
+                               @onblur="SaveGroupDescription"
+                               @onkeydown="OnGroupEditKeyDown" autofocus />
+                    }
+                    else
+                    {
+                        <span @ondblclick="() => StartEditGroup(group)">@group.Description</span>
+                    }
+                </div>
+            }
+        </div>
+
+        @* Users Section *@
+        <div class="panel-header">
+            <span class="panel-header-label">Members</span>
+            <div class="panel-toolbar">
+                <button class="tool-btn" title="Delete User" @onclick="DeleteUser">🗑️</button>
+                <button class="tool-btn" title="Create New User" @onclick="CreateUser">➕</button>
+                <button class="tool-btn" title="Find User" @onclick="FindUser">🔍</button>
+            </div>
+        </div>
+        <div class="users-section">
+            @foreach (var user in Users)
+            {
+                <div class="list-item @(SelectedUser?.UserID == user.UserID ? "selected" : "")"
+                     @onclick="() => OnUserSelected(user)">
+                    @user.UserName
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ── RIGHT PANEL: Tabs or User Page ──────────────────── *@
+    <div class="right-panel">
+        @if (ShowUserPage)
+        {
+            @* User Detail Page *@
+            <div class="tab-content">
+                <div class="user-page">
+                    <h5 style="margin-bottom: 12px;">User Details</h5>
+
+                    <div class="user-form-row">
+                        <label>User ID</label>
+                        <input type="text" @bind="UserID" maxlength="10" @oninput="OnUserFieldChanged" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>First Name</label>
+                        <input type="text" @bind="UserFirstName" @oninput="OnUserFieldChanged" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Last Name</label>
+                        <input type="text" @bind="UserLastName" @oninput="OnUserFieldChanged" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Password</label>
+                        <input type="password" @bind="UserPassword" @oninput="OnUserFieldChanged"
+                               @onfocus="OnPasswordFocus" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Designation</label>
+                        <input type="text" @bind="UserDesignation" @oninput="OnUserFieldChanged" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Office</label>
+                        <input type="text" @bind="UserOffice" @oninput="OnUserFieldChanged" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Email Address</label>
+                        <input type="text" @bind="UserEmail" @oninput="OnUserFieldChanged" style="max-width:350px;" />
+                    </div>
+                    <div class="user-form-row">
+                        <label>Security Group</label>
+                        <select @bind="UserSecGroupID" @bind:after="OnUserFieldChanged">
+                            <option value="0">-- Select --</option>
+                            @foreach (var g in Groups)
+                            {
+                                <option value="@g.SecGroupID">@g.Description</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="chkPM" @bind="UserIsPMUser" @bind:after="OnUserFieldChanged" />
+                        <label for="chkPM">Project Manager</label>
+                    </div>
+
+                    @if (CRMSeats > 0)
+                    {
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="chkCRM" @bind="UserCRMAccess"
+                                   disabled="@(!UserCRMAccess && CRMSeatsUsed >= CRMSeats)"
+                                   @bind:after="OnUserFieldChanged" />
+                            <label for="chkCRM">Sales User</label>
+                            <span class="crm-seats-label">@CRMSeatsUsed of @CRMSeats seats have been assigned.</span>
+                        </div>
+                    }
+
+                    @* Divisions and Sales Communities *@
+                    <div class="user-grids-row">
+                        <div class="user-grid-section">
+                            <h6>Divisions</h6>
+                            @foreach (var div in Divisions)
+                            {
+                                <div style="display:flex; align-items:center; gap:6px; padding:2px 0;">
+                                    <input type="checkbox" @bind="div.Selected"
+                                           @bind:after="OnUserFieldChanged" />
+                                    <span style="font-size:12px;">@div.DivisionCode - @div.DivisionName</span>
+                                </div>
+                            }
+                        </div>
+
+                        @if (ShowSalesCommunities)
+                        {
+                            <div class="user-grid-section">
+                                <h6>Sales Communities</h6>
+                                @foreach (var sc in SalesCommunities)
+                                {
+                                    <div style="display:flex; align-items:center; gap:6px; padding:2px 0;">
+                                        <input type="checkbox" @bind="sc.Selected"
+                                               @bind:after="OnUserFieldChanged" />
+                                        <span style="font-size:12px;">@sc.Area - @sc.Description</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* Tab Strip for Permissions *@
+            <div class="tab-strip">
+                @foreach (var tab in VisibleTabs)
+                {
+                    <button class="@(ActiveTab == tab.Key ? "active" : "")"
+                            @onclick="() => ActiveTab = tab.Key">
+                        @tab.Caption
+                    </button>
+                }
+            </div>
+
+            <div class="tab-content">
+                @* Sales Tab Extra Fields *@
+                @if (ActiveTab == TAB_SALES)
+                {
+                    <div class="sales-fields">
+                        <div class="sales-field-row">
+                            <label>Home page report</label>
+                            <input type="text" @bind="HomePage" @oninput="OnPermFieldChanged" />
+                        </div>
+                        <div class="sales-field-row">
+                            <label>User Type</label>
+                            <select @bind="UserAccessType" @bind:after="OnPermFieldChanged">
+                                <option value="1">1 - Administrators</option>
+                                <option value="2">2 - Sales Managers</option>
+                                <option value="3">3 - Accounting</option>
+                                <option value="4">4 - Sales People</option>
+                                <option value="5">5 - Design Center Sales</option>
+                                <option value="6">6 - Read Only</option>
+                                <option value="7">7 - Estimating</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+
+                @* Purchasing Tab Extra Fields *@
+                @if (ActiveTab == TAB_PURCHASING)
+                {
+                    <div class="purchasing-fields">
+                        <label>Maximum PO Amount</label>
+                        <input type="text" @bind="MaxPOAmount" @oninput="OnPermFieldChanged" />
+                    </div>
+                }
+
+                @* Payables Tab Extra Fields *@
+                @if (ActiveTab == TAB_PAYABLES)
+                {
+                    <div class="payables-fields">
+                        <label>Invoice approval limit</label>
+                        <input type="text" @bind="MaxInvoiceAmount" @oninput="OnPermFieldChanged" />
+                        <label></label>
+                        <span></span>
+
+                        <label>Invoice variance %</label>
+                        <input type="text" @bind="MaxInvoiceOverridePercent" @oninput="OnPermFieldChanged" />
+                        <label></label>
+                        <span></span>
+
+                        <label>to a maximum of</label>
+                        <input type="text" @bind="MaxInvoiceOverrideAmount" @oninput="OnPermFieldChanged" />
+                        <label></label>
+                        <span></span>
+                    </div>
+                }
+
+                @* Permission Checkboxes *@
+                @if (ActiveTabPermissions.Any())
+                {
+                    @foreach (var section in ActiveTabPermissions.GroupBy(p => p.Section))
+                    {
+                        <div class="perm-section">
+                            <div class="perm-section-header">@(section).Key</div>
+                            @foreach (var perm in section)
+                            {
+                                <div class="perm-item">
+                                    <input type="checkbox" @bind="perm.Value"
+                                           @bind:after="OnPermFieldChanged" />
+                                    <span>@perm.Description</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p style="color:#999; padding:20px;">No permissions configured for this tab.</p>
+                }
+            </div>
+        }
+
+        @* Save Bar *@
+        <div class="save-bar">
+            <button class="btn-save" disabled="@(Dirty == DirtyState.None)" @onclick="OnSaveClick">
+                💾 Save
+            </button>
+        </div>
+    </div>
+</div>
+
+@* ── Find User Dialog ──────────────────────────────────────── *@
+@if (ShowFindUserDialog)
+{
+    <div style="position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;"
+         @onclick="() => ShowFindUserDialog = false">
+        <div style="background:#fff; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.2); min-width:400px; max-height:70vh; display:flex; flex-direction:column; overflow:hidden;"
+             @onclick:stopPropagation="true">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #dee2e6; font-weight:600;">
+                <span>Find User</span>
+                <button style="background:none; border:none; font-size:20px; cursor:pointer;" @onclick="() => ShowFindUserDialog = false">×</button>
+            </div>
+            <div style="padding:16px; overflow-y:auto; flex:1;">
+                <input type="text" placeholder="Search by User ID or Name..."
+                       @bind="FindUserSearch" @bind:event="oninput"
+                       style="width:100%; padding:6px 10px; border:1px solid #ced4da; border-radius:4px; margin-bottom:12px;" />
+                @foreach (var u in AllUsersForFind.Where(u =>
+                    string.IsNullOrEmpty(FindUserSearch) ||
+                    (u.UserID?.Contains(FindUserSearch, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (u.UserName?.Contains(FindUserSearch, StringComparison.OrdinalIgnoreCase) ?? false)))
+                {
+                    <div class="list-item" @onclick="() => OnFindUserSelect(u)">
+                        <strong>@u.UserID</strong> — @u.UserName <span style="color:#999;">(@u.SecurityGroup)</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // ── Constants ────────────────────────────────────────────────
+    private const string TAB_ADMIN = "Admin";
+    private const string TAB_SALES = "Sales";
+    private const string TAB_PURCHASING = "Purchasing";
+    private const string TAB_PAYABLES = "Payables";
+    private const string TAB_SCHEDULING = "Scheduling";
+    private const string TAB_WARRANTY = "Warranty";
+    private const string TAB_WORKTICKET = "Workticket";
+    private const string TAB_CRM = "CRM";
+    private const string TAB_DATAPORTAL = "Data Portal";
+
+    // ── Enums ────────────────────────────────────────────────────
+    private enum DirtyState { None, User, Perms }
+
+    // ── Database ─────────────────────────────────────────────────
+    private DbWrapperSqlServer db = new();
+
+    // ── UI State ─────────────────────────────────────────────────
+    private bool IsLoading = false;
+    private DirtyState Dirty = DirtyState.None;
+    private bool ShowUserPage = false;
+    private string ActiveTab = TAB_ADMIN;
+    private bool ShowFindUserDialog = false;
+    private string FindUserSearch = "";
+    private long? EditingGroupId = null;
+    private string EditingGroupDescription = "";
+    private bool PasswordChanged = false;
+
+    // ── Group/User State ─────────────────────────────────────────
+    private long mSecGroupID = 0;
+    private int mUserIndex = 0;
+    private long CRMSeats = 0;
+    private long CRMSeatsUsed = 0;
+
+    // ── Data Collections ─────────────────────────────────────────
+    private List<SecurityGroup> Groups = new();
+    private List<UserListItem> Users = new();
+    private List<DivisionItem> Divisions = new();
+    private List<SalesCommunityItem> SalesCommunities = new();
+    private List<PermissionItem> AllPermissions = new();
+    private List<FindUserItem> AllUsersForFind = new();
+
+    // ── Selected Items ───────────────────────────────────────────
+    private SecurityGroup? SelectedGroup;
+    private UserListItem? SelectedUser;
+
+    // ── Tab Definitions ──────────────────────────────────────────
+    private List<TabDefinition> AllTabs = new();
+    private List<TabDefinition> VisibleTabs = new();
+
+    // ── User Form Fields ─────────────────────────────────────────
+    private string UserID = "";
+    private string OriginalUserID = "";
+    private string UserFirstName = "";
+    private string UserLastName = "";
+    private string UserPassword = "";
+    private string UserDesignation = "";
+    private string UserOffice = "";
+    private string UserEmail = "";
+    private long UserSecGroupID = 0;
+    private bool UserIsPMUser = false;
+    private bool UserCRMAccess = false;
+    private bool ShowSalesCommunities = false;
+
+    // ── Permission Form Fields ───────────────────────────────────
+    private string HomePage = "";
+    private int UserAccessType = 6;
+    private string MaxPOAmount = "0.00";
+    private string MaxInvoiceAmount = "0.00";
+    private string MaxInvoiceOverrideAmount = "0.00";
+    private string MaxInvoiceOverridePercent = "0";
+    private string MaxInvoicePOOverageAmount = "0.00";
+    private string MaxInvoicePOOveragePercent = "0";
+
+    // ── Computed ─────────────────────────────────────────────────
+    private List<PermissionItem> ActiveTabPermissions =>
+        AllPermissions.Where(p => p.Page == ActiveTab).ToList();
+
+    // ── Models ───────────────────────────────────────────────────
+    public class SecurityGroup
+    {
+        public long SecGroupID { get; set; }
+        public string Description { get; set; } = "";
+    }
+
+    public class UserListItem
+    {
+        public string UserID { get; set; } = "";
+        public string UserName { get; set; } = "";
+    }
+
+    public class DivisionItem
+    {
+        public long DivisionID { get; set; }
+        public string DivisionCode { get; set; } = "";
+        public string DivisionName { get; set; } = "";
+        public bool Selected { get; set; }
+    }
+
+    public class SalesCommunityItem
+    {
+        public string Area { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool Selected { get; set; }
+    }
+
+    public class PermissionItem
+    {
+        public string Page { get; set; } = "";
+        public string Section { get; set; } = "";
+        public string ColumnName { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool Value { get; set; }
+    }
+
+    public class TabDefinition
+    {
+        public string Key { get; set; } = "";
+        public string Caption { get; set; } = "";
+    }
+
+    public class FindUserItem
+    {
+        public string UserID { get; set; } = "";
+        public string UserName { get; set; } = "";
+        public string SecurityGroup { get; set; } = "";
+        public long SecGroupID { get; set; }
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        InitializeTabs();
+        await LoadDivisions();
+        await LoadSalesCommunities();
+        await InitPermissionDefinitions();
+        await LoadGroups();
+        CRMSeats = await GetCRMSeats();
+        Dirty = DirtyState.None;
+    }
+
+    private void InitializeTabs()
+    {
+        AllTabs = new List<TabDefinition>
+        {
+            new() { Key = TAB_ADMIN, Caption = "Admin" },
+            new() { Key = TAB_SALES, Caption = "Sales" },
+            new() { Key = TAB_PURCHASING, Caption = "Purchasing" },
+            new() { Key = TAB_PAYABLES, Caption = "Payables" },
+            new() { Key = TAB_SCHEDULING, Caption = "Scheduling" },
+            new() { Key = TAB_WARRANTY, Caption = "Warranty" },
+            new() { Key = TAB_WORKTICKET, Caption = "Workticket" },
+            new() { Key = TAB_CRM, Caption = "CRM" },
+            new() { Key = TAB_DATAPORTAL, Caption = "Data Portal" }
+        };
+        // Start with all visible; could filter based on licensing
+        VisibleTabs = AllTabs.ToList();
+    }
+
+    // ── Load Data ────────────────────────────────────────────────
+    private async Task LoadGroups()
+    {
+        try
+        {
+            mSecGroupID = 0;
+            var rows = await db.QueryAsync("SELECT SecGroupID, Description FROM SecurityGroups ORDER BY Description");
+            Groups = rows.Select(r => new SecurityGroup
+            {
+                SecGroupID = Convert.ToInt64(r["SecGroupID"]),
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            if (Groups.Any())
+            {
+                await OnGroupSelected(Groups.First());
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadGroups error: {ex.Message}");
+        }
+        Dirty = DirtyState.None;
+    }
+
+    private async Task LoadUsers(long secGroupID)
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT User_id, user_name FROM user_manager WHERE secgroupid=@SecGroupID ORDER BY user_name",
+                new { SecGroupID = secGroupID });
+            Users = rows.Select(r => new UserListItem
+            {
+                UserID = r["User_id"]?.ToString() ?? "",
+                UserName = r["user_name"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadUsers error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadDivisions()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT DivisionID, DivisionCode, DivisionName FROM Divisions ORDER BY DivisionCode");
+            Divisions = rows.Select(r => new DivisionItem
+            {
+                DivisionID = Convert.ToInt64(r["DivisionID"]),
+                DivisionCode = r["DivisionCode"]?.ToString() ?? "",
+                DivisionName = r["DivisionName"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadDivisions error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadSalesCommunities()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT Area, Description FROM tbllocality WHERE ISNULL(inactive,0)=0 ORDER BY Area");
+            SalesCommunities = rows.Select(r => new SalesCommunityItem
+            {
+                Area = r["Area"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadSalesCommunities error: {ex.Message}");
+        }
+    }
+
+    private async Task InitPermissionDefinitions()
+    {
+        try
+        {
+            var sql = @"
+                SELECT c.name, CAST(p.value AS varchar(500)) Description
+                FROM sys.tables t
+                JOIN sys.columns c ON t.object_id=c.object_id
+                JOIN sys.extended_properties p ON p.major_id=t.object_id AND p.minor_id=c.column_id AND p.name='MS_Description'
+                WHERE t.name='SecurityGroups'
+                ORDER BY 2";
+            var rows = await db.QueryAsync(sql);
+
+            AllPermissions.Clear();
+            foreach (var row in rows)
+            {
+                var desc = row["Description"]?.ToString() ?? "";
+                var columnName = row["name"]?.ToString() ?? "";
+
+                var parts = desc.Split(':');
+                if (parts.Length >= 4)
+                {
+                    var page = parts[0].Trim();
+                    var section = parts[1].Trim();
+                    var description = parts[3].Trim();
+
+                    AllPermissions.Add(new PermissionItem
+                    {
+                        Page = page,
+                        Section = section,
+                        ColumnName = columnName,
+                        Description = description,
+                        Value = false
+                    });
+                }
+            }
+
+            // Remove tabs that have no permissions
+            var pagesWithPerms = AllPermissions.Select(p => p.Page).Distinct().ToHashSet();
+            VisibleTabs = AllTabs.Where(t => pagesWithPerms.Contains(t.Key) ||
+                t.Key == TAB_SALES || t.Key == TAB_PURCHASING || t.Key == TAB_PAYABLES).ToList();
+
+            if (VisibleTabs.Any() && !VisibleTabs.Any(t => t.Key == ActiveTab))
+                ActiveTab = VisibleTabs.First().Key;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"InitPermissionDefinitions error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadPermissions(long secGroupID)
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT * FROM SecurityGroups WHERE SecGroupID=@SecGroupID",
+                new { SecGroupID = secGroupID });
+
+            if (!rows.Any()) return;
+            var row = rows.First();
+
+            // Sales fields
+            HomePage = row.ContainsKey("HomePage") ? row["HomePage"]?.ToString() ?? "" : "";
+            var ua = row.ContainsKey("User_Access") ? Convert.ToInt32(row["User_Access"] ?? 6) : 6;
+            if (ua < 1 || ua > 7) ua = 6;
+            UserAccessType = ua;
+
+            // Purchasing
+            MaxPOAmount = row.ContainsKey("MaxPOAmount") ? FormatDecimal(row["MaxPOAmount"]) : "0.00";
+
+            // Payables
+            MaxInvoiceAmount = row.ContainsKey("MaxInvoiceAmount") ? FormatDecimal(row["MaxInvoiceAmount"]) : "0.00";
+            MaxInvoiceOverrideAmount = row.ContainsKey("MaxInvoiceOverrideAmount") ? FormatDecimal(row["MaxInvoiceOverrideAmount"]) : "0.00";
+            MaxInvoiceOverridePercent = row.ContainsKey("MaxInvoiceOverRidePercent") ? (Convert.ToDecimal(row["MaxInvoiceOverRidePercent"] ?? 0)).ToString() : "0";
+            MaxInvoicePOOverageAmount = row.ContainsKey("MaxInvoicePOOverageAmount") ? FormatDecimal(row["MaxInvoicePOOverageAmount"]) : "0.00";
+            MaxInvoicePOOveragePercent = row.ContainsKey("MaxInvoicePOOveragePercent") ? (Convert.ToDecimal(row["MaxInvoicePOOveragePercent"] ?? 0)).ToString() : "0";
+
+            // Checkboxes
+            foreach (var perm in AllPermissions)
+            {
+                if (row.ContainsKey(perm.ColumnName))
+                {
+                    perm.Value = row[perm.ColumnName]?.ToString() == "True" || row[perm.ColumnName]?.ToString() == "1";
+                }
+                else
+                {
+                    perm.Value = false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPermissions error: {ex.Message}");
+        }
+        Dirty = DirtyState.None;
+    }
+
+    private async Task LoadUser(string userId)
+    {
+        try
+        {
+            var rows = await db.QueryAsync(@"
+                SELECT u.user_id, u.firstname, u.lastname, u.designation, u.office, u.email,
+                       u.CRMAccess, u.SecGroupID, u.PMUser, g.user_access
+                FROM user_manager u
+                LEFT OUTER JOIN securitygroups g ON u.secgroupid=g.secgroupid
+                WHERE u.user_id=@UserID", new { UserID = userId });
+
+            if (!rows.Any())
+            {
+                ClearUserForm();
+                return;
+            }
+
+            var row = rows.First();
+            UserID = row["user_id"]?.ToString() ?? "";
+            OriginalUserID = UserID;
+            UserFirstName = row["firstname"]?.ToString() ?? "";
+            UserLastName = row["lastname"]?.ToString() ?? "";
+            UserPassword = new string('*', new Random().Next(6, 20));
+            PasswordChanged = false;
+            UserDesignation = row["designation"]?.ToString() ?? "";
+            UserOffice = row["office"]?.ToString() ?? "";
+            UserEmail = row["email"]?.ToString() ?? "";
+            UserSecGroupID = Convert.ToInt64(row["SecGroupID"] ?? 0);
+            UserCRMAccess = row["CRMAccess"]?.ToString() == "True" || row["CRMAccess"]?.ToString() == "1";
+            UserIsPMUser = row["PMUser"]?.ToString() == "True" || row["PMUser"]?.ToString() == "1";
+
+            var userAccess = Convert.ToInt32(row["user_access"] ?? 0);
+            ShowSalesCommunities = userAccess == 4;
+
+            // Load user divisions
+            foreach (var div in Divisions) div.Selected = false;
+            var divRows = await db.QueryAsync(
+                "SELECT divisionid FROM divisionusers WHERE userid=@UserID",
+                new { UserID = userId });
+            foreach (var dr in divRows)
+            {
+                var divId = Convert.ToInt64(dr["divisionid"]);
+                var div = Divisions.FirstOrDefault(d => d.DivisionID == divId);
+                if (div != null) div.Selected = true;
+            }
+
+            // Load sales areas
+            foreach (var sc in SalesCommunities) sc.Selected = false;
+            var areaRows = await db.QueryAsync(
+                "SELECT area FROM tblsalespersonarea WHERE sales_person_id=@UserID",
+                new { UserID = userId });
+            foreach (var ar in areaRows)
+            {
+                var area = ar["area"]?.ToString() ?? "";
+                var sc = SalesCommunities.FirstOrDefault(s => s.Area == area);
+                if (sc != null) sc.Selected = true;
+            }
+
+            // CRM seats
+            CRMSeatsUsed = await GetCRMSeatsUsed();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadUser error: {ex.Message}");
+        }
+        Dirty = DirtyState.None;
+    }
+
+    private void ClearUserForm()
+    {
+        UserID = "";
+        OriginalUserID = "";
+        UserFirstName = "";
+        UserLastName = "";
+        UserPassword = "";
+        PasswordChanged = false;
+        UserDesignation = "";
+        UserOffice = "";
+        UserEmail = "";
+        UserSecGroupID = 0;
+        UserCRMAccess = false;
+        UserIsPMUser = false;
+        ShowSalesCommunities = false;
+        foreach (var div in Divisions) div.Selected = false;
+        foreach (var sc in SalesCommunities) sc.Selected = false;
+    }
+
+    // ── Group Operations ─────────────────────────────────────────
+    private async Task OnGroupSelected(SecurityGroup group)
+    {
+        if (await CheckDirty()) return;
+
+        SelectedGroup = group;
+        mSecGroupID = group.SecGroupID;
+        ShowUserPage = false;
+        SelectedUser = null;
+
+        await LoadUsers(group.SecGroupID);
+        await LoadPermissions(group.SecGroupID);
+        Dirty = DirtyState.None;
+    }
+
+    private async Task CreateGroup()
+    {
+        try
+        {
+            await db.ExecuteAsync("INSERT INTO SecurityGroups(Description) VALUES('(untitled)')");
+            var idRows = await db.QueryAsync("SELECT IDENT_CURRENT('SecurityGroups') AS ID");
+            var newId = Convert.ToInt64(idRows.First()["ID"]);
+            await LoadGroups();
+
+            var newGroup = Groups.FirstOrDefault(g => g.SecGroupID == newId);
+            if (newGroup != null)
+            {
+                SelectedGroup = newGroup;
+                mSecGroupID = newId;
+                StartEditGroup(newGroup);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating group: {ex.Message}");
+        }
+    }
+
+    private async Task CopyGroup()
+    {
+        if (SelectedGroup == null) return;
+        try
+        {
+            var sql = @"
+                DECLARE @column varchar(100)
+                DECLARE @sql nvarchar(max)
+                SET @sql=''
+                DECLARE c CURSOR FOR
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='SecurityGroups'
+                AND column_name NOT IN('SecGroupID','Description')
+                OPEN c
+                FETCH NEXT FROM c INTO @column
+                WHILE @@fetch_status = 0
+                BEGIN
+                    SET @sql = @sql + ',[' + @column + ']'
+                    FETCH NEXT FROM c INTO @column
+                END
+                CLOSE c
+                DEALLOCATE c
+                SET @sql = 'INSERT INTO SecurityGroups(Description' + @sql + ') SELECT ''Copy of ''+ISNULL(Description,'''') ' + @sql + ' FROM SecurityGroups WHERE SecGroupID=' + CAST(@SecGroupID AS VARCHAR)
+                EXEC sp_executesql @sql";
+            await db.ExecuteAsync(sql, new { SecGroupID = SelectedGroup.SecGroupID });
+
+            var idRows = await db.QueryAsync("SELECT IDENT_CURRENT('SecurityGroups') AS ID");
+            var newId = Convert.ToInt64(idRows.First()["ID"]);
+            await LoadGroups();
+
+            var newGroup = Groups.FirstOrDefault(g => g.SecGroupID == newId);
+            if (newGroup != null)
+            {
+                SelectedGroup = newGroup;
+                mSecGroupID = newId;
+                StartEditGroup(newGroup);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error copying group: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteGroup()
+    {
+        if (mSecGroupID == 0) return;
+
+        if (Users.Any())
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "You must remove all users before you can delete this group.");
+            return;
+        }
+
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this group?"))
+            return;
+
+        try
+        {
+            await db.ExecuteAsync("DELETE FROM SecurityGroups WHERE SecGroupID=@SecGroupID",
+                new { SecGroupID = mSecGroupID });
+            await LoadGroups();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting group: {ex.Message}");
+        }
+    }
+
+    private void StartEditGroup(SecurityGroup group)
+    {
+        EditingGroupId = group.SecGroupID;
+        EditingGroupDescription = group.Description;
+    }
+
+    private async Task SaveGroupDescription()
+    {
+        if (EditingGroupId == null) return;
+        try
+        {
+            await db.ExecuteAsync(
+                "UPDATE SecurityGroups SET Description=@Description WHERE SecGroupID=@SecGroupID",
+                new { Description = EditingGroupDescription, SecGroupID = EditingGroupId });
+
+            var group = Groups.FirstOrDefault(g => g.SecGroupID == EditingGroupId);
+            if (group != null) group.Description = EditingGroupDescription;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveGroupDescription error: {ex.Message}");
+        }
+        EditingGroupId = null;
+    }
+
+    private async Task OnGroupEditKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SaveGroupDescription();
+        else if (e.Key == "Escape")
+            EditingGroupId = null;
+    }
+
+    // ── User Operations ──────────────────────────────────────────
+    private async Task OnUserSelected(UserListItem user)
+    {
+        if (await CheckDirty()) return;
+
+        SelectedUser = user;
+        ShowUserPage = true;
+        await LoadUser(user.UserID);
+        Dirty = DirtyState.None;
+    }
+
+    private async Task CreateUser()
+    {
+        if (await CheckDirty()) return;
+
+        ShowUserPage = true;
+        SelectedUser = null;
+        ClearUserForm();
+
+        UserID = "(login id)";
+        OriginalUserID = "";
+        UserFirstName = "New User Name";
+        UserSecGroupID = mSecGroupID;
+        Dirty = DirtyState.User;
+    }
+
+    private async Task DeleteUser()
+    {
+        if (SelectedUser == null) return;
+
+        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to delete this user?"))
+            return;
+
+        try
+        {
+            await db.ExecuteAsync(
+                "DELETE FROM user_manager WHERE user_id=@UserID",
+                new { UserID = SelectedUser.UserID });
+
+            await LoadUsers(mSecGroupID);
+            ShowUserPage = false;
+            SelectedUser = null;
+            ClearUserForm();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
+        }
+    }
+
+    private async Task FindUser()
+    {
+        if (await CheckDirty()) return;
+
+        try
+        {
+            var rows = await db.QueryAsync(@"
+                SELECT u.user_id AS LoginID, u.user_name AS UserName,
+                       g.Description AS SecurityGroup, u.SecGroupID
+                FROM user_manager u
+                JOIN securitygroups g ON u.secgroupid=g.secgroupid
+                ORDER BY u.user_name");
+
+            AllUsersForFind = rows.Select(r => new FindUserItem
+            {
+                UserID = r["LoginID"]?.ToString() ?? "",
+                UserName = r["UserName"]?.ToString() ?? "",
+                SecurityGroup = r["SecurityGroup"]?.ToString() ?? "",
+                SecGroupID = Convert.ToInt64(r["SecGroupID"] ?? 0)
+            }).ToList();
+
+            FindUserSearch = "";
+            ShowFindUserDialog = true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error finding users: {ex.Message}");
+        }
+    }
+
+    private async Task OnFindUserSelect(FindUserItem user)
+    {
+        ShowFindUserDialog = false;
+
+        // Navigate to the user's group
+        var group = Groups.FirstOrDefault(g => g.SecGroupID == user.SecGroupID);
+        if (group == null)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Group not loaded.");
+            return;
+        }
+
+        await OnGroupSelected(group);
+
+        // Select the user
+        var userItem = Users.FirstOrDefault(u => u.UserID.Equals(user.UserID, StringComparison.OrdinalIgnoreCase));
+        if (userItem != null)
+        {
+            await OnUserSelected(userItem);
+        }
+    }
+
+    // ── Save Operations ──────────────────────────────────────────
+    private async Task OnSaveClick()
+    {
+        if (Dirty == DirtyState.Perms) await SaveGroup();
+        if (Dirty == DirtyState.User) await SaveUser();
+    }
+
+    private async Task<bool> SaveUser()
+    {
+        try
+        {
+            var oldId = OriginalUserID;
+            var newId = UserID;
+
+            if (newId.Length > 10)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "User ID is too long. It must be 10 characters or less.");
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(oldId))
+            {
+                // Insert new user
+                oldId = newId;
+                await db.ExecuteAsync(
+                    "INSERT INTO user_manager(user_id, SecGroupID) VALUES(@UserID, @SecGroupID)",
+                    new { UserID = newId, SecGroupID = UserSecGroupID });
+            }
+
+            // Build update SQL
+            var setClauses = new List<string>
+            {
+                "user_id=@NewUserID",
+                "firstname=@FirstName",
+                "lastname=@LastName",
+                "designation=@Designation",
+                "office=@Office",
+                "email=@Email",
+                "crmaccess=@CRMAccess",
+                "pmuser=@PMUser",
+                "SecGroupID=@SecGroupID"
+            };
+
+            if (PasswordChanged)
+            {
+                setClauses.Add("user_Password=@Password");
+            }
+
+            var sql = $"UPDATE user_manager SET {string.Join(", ", setClauses)} WHERE user_id=@OldUserID";
+            await db.ExecuteAsync(sql, new
+            {
+                NewUserID = newId,
+                FirstName = UserFirstName,
+                LastName = UserLastName,
+                Password = UserPassword,
+                Designation = UserDesignation,
+                Office = UserOffice,
+                Email = UserEmail,
+                CRMAccess = UserCRMAccess,
+                PMUser = UserIsPMUser,
+                SecGroupID = UserSecGroupID,
+                OldUserID = oldId
+            });
+
+            // Update contacts
+            await db.ExecuteAsync(@"
+                UPDATE contacts SET
+                    userid=@NewUserID, email=@Email, firstname=@FirstName,
+                    lastname=@LastName, displayname=@DisplayName
+                WHERE userid=@OldUserID AND contacttypeid IN(1,4)",
+                new
+                {
+                    NewUserID = newId, Email = UserEmail, FirstName = UserFirstName,
+                    LastName = UserLastName, DisplayName = $"{UserFirstName} {UserLastName}",
+                    OldUserID = oldId
+                });
+
+            // Update sales persons
+            await db.ExecuteAsync(@"
+                UPDATE tblsales_persons SET
+                    sales_person_id=@NewUserID,
+                    sales_person_name=@DisplayName,
+                    email=@Email
+                WHERE sales_person_id=@OldUserID",
+                new
+                {
+                    NewUserID = newId,
+                    DisplayName = $"{UserFirstName} {UserLastName}",
+                    Email = UserEmail,
+                    OldUserID = oldId
+                });
+
+            // Update project managers
+            var pmSetClauses = new List<string>
+            {
+                "pm=@NewUserID",
+                "pmname=@DisplayName",
+                "email=@Email",
+                "inactive=@Inactive"
+            };
+            if (PasswordChanged)
+                pmSetClauses.Add("password=@Password");
+
+            await db.ExecuteAsync(
+                $"UPDATE tblprojectmanager SET {string.Join(", ", pmSetClauses)} WHERE pm=@OldUserID",
+                new
+                {
+                    NewUserID = newId,
+                    DisplayName = $"{UserFirstName} {UserLastName}",
+                    Email = UserEmail,
+                    Inactive = !UserIsPMUser,
+                    Password = UserPassword,
+                    OldUserID = oldId
+                });
+
+            // Save divisions
+            await db.ExecuteAsync("DELETE FROM divisionusers WHERE userid=@UserID", new { UserID = oldId });
+            foreach (var div in Divisions.Where(d => d.Selected))
+            {
+                await db.ExecuteAsync(
+                    "INSERT INTO divisionusers(divisionid, userid) VALUES(@DivisionID, @UserID)",
+                    new { DivisionID = div.DivisionID, UserID = newId });
+            }
+
+            // Save sales areas
+            await db.ExecuteAsync("DELETE FROM tblsalespersonarea WHERE sales_person_id=@UserID",
+                new { UserID = oldId });
+            foreach (var sc in SalesCommunities.Where(s => s.Selected))
+            {
+                await db.ExecuteAsync(
+                    "INSERT INTO tblsalespersonarea(area, sales_person_id) VALUES(@Area, @UserID)",
+                    new { Area = sc.Area, UserID = newId });
+            }
+
+            // Insert PM/SP records if needed
+            await InsertPMSP();
+
+            Dirty = DirtyState.None;
+            ShowUserPage = false;
+
+            // Reload
+            await LoadUsers(mSecGroupID);
+            await LoadPermissions(mSecGroupID);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("Duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Duplicate found. Make sure user IDs are unique.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving user: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    private async Task SaveGroup()
+    {
+        try
+        {
+            var setClauses = new List<string>
+            {
+                "HomePage=@HomePage",
+                "User_Access=@UserAccess",
+                "MaxPOAmount=@MaxPOAmount",
+                "MaxInvoiceAmount=@MaxInvoiceAmount",
+                "MaxInvoiceOverrideAmount=@MaxInvoiceOverrideAmount",
+                "MaxInvoiceOverRidePercent=@MaxInvoiceOverridePercent",
+                "MaxInvoicePOOverageAmount=@MaxInvoicePOOverageAmount",
+                "MaxInvoicePOOveragePercent=@MaxInvoicePOOveragePercent"
+            };
+
+            // Add all permission checkboxes
+            foreach (var perm in AllPermissions)
+            {
+                setClauses.Add($"[{perm.ColumnName}]=@p_{perm.ColumnName.Replace(" ", "_")}");
+            }
+
+            var setClause = string.Join(", ", setClauses);
+
+            // Build parameters
+            var parameters = new Dictionary<string, object?>
+            {
+                ["HomePage"] = HomePage,
+                ["UserAccess"] = UserAccessType,
+                ["MaxPOAmount"] = ParseDecimal(MaxPOAmount),
+                ["MaxInvoiceAmount"] = ParseDecimal(MaxInvoiceAmount),
+                ["MaxInvoiceOverrideAmount"] = ParseDecimal(MaxInvoiceOverrideAmount),
+                ["MaxInvoiceOverridePercent"] = ParseDecimal(MaxInvoiceOverridePercent),
+                ["MaxInvoicePOOverageAmount"] = ParseDecimal(MaxInvoicePOOverageAmount),
+                ["MaxInvoicePOOveragePercent"] = ParseDecimal(MaxInvoicePOOveragePercent),
+                ["SecGroupID"] = mSecGroupID
+            };
+
+            foreach (var perm in AllPermissions)
+            {
+                parameters[$"p_{perm.ColumnName.Replace(" ", "_")}"] = perm.Value;
+            }
+
+            // Update securitygroups
+            var sql = $"UPDATE SecurityGroups SET {setClause} WHERE SecGroupID=@SecGroupID";
+            await db.ExecuteAsync(sql, parameters);
+
+            // Also update user_manager with same permissions
+            sql = $"UPDATE user_manager SET {setClause} WHERE SecGroupID=@SecGroupID";
+            await db.ExecuteAsync(sql, parameters);
+
+            await InsertPMSP();
+
+            Dirty = DirtyState.None;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving group: {ex.Message}");
+        }
+    }
+
+    private async Task InsertPMSP()
+    {
+        try
+        {
+            // Create warranty user contacts
+            await db.ExecuteAsync(@"
+                INSERT INTO contacts(userid, firstname, lastname, displayname, email, contacttypeid)
+                SELECT u.user_id, u.firstname, u.lastname, u.user_name, u.email, 1
+                FROM user_manager u
+                JOIN securitygroups g ON u.secgroupid=g.secgroupid AND g.launchwarranty=1
+                LEFT OUTER JOIN contacts s ON u.user_id=s.userid AND s.contacttypeid=1
+                WHERE s.userid IS NULL");
+
+            // Create salespersons
+            await db.ExecuteAsync(@"
+                INSERT INTO tblsales_persons(sales_person_id, sales_person_name, email)
+                SELECT u.user_id, u.user_name, u.email
+                FROM user_manager u
+                JOIN securitygroups g ON u.secgroupid=g.secgroupid AND g.user_access IN(4,5)
+                LEFT OUTER JOIN tblsales_persons s ON u.user_id=s.sales_person_id
+                WHERE s.sales_person_id IS NULL");
+
+            await db.ExecuteAsync(@"
+                INSERT INTO contacts(userid, firstname, lastname, displayname, email, contacttypeid)
+                SELECT u.user_id, u.firstname, u.lastname, u.user_name, u.email, 4
+                FROM user_manager u
+                JOIN securitygroups g ON u.secgroupid=g.secgroupid AND g.user_access IN(4,5)
+                LEFT OUTER JOIN contacts s ON u.user_id=s.userid AND s.contacttypeid=4
+                WHERE s.userid IS NULL");
+
+            // Create project managers
+            await db.ExecuteAsync(@"
+                INSERT INTO tblprojectmanager(pm, pmname, email)
+                SELECT u.user_id, u.user_name, u.email
+                FROM user_manager u
+                LEFT OUTER JOIN tblprojectmanager p ON u.user_id=p.pm
+                WHERE u.PMUser=1 AND p.pm IS NULL");
+
+            await db.ExecuteAsync(@"
+                INSERT INTO contacts(userid, firstname, lastname, displayname, email, contacttypeid)
+                SELECT u.user_id, u.firstname, u.lastname, u.user_name, u.email, 5
+                FROM user_manager u
+                LEFT OUTER JOIN contacts s ON u.user_id=s.userid AND s.contacttypeid=5
+                WHERE u.pmuser=1 AND s.userid IS NULL");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"InsertPMSP error: {ex.Message}");
+        }
+    }
+
+    // ── Dirty Check ──────────────────────────────────────────────
+    private async Task<bool> CheckDirty()
+    {
+        if (Dirty == DirtyState.None) return false;
+
+        var result = await JSRuntime.InvokeAsync<string>("prompt",
+            "Do you want to save your changes? (yes/no/cancel)");
+
+        if (result == null || result.Equals("cancel", StringComparison.OrdinalIgnoreCase))
+            return true; // Cancel navigation
+
+        if (result.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Dirty == DirtyState.Perms) await SaveGroup();
+            if (Dirty == DirtyState.User) await SaveUser();
+        }
+        else
+        {
+            Dirty = DirtyState.None;
+        }
+
+        return Dirty != DirtyState.None;
+    }
+
+    // ── Field Change Handlers ────────────────────────────────────
+    private void OnUserFieldChanged() => Dirty = DirtyState.User;
+    private void OnPermFieldChanged() => Dirty = DirtyState.Perms;
+
+    private void OnPasswordFocus()
+    {
+        if (!PasswordChanged)
+        {
+            UserPassword = "";
+            PasswordChanged = true;
+            Dirty = DirtyState.User;
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────
+    private async Task<long> GetCRMSeats()
+    {
+        try
+        {
+            // Placeholder - would come from licensing system
+            return 10;
+        }
+        catch { return 0; }
+    }
+
+    private async Task<long> GetCRMSeatsUsed()
+    {
+        try
+        {
+            var result = await db.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM user_manager WHERE CRMAccess=1");
+            return result;
+        }
+        catch { return 0; }
+    }
+
+    private string FormatDecimal(object? val)
+    {
+        if (val == null || val == DBNull.Value) return "0.00";
+        return Convert.ToDecimal(val).ToString("0.00");
+    }
+
+    private decimal ParseDecimal(string? val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return 0;
+        return decimal.TryParse(val, out var result) ? result : 0;
+    }
+}
+```

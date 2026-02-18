@@ -1,0 +1,396 @@
+@using HomeFront.Data
+@inject IJSRuntime JSRuntime
+
+<HfDialog Visible="@Visible"
+          Header="@DialogTitle"
+          Width="640px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="HandleCancel">
+    <ChildContent>
+        <div class="faddproperty-form">
+            <div class="form-row">
+                <label>Property Name</label>
+                <HfTextBox @bind-Value="FieldName"
+                           @bind-Value:after="OnFieldNameChanged"
+                           MaxLength="200"
+                           Enabled="@FieldNameEnabled"
+                           CssClass="form-input" />
+            </div>
+
+            <div class="form-row">
+                <label>Category</label>
+                <HfTextBox @bind-Value="Category"
+                           MaxLength="200"
+                           Enabled="@(!IsEdit)"
+                           CssClass="form-input" />
+            </div>
+
+            <div class="form-row">
+                <label>Data Type</label>
+                <div class="radio-group">
+                    <InputRadioGroup @bind-Value="SelectedType" @bind-Value:after="OnTypeChanged">
+                        @foreach (var opt in TypeOptions)
+                        {
+                            <label class="radio-item">
+                                <InputRadio Value="@opt.Value" disabled="@IsTypeDisabled" />
+                                <span>@opt.Label</span>
+                            </label>
+                        }
+                    </InputRadioGroup>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <label>Length</label>
+                <HfNumericTextBox TValue="int"
+                                  Value="@LengthValue"
+                                  ValueChanged="OnLengthChanged"
+                                  Min="1"
+                                  Max="999"
+                                  Step="1"
+                                  Enabled="@LengthEnabled"
+                                  CssClass="length-input" />
+            </div>
+
+            <div class="form-row">
+                <label>Selection List</label>
+                <HfTextBox @bind-Value="PickListText"
+                           Multiline="true"
+                           Rows="6"
+                           Enabled="@PickListEnabled"
+                           CssClass="form-input" />
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn hf-primary" Disabled="@(!OkEnabled)" OnClick="HandleOk">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="HandleCancel">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .faddproperty-form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .form-row label {
+        font-weight: 600;
+        color: #444;
+    }
+
+    .form-input {
+        width: 100%;
+    }
+
+    .length-input {
+        width: 120px;
+    }
+
+    .radio-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 16px;
+    }
+
+    .radio-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+    }
+</style>
+
+@code {
+    private readonly DbWrapperSqlServer _db = new();
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    private enum ModeType { Add, Edit }
+
+    private ModeType Mode { get; set; } = ModeType.Add;
+    private string FieldName { get; set; } = "";
+    private string Category { get; set; } = "";
+    private int LengthValue { get; set; } = 20;
+    private string PickListText { get; set; } = "enter each item on its own line.";
+    private int SelectedType { get; set; } = 4;
+
+    private bool IsEdit => Mode == ModeType.Edit;
+    private bool FieldNameEnabled => !IsEdit;
+    private bool LengthEnabled => !IsEdit && SelectedType == 4;
+    private bool PickListEnabled => SelectedType == 5;
+    private bool OkEnabled => !string.IsNullOrWhiteSpace(FieldName);
+    private string DialogTitle => IsEdit ? "Edit Property" : "New Property";
+    private bool IsTypeDisabled => IsEdit;
+
+    private readonly List<TypeOption> TypeOptions =
+    [
+        new(0, "Numeric (integer)"),
+        new(1, "Numeric (decimal)"),
+        new(2, "Date"),
+        new(3, "Yes/No"),
+        new(4, "Text"),
+        new(5, "Selection List"),
+        new(6, "Currency")
+    ];
+
+    private bool _suppressTypeChange;
+
+    public async Task AddFieldAsync()
+    {
+        Mode = ModeType.Add;
+        ResetFields();
+        await ShowAsync();
+    }
+
+    public async Task EditFieldAsync(string fieldName)
+    {
+        Mode = ModeType.Edit;
+        ResetFields();
+        FieldName = fieldName;
+        await LoadFieldAsync();
+        await ShowAsync();
+    }
+
+    private void ResetFields()
+    {
+        FieldName = "";
+        Category = "";
+        LengthValue = 20;
+        SelectedType = 4;
+        PickListText = "enter each item on its own line.";
+        _suppressTypeChange = false;
+    }
+
+    private async Task ShowAsync()
+    {
+        Visible = true;
+        if (VisibleChanged.HasDelegate)
+            await VisibleChanged.InvokeAsync(true);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleOk()
+    {
+        if (IsEdit)
+        {
+            await SaveEditAsync();
+        }
+        else
+        {
+            await SaveAddAsync();
+        }
+    }
+
+    private async Task HandleCancel()
+    {
+        await CloseAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        Visible = false;
+        if (VisibleChanged.HasDelegate)
+            await VisibleChanged.InvokeAsync(false);
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnFieldNameChanged() => StateHasChanged();
+
+    private void OnTypeChanged()
+    {
+        if (_suppressTypeChange) return;
+        UpdateTypeState();
+    }
+
+    private void UpdateTypeState()
+    {
+        if (SelectedType != 5)
+        {
+            PickListText = "enter each item on its own line.";
+        }
+        else if (string.Equals(PickListText, "enter each item on its own line.", StringComparison.OrdinalIgnoreCase))
+        {
+            PickListText = "";
+        }
+    }
+
+    private Task OnLengthChanged(int value)
+    {
+        LengthValue = value;
+        if (LengthValue < 1) LengthValue = 1;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        try
+        {
+            var list = "";
+            if (SelectedType == 5)
+            {
+                var size = LengthValue;
+                var parts = new List<string>();
+                foreach (var line in SplitLines(PickListText))
+                {
+                    var s = line.Trim();
+                    if (string.IsNullOrEmpty(s)) continue;
+                    if (size > 0 && s.Length > size) s = s[..size];
+                    parts.Add(s);
+                }
+                list = string.Join("|", parts);
+            }
+
+            var sql = "UPDATE JobCustomFieldDefs SET picklist=@PickList, category=@Category WHERE name=@Name";
+            await _db.ExecuteAsync(sql, new { PickList = list, Category, Name = FieldName });
+
+            await CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Unable to update field: {ex.Message}");
+        }
+    }
+    
+    
+
+    private async Task SaveAddAsync()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(FieldName)) return;
+
+            if (string.IsNullOrWhiteSpace(Category))
+            {
+                await ShowErrorAsync("Category is required.");
+                return;
+            }
+
+            if (SelectedType == 4 && LengthValue <= 0)
+            {
+                await ShowErrorAsync("Length must be greater than zero.");
+                return;
+            }
+
+            if (FieldName.Contains("\"", StringComparison.Ordinal))
+            {
+                await ShowErrorAsync("The property name may not contain the quote character (\").");
+                return;
+            }
+
+            if (PickListText.Contains("|", StringComparison.Ordinal))
+            {
+                await ShowErrorAsync("The selection list may not contain the pipe character (|).");
+                return;
+            }
+
+            var list = "";
+            var size = -1;
+            if (SelectedType == 5)
+            {
+                var parts = new List<string>();
+                foreach (var line in SplitLines(PickListText))
+                {
+                    var s = line.Trim();
+                    if (string.IsNullOrEmpty(s)) continue;
+                    size = Math.Max(size, s.Length);
+                    parts.Add(s);
+                }
+                list = string.Join("|", parts);
+            }
+
+            var sqlType = SelectedType switch
+            {
+                0 => "int",
+                1 => "float",
+                2 => "datetime",
+                3 => "bit",
+                4 => $"varchar({LengthValue})",
+                5 => $"varchar({(size == -1 ? 25 : size)})",
+                6 => "money",
+                _ => "varchar(25)"
+            };
+
+            var columnName = SqlIdentifier(FieldName.Trim());
+            await _db.ExecuteAsync($"ALTER TABLE dbo.JobCustomFields ADD {columnName} {sqlType}");
+            await _db.ExecuteAsync($"ALTER TABLE dbo.WorkticketCustomFlds ADD {columnName} {sqlType}");
+            await _db.ExecuteAsync("INSERT INTO JobCustomFieldDefs(Name,Category,PickList) VALUES(@Name,@Category,@PickList)",
+                new { Name = FieldName.Trim(), Category, PickList = list });
+
+            await CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Unable to create field: {ex.Message}");
+        }
+    }
+
+    private async Task LoadFieldAsync()
+    {
+        try
+        {
+            _suppressTypeChange = true;
+            SelectedType = 5;
+            _suppressTypeChange = false;
+
+            var sql = @"
+select d.*, c.max_length Size
+from JobCustomFieldDefs d
+left outer join sys.columns c on c.object_id = object_id('JobCustomFields') and c.name = d.name
+where d.name = @Name";
+            var rows = await _db.QueryAsync(sql, new { Name = FieldName });
+
+            if (!rows.Any()) return;
+
+            var row = rows[0];
+            FieldName = row["name"]?.ToString() ?? FieldName;
+            Category = row["category"]?.ToString() ?? "";
+            LengthValue = TryToInt(row["size"]);
+            if (LengthValue <= 0) LengthValue = 1;
+            PickListText = (row["picklist"]?.ToString() ?? "").Replace("|", Environment.NewLine);
+
+            UpdateTypeState();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync($"Unable to load field: {ex.Message}");
+        }
+    }
+
+    private static IEnumerable<string> SplitLines(string? text)
+    {
+        return (text ?? "")
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+    }
+
+    private static int TryToInt(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        return int.TryParse(value.ToString(), out var result) ? result : 0;
+    }
+
+    private static string SqlIdentifier(string name)
+    {
+        return $"[{name.Replace("]", "]]")}]";
+    }
+
+    private async Task ShowErrorAsync(string message)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", message);
+    }
+
+    private sealed record TypeOption(int Value, string Label);
+}

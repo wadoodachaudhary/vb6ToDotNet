@@ -1,0 +1,833 @@
+```razor
+@page "/export-ar-estimates"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>AR Estimate Posting Wizard</PageTitle>
+
+<style>
+    .wizard-container {
+        max-width: 700px;
+        margin: 0 auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        display: flex;
+        flex-direction: column;
+        min-height: 500px;
+    }
+
+    .wizard-header {
+        background: linear-gradient(to right, #f8f9fa, #e9ecef);
+        border-bottom: 1px solid #dee2e6;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .wizard-header-icon {
+        width: 48px;
+        height: 48px;
+    }
+
+    .wizard-header-text h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .wizard-header-text p {
+        margin: 4px 0 0;
+        font-size: 13px;
+        color: #6c757d;
+    }
+
+    .wizard-body {
+        flex: 1;
+        padding: 24px;
+        min-height: 300px;
+    }
+
+    .wizard-footer {
+        border-top: 1px solid #dee2e6;
+        padding: 12px 24px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        background: #f8f9fa;
+        border-radius: 0 0 8px 8px;
+    }
+
+    .wizard-footer button {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 90px;
+    }
+
+    .wizard-footer button:hover:not(:disabled) {
+        background: #e9ecef;
+    }
+
+    .wizard-footer button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .wizard-footer button.btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .wizard-footer button.btn-primary:hover:not(:disabled) {
+        background: #0b5ed7;
+    }
+
+    .frame-content {
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+    }
+
+    .frame-icon {
+        width: 48px;
+        height: 48px;
+        flex-shrink: 0;
+    }
+
+    .frame-body {
+        flex: 1;
+    }
+
+    .frame-body label {
+        font-size: 13px;
+        color: #495057;
+        display: block;
+        margin-bottom: 12px;
+    }
+
+    .radio-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+    }
+
+    .radio-option input[type="radio"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .data-grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: auto;
+        max-height: 280px;
+    }
+
+    .data-grid-container table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+
+    .data-grid-container th {
+        background: #f0f0f0;
+        border: 1px solid #dee2e6;
+        padding: 6px 8px;
+        text-align: left;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .data-grid-container td {
+        border: 1px solid #dee2e6;
+        padding: 4px 8px;
+    }
+
+    .data-grid-container tr:hover {
+        background: #e8f0fe;
+    }
+
+    .data-grid-container tr.selected {
+        background: #cce5ff;
+    }
+
+    .data-grid-container tr.has-errors td:last-child {
+        color: red;
+    }
+
+    .review-link {
+        color: #0d6efd;
+        text-decoration: underline;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .review-link:hover {
+        color: #0a58ca;
+    }
+
+    .message-label {
+        font-size: 13px;
+        color: #495057;
+        margin-bottom: 12px;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        font-size: 14px;
+        color: #333;
+    }
+</style>
+
+<div class="wizard-container" style="position: relative;">
+    @if (IsLoading)
+    {
+        <div class="loading-overlay">
+            <span>⏳ Loading...</span>
+        </div>
+    }
+
+    @* ── Wizard Header ─────────────────────────────────────── *@
+    <div class="wizard-header">
+        <img src="images/32/accounting.ico" class="wizard-header-icon" alt="Wizard"
+             onerror="this.style.display='none'" />
+        <div class="wizard-header-text">
+            <h3>Post AR Estimates to Accounting</h3>
+            <p>The posting wizard will send AR estimates to accounting</p>
+        </div>
+    </div>
+
+    @* ── Wizard Body ───────────────────────────────────────── *@
+    <div class="wizard-body">
+        @switch (CurrentFrame)
+        {
+            case 0:
+                @* Frame 0: Choose Task *@
+                <div class="frame-content">
+                    <img src="images/32/accounting.ico" class="frame-icon" alt=""
+                         onerror="this.style.display='none'" />
+                    <div class="frame-body">
+                        <label>Choose the task you would like to perform</label>
+                        <div class="radio-option">
+                            <input type="radio" id="chkPostNew" name="taskChoice"
+                                   checked="@IsPostNew"
+                                   @onchange="() => OnTaskChanged(true)" />
+                            <label for="chkPostNew">Post new estimates</label>
+                        </div>
+                        <div class="radio-option">
+                            <input type="radio" id="chkReview" name="taskChoice"
+                                   checked="@(!IsPostNew)"
+                                   @onchange="() => OnTaskChanged(false)" />
+                            <label for="chkReview">Review a previous posting</label>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 1:
+                @* Frame 1: Data Grid *@
+                <div class="frame-content">
+                    <img src="images/32/accounting.ico" class="frame-icon" alt=""
+                         onerror="this.style.display='none'" />
+                    <div class="frame-body">
+                        <label>@ListDescription</label>
+                        <div class="data-grid-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        @if (IsPostNew)
+                                        {
+                                            <th style="width:30px;">
+                                                <input type="checkbox" @bind="SelectAll"
+                                                       @bind:after="OnSelectAllChanged" />
+                                            </th>
+                                            <th>Community</th>
+                                            <th>Phase</th>
+                                            <th>Description</th>
+                                            <th>Job</th>
+                                            <th>Job Description</th>
+                                            <th>Item</th>
+                                            <th>Qty</th>
+                                            <th>Rate</th>
+                                            <th>Amount</th>
+                                            <th>Billing Code</th>
+                                            <th>Billing Category</th>
+                                            <th>Errors</th>
+                                        }
+                                        else
+                                        {
+                                            <th>Batch</th>
+                                            <th>Posted</th>
+                                            <th>Posted By</th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (GridData.Count == 0)
+                                    {
+                                        <tr>
+                                            <td colspan="@(IsPostNew ? 13 : 3)" style="text-align:center; color:#999; padding:20px;">
+                                                No records found.
+                                            </td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var row in GridData)
+                                        {
+                                            var rowClass = row.IsSelected ? "selected" : "";
+                                            var errorClass = !string.IsNullOrEmpty(row.ValidationErrors) ? "has-errors" : "";
+
+                                            <tr class="@rowClass @errorClass" @onclick="() => OnRowClicked(row)">
+                                                @if (IsPostNew)
+                                                {
+                                                    <td>
+                                                        <input type="checkbox" @bind="row.IsSelected"
+                                                               @bind:after="OnSelectionChanged"
+                                                               @onclick:stopPropagation="true" />
+                                                    </td>
+                                                    <td>@row.Community</td>
+                                                    <td>@row.Phase</td>
+                                                    <td>@row.Description</td>
+                                                    <td>@row.Job</td>
+                                                    <td>@row.JobDescription</td>
+                                                    <td>@row.Item</td>
+                                                    <td style="text-align:right;">@row.Qty.ToString("N2")</td>
+                                                    <td style="text-align:right;">@row.Rate.ToString("N2")</td>
+                                                    <td style="text-align:right;">@row.Amount.ToString("N2")</td>
+                                                    <td>@row.BillingCode</td>
+                                                    <td>@row.BillingCategory</td>
+                                                    <td style="color:red;">@row.ValidationErrors</td>
+                                                }
+                                                else
+                                                {
+                                                    <td>@row.Batch</td>
+                                                    <td>@row.Posted</td>
+                                                    <td>@row.PostedBy</td>
+                                                }
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                break;
+
+            case 2:
+                @* Frame 2: Ready / Review *@
+                <div class="frame-content">
+                    <img src="images/32/accounting.ico" class="frame-icon" alt=""
+                         onerror="this.style.display='none'" />
+                    <div class="frame-body">
+                        @if (!IsPostNew)
+                        {
+                            <p class="message-label">The posting wizard is ready to proceed.</p>
+                            <div style="margin-left: 24px;">
+                                <span class="review-link" @onclick="OnOpenPostingSummaryReport">
+                                    Open the posting summary report
+                                </span>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="message-label">The posting wizard is ready to proceed.</p>
+                            <p style="font-size:13px; color:#495057;">
+                                Click <strong>Finish</strong> to post the selected AR estimates to accounting.
+                            </p>
+                        }
+                    </div>
+                </div>
+                break;
+        }
+    </div>
+
+    @* ── Wizard Footer ─────────────────────────────────────── *@
+    <div class="wizard-footer">
+        <button @onclick="OnCancelClick">
+            &amp;Cancel
+        </button>
+        <button disabled="@(CurrentFrame <= 0)" @onclick="OnBackClick">
+            &lt; &amp;Back
+        </button>
+        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">
+            &amp;Next &gt;
+        </button>
+        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">
+            &amp;Finish
+        </button>
+    </div>
+</div>
+
+@code {
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === App State (would come from a shared service in production) ===
+    private int DivisionID = 1;
+    private string LoginID = "admin";
+
+    // === Wizard State ===
+    private int CurrentFrame = 0;
+    private const int MaxFrame = 2;
+    private bool IsPostNew = true;
+    private bool IsLoading = false;
+    private long mBatch = 0;
+    private string WhereClause = "";
+
+    // === Grid Data ===
+    private List<GridRow> GridData = new();
+    private string ListDescription = "";
+    private bool SelectAll = false;
+
+    // === Navigation State ===
+    private bool CanGoNext => CurrentFrame < MaxFrame && IsNextAllowed();
+    private bool CanFinish => CurrentFrame == MaxFrame;
+
+    // === Models ===
+    public class GridRow
+    {
+        // Common
+        public long EstAssemblyID { get; set; }
+        public bool IsSelected { get; set; }
+
+        // Post New columns
+        public string Community { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Job { get; set; } = "";
+        public string JobDescription { get; set; } = "";
+        public string Item { get; set; } = "";
+        public decimal Qty { get; set; }
+        public decimal Rate { get; set; }
+        public decimal Amount { get; set; }
+        public string BillingCode { get; set; } = "";
+        public string BillingCategory { get; set; } = "";
+        public string ValidationErrors { get; set; } = "";
+
+        // Review columns
+        public long Batch { get; set; }
+        public string Posted { get; set; } = "";
+        public string PostedBy { get; set; } = "";
+    }
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        CurrentFrame = 0;
+    }
+
+    // === Navigation ===
+    private bool IsNextAllowed()
+    {
+        switch (CurrentFrame)
+        {
+            case 0:
+                return true;
+            case 1:
+                return SelectionValid();
+            default:
+                return false;
+        }
+    }
+
+    private bool SelectionValid()
+    {
+        if (!IsPostNew)
+        {
+            // For review mode, just need a row selected
+            return GridData.Any(r => r.IsSelected);
+        }
+
+        // For post new, check that selected rows have no validation errors
+        var selectedRows = GridData.Where(r => r.IsSelected).ToList();
+        if (selectedRows.Count == 0) return false;
+        return selectedRows.All(r => string.IsNullOrEmpty(r.ValidationErrors));
+    }
+
+    private async Task OnCancelClick()
+    {
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnBackClick()
+    {
+        if (CurrentFrame > 0)
+        {
+            CurrentFrame--;
+        }
+    }
+
+    private async Task OnNextClick()
+    {
+        if (CurrentFrame < MaxFrame)
+        {
+            CurrentFrame++;
+            await OnFrameChanged();
+        }
+    }
+
+    private async Task OnFinishClick()
+    {
+        if (IsPostNew)
+        {
+            await CreateBatch();
+        }
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnFrameChanged()
+    {
+        switch (CurrentFrame)
+        {
+            case 1:
+                await LoadData();
+                break;
+            case 2:
+                LoadTasks();
+                break;
+        }
+    }
+
+    // === Task Selection ===
+    private void OnTaskChanged(bool postNew)
+    {
+        IsPostNew = postNew;
+        StateHasChanged();
+    }
+
+    // === Load Tasks (Frame 2) ===
+    private void LoadTasks()
+    {
+        if (!IsPostNew)
+        {
+            // Review mode - get selected batch
+            var selectedRow = GridData.FirstOrDefault(r => r.IsSelected);
+            if (selectedRow != null)
+            {
+                mBatch = selectedRow.Batch;
+            }
+        }
+    }
+
+    // === Load Data (Frame 1) ===
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            bool isUSVersion = await GetIsUSVersion();
+            GridData.Clear();
+
+            if (!IsPostNew)
+            {
+                // Review mode - load batches
+                ListDescription = "Select the batch you would like to review.";
+                var sql = @"
+                    SELECT Batch, TStmp AS Posted, UStmp AS PostedBy
+                    FROM Batches
+                    WHERE DivisionID = @DivisionID AND BatchType = 'AR Estimate Posting'
+                    ORDER BY Batch DESC";
+
+                var rows = await db.QueryAsync(sql, new { DivisionID });
+                foreach (var row in rows)
+                {
+                    GridData.Add(new GridRow
+                    {
+                        Batch = Convert.ToInt64(row["Batch"]),
+                        Posted = row["Posted"]?.ToString() ?? "",
+                        PostedBy = row["PostedBy"]?.ToString() ?? ""
+                    });
+                }
+            }
+            else
+            {
+                // Post new mode - load estimates
+                ListDescription = "Select the estimates you would like to post.";
+
+                var sql = @"
+                    SELECT
+                        a.EstAssemblyID,
+                        c.area AS Community,
+                        j.CommunityPhase AS Phase,
+                        c.Description,
+                        j.job_no AS Job,
+                        j.Description AS [Job Description],
+                        a.HFDescription AS Item,
+                        a.SalesQty AS Qty,
+                        a.SalesRate * m.BillingFactor AS Rate,
+                        a.SalesQty * a.SalesRate * m.BillingFactor AS Amount,
+                        cc.description AS BillingCode,
+                        cat.description AS BillingCategory,
+                        CASE WHEN cc.costcode IS NULL THEN 'invalid billing code, ' ELSE '' END
+                        + CASE WHEN cat.category IS NULL THEN 'invalid billing category, ' ELSE '' END"
+                    + (isUSVersion ? "" : @"
+                        + CASE WHEN ISNULL(t.taxgroup,'') = '' THEN 'invalid AR taxgroup, ' ELSE '' END")
+                    + @" AS ValidationErrors
+                    FROM estimateassemblies a
+                    JOIN tbljobs j ON a.job = j.job_no AND a.divisionid = j.divisionid
+                    JOIN tbllocality c ON c.area = j.community
+                    JOIN tblDBAssemblyMaster m ON
+                        m.DivisionID = a.DivisionID AND
+                        m.Community = dbo.Purch_GetAssemblyCommunity(a.Assembly,
+                            CASE WHEN (a.AssemblyType = 3 OR a.AssemblyType = 4) THEN '' ELSE a.Model END,
+                            a.OptionID, j.Community, a.DivisionID) AND
+                        m.Assembly = a.Assembly AND
+                        m.OptionID = a.OptionID AND
+                        m.Model = CASE WHEN a.AssemblyType = 0 OR a.AssemblyType = 2 THEN a.Model ELSE '' END
+                    LEFT OUTER JOIN standardCostcodes cc ON m.divisionid = cc.divisionid AND m.BillingCode = cc.costcode
+                    LEFT OUTER JOIN standardcategories cat ON m.divisionid = cat.divisionid AND m.BillingCategory = cat.category
+                    LEFT OUTER JOIN taxgroups t ON m.divisionid = t.divisionid AND j.artaxgroup = t.taxgroup
+                    WHERE ISNULL(a.AREstimatePostingBatch, 0) = 0
+                        AND a.Divisionid = @DivisionID
+                    ORDER BY c.area, j.communityphase, j.job_no";
+
+                var rows = await db.QueryAsync(sql, new { DivisionID });
+                foreach (var row in rows)
+                {
+                    GridData.Add(new GridRow
+                    {
+                        EstAssemblyID = Convert.ToInt64(row["EstAssemblyID"]),
+                        Community = row["Community"]?.ToString() ?? "",
+                        Phase = row["Phase"]?.ToString() ?? "",
+                        Description = row["Description"]?.ToString() ?? "",
+                        Job = row["Job"]?.ToString() ?? "",
+                        JobDescription = row["Job Description"]?.ToString() ?? "",
+                        Item = row["Item"]?.ToString() ?? "",
+                        Qty = SafeDecimal(row["Qty"]),
+                        Rate = SafeDecimal(row["Rate"]),
+                        Amount = SafeDecimal(row["Amount"]),
+                        BillingCode = row["BillingCode"]?.ToString() ?? "",
+                        BillingCategory = row["BillingCategory"]?.ToString() ?? "",
+                        ValidationErrors = row["ValidationErrors"]?.ToString()?.TrimEnd(',', ' ') ?? ""
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportAREstimates.LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Create Batch ===
+    private async Task CreateBatch()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Create new batch
+            var insertSql = @"
+                INSERT INTO Batches(BatchType, UStmp, TStmp, DivisionID)
+                VALUES('AR Estimate Posting', @LoginID, GETDATE(), @DivisionID)";
+            await db.ExecuteAsync(insertSql, new { LoginID, DivisionID });
+
+            // Get the new batch identity
+            mBatch = await db.ExecuteScalarAsync<long>("SELECT IDENT_CURRENT('Batches')");
+
+            // Build where clause from selected items
+            var selectedIds = GridData
+                .Where(r => r.IsSelected)
+                .Select(r => r.EstAssemblyID.ToString())
+                .ToList();
+
+            if (selectedIds.Count == 0) return;
+
+            WhereClause = $"estassemblyid IN ({string.Join(",", selectedIds)})";
+
+            // Update selected items with batch number
+            var updateSql = $@"
+                UPDATE EstimateAssemblies
+                SET AREstimatePostingBatch = @Batch
+                WHERE ISNULL(AREstimatePostingBatch, 0) = 0 AND {WhereClause}";
+            await db.ExecuteAsync(updateSql, new { Batch = mBatch });
+
+            // Send batch to accounting
+            await SendBatch();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportAREstimates.CreateBatch] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating batch: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Send Batch ===
+    private async Task SendBatch()
+    {
+        // In the VB6 version this dispatched to different accounting systems.
+        // For now we implement the QuickBooks path as a placeholder.
+        await SendBatchToQB();
+    }
+
+    private async Task SendBatchToQB()
+    {
+        try
+        {
+            bool isUSVersion = await GetIsUSVersion();
+
+            // Ensure external job IDs exist
+            var jobCheckSql = $@"
+                SELECT j.ExternalJobID, j.Job_no
+                FROM estimateassemblies a
+                JOIN tbljobs j ON a.job = j.job_no
+                WHERE ISNULL(j.ExternalJobID, '') = '' AND {WhereClause}";
+            var jobRows = await db.QueryAsync(jobCheckSql);
+            foreach (var jobRow in jobRows)
+            {
+                var jobNo = jobRow["Job_no"]?.ToString() ?? "";
+                // In production, this would call HFApp.WriteJobToAccounting(jobNo)
+                Console.WriteLine($"[SendBatchToQB] Would write job {jobNo} to accounting");
+            }
+
+            // Load batch detail data
+            var sql = $@"
+                SELECT
+                    cc.ExternalID AS JCCostCode,
+                    cat.ExternalID AS JCCategory,
+                    a.SalesQty * m.BillingFactor AS Qty,
+                    a.SalesRate AS Rate,
+                    j.ARTaxGroup AS TaxGroup,
+                    a.HFDescription AS ItemDesc,
+                    j.ExternalJobID,
+                    j.job_no,
+                    j.notes
+                FROM estimateassemblies a
+                JOIN tbljobs j ON a.job = j.job_no AND a.divisionid = j.divisionid
+                JOIN tbllocality c ON c.area = j.community
+                JOIN tblDBAssemblyMaster m ON
+                    m.DivisionID = a.DivisionID AND
+                    m.Community = dbo.Purch_GetAssemblyCommunity(a.Assembly,
+                        CASE WHEN (a.AssemblyType = 3 OR a.AssemblyType = 4) THEN '' ELSE a.Model END,
+                        a.OptionID, j.Community, a.DivisionID) AND
+                    m.Assembly = a.Assembly AND
+                    m.OptionID = a.OptionID AND
+                    m.Model = CASE WHEN a.AssemblyType = 0 OR a.AssemblyType = 2 THEN a.Model ELSE '' END
+                LEFT OUTER JOIN standardCostcodes cc ON m.divisionid = cc.divisionid AND m.BillingCode = cc.costcode
+                LEFT OUTER JOIN standardcategories cat ON m.divisionid = cat.divisionid AND m.BillingCategory = cat.category
+                WHERE ISNULL(a.AREstimatePostingBatch, 0) = @Batch
+                ORDER BY j.ExternalJobID, a.HFDescription";
+
+            var rows = await db.QueryAsync(sql, new { Batch = mBatch });
+
+            // In production, this would build XML and submit to QuickBooks.
+            // For now, log the batch details.
+            Console.WriteLine($"[SendBatchToQB] Batch {mBatch}: {rows.Count} line items to post");
+
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"Batch {mBatch} created successfully with {rows.Count} line item(s).");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportAREstimates.SendBatchToQB] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error sending batch: {ex.Message}");
+        }
+    }
+
+    // === Row Selection ===
+    private void OnRowClicked(GridRow row)
+    {
+        if (!IsPostNew)
+        {
+            // Single selection for review mode
+            foreach (var r in GridData)
+                r.IsSelected = false;
+            row.IsSelected = true;
+        }
+        else
+        {
+            row.IsSelected = !row.IsSelected;
+        }
+        OnSelectionChanged();
+    }
+
+    private void OnSelectionChanged()
+    {
+        SelectAll = GridData.Count > 0 && GridData.All(r => r.IsSelected);
+        StateHasChanged();
+    }
+
+    private void OnSelectAllChanged()
+    {
+        foreach (var row in GridData)
+        {
+            row.IsSelected = SelectAll;
+        }
+        StateHasChanged();
+    }
+
+    // === Review Report ===
+    private async Task OnOpenPostingSummaryReport()
+    {
+        // In VB6 this opened a Crystal Report. In Blazor, we'd navigate to a report page or generate a PDF.
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Posting summary report for Batch {mBatch}.\n\n" +
+            "In production, this would open the ExportAREstimateBatch report.");
+    }
+
+    // === Helpers ===
+    private async Task<bool> GetIsUSVersion()
+    {
+        try
+        {
+            var version = await db.ExecuteScalarAsync<string>(
+                "SELECT Value FROM Options WHERE Name = 'AccountingVersion'");
+            return !string.Equals(version, "CA", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+}
+```

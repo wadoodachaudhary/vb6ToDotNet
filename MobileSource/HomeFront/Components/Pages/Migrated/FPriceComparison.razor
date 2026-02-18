@@ -1,0 +1,424 @@
+```razor
+@page "/price-comparison"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Price Comparison - HomeFront</PageTitle>
+
+<style>
+    .price-comparison-container {
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        padding: 10px;
+        max-width: 700px;
+    }
+
+    .header-info {
+        display: grid;
+        grid-template-columns: auto 1fr 80px auto 1fr;
+        gap: 4px 8px;
+        margin-bottom: 12px;
+        align-items: center;
+    }
+
+    .header-info .lbl {
+        text-align: right;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .header-info .val {
+        font-size: 13px;
+        color: #333;
+    }
+
+    .header-info .val-bold {
+        font-size: 13px;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .legend-panel {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px 14px;
+        background: #f8f9fa;
+        margin-top: 12px;
+    }
+
+    .legend-title {
+        font-weight: 700;
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .legend-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px 24px;
+    }
+
+    .legend-section-title {
+        font-weight: 700;
+        font-size: 13px;
+        margin-bottom: 4px;
+    }
+
+    .legend-item {
+        font-size: 12px;
+        padding: 1px 0;
+    }
+
+    .legend-item.alt-vendor {
+        color: #00007f; /* vbHighlight */
+    }
+
+    .legend-item.diff-assembly {
+        color: #808080; /* vbGrayText */
+    }
+
+    .legend-item.best-fit {
+        font-weight: 700;
+    }
+
+    .btn-cancel {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 13px;
+        float: right;
+        margin-top: 12px;
+    }
+
+    .btn-cancel:hover {
+        background: #e8e8e8;
+    }
+
+    /* Grid row styling */
+    .row-bold {
+        font-weight: 700;
+    }
+
+    .row-alt-vendor {
+        color: #00007f;
+    }
+
+    .row-gray {
+        color: #808080;
+    }
+</style>
+
+<div class="price-comparison-container">
+    <h4 style="margin-bottom: 12px;">Price Comparison</h4>
+
+    <!-- Header Info -->
+    <div class="header-info">
+        <span class="lbl">Phase/Item</span>
+        <span class="val">@PhaseItem</span>
+        <span></span>
+        <span class="lbl">Vendor</span>
+        <span class="val-bold">@VendorName</span>
+
+        <span class="lbl">Description</span>
+        <span class="val-bold">@ItemDescription</span>
+        <span></span>
+        <span class="lbl">Community</span>
+        <span class="val-bold">@CommunityDisplay</span>
+
+        <span class="lbl">Estimated Rate</span>
+        <span class="val">@DefaultRate</span>
+        <span></span>
+        <span class="lbl">Assembly</span>
+        <span class="val-bold">@AssemblyDisplay</span>
+    </div>
+
+    <!-- Prices Grid -->
+    <HfGrid @ref="PricesGrid"
+            TValue="PriceRow"
+            DataSource="@PriceData"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            SelectionSettingsRef="@selectionSettings"
+            Height="300px">
+        <HfGridColumnsBase>
+            <HfGridColumn Field="@nameof(PriceRow.RateType)" HeaderText="Rate Type" Width="160px" />
+            <HfGridColumn Field="@nameof(PriceRow.VendorName)" HeaderText="Vendor" Width="180px" />
+            <HfGridColumn Field="@nameof(PriceRow.Cost)" HeaderText="Cost" Format="N10" Width="120px"
+                          TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+            <HfGridColumn Field="@nameof(PriceRow.CommunityDisplay)" HeaderText="Community" Width="180px" />
+            <HfGridColumn Field="@nameof(PriceRow.AssemblyDisplay)" HeaderText="Assembly" Width="200px" />
+        </HfGridColumnsBase>
+    </HfGrid>
+
+    <!-- Legend Panel -->
+    <div class="legend-panel">
+        <div class="legend-grid">
+            <div>
+                <div class="legend-section-title">Rate types and order of retrieval:</div>
+                <div class="legend-item">1 - Phase Quote — Community and phase specific quote for this assembly.</div>
+                <div class="legend-item">2 - Community Quote — Community specific quote for this assembly.</div>
+                <div class="legend-item">3 - Global Quote — Quote for this assembly in any community or phase.</div>
+                <div class="legend-item">4 - Phase Rate — Community and phase specific rate for this item.</div>
+                <div class="legend-item">5 - Community Rate — Community specific rate for this item.</div>
+                <div class="legend-item">6 - Global Rate — Rate for this item in any community or phase.</div>
+                <div class="legend-item">7 - other — Prices for other assemblies.</div>
+            </div>
+            <div>
+                <div class="legend-section-title">Legend:</div>
+                <div class="legend-item best-fit">Best fit for selected vendor and assembly.</div>
+                <div class="legend-item">Other pricing for this vendor and assembly.</div>
+                <div class="legend-item alt-vendor">Pricing for alternate vendor.</div>
+                <div class="legend-item diff-assembly">Pricing for different assembly.</div>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-cancel" @onclick="OnCancelClick">&amp;Cancel</button>
+    <div style="clear:both;"></div>
+</div>
+
+@code {
+    // === Parameters (passed when opening this form) ===
+    [Parameter] public string Vendor { get; set; } = "";
+    [Parameter] public string Community { get; set; } = "";
+    [Parameter] public string CommunityPhase { get; set; } = "";
+    [Parameter] public string Assembly { get; set; } = "";
+    [Parameter] public string Model { get; set; } = "";
+    [Parameter] public string Phase { get; set; } = "";
+    [Parameter] public string Item { get; set; } = "";
+    [Parameter] public string ItemDesc { get; set; } = "";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === Grid ===
+    private HfGrid<PriceRow>? PricesGrid;
+    private List<PriceRow> PriceData = new();
+
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+
+    // === Display Fields ===
+    private string PhaseItem = "";
+    private string ItemDescription = "";
+    private string DefaultRate = "";
+    private string VendorName = "";
+    private string CommunityDisplay = "";
+    private string AssemblyDisplay = "";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    /// <summary>
+    /// Public method to show the form with parameters, mirroring VB6 ShowForm.
+    /// Can be called externally before or after initialization.
+    /// </summary>
+    public async Task ShowForm(string vendor, string community, string communityPhase,
+                                string assembly, string model, string phase, string item, string itemDesc)
+    {
+        Vendor = vendor;
+        Community = community;
+        CommunityPhase = communityPhase;
+        Assembly = assembly;
+        Model = model;
+        Phase = phase;
+        Item = item;
+        ItemDesc = itemDesc;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        try
+        {
+            // === Load header info ===
+            var headerSql = @"
+                SELECT i.Price
+                      ,i.OrderUOM
+                      ,c.Description + ISNULL(' ' + p.Description,'') AS Community
+                      ,' -- ' + a.Description AS AssemblyDesc
+                      ,v.Vendor_Name
+                FROM tblphaseitem i
+                     LEFT OUTER JOIN tblVendors v ON (v.DivisionID = @DivisionID AND v.vendor_id = @Vendor)
+                     LEFT OUTER JOIN tbllocality c ON (c.area = @Community)
+                     LEFT OUTER JOIN communityphase p ON (p.community = @Community AND p.communityphase = @CommunityPhase)
+                     LEFT OUTER JOIN DistinctAssemblies a ON (a.assembly = @Assembly)
+                WHERE i.DivisionID = @DivisionID AND i.Phase = @Phase
+                  AND item = @Item";
+
+            var headerParams = new
+            {
+                DivisionID,
+                Vendor,
+                Community,
+                CommunityPhase,
+                Assembly,
+                Phase,
+                Item
+            };
+
+            var headerRows = await db.QueryAsync(headerSql, headerParams);
+
+            PhaseItem = $"{Phase} / {Item}";
+            ItemDescription = ItemDesc;
+
+            if (headerRows.Any())
+            {
+                var h = headerRows.First();
+                var price = SafeDecimal(h.ContainsKey("Price") ? h["Price"] : null);
+                var uom = h["OrderUOM"]?.ToString() ?? "";
+                DefaultRate = $"{price:$#,##0.00##########} per {uom}";
+                VendorName = h["Vendor_Name"]?.ToString() ?? "";
+                CommunityDisplay = h["Community"]?.ToString() ?? "";
+                var assemblyDesc = h["AssemblyDesc"]?.ToString() ?? "";
+                AssemblyDisplay = Assembly + assemblyDesc;
+            }
+
+            // === Load price comparison grid ===
+            var pricesSql = @"
+                SELECT CASE
+                    WHEN ISNULL(vc.community,'') = @Community AND ISNULL(vc.communityphase,'') = @CommunityPhase AND ISNULL(vc.assembly,'') = @Assembly AND ISNULL(vc.model,'') = @Model THEN '1 - Phase Quote'
+                    WHEN ISNULL(vc.community,'') = @Community AND ISNULL(vc.communityphase,'') = '' AND ISNULL(vc.assembly,'') = @Assembly AND ISNULL(vc.model,'') = @Model THEN '2 - Community Quote'
+                    WHEN ISNULL(vc.community,'') = '' AND ISNULL(vc.communityphase,'') = '' AND ISNULL(vc.assembly,'') = @Assembly AND ISNULL(vc.model,'') = @Assembly THEN '3 - Global Quote'
+                    WHEN ISNULL(vc.community,'') = @Community AND ISNULL(vc.communityphase,'') = @CommunityPhase AND ISNULL(vc.assembly,'') = '' AND ISNULL(vc.model,'') = '' THEN '4 - Phase Rate'
+                    WHEN ISNULL(vc.community,'') = @Community AND ISNULL(vc.communityphase,'') = '' AND ISNULL(vc.assembly,'') = '' AND ISNULL(vc.model,'') = '' THEN '5 - Community Rate'
+                    WHEN ISNULL(vc.community,'') = '' AND ISNULL(vc.communityphase,'') = '' AND ISNULL(vc.assembly,'') = '' AND ISNULL(vc.model,'') = '' THEN '6 - Global Rate'
+                    ELSE '7 - other' END AS RateType
+                      ,vc.Vendor
+                      ,Vendor_Name
+                      ,Current_cost
+                      ,c.Description + ISNULL(' ' + p.Description,'') AS CommunityDisplay
+                      ,vc.assembly + ISNULL(' -- ' + a.Description,'') AS AssemblyDisplay
+                FROM tblvendorcost vc
+                     LEFT OUTER JOIN DistinctAssemblies a ON (a.assembly = vc.assembly)
+                     LEFT OUTER JOIN tblVendors v ON (vc.DivisionID = v.DivisionID AND vc.vendor = v.vendor_id AND v.inactive = 0)
+                     LEFT OUTER JOIN tbllocality c ON (c.area = vc.community)
+                     LEFT OUTER JOIN communityphase p ON (p.community = vc.community AND p.communityphase = vc.communityphase)
+                WHERE vc.phase = @Phase
+                  AND vc.item = @Item
+                  AND (ISNULL(vc.community,'') = @Community OR ISNULL(vc.community,'') = '')
+                  AND (ISNULL(vc.communityphase,'') = @CommunityPhase OR ISNULL(vc.communityphase,'') = '')
+                  AND vc.DivisionID = @DivisionID
+                ORDER BY 1, 2, 3, 4, 5";
+
+            var pricesParams = new
+            {
+                DivisionID,
+                Community,
+                CommunityPhase,
+                Assembly,
+                Model,
+                Phase,
+                Item
+            };
+
+            var pricesRows = await db.QueryAsync(pricesSql, pricesParams);
+
+            PriceData.Clear();
+            bool bestFitFound = false;
+
+            foreach (var r in pricesRows)
+            {
+                var rateType = r["RateType"]?.ToString() ?? "";
+                var vendorId = r["Vendor"]?.ToString() ?? "";
+                var vendorName = r["Vendor_Name"]?.ToString() ?? "";
+                var cost = SafeDecimal(r.ContainsKey("Current_cost") ? r["Current_cost"] : null);
+                var communityDisplay = r["CommunityDisplay"]?.ToString() ?? "";
+                var assemblyDisplay = r["AssemblyDisplay"]?.ToString() ?? "";
+
+                var rowStyle = PriceRowStyle.Normal;
+
+                if (rateType == "7 - other")
+                {
+                    rowStyle = PriceRowStyle.GrayText;
+                }
+                else if (vendorId == Vendor)
+                {
+                    if (!bestFitFound)
+                    {
+                        bestFitFound = true;
+                        rowStyle = PriceRowStyle.BoldBestFit;
+                    }
+                    else
+                    {
+                        rowStyle = PriceRowStyle.Normal;
+                    }
+                }
+                else
+                {
+                    rowStyle = PriceRowStyle.AltVendor;
+                }
+
+                PriceData.Add(new PriceRow
+                {
+                    RateType = rateType,
+                    VendorId = vendorId,
+                    VendorName = vendorName,
+                    Cost = cost,
+                    CommunityDisplay = communityDisplay,
+                    AssemblyDisplay = assemblyDisplay,
+                    Style = rowStyle
+                });
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FPriceComparison.LoadDataAsync] Error: {ex.Message}");
+        }
+    }
+
+    private void OnCancelClick()
+    {
+        NavigationManager.NavigateTo("javascript:history.back()");
+    }
+
+    // === Helpers ===
+    private decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrWhiteSpace(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+
+    // === Models ===
+    public enum PriceRowStyle
+    {
+        Normal,
+        BoldBestFit,
+        AltVendor,
+        GrayText
+    }
+
+    public class PriceRow
+    {
+        public string RateType { get; set; } = "";
+        public string VendorId { get; set; } = "";
+        public string VendorName { get; set; } = "";
+        public decimal Cost { get; set; }
+        public string CommunityDisplay { get; set; } = "";
+        public string AssemblyDisplay { get; set; } = "";
+        public PriceRowStyle Style { get; set; } = PriceRowStyle.Normal;
+    }
+}
+```

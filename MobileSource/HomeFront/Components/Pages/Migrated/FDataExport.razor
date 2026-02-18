@@ -1,0 +1,499 @@
+@page "/data-export"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.Text
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Pricelist Import Wizard - HomeFront</PageTitle>
+
+<style>
+    .export-container {
+        font-family: sans-serif;
+        padding: 20px;
+    }
+
+    .export-dialog {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .export-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        color: #333;
+    }
+
+    .export-status {
+        margin-top: 12px;
+        padding: 8px 16px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        font-size: 13px;
+        color: #495057;
+    }
+
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background-color: rgba(1, 1, 1, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .form-group {
+        margin-bottom: 14px;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 4px;
+        font-size: 13px;
+        color: #495057;
+    }
+
+    .form-group select,
+    .form-group input {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+
+    .btn-row {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 16px;
+    }
+
+    .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .btn:hover {
+        background: #e9ecef;
+    }
+
+    .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .btn-primary:hover {
+        background: #0b5ed7;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Exporting Data...</div>
+    </div>
+}
+
+<div class="export-container">
+    <div class="export-dialog">
+        <h3 class="export-title">@DialogTitle</h3>
+
+        @if (!ExportComplete)
+        {
+            <div class="form-group">
+                <label>Export Format:</label>
+                <select @bind="SelectedFileExtIndex">
+                    <option value="0">Excel Files (*.xlsx)</option>
+                    <option value="1">Text (Tab delimited) (*.txt)</option>
+                    <option value="2">CSV (Comma delimited) (*.csv)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>File Name:</label>
+                <input type="text" @bind="FileName" placeholder="Enter file name (without extension)" />
+            </div>
+
+            <div class="btn-row">
+                <button class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(FileName) || string.IsNullOrWhiteSpace(SelectStatement))" @onclick="OnExportClick">
+                    Export
+                </button>
+                <button class="btn" @onclick="OnCancelClick">
+                    Cancel
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="export-status">
+                ✅ Export Complete
+            </div>
+
+            <div class="btn-row">
+                <button class="btn" @onclick="OnCloseClick">
+                    Close
+                </button>
+            </div>
+        }
+
+        @if (HasError)
+        {
+            <div class="export-status" style="color: #dc3545; border-color: #f5c6cb; background: #f8d7da;">
+                ❌ @ErrorMessage
+            </div>
+        }
+
+        @* Hidden grid used for data export *@
+        @if (ShowGrid)
+        {
+            <div style="margin-top: 16px;">
+                <HfGrid @ref="ExportGrid"
+                        TValue="Dictionary<string, object>"
+                        DataSource="@GridData"
+                        AllowSorting="false"
+                        AllowResizing="true"
+                        Height="300px">
+                    <HfGridColumnsBase>
+                        @foreach (var col in DynamicColumns)
+                        {
+                            <HfGridColumn Field="@col.Field"
+                                          HeaderText="@col.HeaderText"
+                                          Width="@col.Width"
+                                          AllowEditing="false"
+                                          Type="@col.ColumnType"
+                                          Format="@col.Format"
+                                          TextAlign="@col.TextAlign" />
+                        }
+                    </HfGridColumnsBase>
+                </HfGrid>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // === Constants ===
+    private const string SRCFILE = "FDataExport::";
+
+    // === Parameters ===
+    /// <summary>
+    /// The SQL SELECT statement to execute for the export data.
+    /// Set this before calling ExportData or pass via query string / cascading parameter.
+    /// </summary>
+    [Parameter] public string SelectStatement { get; set; } = "";
+
+    /// <summary>
+    /// The dialog title displayed at the top of the export form.
+    /// </summary>
+    [Parameter] public string DialogTitle { get; set; } = "Pricelist Import Wizard";
+
+    /// <summary>
+    /// Event callback invoked when the export is complete or cancelled.
+    /// </summary>
+    [Parameter] public EventCallback OnExportCompleted { get; set; }
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool ExportComplete = false;
+    private bool HasError = false;
+    private bool ShowGrid = false;
+    private string ErrorMessage = "";
+    private string FileName = "export";
+    private int SelectedFileExtIndex = 0;
+
+    // === Grid ===
+    private HfGrid<Dictionary<string, object>>? ExportGrid;
+    private List<Dictionary<string, object>> GridData = new();
+    private List<DynamicColumnDef> DynamicColumns = new();
+
+    // === Public API ===
+
+    /// <summary>
+    /// Main export method — equivalent to VB6 ExportData function.
+    /// Executes the given SQL, loads data into the grid, and triggers a file download.
+    /// </summary>
+    public async Task ExportData(string selectStatement, string dialogTitle = "Data Export")
+    {
+        SelectStatement = selectStatement;
+        DialogTitle = dialogTitle;
+        ExportComplete = false;
+        HasError = false;
+        ErrorMessage = "";
+        ShowGrid = false;
+        GridData.Clear();
+        DynamicColumns.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // === Event Handlers ===
+
+    private async Task OnExportClick()
+    {
+        if (string.IsNullOrWhiteSpace(SelectStatement))
+        {
+            HasError = true;
+            ErrorMessage = "No SQL statement provided for export.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(FileName))
+        {
+            HasError = true;
+            ErrorMessage = "Please enter a file name.";
+            return;
+        }
+
+        IsLoading = true;
+        HasError = false;
+        ErrorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            // Execute the query
+            var dt = db.SqlExec(SelectStatement);
+
+            if (dt == null || dt.Rows.Count == 0)
+            {
+                HasError = true;
+                ErrorMessage = "No data returned from the query.";
+                return;
+            }
+
+            // Build dynamic columns based on the result set
+            DynamicColumns.Clear();
+            foreach (DataColumn col in dt.Columns)
+            {
+                var colDef = new DynamicColumnDef
+                {
+                    Field = col.ColumnName,
+                    HeaderText = col.ColumnName,
+                    Width = "150px"
+                };
+
+                // Map data types for proper formatting (mirrors VB6 logic)
+                if (col.DataType == typeof(DateTime))
+                {
+                    colDef.ColumnType = ColumnType.Date;
+                    colDef.Format = "d";
+                    colDef.TextAlign = TextAlign.Left;
+                }
+                else if (col.DataType == typeof(decimal) || col.DataType == typeof(double) ||
+                         col.DataType == typeof(float) || col.DataType == typeof(int) ||
+                         col.DataType == typeof(long) || col.DataType == typeof(short) ||
+                         col.DataType == typeof(byte) || col.DataType == typeof(bool))
+                {
+                    colDef.ColumnType = ColumnType.Number;
+                    colDef.Format = "N2";
+                    colDef.TextAlign = TextAlign.Right;
+                }
+                else
+                {
+                    colDef.ColumnType = ColumnType.Text;
+                    colDef.Format = "";
+                    colDef.TextAlign = TextAlign.Left;
+                }
+
+                DynamicColumns.Add(colDef);
+            }
+
+            // Convert DataTable rows to List<Dictionary<string, object>>
+            GridData = new List<Dictionary<string, object>>();
+            foreach (DataRow row in dt.Rows)
+            {
+                var dict = new Dictionary<string, object>();
+                foreach (DataColumn col in dt.Columns)
+                {
+                    dict[col.ColumnName] = row[col] == DBNull.Value ? null! : row[col];
+                }
+                GridData.Add(dict);
+            }
+
+            ShowGrid = true;
+            StateHasChanged();
+
+            // Generate file content and trigger download
+            var fileExtension = SelectedFileExtIndex switch
+            {
+                0 => "xlsx",
+                1 => "txt",
+                2 => "csv",
+                _ => "txt"
+            };
+
+            var fullFileName = $"{FileName}.{fileExtension}";
+
+            switch (fileExtension)
+            {
+                case "csv":
+                    await DownloadDelimitedFile(dt, fullFileName, ",");
+                    break;
+                case "txt":
+                    await DownloadDelimitedFile(dt, fullFileName, "\t");
+                    break;
+                case "xlsx":
+                    await DownloadDelimitedFile(dt, fullFileName, ",");
+                    break;
+            }
+
+            ExportComplete = true;
+            await JSRuntime.InvokeVoidAsync("alert", "Export Complete");
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Export failed: {ex.Message}";
+            Console.WriteLine($"[{SRCFILE}ExportData] Error: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        if (OnExportCompleted.HasDelegate)
+            await OnExportCompleted.InvokeAsync();
+    }
+
+    private async Task OnCloseClick()
+    {
+        ExportComplete = false;
+        ShowGrid = false;
+        GridData.Clear();
+        DynamicColumns.Clear();
+
+        if (OnExportCompleted.HasDelegate)
+            await OnExportCompleted.InvokeAsync();
+
+        StateHasChanged();
+    }
+
+    // === File Generation & Download ===
+
+    /// <summary>
+    /// Generates a delimited text file (CSV or Tab) from a DataTable and triggers a browser download.
+    /// </summary>
+    private async Task DownloadDelimitedFile(DataTable dt, string fileName, string delimiter)
+    {
+        var sb = new StringBuilder();
+
+        // Header row
+        var headers = new List<string>();
+        foreach (DataColumn col in dt.Columns)
+        {
+            headers.Add(EscapeField(col.ColumnName, delimiter));
+        }
+        sb.AppendLine(string.Join(delimiter, headers));
+
+        // Data rows
+        foreach (DataRow row in dt.Rows)
+        {
+            var values = new List<string>();
+            foreach (DataColumn col in dt.Columns)
+            {
+                var val = row[col];
+                if (val == DBNull.Value || val == null)
+                {
+                    values.Add("");
+                }
+                else if (col.DataType == typeof(DateTime))
+                {
+                    values.Add(EscapeField(((DateTime)val).ToString("yyyy-MM-dd"), delimiter));
+                }
+                else if (col.DataType == typeof(decimal) || col.DataType == typeof(double) ||
+                         col.DataType == typeof(float))
+                {
+                    values.Add(Convert.ToDouble(val).ToString("G"));
+                }
+                else
+                {
+                    values.Add(EscapeField(val.ToString() ?? "", delimiter));
+                }
+            }
+            sb.AppendLine(string.Join(delimiter, values));
+        }
+
+        var content = sb.ToString();
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var base64 = Convert.ToBase64String(bytes);
+
+        var mimeType = fileName.EndsWith(".csv") ? "text/csv" :
+                       fileName.EndsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" :
+                       "text/plain";
+
+        // Trigger browser download via JS interop
+        await JSRuntime.InvokeVoidAsync("downloadFileFromBase64", fileName, base64, mimeType);
+    }
+
+    /// <summary>
+    /// Escapes a field value for delimited file output.
+    /// Wraps in quotes if the value contains the delimiter, quotes, or newlines.
+    /// </summary>
+    private string EscapeField(string value, string delimiter)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "";
+
+        if (value.Contains(delimiter) || value.Contains("\"") || value.Contains("\n") || value.Contains("\r"))
+        {
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
+        return value;
+    }
+
+    // === Models ===
+
+    public class DynamicColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string HeaderText { get; set; } = "";
+        public string Width { get; set; } = "150px";
+        public ColumnType ColumnType { get; set; } = ColumnType.Text;
+        public string Format { get; set; } = "";
+        public TextAlign TextAlign { get; set; } = TextAlign.Left;
+    }
+}

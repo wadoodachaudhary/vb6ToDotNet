@@ -1,0 +1,1228 @@
+```razor
+@page "/documents"
+@page "/documents/{ObjectId}/{ObjectDescription}"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.IO
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Documents - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .tbar-btn:hover:not(:disabled) { background: #e8e8e8; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tbar-icon { width: 24px; height: 24px; margin-bottom: 4px; }
+    .tool-label { font-size: 12px; display: block; text-align: center; }
+    .toolbar-sep { width: 1px; height: 28px; background: #dee2e6; margin: 0 4px; }
+
+    .documents-container {
+        height: calc(100vh - 120px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .tree-container {
+        flex: 1;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+    /* Tree styling */
+    .doc-tree ul { list-style: none; padding-left: 18px; margin: 0; }
+    .doc-tree > ul { padding-left: 0; }
+    .doc-tree li { padding: 2px 0; }
+
+    .doc-tree .tree-node {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        padding: 3px 8px;
+        border-radius: 3px;
+        font-size: 13px;
+        user-select: none;
+    }
+
+    .doc-tree .tree-node:hover { background-color: #e8f0fe; }
+    .doc-tree .tree-node.selected { background-color: #cce5ff; font-weight: 600; }
+
+    .doc-tree .tree-toggle {
+        width: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #666;
+        cursor: pointer;
+    }
+
+    .doc-tree .node-icon { width: 16px; height: 16px; margin-right: 4px; }
+
+    .node-root { font-weight: bold; color: #333; }
+    .node-folder { font-weight: 600; color: #555; }
+    .node-class { font-weight: 600; color: #0d6efd; }
+    .node-document { color: #333; }
+    .node-revision { color: #6c757d; font-size: 12px; }
+
+    .scanner-combo {
+        padding: 4px 8px;
+        border: 1px solid #c9c9c9;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #fff;
+        min-width: 200px;
+    }
+
+    /* Context menu */
+    .context-menu-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
+    }
+
+    .context-menu {
+        position: fixed;
+        z-index: 1000;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        min-width: 180px;
+        padding: 4px 0;
+    }
+
+    .context-menu button {
+        display: block;
+        width: 100%;
+        padding: 6px 16px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        text-align: left;
+    }
+
+    .context-menu button:hover { background: #f0f0f0; }
+    .context-menu hr { margin: 4px 0; border: none; border-top: 1px solid #dee2e6; }
+
+    /* Drop zone */
+    .drop-zone {
+        border: 2px dashed #dee2e6;
+        border-radius: 4px;
+        padding: 20px;
+        text-align: center;
+        color: #6c757d;
+        margin-top: 8px;
+        transition: all 0.2s;
+    }
+
+    .drop-zone.drag-over {
+        border-color: #0d6efd;
+        background: #e8f0fe;
+        color: #0d6efd;
+    }
+
+    /* Dialog */
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 400px; max-width: 600px;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; }
+
+    .dialog-body textarea {
+        width: 100%; padding: 8px 10px; border: 1px solid #ced4da;
+        border-radius: 4px; font-size: 14px; box-sizing: border-box;
+    }
+
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Documents...</div>
+    </div>
+}
+
+<div class="documents-container">
+    <!-- Toolbar -->
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" @onclick="OnOpenClick" disabled="@(!HasSelectedFileNode)">
+            <img src="images/32/open.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Open</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnPrintClick" disabled="@(!HasSelectedFileNode)">
+            <img src="images/32/print.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Print</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnSaveAsClick" disabled="@(!HasSelectedFileNode)">
+            <img src="images/32/save.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Save As</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnDeleteClick" disabled="@(!HasSelectedFileNode)">
+            <img src="images/32/delete.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Remove</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnFindClick">
+            <img src="images/32/find.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Find</span>
+        </button>
+
+        <div class="toolbar-sep"></div>
+
+        <select class="scanner-combo" @bind="SelectedScanner">
+            <option value="">Select Scanner...</option>
+            @foreach (var scanner in ScannerList)
+            {
+                <option value="@scanner">@scanner</option>
+            }
+        </select>
+    </div>
+
+    <!-- Document Tree -->
+    <div class="tree-container"
+         @ondragover="OnDragOver"
+         @ondragover:preventDefault="true"
+         @ondrop="OnDrop"
+         @ondrop:preventDefault="true">
+        <div class="doc-tree">
+            <ul>
+                @foreach (var node in TreeNodes)
+                {
+                    @RenderTreeNode(node)
+                }
+            </ul>
+        </div>
+    </div>
+</div>
+
+@* Context Menu for Document Class *@
+@if (ShowDocClassMenu)
+{
+    <div class="context-menu-overlay" @onclick="CloseContextMenu"></div>
+    <div class="context-menu" style="left: @(ContextMenuX)px; top: @(ContextMenuY)px;">
+        <button @onclick="OnAddFileClick">📎 Add File...</button>
+        <button @onclick="OnScanFileClick">📷 Scan File...</button>
+    </div>
+}
+
+@* Context Menu for Document/Revision *@
+@if (ShowRevisionMenu)
+{
+    <div class="context-menu-overlay" @onclick="CloseContextMenu"></div>
+    <div class="context-menu" style="left: @(ContextMenuX)px; top: @(ContextMenuY)px;">
+        <button @onclick="OnOpenClick">📂 Open</button>
+        <button @onclick="OnPrintClick">🖨️ Print</button>
+        <button @onclick="OnSaveAsClick">💾 Save As...</button>
+        <button @onclick="OnDeleteClick">🗑️ Remove</button>
+        <hr />
+        <button @onclick="OnAddRevisionClick">📄 Add Revision...</button>
+    </div>
+}
+
+@* Notes Edit Dialog *@
+@if (IsNotesDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="OnNotesDialogCancel">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Edit Notes</span>
+                <button @onclick="OnNotesDialogCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <textarea @bind="EditingNotes" rows="8" placeholder="Enter notes..."></textarea>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnNotesDialogOk">OK</button>
+                <button class="btn" @onclick="OnNotesDialogCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* File Upload Dialog *@
+@if (IsFileUploadDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsFileUploadDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>@FileUploadDialogTitle</span>
+                <button @onclick="() => IsFileUploadDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <p>Select a file to attach:</p>
+                <InputFile OnChange="OnFileSelected" />
+                @if (!string.IsNullOrEmpty(SelectedFileName))
+                {
+                    <p style="margin-top: 8px; color: #198754;">Selected: @SelectedFileName</p>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnFileUploadConfirm" disabled="@(string.IsNullOrEmpty(SelectedFileName))">Attach</button>
+                <button class="btn" @onclick="() => IsFileUploadDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Find Dialog *@
+@if (IsFindDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsFindDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Find Document</span>
+                <button @onclick="() => IsFindDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: 500; margin-bottom: 4px;">Search:</label>
+                    <input type="text" @bind="FindSearchText" @bind:event="oninput"
+                           placeholder="Type to search..."
+                           style="width: 100%; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px;" />
+                </div>
+                @if (FindResults.Any())
+                {
+                    <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
+                        @foreach (var result in FindResults)
+                        {
+                            <div style="padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
+                                 @onclick="() => OnFindResultSelected(result)">
+                                <strong>@result.Name</strong>
+                                <span style="color: #6c757d; font-size: 12px; margin-left: 8px;">@result.DocumentClass</span>
+                            </div>
+                        }
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(FindSearchText))
+                {
+                    <p style="color: #6c757d;">No results found.</p>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn" @onclick="() => IsFindDialogVisible = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Route Parameters ===
+    [Parameter] public string? ObjectId { get; set; }
+    [Parameter] public string? ObjectDescription { get; set; }
+
+    // === Constants ===
+    private const string SRCFILE = "FDocuments::";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private string SelectedScanner = "";
+    private List<string> ScannerList = new();
+
+    // === Tree Data ===
+    private List<DocumentTreeNode> TreeNodes = new();
+    private DocumentTreeNode? SelectedNode;
+
+    // === Context Menu ===
+    private bool ShowDocClassMenu = false;
+    private bool ShowRevisionMenu = false;
+    private double ContextMenuX = 0;
+    private double ContextMenuY = 0;
+
+    // === Notes Dialog ===
+    private bool IsNotesDialogVisible = false;
+    private string EditingNotes = "";
+    private DocumentTreeNode? EditingNotesNode;
+
+    // === File Upload Dialog ===
+    private bool IsFileUploadDialogVisible = false;
+    private string FileUploadDialogTitle = "Attach File";
+    private string SelectedFileName = "";
+    private string SelectedFilePath = "";
+    private bool IsAddingRevision = false;
+
+    // === Find Dialog ===
+    private bool IsFindDialogVisible = false;
+    private string FindSearchText = "";
+    private List<DocumentTreeNode> FindResults => string.IsNullOrWhiteSpace(FindSearchText)
+        ? new()
+        : GetAllDocumentNodes()
+            .Where(n => (n.Name ?? "").Contains(FindSearchText, StringComparison.OrdinalIgnoreCase)
+                     || (n.FileName ?? "").Contains(FindSearchText, StringComparison.OrdinalIgnoreCase)
+                     || (n.Notes ?? "").Contains(FindSearchText, StringComparison.OrdinalIgnoreCase))
+            .Take(50)
+            .ToList();
+
+    // === Computed Properties ===
+    private bool HasSelectedFileNode =>
+        SelectedNode != null && (SelectedNode.RowType == "document" || SelectedNode.RowType == "revision");
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(ObjectId) && !string.IsNullOrEmpty(ObjectDescription))
+        {
+            await LoadData(ObjectId, ObjectDescription);
+        }
+    }
+
+    // === Public Methods ===
+    public async Task ShowForm(string formCaption, params (string ObjectId, string FolderName)[] objectIdsAndFolderNames)
+    {
+        TreeNodes.Clear();
+        foreach (var (objId, folderName) in objectIdsAndFolderNames)
+        {
+            if (!string.IsNullOrWhiteSpace(objId) && !string.IsNullOrWhiteSpace(folderName))
+            {
+                await LoadData(objId, folderName);
+            }
+        }
+        StateHasChanged();
+    }
+
+    // === LoadData ===
+    private async Task LoadData(string objectId, string objectDescription)
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Create root node for objectId
+            var rootNode = new DocumentTreeNode
+            {
+                Name = objectDescription,
+                RowType = "root",
+                ObjectID = objectId,
+                RelativePath = objectId,
+                IsExpanded = true,
+                IsBold = true,
+                IconClass = "🏠"
+            };
+            TreeNodes.Add(rootNode);
+
+            // Load document classes and create folder structure
+            var classSql = "SELECT documentclass FROM dms_documentclasses ORDER BY 1";
+            var classRows = await db.QueryAsync(classSql);
+
+            foreach (var classRow in classRows)
+            {
+                var documentClass = classRow["documentclass"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(documentClass)) continue;
+
+                var pathSegments = documentClass.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                var currentParent = rootNode;
+                var relativePath = objectId;
+
+                for (int i = 0; i < pathSegments.Length; i++)
+                {
+                    var folder = pathSegments[i];
+                    if (string.IsNullOrEmpty(folder)) continue;
+
+                    relativePath = relativePath + "\\" + folder;
+
+                    // Check if this folder already exists under currentParent
+                    var existingNode = currentParent.Children.FirstOrDefault(c => c.RelativePath == relativePath);
+                    if (existingNode == null)
+                    {
+                        var isLeaf = (i == pathSegments.Length - 1);
+                        existingNode = new DocumentTreeNode
+                        {
+                            Name = folder,
+                            RowType = isLeaf ? "class" : "folder",
+                            ObjectID = objectId,
+                            RelativePath = relativePath,
+                            DocumentClass = isLeaf ? documentClass : "",
+                            IsBold = true,
+                            IconClass = "📁",
+                            IsExpanded = false
+                        };
+                        currentParent.Children.Add(existingNode);
+                    }
+
+                    if (i == pathSegments.Length - 1)
+                    {
+                        existingNode.DocumentClass = documentClass;
+                        existingNode.RowType = "class";
+                    }
+
+                    currentParent = existingNode;
+                }
+            }
+
+            // Load documents and revisions
+            var docSql = @"
+                SELECT d.DocumentClass, d.DocumentID, d.Name, r.Revision, d.ObjectID,
+                       r.CreatedDate, r.CreatedBy, r.FileTitle, r.FileName, r.Notes,
+                       r.Embedded, r.AssetID, r.FileExt
+                FROM dms_documents d
+                JOIN dms_revisions r ON d.documentid = r.documentid
+                WHERE d.objectid = @ObjectID
+                ORDER BY d.Name, r.revision DESC";
+
+            var docRows = await db.QueryAsync(docSql, new { ObjectID = objectId });
+
+            string lastDocumentId = "";
+            DocumentTreeNode? lastDocNode = null;
+
+            foreach (var row in docRows)
+            {
+                var documentClass = row["DocumentClass"]?.ToString() ?? "";
+                var documentId = row["DocumentID"]?.ToString() ?? "";
+                var name = row["Name"]?.ToString() ?? "";
+                var revision = row["Revision"]?.ToString() ?? "0";
+                var fileTitle = row["FileTitle"]?.ToString() ?? "";
+                var fileName = row["FileName"]?.ToString() ?? "";
+                var notes = row["Notes"]?.ToString() ?? "";
+                var createdDate = row["CreatedDate"]?.ToString() ?? "";
+                var createdBy = row["CreatedBy"]?.ToString() ?? "";
+                var embedded = row["Embedded"]?.ToString() ?? "";
+                var assetId = row["AssetID"]?.ToString() ?? "";
+                var fileExt = row["FileExt"]?.ToString() ?? "";
+
+                // Find the class node
+                var classPath = objectId + "\\" + documentClass;
+                var classNode = FindNodeByPath(rootNode, classPath);
+                if (classNode == null) continue;
+
+                if (documentId == lastDocumentId && lastDocNode != null)
+                {
+                    // Add as revision under existing document node
+                    var revisionNode = new DocumentTreeNode
+                    {
+                        Name = fileTitle,
+                        RowType = "revision",
+                        ObjectID = objectId,
+                        RelativePath = classPath + "\\" + documentId + "\\" + revision,
+                        DocumentID = documentId,
+                        Revision = revision,
+                        DocumentClass = documentClass,
+                        Notes = notes,
+                        FileName = fileName,
+                        FileTitle = fileTitle,
+                        CreatedDate = createdDate,
+                        CreatedBy = createdBy,
+                        Embedded = embedded,
+                        AssetID = assetId,
+                        FileExt = fileExt,
+                        IconClass = GetFileIcon(fileExt),
+                        IsExpanded = false
+                    };
+                    lastDocNode.Children.Add(revisionNode);
+                }
+                else
+                {
+                    // Add as new document node
+                    var docNode = new DocumentTreeNode
+                    {
+                        Name = name,
+                        RowType = "document",
+                        ObjectID = objectId,
+                        RelativePath = classPath + "\\" + documentId,
+                        DocumentID = documentId,
+                        Revision = revision,
+                        DocumentClass = documentClass,
+                        Notes = notes,
+                        FileName = fileName,
+                        FileTitle = fileTitle,
+                        CreatedDate = createdDate,
+                        CreatedBy = createdBy,
+                        Embedded = embedded,
+                        AssetID = assetId,
+                        FileExt = fileExt,
+                        IconClass = GetFileIcon(fileExt),
+                        IsExpanded = false
+                    };
+                    classNode.Children.Add(docNode);
+
+                    lastDocumentId = documentId;
+                    lastDocNode = docNode;
+                }
+
+                // Mark parent folders as having content
+                if (classNode.IconClass == "📁")
+                    classNode.IconClass = "📂";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading documents: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Tree Rendering ===
+    private RenderFragment RenderTreeNode(DocumentTreeNode node) => __builder =>
+    {
+        <li>
+            <span class="tree-node @(SelectedNode == node ? "selected" : "") @GetNodeCssClass(node)"
+                  @onclick="() => OnNodeClicked(node)"
+                  @onclick:stopPropagation="true"
+                  @oncontextmenu="(e) => OnNodeRightClick(e, node)"
+                  @oncontextmenu:preventDefault="true">
+                @if (node.Children.Any())
+                {
+                    <span class="tree-toggle" @onclick="() => ToggleNode(node)" @onclick:stopPropagation="true">
+                        @(node.IsExpanded ? "▼" : "▶")
+                    </span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+                <span>@node.IconClass</span>
+                <span style="@(node.IsBold ? "font-weight:bold;" : "")">@node.Name</span>
+                @if (!string.IsNullOrEmpty(node.CreatedDate))
+                {
+                    <span style="color: #999; font-size: 11px; margin-left: 8px;">@node.CreatedDate</span>
+                }
+                @if (!string.IsNullOrEmpty(node.CreatedBy))
+                {
+                    <span style="color: #999; font-size: 11px; margin-left: 4px;">(@node.CreatedBy)</span>
+                }
+            </span>
+            @if (node.IsExpanded && node.Children.Any())
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderTreeNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private string GetNodeCssClass(DocumentTreeNode node) => node.RowType switch
+    {
+        "root" => "node-root",
+        "folder" => "node-folder",
+        "class" => "node-class",
+        "document" => "node-document",
+        "revision" => "node-revision",
+        _ => ""
+    };
+
+    private void ToggleNode(DocumentTreeNode node)
+    {
+        node.IsExpanded = !node.IsExpanded;
+    }
+
+    private void OnNodeClicked(DocumentTreeNode node)
+    {
+        SelectedNode = node;
+        CloseContextMenu();
+    }
+
+    private void OnNodeRightClick(MouseEventArgs e, DocumentTreeNode node)
+    {
+        SelectedNode = node;
+        ContextMenuX = e.ClientX;
+        ContextMenuY = e.ClientY;
+
+        ShowDocClassMenu = false;
+        ShowRevisionMenu = false;
+
+        switch (node.RowType)
+        {
+            case "class":
+                ShowDocClassMenu = true;
+                break;
+            case "document":
+            case "revision":
+                ShowRevisionMenu = true;
+                break;
+        }
+    }
+
+    private void CloseContextMenu()
+    {
+        ShowDocClassMenu = false;
+        ShowRevisionMenu = false;
+    }
+
+    // === Toolbar Actions ===
+    private async Task OnOpenClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null || !HasSelectedFileNode) return;
+        var fileName = SelectedNode.FileName;
+        if (string.IsNullOrEmpty(fileName))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "No file associated with this document.");
+            return;
+        }
+        // In Blazor, we'd typically trigger a file download or open in new tab
+        await JSRuntime.InvokeVoidAsync("alert", $"Open file: {fileName}");
+    }
+
+    private async Task OnPrintClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null || !HasSelectedFileNode) return;
+        await JSRuntime.InvokeVoidAsync("alert", $"Print file: {SelectedNode.FileName}");
+    }
+
+    private async Task OnSaveAsClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null || !HasSelectedFileNode) return;
+        var fileName = SelectedNode.FileName ?? "";
+        await JSRuntime.InvokeVoidAsync("alert", $"Save As: {fileName}\n(File download would be triggered here)");
+    }
+
+    private async Task OnDeleteClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null || !HasSelectedFileNode) return;
+        await DeleteNode(SelectedNode);
+    }
+
+    private async Task OnFindClick()
+    {
+        FindSearchText = "";
+        IsFindDialogVisible = true;
+    }
+
+    private void OnFindResultSelected(DocumentTreeNode result)
+    {
+        // Navigate to and select the found node
+        ExpandPathToNode(result);
+        SelectedNode = result;
+        IsFindDialogVisible = false;
+        StateHasChanged();
+    }
+
+    // === Context Menu Actions ===
+    private void OnAddFileClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null) return;
+        IsAddingRevision = false;
+        FileUploadDialogTitle = "Attach File";
+        SelectedFileName = "";
+        SelectedFilePath = "";
+        IsFileUploadDialogVisible = true;
+    }
+
+    private void OnScanFileClick()
+    {
+        CloseContextMenu();
+        // Scanner functionality would require JS interop with TWAIN
+        JSRuntime.InvokeVoidAsync("alert", "Scanner functionality is not available in the web version.");
+    }
+
+    private void OnAddRevisionClick()
+    {
+        CloseContextMenu();
+        if (SelectedNode == null) return;
+        IsAddingRevision = true;
+        FileUploadDialogTitle = "Add Revision";
+        SelectedFileName = "";
+        SelectedFilePath = "";
+        IsFileUploadDialogVisible = true;
+    }
+
+    // === File Upload ===
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            SelectedFileName = file.Name;
+            // In a real implementation, we'd read the file stream and save it
+        }
+    }
+
+    private async Task OnFileUploadConfirm()
+    {
+        if (string.IsNullOrEmpty(SelectedFileName) || SelectedNode == null)
+            return;
+
+        try
+        {
+            if (IsAddingRevision)
+            {
+                await AddRevision(SelectedNode, SelectedFileName);
+            }
+            else
+            {
+                await AddDocument(SelectedNode, SelectedFileName);
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+
+        IsFileUploadDialogVisible = false;
+        StateHasChanged();
+    }
+
+    // === AddDocument ===
+    private async Task AddDocument(DocumentTreeNode classNode, string fileName)
+    {
+        try
+        {
+            var objectId = classNode.ObjectID;
+            var documentClass = classNode.DocumentClass;
+            var loginId = "CurrentUser"; // Would come from auth service
+
+            var sql = @"EXEC DMS_AddDocument @ObjectID, @FileName, @CreatedBy, @DocumentClass, ''";
+            var result = db.SqlExec(sql, new
+            {
+                ObjectID = objectId,
+                FileName = fileName,
+                CreatedBy = loginId,
+                DocumentClass = documentClass
+            });
+
+            var documentId = result.Rows.Count > 0 ? result.Rows[0][0]?.ToString() ?? "" : "";
+
+            if (string.IsNullOrEmpty(documentId))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Failed to create document.");
+                return;
+            }
+
+            var fileTitle = Path.GetFileName(fileName);
+            var fileExt = Path.GetExtension(fileName).TrimStart('.');
+
+            var docNode = new DocumentTreeNode
+            {
+                Name = fileTitle,
+                RowType = "document",
+                ObjectID = objectId,
+                RelativePath = classNode.RelativePath + "\\" + documentId,
+                DocumentID = documentId,
+                Revision = "0",
+                DocumentClass = documentClass,
+                Notes = "",
+                FileName = fileName,
+                FileTitle = fileTitle,
+                CreatedDate = DateTime.Now.ToString(),
+                CreatedBy = loginId,
+                Embedded = "false",
+                AssetID = "",
+                FileExt = fileExt,
+                IconClass = GetFileIcon(fileExt)
+            };
+
+            classNode.Children.Add(docNode);
+            classNode.IsExpanded = true;
+            SelectedNode = docNode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}AddDocument] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    // === AddRevision ===
+    private async Task AddRevision(DocumentTreeNode docNode, string fileName)
+    {
+        try
+        {
+            var loginId = "CurrentUser";
+
+            var sql = @"EXEC DMS_AddRevision @DocumentID, @FileName, @CreatedBy, ''";
+            var result = db.SqlExec(sql, new
+            {
+                DocumentID = docNode.DocumentID,
+                FileName = fileName,
+                CreatedBy = loginId
+            });
+
+            var revision = result.Rows.Count > 0 ? result.Rows[0][0]?.ToString() ?? "0" : "0";
+
+            var fileTitle = Path.GetFileName(fileName);
+            var fileExt = Path.GetExtension(fileName).TrimStart('.');
+
+            // Convert current document node to show it has revisions
+            // The existing document info becomes a child revision
+            if (docNode.RowType == "document" && !docNode.Children.Any(c => c.RowType == "revision"))
+            {
+                // Move current doc info to a revision child
+                var existingRevNode = new DocumentTreeNode
+                {
+                    Name = docNode.FileTitle ?? docNode.Name,
+                    RowType = "revision",
+                    ObjectID = docNode.ObjectID,
+                    RelativePath = docNode.RelativePath + "\\" + docNode.Revision,
+                    DocumentID = docNode.DocumentID,
+                    Revision = docNode.Revision,
+                    DocumentClass = docNode.DocumentClass,
+                    Notes = docNode.Notes,
+                    FileName = docNode.FileName,
+                    FileTitle = docNode.FileTitle,
+                    CreatedDate = docNode.CreatedDate,
+                    CreatedBy = docNode.CreatedBy,
+                    Embedded = docNode.Embedded,
+                    AssetID = docNode.AssetID,
+                    FileExt = docNode.FileExt,
+                    IconClass = GetFileIcon(docNode.FileExt ?? "")
+                };
+                docNode.Children.Insert(0, existingRevNode);
+            }
+
+            // Add new revision as first child
+            var newRevNode = new DocumentTreeNode
+            {
+                Name = fileTitle,
+                RowType = "revision",
+                ObjectID = docNode.ObjectID,
+                RelativePath = docNode.RelativePath + "\\" + revision,
+                DocumentID = docNode.DocumentID,
+                Revision = revision,
+                DocumentClass = docNode.DocumentClass,
+                Notes = "",
+                FileName = fileName,
+                FileTitle = fileTitle,
+                CreatedDate = DateTime.Now.ToString(),
+                CreatedBy = loginId,
+                Embedded = "false",
+                AssetID = "",
+                FileExt = fileExt,
+                IconClass = GetFileIcon(fileExt)
+            };
+
+            docNode.Children.Insert(0, newRevNode);
+
+            // Update document node with new revision info
+            docNode.Revision = revision;
+            docNode.FileName = fileName;
+            docNode.FileTitle = fileTitle;
+            docNode.FileExt = fileExt;
+            docNode.CreatedDate = DateTime.Now.ToString();
+            docNode.CreatedBy = loginId;
+            docNode.IconClass = GetFileIcon(fileExt);
+            docNode.IsExpanded = true;
+
+            SelectedNode = docNode;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}AddRevision] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    // === Delete ===
+    private async Task DeleteNode(DocumentTreeNode node)
+    {
+        var confirmMsg = node.RowType == "document"
+            ? $"Remove document '{node.Name}' and all its revisions?"
+            : $"Remove revision '{node.Name}'?";
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMsg);
+        if (!confirmed) return;
+
+        try
+        {
+            if (node.RowType == "document")
+            {
+                var sql = @"
+                    DELETE DMS_Documents WHERE DocumentID = @DocumentID;
+                    DELETE DMS_Revisions WHERE DocumentID = @DocumentID;";
+                await db.ExecuteAsync(sql, new { DocumentID = node.DocumentID });
+
+                // Remove from tree
+                RemoveNodeFromTree(node);
+            }
+            else if (node.RowType == "revision")
+            {
+                var sql = "DELETE DMS_Revisions WHERE DocumentID = @DocumentID AND Revision = @Revision";
+                await db.ExecuteAsync(sql, new { DocumentID = node.DocumentID, Revision = node.Revision });
+
+                // Remove from tree
+                RemoveNodeFromTree(node);
+            }
+
+            SelectedNode = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error removing: {ex.Message}");
+        }
+    }
+
+    // === Notes Editing ===
+    private async Task OnEditNotes(DocumentTreeNode node)
+    {
+        EditingNotesNode = node;
+        EditingNotes = node.Notes ?? "";
+        IsNotesDialogVisible = true;
+    }
+
+    private async Task OnNotesDialogOk()
+    {
+        if (EditingNotesNode != null)
+        {
+            EditingNotesNode.Notes = EditingNotes;
+
+            // Save to database
+            try
+            {
+                var sql = "UPDATE dms_revisions SET notes = @Notes WHERE documentid = @DocumentID AND revision = @Revision";
+                await db.ExecuteAsync(sql, new
+                {
+                    Notes = EditingNotes,
+                    DocumentID = EditingNotesNode.DocumentID,
+                    Revision = EditingNotesNode.Revision
+                });
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving notes: {ex.Message}");
+            }
+        }
+        IsNotesDialogVisible = false;
+    }
+
+    private void OnNotesDialogCancel()
+    {
+        IsNotesDialogVisible = false;
+    }
+
+    // === Drag and Drop ===
+    private void OnDragOver(DragEventArgs e)
+    {
+        // Allow drop
+    }
+
+    private async Task OnDrop(DragEventArgs e)
+    {
+        if (SelectedNode == null) return;
+
+        // In Blazor Server, drag-and-drop of files from desktop requires JS interop
+        // This is a placeholder for the VB6 OLEDragDrop functionality
+        if (SelectedNode.RowType == "class")
+        {
+            await JSRuntime.InvokeVoidAsync("alert",
+                "File drag-and-drop from desktop requires additional JS interop setup.\nPlease use the 'Add File' option instead.");
+        }
+        else if (SelectedNode.RowType == "document")
+        {
+            await JSRuntime.InvokeVoidAsync("alert",
+                "File drag-and-drop from desktop requires additional JS interop setup.\nPlease use the 'Add Revision' option instead.");
+        }
+    }
+
+    // === Helper Methods ===
+    private string GetFileIcon(string ext)
+    {
+        if (string.IsNullOrEmpty(ext)) return "📄";
+        return ext.ToLower() switch
+        {
+            "pdf" => "📕",
+            "doc" or "docx" => "📘",
+            "xls" or "xlsx" => "📗",
+            "ppt" or "pptx" => "📙",
+            "jpg" or "jpeg" or "png" or "gif" or "bmp" or "tif" or "tiff" => "🖼️",
+            "txt" or "csv" => "📝",
+            "zip" or "rar" or "7z" => "📦",
+            "dwg" or "dxf" => "📐",
+            "mp4" or "avi" or "mov" => "🎬",
+            "mp3" or "wav" => "🎵",
+            "html" or "htm" => "🌐",
+            "xml" => "📋",
+            _ => "📄"
+        };
+    }
+
+    private DocumentTreeNode? FindNodeByPath(DocumentTreeNode root, string path)
+    {
+        if (root.RelativePath == path) return root;
+        foreach (var child in root.Children)
+        {
+            var found = FindNodeByPath(child, path);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private void RemoveNodeFromTree(DocumentTreeNode nodeToRemove)
+    {
+        foreach (var root in TreeNodes)
+        {
+            if (RemoveNodeFromParent(root, nodeToRemove))
+                return;
+        }
+    }
+
+    private bool RemoveNodeFromParent(DocumentTreeNode parent, DocumentTreeNode nodeToRemove)
+    {
+        if (parent.Children.Remove(nodeToRemove))
+            return true;
+
+        foreach (var child in parent.Children)
+        {
+            if (RemoveNodeFromParent(child, nodeToRemove))
+                return true;
+        }
+        return false;
+    }
+
+    private List<DocumentTreeNode> GetAllDocumentNodes()
+    {
+        var results = new List<DocumentTreeNode>();
+        foreach (var root in TreeNodes)
+        {
+            CollectDocumentNodes(root, results);
+        }
+        return results;
+    }
+
+    private void CollectDocumentNodes(DocumentTreeNode node, List<DocumentTreeNode> results)
+    {
+        if (node.RowType == "document" || node.RowType == "revision")
+        {
+            results.Add(node);
+        }
+        foreach (var child in node.Children)
+        {
+            CollectDocumentNodes(child, results);
+        }
+    }
+
+    private void ExpandPathToNode(DocumentTreeNode targetNode)
+    {
+        foreach (var root in TreeNodes)
+        {
+            if (ExpandPathToNodeRecursive(root, targetNode))
+                return;
+        }
+    }
+
+    private bool ExpandPathToNodeRecursive(DocumentTreeNode current, DocumentTreeNode target)
+    {
+        if (current == target) return true;
+        foreach (var child in current.Children)
+        {
+            if (ExpandPathToNodeRecursive(child, target))
+            {
+                current.IsExpanded = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // === Model ===
+    public class DocumentTreeNode
+    {
+        public string Name { get; set; } = "";
+        public string RowType { get; set; } = ""; // root, folder, class, document, revision
+        public string ObjectID { get; set; } = "";
+        public string RelativePath { get; set; } = "";
+        public string DocumentID { get; set; } = "";
+        public string Revision { get; set; } = "";
+        public string DocumentClass { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string FileTitle { get; set; } = "";
+        public string CreatedDate { get; set; } = "";
+        public string CreatedBy { get; set; } = "";
+        public string Embedded { get; set; } = "";
+        public string AssetID { get; set; } = "";
+        public string? FileExt { get; set; } = "";
+        public string IconClass { get; set; } = "📄";
+        public bool IsBold { get; set; } = false;
+        public bool IsExpanded { get; set; } = false;
+        public List<DocumentTreeNode> Children { get; set; } = new();
+    }
+}
+```

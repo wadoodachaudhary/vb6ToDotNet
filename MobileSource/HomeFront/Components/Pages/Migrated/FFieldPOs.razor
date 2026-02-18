@@ -1,0 +1,497 @@
+@page "/field-po-requests"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Field PO Requests</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 8px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        min-width: 80px;
+    }
+
+    .tbar-btn:hover { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: default; }
+    .tbar-btn.btn-success { border-color: #198754; color: #198754; }
+    .tbar-btn.btn-danger { border-color: #dc3545; color: #dc3545; }
+
+    .toolbar-info {
+        margin-left: auto;
+        font-size: 12px;
+        color: #555;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .fieldpo-body {
+        display: grid;
+        height: calc(100vh - 150px);
+        gap: 6px;
+    }
+
+    .grid-panel {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .slider-panel {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        background: #f1f3f5;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+    }
+
+    .slider-panel input[type=range] { width: 100%; }
+
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255,255,255,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .loading-spinner {
+        padding: 12px 20px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">Loading...</div>
+    </div>
+}
+
+<div class="toolbar-cntr">
+    <button class="tbar-btn btn-success" disabled="@(!HasSelection)" @onclick="ApproveSelected">
+        <span>✔</span>
+        <span class="tool-label">Approve</span>
+    </button>
+    <button class="tbar-btn btn-danger" disabled="@(!HasSelection)" @onclick="DeclineSelected">
+        <span>✖</span>
+        <span class="tool-label">Decline</span>
+    </button>
+    <div class="toolbar-info">
+        <span>@RequestsData.Count request(s)</span>
+        @if (SelectedRequestId > 0)
+        {
+            <span>Selected: @SelectedRequestId</span>
+        }
+    </div>
+</div>
+
+<div class="fieldpo-body" style="@($"grid-template-rows: {SplitPercent}fr 28px {100 - SplitPercent}fr;")">
+    <div class="grid-panel">
+        <HfGrid @ref="RequestsGrid"
+                TValue="RequestRow"
+                DataSource="@RequestsData"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                EnableHover="true"
+                Height="100%"
+                SelectionSettingsRef="@requestSelectionSettings"
+                EventsRef="@requestGridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(RequestRow.RequestID)" HeaderText="Request ID" Width="90px" IsPrimaryKey="true" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(RequestRow.RequestedBy)" HeaderText="Requested By" Width="120px" />
+                <HfGridColumn Field="@nameof(RequestRow.RequestedDate)" HeaderText="Requested Date" Width="120px" Format="d" />
+                <HfGridColumn Field="@nameof(RequestRow.Job)" HeaderText="Job" Width="80px" />
+                <HfGridColumn Field="@nameof(RequestRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
+                <HfGridColumn Field="@nameof(RequestRow.POIndex)" HeaderText="PO Index" Width="90px" />
+                <HfGridColumn Field="@nameof(RequestRow.Vendor)" HeaderText="Vendor" Width="90px" />
+                <HfGridColumn Field="@nameof(RequestRow.VendorDesc)" HeaderText="Vendor Desc" Width="200px" />
+                <HfGridColumn Field="@nameof(RequestRow.RequestDesc)" HeaderText="Request Desc" Width="240px" />
+                <HfGridColumn Field="@nameof(RequestRow.BCVendor)" HeaderText="BC Vendor" Width="90px" />
+                <HfGridColumn Field="@nameof(RequestRow.BCVendorDesc)" HeaderText="BC Vendor Desc" Width="200px" />
+                <HfGridColumn Field="@nameof(RequestRow.Comments)" HeaderText="Comments" Width="240px" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <div class="slider-panel">
+        <input type="range" min="20" max="80" step="1" @bind="SplitPercent" @bind:event="oninput" />
+        <span>@SplitPercent%</span>
+    </div>
+
+    <div class="grid-panel">
+        <HfGrid @ref="DetailsGrid"
+                TValue="DetailRow"
+                DataSource="@DetailsData"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                EnableHover="true"
+                Height="100%"
+                SelectionSettingsRef="@detailSelectionSettings">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(DetailRow.Sequence)" HeaderText="Seq" Width="60px" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.Phase)" HeaderText="Phase" Width="70px" />
+                <HfGridColumn Field="@nameof(DetailRow.Item)" HeaderText="Item" Width="80px" />
+                <HfGridColumn Field="@nameof(DetailRow.Description)" HeaderText="Description" Width="220px" />
+                <HfGridColumn Field="@nameof(DetailRow.Job)" HeaderText="Job" Width="80px" />
+                <HfGridColumn Field="@nameof(DetailRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
+                <HfGridColumn Field="@nameof(DetailRow.JCExtra)" HeaderText="JC Extra" Width="90px" />
+                <HfGridColumn Field="@nameof(DetailRow.JCCostCode)" HeaderText="JC Cost Code" Width="110px" />
+                <HfGridColumn Field="@nameof(DetailRow.JCCostCodeDesc)" HeaderText="Cost Code Desc" Width="180px" />
+                <HfGridColumn Field="@nameof(DetailRow.JCCategory)" HeaderText="JC Category" Width="100px" />
+                <HfGridColumn Field="@nameof(DetailRow.JCCategoryDesc)" HeaderText="Category Desc" Width="180px" />
+                <HfGridColumn Field="@nameof(DetailRow.TaxGroup)" HeaderText="Tax Group" Width="90px" />
+                <HfGridColumn Field="@nameof(DetailRow.Qty)" HeaderText="Qty" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.Rate)" HeaderText="Rate" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.Amount)" HeaderText="Amount" Width="100px" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.JCTax)" HeaderText="JC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.NJCTax)" HeaderText="NJC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(DetailRow.UOM)" HeaderText="UOM" Width="70px" />
+                <HfGridColumn Field="@nameof(DetailRow.TotalAmount)" HeaderText="Total" Width="110px" Format="N2" TextAlign="TextAlign.Right" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+</div>
+
+@code {
+    private readonly DbWrapperSqlServer db = new();
+    private const int DivisionID = 1;
+    private const string LoginId = "SYSTEM";
+    private bool IsLoading;
+    private int SplitPercent = 45;
+
+    private List<RequestRow> RequestsData = new();
+    private List<DetailRow> DetailsData = new();
+
+    private HfGrid<RequestRow>? RequestsGrid;
+    private HfGrid<DetailRow>? DetailsGrid;
+
+    private long SelectedRequestId;
+    private int SelectedRequestCount;
+
+    private bool HasSelection => SelectedRequestCount > 0;
+
+    private HfSelectionSettings requestSelectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+
+    private HfSelectionSettings detailSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+
+    private HfGridEvents<RequestRow> requestGridEvents = new();
+    private HfGridEvents<DetailRow> detailGridEvents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        requestGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<RequestRow>>(this, OnRequestRowSelected);
+        requestGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<RequestRow>>(this, OnRequestRowDeselected);
+        await LoadRequestsAsync();
+    }
+
+    private async Task LoadRequestsAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var sql = @"
+SELECT
+  fpr.RequestID,
+  fpu.USER_NAME RequestedBy,
+  fpr.RequestDate RequestedDate,
+  j.Job_No Job,
+  j.Description JobDesc,
+  fpr.POIndex,
+  fpr.VendorID Vendor,
+  v.Vendor_Name VendorDesc,
+  fpr.Description RequestDesc,
+  fpr.BackChargeVendorID BCVendor,
+  bc.Vendor_Name BCVendorDesc,
+  fpr.BackChargeComments Comments
+FROM FieldPORequests fpr
+LEFT OUTER JOIN tblVendors v ON fpr.VendorID = v.Vendor_ID and fpr.DivisionID = v.DivisionID
+LEFT OUTER JOIN tblVendors bc ON fpr.BackChargeVendorID = bc.Vendor_ID and fpr.DivisionID = v.DivisionID
+LEFT OUTER JOIN FieldPOUsers fpu ON fpu.User_ID = fpr.UserID
+LEFT OUTER JOIN tblJobs j ON fpr.Job=j.Job_No and fpr.DivisionID = j.DivisionID
+WHERE fpr.Status=0
+  AND fpr.DivisionID = @DivisionID
+ORDER BY fpr.RequestID";
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+
+            RequestsData = rows.Select(r => new RequestRow
+            {
+                RequestID = AsLong(GetValue(r, "RequestID")),
+                RequestedBy = AsString(GetValue(r, "RequestedBy")),
+                RequestedDate = AsDate(GetValue(r, "RequestedDate")),
+                Job = AsString(GetValue(r, "Job")),
+                JobDesc = AsString(GetValue(r, "JobDesc")),
+                POIndex = AsString(GetValue(r, "POIndex")),
+                Vendor = AsString(GetValue(r, "Vendor")),
+                VendorDesc = AsString(GetValue(r, "VendorDesc")),
+                RequestDesc = AsString(GetValue(r, "RequestDesc")),
+                BCVendor = AsString(GetValue(r, "BCVendor")),
+                BCVendorDesc = AsString(GetValue(r, "BCVendorDesc")),
+                Comments = AsString(GetValue(r, "Comments"))
+            }).ToList();
+
+            if (RequestsData.Count > 0)
+            {
+                SelectedRequestId = RequestsData[0].RequestID;
+                await LoadDetailsAsync(SelectedRequestId);
+            }
+            else
+            {
+                DetailsData = new();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading requests: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadDetailsAsync(long requestId)
+    {
+        if (requestId == 0) { DetailsData = new(); return; }
+
+        try
+        {
+            var sql = @"
+SELECT
+  d.sequence,
+  d.phase,
+  d.item,
+  d.description,
+  d.job,
+  j.Description JobDesc,
+  d.jcextra,
+  d.jccostcode,
+  scc.description jccostcodedesc,
+  d.jccategory,
+  scat.description jccategorydesc,
+  d.taxgroup,
+  round(d.qty,4) Qty,
+  round(d.rate,4) Rate,
+  round(d.amount,2) Amount,
+  round(d.jctax,2) jctax,
+  round(d.njctax,2) njctax,
+  d.orderuom uom,
+  round(d.totalamount,2) totalamount
+FROM FieldPORequests fpr
+LEFT OUTER JOIN tblVendors v ON fpr.VendorID = v.Vendor_ID and fpr.DivisionID = v.DivisionID
+LEFT OUTER JOIN tblVendors bc ON fpr.BackChargeVendorID = bc.Vendor_ID and fpr.DivisionID = v.DivisionID
+LEFT OUTER JOIN FieldPOUsers fpu ON fpu.User_ID = fpr.UserID
+LEFT OUTER JOIN fieldporequestdetails d ON fpr.requestid=d.requestid
+LEFT OUTER JOIN tblJobs j ON d.Job=j.Job_No and fpr.DivisionID = j.DivisionID
+LEFT OUTER JOIN standardcostcodes scc ON d.jccostcode=scc.costcode and fpr.DivisionID = scc.DivisionID
+LEFT OUTER JOIN standardcategories scat ON d.jccategory=scat.category and fpr.DivisionID = scat.DivisionID
+WHERE fpr.RequestID=@RequestID
+  AND fpr.DivisionID = @DivisionID
+ORDER BY d.sequence";
+            var rows = await db.QueryAsync(sql, new { RequestID = requestId, DivisionID });
+
+            DetailsData = rows.Select(r => new DetailRow
+            {
+                Sequence = AsInt(GetValue(r, "sequence")),
+                Phase = AsString(GetValue(r, "phase")),
+                Item = AsString(GetValue(r, "item")),
+                Description = AsString(GetValue(r, "description")),
+                Job = AsString(GetValue(r, "job")),
+                JobDesc = AsString(GetValue(r, "JobDesc")),
+                JCExtra = AsString(GetValue(r, "jcextra")),
+                JCCostCode = AsString(GetValue(r, "jccostcode")),
+                JCCostCodeDesc = AsString(GetValue(r, "jccostcodedesc")),
+                JCCategory = AsString(GetValue(r, "jccategory")),
+                JCCategoryDesc = AsString(GetValue(r, "jccategorydesc")),
+                TaxGroup = AsString(GetValue(r, "taxgroup")),
+                Qty = AsDecimal(GetValue(r, "Qty")),
+                Rate = AsDecimal(GetValue(r, "Rate")),
+                Amount = AsDecimal(GetValue(r, "Amount")),
+                JCTax = AsDecimal(GetValue(r, "jctax")),
+                NJCTax = AsDecimal(GetValue(r, "njctax")),
+                UOM = AsString(GetValue(r, "uom")),
+                TotalAmount = AsDecimal(GetValue(r, "totalamount"))
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading details: {ex.Message}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRequestRowSelected(RowSelectEventArgs<RequestRow> args)
+    {
+        if (args?.Data == null) return;
+        SelectedRequestId = args.Data.RequestID;
+        SelectedRequestCount = RequestsGrid?.GetSelectedRecords()?.Count() ?? 1;
+        await LoadDetailsAsync(SelectedRequestId);
+    }
+
+    private Task OnRequestRowDeselected(RowSelectEventArgs<RequestRow> args)
+    {
+        SelectedRequestCount = RequestsGrid?.GetSelectedRecords()?.Count() ?? 0;
+        if (SelectedRequestCount == 0)
+        {
+            SelectedRequestId = 0;
+            DetailsData = new();
+        }
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task ApproveSelected() => await ProcessSelectionAsync("Approve");
+    private async Task DeclineSelected() => await ProcessSelectionAsync("Decline");
+
+    private async Task ProcessSelectionAsync(string action)
+    {
+        var selected = RequestsGrid?.GetSelectedRecords()?.ToList() ?? new List<RequestRow>();
+        if (selected.Count == 0)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Select one or more requests.");
+            return;
+        }
+
+        if (selected.Count > 1)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"{action} these {selected.Count} requests?");
+            if (!confirm) return;
+        }
+
+        foreach (var row in selected)
+        {
+            if (action == "Approve")
+            {
+                await db.ExecuteAsync("exec FieldPO_ApprovePORequest @RequestID, @ApprovedDate, @LoginID",
+                    new { RequestID = row.RequestID, ApprovedDate = DateTime.Now, LoginID = LoginId });
+            }
+            else
+            {
+                await db.ExecuteAsync("exec FieldPO_DeclinePORequest @RequestID, @DeclinedDate",
+                    new { RequestID = row.RequestID, DeclinedDate = DateTime.Now });
+            }
+            RequestsData.Remove(row);
+        }
+
+        SelectedRequestCount = 0;
+        await InvokeAsync(StateHasChanged);
+
+        if (RequestsData.Count > 0)
+        {
+            SelectedRequestId = RequestsData[0].RequestID;
+            await LoadDetailsAsync(SelectedRequestId);
+        }
+        else
+        {
+            SelectedRequestId = 0;
+            DetailsData = new();
+        }
+
+        if (RequestsGrid != null)
+            await RequestsGrid.Refresh();
+    }
+
+    private static object? GetValue(IDictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var val) ? val : null;
+
+    private static string AsString(object? value) =>
+        value == null || value == DBNull.Value ? "" : value.ToString() ?? "";
+
+    private static long AsLong(object? value) =>
+        value == null || value == DBNull.Value ? 0 : Convert.ToInt64(value);
+
+    private static int AsInt(object? value) =>
+        value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+
+    private static decimal AsDecimal(object? value) =>
+        value == null || value == DBNull.Value ? 0 : Convert.ToDecimal(value);
+
+    private static DateTime? AsDate(object? value) =>
+        value == null || value == DBNull.Value ? null : Convert.ToDateTime(value);
+
+    public class RequestRow
+    {
+        public long RequestID { get; set; }
+        public string RequestedBy { get; set; } = "";
+        public DateTime? RequestedDate { get; set; }
+        public string Job { get; set; } = "";
+        public string JobDesc { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string VendorDesc { get; set; } = "";
+        public string RequestDesc { get; set; } = "";
+        public string BCVendor { get; set; } = "";
+        public string BCVendorDesc { get; set; } = "";
+        public string Comments { get; set; } = "";
+    }
+
+    public class DetailRow
+    {
+        public int Sequence { get; set; }
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Job { get; set; } = "";
+        public string JobDesc { get; set; } = "";
+        public string JCExtra { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
+        public string TaxGroup { get; set; } = "";
+        public decimal Qty { get; set; }
+        public decimal Rate { get; set; }
+        public decimal Amount { get; set; }
+        public decimal JCTax { get; set; }
+        public decimal NJCTax { get; set; }
+        public string UOM { get; set; } = "";
+        public decimal TotalAmount { get; set; }
+    }
+}

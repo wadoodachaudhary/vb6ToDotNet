@@ -1,0 +1,362 @@
+```razor
+@page "/takeoff-settings"
+@page "/takeoff-settings/{Job}"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Takeoff Settings - HomeFront</PageTitle>
+
+<style>
+    .takeoff-settings-container {
+        max-width: 600px;
+        margin: 20px auto;
+        font-family: sans-serif;
+    }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+        margin-bottom: 16px;
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    .button-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 8px 0;
+    }
+
+    .btn-action {
+        padding: 6px 24px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+        min-width: 90px;
+        transition: background 0.15s;
+    }
+
+    .btn-action:hover {
+        background: #e9ecef;
+    }
+
+    .btn-action.primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .btn-action.primary:hover {
+        background: #0b5ed7;
+    }
+</style>
+
+<div class="takeoff-settings-container">
+    <h4 style="margin-bottom: 16px;">Takeoff Settings</h4>
+
+    <div class="grid-container">
+        <HfGrid @ref="SettingsGrid"
+                TValue="TakeoffSettingRow"
+                DataSource="@GridData"
+                AllowSelection="true"
+                AllowResizing="true"
+                EnableHover="true"
+                Height="400px"
+                EditSettingsRef="@editSettings"
+                SelectionSettingsRef="@selectionSettings">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(TakeoffSettingRow.RowIndex)" HeaderText="" Width="1px" Visible="false" IsPrimaryKey="true" />
+                <HfGridColumn Field="@nameof(TakeoffSettingRow.Label)" HeaderText="Setting" Width="200px" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(TakeoffSettingRow.Value)" HeaderText="Value" Width="250px" AllowEditing="true">
+                    <EditTemplate>
+                        @{
+                            var data = (TakeoffSettingRow)context;
+                            var comboItems = GetComboListForRow(data.RowIndex);
+                            if (comboItems != null && comboItems.Count > 0)
+                            {
+                                <select @bind="data.Value" style="width:100%; padding:4px 8px; border:1px solid #ced4da; border-radius:4px;">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var item in comboItems)
+                                    {
+                                        <option value="@item">@item</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <input type="text" @bind="data.Value" maxlength="50"
+                                       style="width:100%; padding:4px 8px; border:1px solid #ced4da; border-radius:4px;" />
+                            }
+                        }
+                    </EditTemplate>
+                </HfGridColumn>
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <div class="button-row">
+        <button class="btn-action primary" @onclick="OnOkClick">OK</button>
+        <button class="btn-action" @onclick="OnCancelClick">Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Job { get; set; }
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // Grid
+    private HfGrid<TakeoffSettingRow>? SettingsGrid;
+    private List<TakeoffSettingRow> GridData = new();
+
+    // Grid settings
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+
+    // State
+    private string mJob = "";
+    private string mSettings = "";
+    private string mResultSettings = "";
+    private bool mCancelled = true;
+    private List<string> WBSDescriptions = new();
+    private Dictionary<int, List<string>> ComboListCache = new();
+
+    // Callback for modal-like behavior
+    [Parameter] public string? InitialSettings { get; set; }
+    [Parameter] public EventCallback<string?> OnSettingsResult { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        mJob = Job ?? "";
+        mSettings = InitialSettings ?? "";
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        GridData.Clear();
+        WBSDescriptions.Clear();
+        ComboListCache.Clear();
+
+        // Load WBS descriptions from tbljobs
+        try
+        {
+            var sql = "SELECT * FROM tbljobs WHERE DivisionID = @DivisionID AND job_no = @Job";
+            var dt = db.SqlExec(sql, new { DivisionID, Job = mJob });
+
+            if (dt.Rows.Count > 0)
+            {
+                var row = dt.Rows[0];
+                for (int i = 1; i <= 40; i++)
+                {
+                    var colName = $"WBSDesc{i:D2}";
+                    var desc = "";
+                    if (dt.Columns.Contains(colName))
+                        desc = row[colName]?.ToString() ?? "";
+                    WBSDescriptions.Add(desc);
+                }
+            }
+            else
+            {
+                for (int i = 1; i <= 40; i++)
+                    WBSDescriptions.Add("");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadDataAsync error loading WBS: {ex.Message}");
+            for (int i = 1; i <= 40; i++)
+                WBSDescriptions.Add("");
+        }
+
+        // Row 1 = Location
+        var locationLabel = "Location";
+        var locationValue = ParseField(mSettings, 1);
+        GridData.Add(new TakeoffSettingRow
+        {
+            RowIndex = 1,
+            Label = locationLabel,
+            Value = locationValue,
+            IsVisible = true
+        });
+
+        // Rows 2-41 = WBS01 through WBS40
+        for (int i = 1; i <= 40; i++)
+        {
+            var wbsDesc = WBSDescriptions[i - 1];
+            var isVisible = !string.IsNullOrWhiteSpace(wbsDesc);
+            var value = ParseField(mSettings, i + 1);
+
+            GridData.Add(new TakeoffSettingRow
+            {
+                RowIndex = i + 1,
+                Label = wbsDesc,
+                Value = value,
+                IsVisible = isVisible
+            });
+        }
+
+        // Filter to only visible rows
+        GridData = GridData.Where(r => r.IsVisible).ToList();
+
+        // Pre-load combo lists
+        await PreloadComboListsAsync();
+    }
+
+    private async Task PreloadComboListsAsync()
+    {
+        try
+        {
+            // Location combo list (row index 1)
+            var locationList = await LoadComboListFromDbAsync("Location");
+            ComboListCache[1] = locationList;
+
+            // WBS combo lists (row index 2-41)
+            for (int i = 1; i <= 40; i++)
+            {
+                var fieldName = $"WBS{i:D2}";
+                var list = await LoadComboListFromDbAsync(fieldName);
+                ComboListCache[i + 1] = list;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"PreloadComboListsAsync error: {ex.Message}");
+        }
+    }
+
+    private async Task<List<string>> LoadComboListFromDbAsync(string fieldName)
+    {
+        var result = new List<string>();
+        try
+        {
+            var sql = $"SELECT DISTINCT [{fieldName}] FROM estimateitems WHERE job = @Job ORDER BY 1";
+            var rows = await db.QueryAsync(sql, new { Job = mJob });
+
+            foreach (var row in rows)
+            {
+                var val = row.Values.FirstOrDefault()?.ToString()?.Trim() ?? "";
+                if (!string.IsNullOrWhiteSpace(val))
+                    result.Add(val);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"GetComboList error for {fieldName}: {ex.Message}");
+        }
+        return result;
+    }
+
+    private List<string> GetComboListForRow(int rowIndex)
+    {
+        if (ComboListCache.TryGetValue(rowIndex, out var list))
+            return list;
+        return new List<string>();
+    }
+
+    private async Task OnOkClick()
+    {
+        SaveData();
+        if (OnSettingsResult.HasDelegate)
+            await OnSettingsResult.InvokeAsync(mResultSettings);
+        else
+            NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnCancelClick()
+    {
+        mCancelled = true;
+        mResultSettings = "";
+        if (OnSettingsResult.HasDelegate)
+            await OnSettingsResult.InvokeAsync(null);
+        else
+            NavigationManager.NavigateTo("/");
+    }
+
+    private void SaveData()
+    {
+        // Rebuild the settings string from all 41 rows (including hidden ones)
+        var allValues = new string[41];
+        for (int i = 0; i < 41; i++)
+            allValues[i] = "";
+
+        foreach (var row in GridData)
+        {
+            if (row.RowIndex >= 1 && row.RowIndex <= 41)
+                allValues[row.RowIndex - 1] = row.Value ?? "";
+        }
+
+        mResultSettings = string.Join("\x01", allValues);
+
+        // If all empty, return empty string
+        var cleaned = mResultSettings.Replace("\x01", "").Trim();
+        if (string.IsNullOrWhiteSpace(cleaned))
+            mResultSettings = "";
+
+        mCancelled = false;
+    }
+
+    /// <summary>
+    /// Parses a Chr(1)-delimited string and returns the field at the given 1-based index.
+    /// Equivalent to VB6: Parse(mSettings, i, Chr(1))
+    /// </summary>
+    private string ParseField(string settings, int index)
+    {
+        if (string.IsNullOrEmpty(settings))
+            return "";
+
+        var parts = settings.Split('\x01');
+        if (index >= 1 && index <= parts.Length)
+            return parts[index - 1];
+
+        return "";
+    }
+
+    // === Public method for programmatic use (mirrors VB6 GetSettings) ===
+    public async Task<string> GetSettingsAsync(string job, string settings)
+    {
+        mJob = job;
+        mSettings = settings;
+        await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
+        // In Blazor, modal behavior is handled differently.
+        // The caller should await OnSettingsResult callback.
+        return mResultSettings;
+    }
+
+    // === Model ===
+    public class TakeoffSettingRow
+    {
+        public int RowIndex { get; set; }
+        public string Label { get; set; } = "";
+        public string Value { get; set; } = "";
+        public bool IsVisible { get; set; } = true;
+    }
+}
+```

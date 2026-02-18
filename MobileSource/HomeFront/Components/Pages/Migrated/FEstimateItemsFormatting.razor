@@ -1,0 +1,414 @@
+```razor
+@page "/estimate-items-formatting"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Collections.Generic
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Formatting Rules - HomeFront</PageTitle>
+
+<style>
+    .formatting-dialog {
+        max-width: 450px;
+        margin: 20px auto;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        background: #fff;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    .formatting-header {
+        padding: 8px 12px;
+        background: #f0f0f0;
+        border-bottom: 1px solid #dee2e6;
+        font-weight: 600;
+        font-size: 14px;
+        border-radius: 6px 6px 0 0;
+    }
+
+    .formatting-body {
+        padding: 10px;
+    }
+
+    .formatting-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .formatting-table th {
+        background: #e9ecef;
+        border: 1px solid #dee2e6;
+        padding: 4px 8px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 12px;
+    }
+
+    .formatting-table td {
+        border: 1px solid #dee2e6;
+        padding: 4px 8px;
+        vertical-align: middle;
+    }
+
+    .formatting-table td.label-cell {
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .formatting-table td.style-cell select {
+        width: 100%;
+        padding: 2px 4px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+
+    .formatting-table td.color-cell {
+        text-align: center;
+        cursor: pointer;
+        min-width: 50px;
+    }
+
+    .color-swatch {
+        display: inline-block;
+        width: 32px;
+        height: 20px;
+        border: 1px solid #999;
+        border-radius: 3px;
+        cursor: pointer;
+        vertical-align: middle;
+    }
+
+    .formatting-footer {
+        padding: 10px 12px;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .formatting-footer button {
+        padding: 5px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .formatting-footer button:hover {
+        background: #e8e8e8;
+    }
+
+    .formatting-footer button.btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .formatting-footer button.btn-primary:hover {
+        background: #0b5ed7;
+    }
+
+    .preview-cell {
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-size: 13px;
+    }
+
+    /* Hidden color input */
+    .hidden-color-input {
+        position: absolute;
+        width: 0;
+        height: 0;
+        opacity: 0;
+        overflow: hidden;
+    }
+</style>
+
+<div class="formatting-dialog">
+    <div class="formatting-header">Formatting Rules</div>
+    <div class="formatting-body">
+        <table class="formatting-table">
+            <thead>
+                <tr>
+                    <th>Rule</th>
+                    <th>Style</th>
+                    <th>Back Color</th>
+                    <th>Fore Color</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < Rules.Count; i++)
+                {
+                    var rule = Rules[i];
+                    var index = i;
+                    <tr>
+                        <td class="label-cell">
+                            <span class="preview-cell"
+                                  style="@GetPreviewStyle(rule)">
+                                @rule.Label
+                            </span>
+                        </td>
+                        <td class="style-cell">
+                            <select value="@rule.FontStyle" @onchange="(e) => OnStyleChanged(index, e)">
+                                <option value="">Normal</option>
+                                <option value="Bold">Bold</option>
+                                <option value="Italic">Italic</option>
+                                <option value="Bold Italic">Bold Italic</option>
+                            </select>
+                        </td>
+                        <td class="color-cell">
+                            <span class="color-swatch"
+                                  style="background-color: @rule.BackColor;"
+                                  @onclick="() => OnColorClick(index, true)"
+                                  title="Click to change background color">
+                            </span>
+                            <input type="color"
+                                   id="@($"backColor_{index}")"
+                                   class="hidden-color-input"
+                                   value="@rule.BackColor"
+                                   @onchange="(e) => OnBackColorChanged(index, e)" />
+                        </td>
+                        <td class="color-cell">
+                            <span class="color-swatch"
+                                  style="background-color: @rule.ForeColor;"
+                                  @onclick="() => OnColorClick(index, false)"
+                                  title="Click to change foreground color">
+                            </span>
+                            <input type="color"
+                                   id="@($"foreColor_{index}")"
+                                   class="hidden-color-input"
+                                   value="@rule.ForeColor"
+                                   @onchange="(e) => OnForeColorChanged(index, e)" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="formatting-footer">
+        <button class="btn-primary" @onclick="OnOkClick">OK</button>
+        <button @onclick="OnCancelClick">Cancel</button>
+    </div>
+</div>
+
+@code {
+    // === Parameters for Bid Rules mode ===
+    [Parameter] public string Mode { get; set; } = "Purchasing"; // "Bid" or "Purchasing"
+
+    // === Callback when dialog is closed with OK ===
+    [Parameter] public EventCallback<List<FormattingRule>> OnAccepted { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+
+    // === Data ===
+    private List<FormattingRule> Rules { get; set; } = new();
+    private bool _initialized = false;
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        if (!_initialized)
+        {
+            if (Mode == "Bid")
+                InitBidRules();
+            else
+                InitPurchasingRules();
+            _initialized = true;
+        }
+    }
+
+    // === Initialize for Bid Rules ===
+    private void InitBidRules()
+    {
+        Rules = new List<FormattingRule>
+        {
+            new() { Label = "Accepted Bid", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Declined Bid", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Minimum Bid", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Maximum Bid", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" }
+        };
+    }
+
+    // === Initialize for Purchasing Rules ===
+    private void InitPurchasingRules()
+    {
+        Rules = new List<FormattingRule>
+        {
+            new() { Label = "Qty/Rate = 0", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Qty/Rate < 0", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Non-System Rate", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" },
+            new() { Label = "Invalid Data", FontStyle = "", BackColor = "#FFFFFF", ForeColor = "#000001" }
+        };
+    }
+
+    /// <summary>
+    /// Public method to show the dialog with Bid Rules, analogous to VB6 ShowBidRules.
+    /// Caller provides initial formatting values; after OK, reads them back from Rules.
+    /// </summary>
+    public void ShowBidRules(
+        string acceptedForeColor, string acceptedBackColor, string acceptedStyle,
+        string declinedForeColor, string declinedBackColor, string declinedStyle,
+        string minForeColor, string minBackColor, string minStyle,
+        string maxForeColor, string maxBackColor, string maxStyle)
+    {
+        Mode = "Bid";
+        Rules = new List<FormattingRule>
+        {
+            new() { Label = "Accepted Bid", FontStyle = acceptedStyle, BackColor = NormalizeColor(acceptedBackColor), ForeColor = NormalizeColor(acceptedForeColor) },
+            new() { Label = "Declined Bid", FontStyle = declinedStyle, BackColor = NormalizeColor(declinedBackColor), ForeColor = NormalizeColor(declinedForeColor) },
+            new() { Label = "Minimum Bid", FontStyle = minStyle, BackColor = NormalizeColor(minBackColor), ForeColor = NormalizeColor(minForeColor) },
+            new() { Label = "Maximum Bid", FontStyle = maxStyle, BackColor = NormalizeColor(maxBackColor), ForeColor = NormalizeColor(maxForeColor) }
+        };
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Public method to show the dialog with Purchasing Rules, analogous to VB6 ShowPurchasingRules.
+    /// </summary>
+    public void ShowPurchasingRules(
+        string qtyRateEqZeroStyle, string qtyRateEqZeroBackColor, string qtyRateEqZeroForeColor,
+        string qtyRateLtZeroStyle, string qtyRateLtZeroBackColor, string qtyRateLtZeroForeColor,
+        string nonSysRateStyle, string nonSysRateBackColor, string nonSysRateForeColor,
+        string invalidDataStyle, string invalidDataBackColor, string invalidDataForeColor)
+    {
+        Mode = "Purchasing";
+        Rules = new List<FormattingRule>
+        {
+            new() { Label = "Qty/Rate = 0", FontStyle = qtyRateEqZeroStyle, BackColor = NormalizeColor(qtyRateEqZeroBackColor), ForeColor = NormalizeColor(qtyRateEqZeroForeColor) },
+            new() { Label = "Qty/Rate < 0", FontStyle = qtyRateLtZeroStyle, BackColor = NormalizeColor(qtyRateLtZeroBackColor), ForeColor = NormalizeColor(qtyRateLtZeroForeColor) },
+            new() { Label = "Non-System Rate", FontStyle = nonSysRateStyle, BackColor = NormalizeColor(nonSysRateBackColor), ForeColor = NormalizeColor(nonSysRateForeColor) },
+            new() { Label = "Invalid Data", FontStyle = invalidDataStyle, BackColor = NormalizeColor(invalidDataBackColor), ForeColor = NormalizeColor(invalidDataForeColor) }
+        };
+        StateHasChanged();
+    }
+
+    // === Event Handlers ===
+    private void OnStyleChanged(int index, ChangeEventArgs e)
+    {
+        Rules[index].FontStyle = e.Value?.ToString() ?? "";
+        StateHasChanged();
+    }
+
+    private async Task OnColorClick(int index, bool isBackColor)
+    {
+        var inputId = isBackColor ? $"backColor_{index}" : $"foreColor_{index}";
+        await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{inputId}').click()");
+    }
+
+    private void OnBackColorChanged(int index, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString() ?? "#FFFFFF";
+        // VB6 workaround: substitute black (0) with almost-black (1)
+        if (color == "#000000") color = "#000001";
+        Rules[index].BackColor = color;
+        StateHasChanged();
+    }
+
+    private void OnForeColorChanged(int index, ChangeEventArgs e)
+    {
+        var color = e.Value?.ToString() ?? "#000001";
+        // VB6 workaround: substitute black (0) with almost-black (1)
+        if (color == "#000000") color = "#000001";
+        Rules[index].ForeColor = color;
+        StateHasChanged();
+    }
+
+    private async Task OnOkClick()
+    {
+        if (OnAccepted.HasDelegate)
+        {
+            await OnAccepted.InvokeAsync(Rules);
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        if (OnCancelled.HasDelegate)
+        {
+            await OnCancelled.InvokeAsync();
+        }
+    }
+
+    // === Preview Style Builder ===
+    private string GetPreviewStyle(FormattingRule rule)
+    {
+        var style = $"color: {rule.ForeColor}; background-color: {rule.BackColor};";
+        if (!string.IsNullOrEmpty(rule.FontStyle))
+        {
+            if (rule.FontStyle.Contains("Bold", StringComparison.OrdinalIgnoreCase))
+                style += " font-weight: bold;";
+            if (rule.FontStyle.Contains("Italic", StringComparison.OrdinalIgnoreCase))
+                style += " font-style: italic;";
+        }
+        return style;
+    }
+
+    // === Helpers ===
+
+    /// <summary>
+    /// Normalizes a color value. Accepts hex (#RRGGBB), VB6 long color, or empty.
+    /// </summary>
+    private string NormalizeColor(string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+            return "#FFFFFF";
+
+        // Already a hex color
+        if (color.StartsWith("#"))
+            return color;
+
+        // Try to parse as VB6 long color (OLE color)
+        if (long.TryParse(color, out var longColor))
+        {
+            return VbColorToHex(longColor);
+        }
+
+        return "#FFFFFF";
+    }
+
+    /// <summary>
+    /// Converts a VB6 OLE color (Long) to an HTML hex color string.
+    /// VB6 stores colors as BGR (Blue-Green-Red) in a Long.
+    /// </summary>
+    private static string VbColorToHex(long vbColor)
+    {
+        if (vbColor <= 0) return "#000001"; // VB6 workaround for black
+        var r = (int)(vbColor & 0xFF);
+        var g = (int)((vbColor >> 8) & 0xFF);
+        var b = (int)((vbColor >> 16) & 0xFF);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
+    /// <summary>
+    /// Converts an HTML hex color string back to a VB6 OLE color (Long).
+    /// </summary>
+    public static long HexToVbColor(string hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith("#") || hex.Length < 7)
+            return 1; // almost-black
+
+        var r = Convert.ToInt32(hex.Substring(1, 2), 16);
+        var g = Convert.ToInt32(hex.Substring(3, 2), 16);
+        var b = Convert.ToInt32(hex.Substring(5, 2), 16);
+        return r + (g << 8) + (b << 16);
+    }
+
+    // === Model ===
+    public class FormattingRule
+    {
+        public string Label { get; set; } = "";
+        public string FontStyle { get; set; } = "";
+        public string BackColor { get; set; } = "#FFFFFF";
+        public string ForeColor { get; set; } = "#000001";
+    }
+}
+```

@@ -1,0 +1,475 @@
+```razor
+@page "/po-inquiry"
+@page "/po-inquiry/{PONumber}"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Purchase Order Inquiry</PageTitle>
+
+<style>
+    .po-inquiry-container {
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        padding: 16px;
+    }
+
+    .po-header {
+        display: grid;
+        grid-template-columns: auto 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+        align-items: start;
+    }
+
+    .po-icon {
+        width: 48px;
+        height: 48px;
+    }
+
+    .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .field-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .field-row label {
+        min-width: 80px;
+        text-align: right;
+        font-size: 12px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .field-row .field-value {
+        flex: 1;
+        font-size: 12px;
+        padding: 2px 4px;
+        background: transparent;
+        color: #000;
+    }
+
+    .field-row .field-value.highlight {
+        color: #000080;
+        font-weight: 600;
+    }
+
+    .amount-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        align-items: flex-end;
+    }
+
+    .amount-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .amount-row label {
+        min-width: 70px;
+        text-align: right;
+        font-size: 12px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .amount-row .amount-value {
+        min-width: 120px;
+        text-align: right;
+        font-size: 12px;
+        padding: 2px 4px;
+    }
+
+    .cancelled-label {
+        font-size: 20px;
+        font-weight: 700;
+        font-style: italic;
+        color: #C00000;
+    }
+
+    .section-label {
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: #333;
+    }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+</style>
+
+<div class="po-inquiry-container">
+    @* ── Header Section ─────────────────────────────────────────── *@
+    <div class="po-header">
+        @* Icon *@
+        <div>
+            <img src="images/po-inquiry.png" class="po-icon" alt="PO" onerror="this.style.display='none'" />
+        </div>
+
+        @* Left fields: PO Number, PO Index, Vendor, Job *@
+        <div class="field-group">
+            <div class="field-row">
+                <label>PO Number</label>
+                <span class="field-value highlight">@txtPONumber</span>
+            </div>
+            <div class="field-row">
+                <label>PO Index</label>
+                <span class="field-value">@txtPOIndex</span>
+            </div>
+            <div class="field-row">
+                <label>Vendor</label>
+                <span class="field-value">@txtVendor</span>
+            </div>
+            <div class="field-row">
+                <label>Job</label>
+                <span class="field-value">@txtJob</span>
+            </div>
+        </div>
+
+        @* Center fields: Issued, Posted, Delivered, Cancelled *@
+        <div class="field-group">
+            <div class="field-row">
+                <label>Issued</label>
+                <span class="field-value">@txtDateIssued</span>
+            </div>
+            <div class="field-row">
+                <label>Posted</label>
+                <span class="field-value">@txtDatePosted</span>
+            </div>
+            <div class="field-row">
+                <label>Delivered</label>
+                <span class="field-value">@txtDateDelivered</span>
+            </div>
+            @if (IsCancelled)
+            {
+                <div class="field-row">
+                    <span class="cancelled-label">@lblCancelled</span>
+                </div>
+            }
+        </div>
+
+        @* Right fields: Original, Changes, Total, Invoiced, Remaining *@
+        <div class="amount-group">
+            <div class="amount-row">
+                <label>Original</label>
+                <span class="amount-value highlight">@txtOriginal</span>
+            </div>
+            <div class="amount-row">
+                <label>Changes</label>
+                <span class="amount-value">@txtChanges</span>
+            </div>
+            <div class="amount-row">
+                <label>Total</label>
+                <span class="amount-value">@txtTotal</span>
+            </div>
+            <div class="amount-row">
+                <label>Invoiced</label>
+                <span class="amount-value">@txtInvoiced</span>
+            </div>
+            <div class="amount-row">
+                <label>Remaining</label>
+                <span class="amount-value">@txtRemaining</span>
+            </div>
+        </div>
+    </div>
+
+    @* ── Accounting Documents Grid ──────────────────────────────── *@
+    <div class="section-label">Accounting Documents</div>
+    <div class="grid-container">
+        <HfGrid @ref="DocumentsGrid"
+                TValue="DocumentRow"
+                DataSource="@DocumentsData"
+                AllowSorting="true"
+                AllowResizing="true"
+                AllowSelection="true"
+                AllowGrouping="true"
+                EnableHover="true"
+                Height="400px"
+                GroupColumns="@(new List<string> { "DocType", "DocID" })"
+                ShowGroupExpandCollapse="true"
+                AggregateRows="@aggregateRows">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(DocumentRow.DocType)" HeaderText="Doc Type" Width="120px" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(DocumentRow.DocID)" HeaderText="Doc ID" Width="120px" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(DocumentRow.DocDate)" HeaderText="Date" Width="150px" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(DocumentRow.Description)" HeaderText="Description" Width="300px" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(DocumentRow.Amount)" HeaderText="Amount" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(DocumentRow.Tax)" HeaderText="Tax" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? PONumber { get; set; }
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // Grid ref
+    private HfGrid<DocumentRow>? DocumentsGrid;
+
+    // Header fields
+    private string txtPONumber = "";
+    private string txtPOIndex = "";
+    private string txtVendor = "";
+    private string txtJob = "";
+    private string txtDateIssued = "";
+    private string txtDatePosted = "";
+    private string txtDateDelivered = "";
+    private string txtOriginal = "";
+    private string txtChanges = "";
+    private string txtTotal = "";
+    private string txtInvoiced = "";
+    private string txtRemaining = "";
+    private bool IsCancelled = false;
+    private string lblCancelled = "";
+
+    // Grid data
+    private List<DocumentRow> DocumentsData = new();
+
+    // PO number passed via ShowForm or route parameter
+    private string mPO = "";
+
+    // Aggregate rows for grid
+    private List<HfAggregateRow> aggregateRows = new()
+    {
+        new HfAggregateRow
+        {
+            ShowInGroupFooter = true,
+            ShowInFooter = true,
+            Columns = new List<HfAggregateColumn>
+            {
+                new() { Field = "Amount", Type = AggregateType.Sum, Format = "N2", FooterTemplate = "Total: {value}", GroupFooterTemplate = "Sub Total: {value}" },
+                new() { Field = "Tax", Type = AggregateType.Sum, Format = "N2", FooterTemplate = "Total: {value}", GroupFooterTemplate = "Sub Total: {value}" }
+            }
+        }
+    };
+
+    // Lifecycle
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrEmpty(PONumber))
+        {
+            mPO = PONumber;
+        }
+        await LoadData();
+    }
+
+    /// <summary>
+    /// Public method to show the form for a specific PO (mirrors VB6 ShowForm).
+    /// </summary>
+    public async Task ShowForm(string po)
+    {
+        mPO = po;
+        await LoadData();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadData()
+    {
+        if (string.IsNullOrWhiteSpace(mPO)) return;
+
+        await LoadPOInfo();
+        await LoadDocumentDetails();
+    }
+
+    private async Task LoadPOInfo()
+    {
+        var sql = @"
+            SELECT
+                 m.PO AS PONumber
+                ,m.PODesc
+                ,m.POIndex
+                ,m.Vendor
+                ,m.VendorDesc
+                ,m.POJob AS Job
+                ,m.POJobDesc AS JobDesc
+                ,CAST(m.PODate AS DATE) AS PODate
+                ,b.TStmp AS PostingDate
+                ,m.PostingBatch
+                ,p.DeliveryDate
+                ,CASE WHEN p.DeliveryMethod=1 THEN 'email' ELSE 'print' END AS DeliveryMethod
+                ,p.DeliveryAddress
+                ,p.Cancelled
+                ,p.CancelledDate
+                ,SUM(m.LinePretax) AS Original
+                ,SUM(m.LineChangesPretax) AS Changes
+                ,SUM(m.LineInvoicedPretax) AS Invoiced
+            FROM jcpodetails m
+            LEFT OUTER JOIN batches b ON m.postingbatch=b.batch
+            LEFT OUTER JOIN pomaster p ON m.po=p.ponumber AND m.divisionid=p.divisionid
+            WHERE m.divisionid=@DivisionID
+              AND m.po=@PO
+            GROUP BY
+                 m.PO
+                ,m.PODesc
+                ,m.POIndex
+                ,m.Vendor
+                ,m.VendorDesc
+                ,m.POJob
+                ,m.POJobDesc
+                ,CAST(m.PODate AS DATE)
+                ,b.TStmp
+                ,m.PostingBatch
+                ,p.DeliveryDate
+                ,p.DeliveryMethod
+                ,p.DeliveryAddress
+                ,p.Cancelled
+                ,p.CancelledDate";
+
+        var rows = await db.QueryAsync(sql, new { DivisionID, PO = mPO });
+        if (rows.Any())
+        {
+            var rs = rows.First();
+            txtPONumber = $"{Str(rs, "PONumber")}   {Str(rs, "PODesc")}";
+            txtPOIndex = Str(rs, "POIndex");
+
+            // Conditionally show vendor number (non-Quickbooks)
+            var vendorNum = Str(rs, "Vendor");
+            var vendorDesc = Str(rs, "VendorDesc");
+            txtVendor = !string.IsNullOrEmpty(vendorNum) ? $"{vendorNum}   {vendorDesc}" : vendorDesc;
+
+            txtJob = $"{Str(rs, "Job")}   {Str(rs, "JobDesc")}";
+            txtDateIssued = FormatDate(rs, "PODate");
+            txtDatePosted = $"{FormatDate(rs, "PostingDate")}   Batch {Str(rs, "PostingBatch")}";
+            txtDateDelivered = $"{FormatDate(rs, "DeliveryDate")}   Via {Str(rs, "DeliveryMethod")}";
+
+            IsCancelled = Str(rs, "Cancelled") == "True";
+            if (IsCancelled)
+                lblCancelled = $"CANCELLED {FormatDate(rs, "CancelledDate")}";
+
+            var original = ToDecimal(rs, "Original");
+            var changes = ToDecimal(rs, "Changes");
+            var invoiced = ToDecimal(rs, "Invoiced");
+
+            txtOriginal = original.ToString("#,##0.00");
+            txtChanges = changes.ToString("#,##0.00");
+            txtTotal = (original + changes).ToString("#,##0.00");
+            txtInvoiced = invoiced.ToString("#,##0.00");
+            txtRemaining = (original + changes - invoiced).ToString("#,##0.00");
+        }
+    }
+
+    private async Task LoadDocumentDetails()
+    {
+        var sql = @"
+            SELECT
+                 'Purchase Order' AS DocType
+                ,PO AS DocID
+                ,PODate AS DocDate
+                ,PODesc AS DocDesc
+                ,LineDesc AS Description
+                ,LinePretax+LineChangesPretax AS Amount
+                ,LineTax+LineChangesTax AS Tax
+            FROM jcpodetails
+            WHERE divisionid=@DivisionID
+              AND po=@PO
+            UNION ALL
+            SELECT
+                 'Invoice'
+                ,m.Invoice
+                ,m.invoicedate
+                ,m.Description
+                ,d.description
+                ,d.pretax
+                ,d.tax
+            FROM Invoices m
+            LEFT OUTER JOIN InvoiceItems d ON m.InvoiceID=d.InvoiceID
+            WHERE m.divisionid=@DivisionID
+              AND d.commitment=@PO";
+
+        var rows = await db.QueryAsync(sql, new { DivisionID, PO = mPO });
+
+        var documents = new List<DocumentRow>();
+        foreach (var row in rows)
+        {
+            documents.Add(new DocumentRow
+            {
+                DocType = Str(row, "DocType"),
+                DocID = Str(row, "DocID"),
+                DocDate = FormatDateFromDict(row, "DocDate"),
+                DocDesc = Str(row, "DocDesc"),
+                Description = Str(row, "Description"),
+                Amount = ToDecimalFromDict(row, "Amount"),
+                Tax = ToDecimalFromDict(row, "Tax")
+            });
+        }
+
+        DocumentsData = documents;
+    }
+
+    // === Helper Methods ===
+    private string Str(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var val) && val != null && val != DBNull.Value)
+            return val.ToString() ?? "";
+        return "";
+    }
+
+    private string FormatDate(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var val) && val != null && val != DBNull.Value)
+        {
+            if (val is DateTime dt)
+                return dt.ToString("MMMM d, yyyy");
+            if (DateTime.TryParse(val.ToString(), out var parsed))
+                return parsed.ToString("MMMM d, yyyy");
+        }
+        return "";
+    }
+
+    private string FormatDateFromDict(Dictionary<string, object> row, string key)
+    {
+        return FormatDate(row, key);
+    }
+
+    private decimal ToDecimal(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var val) && val != null && val != DBNull.Value)
+        {
+            if (val is decimal d) return d;
+            if (decimal.TryParse(val.ToString(), out var parsed)) return parsed;
+        }
+        return 0m;
+    }
+
+    private decimal ToDecimalFromDict(Dictionary<string, object> row, string key)
+    {
+        return ToDecimal(row, key);
+    }
+
+    // === Model Classes ===
+    public class DocumentRow
+    {
+        public string DocType { get; set; } = "";
+        public string DocID { get; set; } = "";
+        public string DocDate { get; set; } = "";
+        public string DocDesc { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Amount { get; set; }
+        public decimal Tax { get; set; }
+    }
+}
+```

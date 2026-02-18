@@ -1,0 +1,998 @@
+```razor
+@page "/po-formats"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Purchase Order Setup - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        background-color: #f8f9fa;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        min-width: 60px;
+    }
+
+    .tbar-btn:hover:not(:disabled) { background: #e8e8e8; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .tbar-icon { width: 24px; height: 24px; margin-bottom: 4px; }
+    .tool-label { font-size: 11px; display: block; text-align: center; }
+    .toolbar-sep { width: 1px; height: 28px; background: #dee2e6; margin: 0 4px; }
+
+    .po-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 120px);
+        overflow: hidden;
+    }
+
+    .grid-panel { flex: 1; overflow: hidden; }
+
+    .footer-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 10px 12px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .footer-bar button {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .footer-bar button:hover { background: #e9ecef; }
+    .footer-bar .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .footer-bar .btn-primary:hover { background: #0b5ed7; }
+
+    .loading-overlay {
+        position: absolute;
+        height: 92%;
+        width: 100%;
+        background-color: rgba(1,1,1,0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .header-row { font-weight: bold; color: #0078d7; }
+    .dirty-row { background-color: #fff3cd !important; }
+
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 450px; max-width: 700px; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+
+    .dialog-header button:hover { color: #212529; }
+
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+
+    .dialog-body input, .dialog-body select {
+        width: 100%; padding: 8px 10px; border: 1px solid #ced4da;
+        border-radius: 4px; font-size: 14px; box-sizing: border-box;
+    }
+
+    .dialog-body label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 13px; color: #495057; }
+    .dialog-body .form-group { margin-bottom: 14px; }
+
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    .cell-btn {
+        padding: 1px 6px; border: 1px solid #ced4da; border-radius: 3px;
+        background: #fff; font-size: 11px; cursor: pointer; margin-left: 4px;
+    }
+
+    .cell-btn:hover { background: #e9ecef; }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Purchase Orders...</div>
+    </div>
+}
+
+<div class="po-container">
+    <!-- Toolbar -->
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" @onclick="OnNewPOClick">
+            <img src="images/32/new.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">New PO</span>
+        </button>
+        <button class="tbar-btn" disabled="@(SelectedRow == null || SelectedRow.RowType != "POINDEX")" @onclick="OnEditPOClick">
+            <img src="images/32/open.ico" class="tbar-icon" onerror="this.style.display='none'" />
+            <span class="tool-label">Edit PO</span>
+        </button>
+        <button class="tbar-btn" disabled="@(SelectedRow == null || SelectedRow.RowType != "POINDEX")" @onclick="OnDeleteClick">
+            <span class="tool-label">Delete</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnItemsClick">
+            <span class="tool-label">Items</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnVendorsClick">
+            <span class="tool-label">Vendors</span>
+        </button>
+        <button class="tbar-btn" disabled="@(SelectedRow == null || string.IsNullOrEmpty(SelectedRow.POFormat))" @onclick="OnPreviewClick">
+            <span class="tool-label">Preview</span>
+        </button>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid-panel">
+        <HfGrid @ref="DataGrid"
+                TValue="POFormatRow"
+                DataSource="@GridData"
+                AllowSorting="false"
+                AllowResizing="true"
+                AllowSelection="true"
+                EnableHover="true"
+                Height="calc(100vh - 260px)"
+                RowHeight="32"
+                SelectionSettingsRef="@selectionSettings"
+                EditSettingsRef="@editSettings"
+                EventsRef="@gridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(POFormatRow.POIndex)" HeaderText="PO Index" Width="140px"
+                              IsPrimaryKey="true" AllowEditing="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.Description)" HeaderText="Description" Width="200px" />
+                <HfGridColumn Field="@nameof(POFormatRow.POGroup)" HeaderText="Group" Width="120px">
+                    <EditTemplate>
+                        @{
+                            var data = (POFormatRow)context;
+                            <select @bind="data.POGroup" @bind:after="() => MarkDirty(data)">
+                                <option value="">-- Select --</option>
+                                @foreach (var g in POGroupList)
+                                {
+                                    <option value="@g">@g</option>
+                                }
+                            </select>
+                        }
+                    </EditTemplate>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.HideQty)" HeaderText="#" Width="50px"
+                              Type="ColumnType.CheckBox" />
+                <HfGridColumn Field="@nameof(POFormatRow.HidePrice)" HeaderText="$" Width="50px"
+                              Type="ColumnType.CheckBox" />
+                <HfGridColumn Field="@nameof(POFormatRow.TotalOnly)" HeaderText="!" Width="50px"
+                              Type="ColumnType.CheckBox" />
+                <HfGridColumn Field="@nameof(POFormatRow.POFormat)" HeaderText="Format" Width="180px">
+                    <EditTemplate>
+                        @{
+                            var data = (POFormatRow)context;
+                            <select @bind="data.POFormat" @bind:after="() => MarkDirty(data)">
+                                <option value="">-- Select --</option>
+                                @foreach (var f in FormatList)
+                                {
+                                    <option value="@f">@f</option>
+                                }
+                            </select>
+                        }
+                    </EditTemplate>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.ReleaseTaskDesc)" HeaderText="Release After" Width="160px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.ReleaseTaskDesc</span>
+                                <button class="cell-btn" @onclick="() => OnPickReleaseTask(data)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                            else
+                            {
+                                <span>@data.ReleaseTaskDesc</span>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint1Percent)" HeaderText="Pmt1" Width="70px"
+                              Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint2Percent)" HeaderText="Pmt2" Width="70px"
+                              Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint3Percent)" HeaderText="Pmt3" Width="70px"
+                              Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint4Percent)" HeaderText="Pmt4" Width="70px"
+                              Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint5Percent)" HeaderText="Pmt5" Width="70px"
+                              Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right"
+                              AllowEditing="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint1Task)" HeaderText="Pmt1 Task" Width="140px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.PayPoint1Task</span>
+                                <button class="cell-btn" @onclick="() => OnPickPayPointTask(data, 1)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint2Task)" HeaderText="Pmt2 Task" Width="140px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.PayPoint2Task</span>
+                                <button class="cell-btn" @onclick="() => OnPickPayPointTask(data, 2)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint3Task)" HeaderText="Pmt3 Task" Width="140px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.PayPoint3Task</span>
+                                <button class="cell-btn" @onclick="() => OnPickPayPointTask(data, 3)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint4Task)" HeaderText="Pmt4 Task" Width="140px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.PayPoint4Task</span>
+                                <button class="cell-btn" @onclick="() => OnPickPayPointTask(data, 4)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint5Task)" HeaderText="Pmt5 Task" Width="140px"
+                              AllowEditing="false">
+                    <Template>
+                        @{
+                            var data = (POFormatRow)context;
+                            if (data.RowType == "POINDEX")
+                            {
+                                <span>@data.PayPoint5Task</span>
+                                <button class="cell-btn" @onclick="() => OnPickPayPointTask(data, 5)" @onclick:stopPropagation="true">🔍</button>
+                            }
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(POFormatRow.RowType)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.RowState)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.ReleaseTaskID)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint1TaskID)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint2TaskID)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint3TaskID)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint4TaskID)" HeaderText="" Width="1px" Visible="false" />
+                <HfGridColumn Field="@nameof(POFormatRow.PayPoint5TaskID)" HeaderText="" Width="1px" Visible="false" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </div>
+
+    <!-- Footer Buttons -->
+    <div class="footer-bar">
+        <button class="btn-primary" @onclick="OnOkClick">OK</button>
+        <button @onclick="OnCancelClick">Cancel</button>
+    </div>
+</div>
+
+@* ── Pick Task Dialog ──────────────────────────────────────────── *@
+@if (IsPickTaskDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsPickTaskDialogVisible = false">
+        <div class="dialog-panel" style="min-width: 500px;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Scheduling Task</span>
+                <button @onclick="() => IsPickTaskDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <HfGrid TValue="TaskItem"
+                        DataSource="@TaskList"
+                        AllowSorting="true"
+                        AllowSelection="true"
+                        Height="300px"
+                        SelectionSettingsRef="@taskSelectionSettings"
+                        EventsRef="@taskGridEvents">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(TaskItem.TaskID)" HeaderText="Task ID" Width="100px" IsPrimaryKey="true" />
+                        <HfGridColumn Field="@nameof(TaskItem.Description)" HeaderText="Description" Width="300px" />
+                    </HfGridColumnsBase>
+                </HfGrid>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnPickTaskOk">OK</button>
+                <button class="btn" @onclick="() => IsPickTaskDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const string SRCFILE = "FPOFormats";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private HfGrid<POFormatRow>? DataGrid;
+    private POFormatRow? SelectedRow;
+
+    // === Grid Settings ===
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<POFormatRow> gridEvents = new();
+
+    // === Task Picker ===
+    private bool IsPickTaskDialogVisible = false;
+    private List<TaskItem> TaskList = new();
+    private TaskItem? SelectedTask;
+    private POFormatRow? PickTaskTargetRow;
+    private int PickTaskTargetPoint = 0; // 0 = release, 1-5 = paypoint
+    private HfSelectionSettings taskSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfGridEvents<TaskItem> taskGridEvents = new();
+
+    // === Data ===
+    private List<POFormatRow> GridData = new();
+    private List<string> FormatList = new();
+    private List<string> POGroupList = new();
+    private string GlobalPOFormat = "";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<POFormatRow>>(this, OnRowSelected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<POFormatRow>>(this, OnCellSaved);
+        taskGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<TaskItem>>(this, OnTaskRowSelected);
+
+        await LoadFormats();
+        await LoadData();
+    }
+
+    // === Load PO Report Formats ===
+    private async Task LoadFormats()
+    {
+        try
+        {
+            // In VB6 this scanned a directory for .rpt files. In Blazor we simulate with a DB or config lookup.
+            // For now, provide a static list or query if available.
+            FormatList = new List<string> { "Standard PO", "Detailed PO", "Summary PO" };
+
+            // Attempt to load from a config or file system equivalent
+            // In production, this would scan a known folder or query a table
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}.LoadFormats] Error: {ex.Message}");
+        }
+    }
+
+    // === Load Data ===
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            GridData.Clear();
+            POGroupList.Clear();
+
+            // Clean up empty POIndex records
+            await db.ExecuteAsync(
+                "DELETE FROM tblPOIndex WHERE DivisionID = @DivisionID AND ISNULL(POIndex,'')=''",
+                new { DivisionID });
+
+            // Load global default format
+            var globalResult = await db.ExecuteScalarAsync<string>(
+                "SELECT ISNULL(POFormat,'') FROM system_setup WHERE id = @DivisionID",
+                new { DivisionID });
+            GlobalPOFormat = globalResult ?? "";
+
+            // Add global default row
+            GridData.Add(new POFormatRow
+            {
+                POIndex = "Global Default",
+                POFormat = GlobalPOFormat,
+                RowType = "GLOBAL",
+                RowState = "CLEAN"
+            });
+
+            // Load PO Index records
+            var sql = @"
+                SELECT
+                    p.*,
+                    rt.Description AS ReleaseTaskDesc,
+                    p1.Description AS PayPoint1Desc,
+                    p2.Description AS PayPoint2Desc,
+                    p3.Description AS PayPoint3Desc,
+                    p4.Description AS PayPoint4Desc,
+                    p5.Description AS PayPoint5Desc
+                FROM tblPOIndex p
+                LEFT OUTER JOIN LibraryTasks rt ON p.ReleaseTaskID = rt.TaskID
+                LEFT OUTER JOIN LibraryTasks p1 ON p.PayPoint1SchedTask = p1.TaskID
+                LEFT OUTER JOIN LibraryTasks p2 ON p.PayPoint2SchedTask = p2.TaskID
+                LEFT OUTER JOIN LibraryTasks p3 ON p.PayPoint3SchedTask = p3.TaskID
+                LEFT OUTER JOIN LibraryTasks p4 ON p.PayPoint4SchedTask = p4.TaskID
+                LEFT OUTER JOIN LibraryTasks p5 ON p.PayPoint5SchedTask = p5.TaskID
+                WHERE p.DivisionID = @DivisionID
+                ORDER BY p.POIndex";
+
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+
+            foreach (var r in rows)
+            {
+                var row = new POFormatRow
+                {
+                    POIndex = r["POIndex"]?.ToString() ?? "",
+                    Description = r["Description"]?.ToString() ?? "",
+                    POGroup = r["POGroup"]?.ToString() ?? "",
+                    HideQty = r["HideQty"]?.ToString() == "True",
+                    HidePrice = r["HidePrice"]?.ToString() == "True",
+                    TotalOnly = r["TotalOnly"]?.ToString() == "True",
+                    POFormat = r["POFormat"]?.ToString() ?? "",
+                    ReleaseTaskID = SafeStr(r, "ReleaseTaskID"),
+                    ReleaseTaskDesc = r["ReleaseTaskDesc"]?.ToString() ?? "",
+                    PayPoint1Percent = SafeDecimalNullable(r, "PayPoint1Percent"),
+                    PayPoint2Percent = SafeDecimalNullable(r, "PayPoint2Percent"),
+                    PayPoint3Percent = SafeDecimalNullable(r, "PayPoint3Percent"),
+                    PayPoint4Percent = SafeDecimalNullable(r, "PayPoint4Percent"),
+                    PayPoint5Percent = SafeDecimalNullable(r, "PayPoint5Percent"),
+                    PayPoint1Task = r["PayPoint1Desc"]?.ToString() ?? "",
+                    PayPoint2Task = r["PayPoint2Desc"]?.ToString() ?? "",
+                    PayPoint3Task = r["PayPoint3Desc"]?.ToString() ?? "",
+                    PayPoint4Task = r["PayPoint4Desc"]?.ToString() ?? "",
+                    PayPoint5Task = r["PayPoint5Desc"]?.ToString() ?? "",
+                    PayPoint1TaskID = SafeStr(r, "PayPoint1SchedTask"),
+                    PayPoint2TaskID = SafeStr(r, "PayPoint2SchedTask"),
+                    PayPoint3TaskID = SafeStr(r, "PayPoint3SchedTask"),
+                    PayPoint4TaskID = SafeStr(r, "PayPoint4SchedTask"),
+                    PayPoint5TaskID = SafeStr(r, "PayPoint5SchedTask"),
+                    RowType = "POINDEX",
+                    RowState = "CLEAN"
+                };
+
+                // Build POGroup list
+                if (!string.IsNullOrWhiteSpace(row.POGroup) && !POGroupList.Contains(row.POGroup))
+                    POGroupList.Add(row.POGroup);
+
+                GridData.Add(row);
+            }
+
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}.LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var result = await JSRuntime.InvokeAsync<bool>("confirm",
+                "This data has changed.\n\nDo you want to save the changes?");
+            if (!result) return true; // User chose not to save, but allow close
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            foreach (var row in GridData.Where(r => r.RowState == "DIRTY"))
+            {
+                switch (row.RowType)
+                {
+                    case "GLOBAL":
+                        await db.ExecuteAsync(
+                            "UPDATE system_setup SET POFormat = @POFormat WHERE id = @DivisionID",
+                            new { row.POFormat, DivisionID });
+                        break;
+
+                    case "POINDEX":
+                        var updateSql = @"
+                            UPDATE tblPOIndex SET
+                                POFormat = @POFormat,
+                                Description = @Description,
+                                POGroup = @POGroup,
+                                HideQty = @HideQty,
+                                HidePrice = @HidePrice,
+                                TotalOnly = @TotalOnly,
+                                ReleaseTaskID = @ReleaseTaskID,
+                                PayPoint1Percent = @PayPoint1Percent,
+                                PayPoint2Percent = @PayPoint2Percent,
+                                PayPoint3Percent = @PayPoint3Percent,
+                                PayPoint4Percent = @PayPoint4Percent,
+                                PayPoint5Percent = @PayPoint5Percent,
+                                PayPoint1SchedTask = @PayPoint1TaskID,
+                                PayPoint2SchedTask = @PayPoint2TaskID,
+                                PayPoint3SchedTask = @PayPoint3TaskID,
+                                PayPoint4SchedTask = @PayPoint4TaskID,
+                                PayPoint5SchedTask = @PayPoint5TaskID
+                            WHERE DivisionID = @DivisionID
+                              AND POIndex = @POIndex";
+
+                        await db.ExecuteAsync(updateSql, new
+                        {
+                            row.POFormat,
+                            row.Description,
+                            row.POGroup,
+                            row.HideQty,
+                            row.HidePrice,
+                            row.TotalOnly,
+                            ReleaseTaskID = NullIfEmpty(row.ReleaseTaskID),
+                            PayPoint1Percent = row.PayPoint1Percent,
+                            PayPoint2Percent = row.PayPoint2Percent,
+                            PayPoint3Percent = row.PayPoint3Percent,
+                            PayPoint4Percent = row.PayPoint4Percent,
+                            PayPoint5Percent = row.PayPoint5Percent,
+                            PayPoint1TaskID = NullIfEmpty(row.PayPoint1TaskID),
+                            PayPoint2TaskID = NullIfEmpty(row.PayPoint2TaskID),
+                            PayPoint3TaskID = NullIfEmpty(row.PayPoint3TaskID),
+                            PayPoint4TaskID = NullIfEmpty(row.PayPoint4TaskID),
+                            PayPoint5TaskID = NullIfEmpty(row.PayPoint5TaskID),
+                            DivisionID,
+                            row.POIndex
+                        });
+
+                        // Ensure DivisionPOIndexes entry exists
+                        var insertDivPO = @"
+                            INSERT INTO DivisionPOIndexes (POIndex, DivisionID, POFormat)
+                            SELECT p.POIndex, p.DivisionID, p.POFormat
+                            FROM tblPOIndex p
+                            LEFT OUTER JOIN DivisionPOIndexes dp
+                                ON dp.POIndex = p.POIndex AND dp.DivisionID = p.DivisionID
+                            WHERE dp.DivisionID IS NULL
+                              AND p.DivisionID = @DivisionID
+                              AND p.POIndex = @POIndex";
+                        await db.ExecuteAsync(insertDivPO, new { DivisionID, row.POIndex });
+                        break;
+                }
+
+                row.RowState = "CLEAN";
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}.SaveData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Grid Events ===
+    private void OnRowSelected(RowSelectEventArgs<POFormatRow> args)
+    {
+        SelectedRow = args.Data;
+    }
+
+    private void OnCellSaved(CellSaveArgs<POFormatRow> args)
+    {
+        if (args.Data == null) return;
+        var row = args.Data;
+        var field = args.ColumnName ?? "";
+
+        // PayPoint percent cascade logic
+        if (field == nameof(POFormatRow.PayPoint1Percent))
+        {
+            var val = Math.Min(Math.Abs(row.PayPoint1Percent ?? 0), 100);
+            row.PayPoint1Percent = val;
+            row.PayPoint2Percent = 100 - val;
+            row.PayPoint3Percent = null;
+            row.PayPoint4Percent = null;
+            row.PayPoint5Percent = null;
+        }
+        else if (field == nameof(POFormatRow.PayPoint2Percent))
+        {
+            var val = Math.Abs(row.PayPoint2Percent ?? 0);
+            row.PayPoint2Percent = val;
+            row.PayPoint3Percent = 100 - (row.PayPoint1Percent ?? 0) - val;
+            row.PayPoint4Percent = null;
+            row.PayPoint5Percent = null;
+        }
+        else if (field == nameof(POFormatRow.PayPoint3Percent))
+        {
+            var val = Math.Abs(row.PayPoint3Percent ?? 0);
+            row.PayPoint3Percent = val;
+            row.PayPoint4Percent = 100 - (row.PayPoint1Percent ?? 0) - (row.PayPoint2Percent ?? 0) - val;
+            row.PayPoint5Percent = null;
+        }
+        else if (field == nameof(POFormatRow.PayPoint4Percent))
+        {
+            var val = Math.Abs(row.PayPoint4Percent ?? 0);
+            row.PayPoint4Percent = val;
+            row.PayPoint5Percent = 100 - (row.PayPoint1Percent ?? 0) - (row.PayPoint2Percent ?? 0) - (row.PayPoint3Percent ?? 0) - val;
+        }
+
+        // Clear zero paypoints
+        if ((row.PayPoint2Percent ?? 0) == 0) row.PayPoint2Percent = null;
+        if ((row.PayPoint3Percent ?? 0) == 0) row.PayPoint3Percent = null;
+        if ((row.PayPoint4Percent ?? 0) == 0) row.PayPoint4Percent = null;
+        if ((row.PayPoint5Percent ?? 0) == 0) row.PayPoint5Percent = null;
+
+        MarkDirty(row);
+    }
+
+    private void MarkDirty(POFormatRow row)
+    {
+        row.RowState = "DIRTY";
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    // === Task Picker ===
+    private async Task LoadTaskList()
+    {
+        var rows = await db.QueryAsync(
+            "SELECT TaskID, Description FROM LibraryTasks ORDER BY Description");
+        TaskList = rows.Select(r => new TaskItem
+        {
+            TaskID = r["TaskID"]?.ToString() ?? "",
+            Description = r["Description"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private void OnTaskRowSelected(RowSelectEventArgs<TaskItem> args)
+    {
+        SelectedTask = args.Data;
+    }
+
+    private async Task OnPickReleaseTask(POFormatRow row)
+    {
+        await LoadTaskList();
+        PickTaskTargetRow = row;
+        PickTaskTargetPoint = 0;
+        SelectedTask = null;
+        IsPickTaskDialogVisible = true;
+    }
+
+    private async Task OnPickPayPointTask(POFormatRow row, int point)
+    {
+        await LoadTaskList();
+        PickTaskTargetRow = row;
+        PickTaskTargetPoint = point;
+        SelectedTask = null;
+        IsPickTaskDialogVisible = true;
+    }
+
+    private void OnPickTaskOk()
+    {
+        if (PickTaskTargetRow == null || SelectedTask == null)
+        {
+            IsPickTaskDialogVisible = false;
+            return;
+        }
+
+        if (PickTaskTargetPoint == 0)
+        {
+            PickTaskTargetRow.ReleaseTaskID = SelectedTask.TaskID;
+            PickTaskTargetRow.ReleaseTaskDesc = SelectedTask.Description;
+        }
+        else
+        {
+            switch (PickTaskTargetPoint)
+            {
+                case 1:
+                    PickTaskTargetRow.PayPoint1TaskID = SelectedTask.TaskID;
+                    PickTaskTargetRow.PayPoint1Task = SelectedTask.Description;
+                    break;
+                case 2:
+                    PickTaskTargetRow.PayPoint2TaskID = SelectedTask.TaskID;
+                    PickTaskTargetRow.PayPoint2Task = SelectedTask.Description;
+                    break;
+                case 3:
+                    PickTaskTargetRow.PayPoint3TaskID = SelectedTask.TaskID;
+                    PickTaskTargetRow.PayPoint3Task = SelectedTask.Description;
+                    break;
+                case 4:
+                    PickTaskTargetRow.PayPoint4TaskID = SelectedTask.TaskID;
+                    PickTaskTargetRow.PayPoint4Task = SelectedTask.Description;
+                    break;
+                case 5:
+                    PickTaskTargetRow.PayPoint5TaskID = SelectedTask.TaskID;
+                    PickTaskTargetRow.PayPoint5Task = SelectedTask.Description;
+                    break;
+            }
+        }
+
+        MarkDirty(PickTaskTargetRow);
+        IsPickTaskDialogVisible = false;
+    }
+
+    // === Toolbar Handlers ===
+    private async Task OnNewPOClick()
+    {
+        if (!await SaveData(true)) return;
+
+        try
+        {
+            // Insert a new untitled PO
+            await db.ExecuteAsync(
+                "INSERT INTO tblPOIndex (DivisionID, POIndex, POType) VALUES (@DivisionID, '(untitled)', 'Purchase Order')",
+                new { DivisionID });
+
+            // Navigate to edit form or show inline edit
+            var confirmed = await JSRuntime.InvokeAsync<string>("prompt",
+                "Enter the new PO Index name:", "(untitled)");
+
+            if (!string.IsNullOrWhiteSpace(confirmed) && confirmed != "(untitled)")
+            {
+                await db.ExecuteAsync(
+                    "UPDATE tblPOIndex SET POIndex = @NewName WHERE DivisionID = @DivisionID AND POIndex = '(untitled)'",
+                    new { NewName = confirmed.Trim(), DivisionID });
+                await LoadData();
+            }
+            else
+            {
+                // User cancelled — remove the untitled record
+                await db.ExecuteAsync(
+                    "DELETE FROM tblPOIndex WHERE DivisionID = @DivisionID AND POIndex = '(untitled)'",
+                    new { DivisionID });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}.OnNewPOClick] Error: {ex.Message}");
+            // Clean up on error
+            try
+            {
+                await db.ExecuteAsync(
+                    "DELETE FROM tblPOIndex WHERE DivisionID = @DivisionID AND POIndex = '(untitled)'",
+                    new { DivisionID });
+            }
+            catch { }
+        }
+    }
+
+    private async Task OnEditPOClick()
+    {
+        if (SelectedRow == null || SelectedRow.RowType != "POINDEX") return;
+        if (!await SaveData(true)) return;
+
+        // In VB6 this opened FPOIndex.Edit(POIndex). Navigate to an edit page or show dialog.
+        await JSRuntime.InvokeVoidAsync("alert", $"Edit PO Index: {SelectedRow.POIndex}\n(Would open PO Index editor)");
+        await LoadData();
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (SelectedRow == null || SelectedRow.RowType != "POINDEX") return;
+
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            "If you delete this purchase order it will be removed immediately\n" +
+            "and permanently. Are you sure this is what you want to do?");
+        if (!confirm) return;
+
+        try
+        {
+            var poIndex = SelectedRow.POIndex;
+            await db.ExecuteAsync(
+                "DELETE FROM tblPOIndex WHERE DivisionID = @DivisionID AND POIndex = @POIndex",
+                new { DivisionID, POIndex = poIndex });
+            await db.ExecuteAsync(
+                "UPDATE tblPhaseItem SET POIndex = '' WHERE DivisionID = @DivisionID AND POIndex = @POIndex",
+                new { DivisionID, POIndex = poIndex });
+
+            GridData.Remove(SelectedRow);
+            SelectedRow = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting: {ex.Message}");
+        }
+    }
+
+    private async Task OnItemsClick()
+    {
+        // In VB6: FPOItems.Show vbModal
+        await JSRuntime.InvokeVoidAsync("alert", "PO Items editor - not yet implemented");
+    }
+
+    private async Task OnVendorsClick()
+    {
+        // In VB6: Call HFApp.RunTask("EditDefaultVendors")
+        await JSRuntime.InvokeVoidAsync("alert", "Edit Default Vendors - not yet implemented");
+    }
+
+    private async Task OnPreviewClick()
+    {
+        if (SelectedRow == null || string.IsNullOrEmpty(SelectedRow.POFormat)) return;
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Print Preview for format: {SelectedRow.POFormat}\n(Crystal Reports preview not yet implemented)");
+    }
+
+    private async Task OnOkClick()
+    {
+        if (await SaveData(false))
+        {
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        if (mDirty)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "You have unsaved changes. Discard and close?");
+            if (!confirm) return;
+        }
+        NavigationManager.NavigateTo("/");
+    }
+
+    // === Helpers ===
+    private string SafeStr(Dictionary<string, object> row, string key)
+    {
+        if (!row.ContainsKey(key)) return "";
+        var val = row[key];
+        if (val == null || val == DBNull.Value) return "";
+        return val.ToString() ?? "";
+    }
+
+    private decimal? SafeDecimalNullable(Dictionary<string, object> row, string key)
+    {
+        if (!row.ContainsKey(key)) return null;
+        var val = row[key];
+        if (val == null || val == DBNull.Value) return null;
+        var d = Convert.ToDecimal(val);
+        return d == 0 ? null : d;
+    }
+
+    private object? NullIfEmpty(string? val) =>
+        string.IsNullOrWhiteSpace(val) ? null : val;
+
+    // === Models ===
+    public class POFormatRow
+    {
+        public string POIndex { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string POGroup { get; set; } = "";
+        public bool HideQty { get; set; }
+        public bool HidePrice { get; set; }
+        public bool TotalOnly { get; set; }
+        public string POFormat { get; set; } = "";
+        public string ReleaseTaskID { get; set; } = "";
+        public string ReleaseTaskDesc { get; set; } = "";
+        public decimal? PayPoint1Percent { get; set; }
+        public decimal? PayPoint2Percent { get; set; }
+        public decimal? PayPoint3Percent { get; set; }
+        public decimal? PayPoint4Percent { get; set; }
+        public decimal? PayPoint5Percent { get; set; }
+        public string PayPoint1Task { get; set; } = "";
+        public string PayPoint2Task { get; set; } = "";
+        public string PayPoint3Task { get; set; } = "";
+        public string PayPoint4Task { get; set; } = "";
+        public string PayPoint5Task { get; set; } = "";
+        public string PayPoint1TaskID { get; set; } = "";
+        public string PayPoint2TaskID { get; set; } = "";
+        public string PayPoint3TaskID { get; set; } = "";
+        public string PayPoint4TaskID { get; set; } = "";
+        public string PayPoint5TaskID { get; set; } = "";
+        public string RowType { get; set; } = ""; // "GLOBAL", "POINDEX"
+        public string RowState { get; set; } = "CLEAN"; // "CLEAN", "DIRTY"
+    }
+
+    public class TaskItem
+    {
+        public string TaskID { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+}
+```

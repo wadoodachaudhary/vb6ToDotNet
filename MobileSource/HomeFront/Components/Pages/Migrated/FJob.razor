@@ -1,0 +1,1457 @@
+```razor
+@page "/job-setup"
+@page "/job-setup/{JobNumber}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Data
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Job Setup - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+
+    .job-layout { display: flex; gap: 16px; }
+    .job-left { width: 320px; min-width: 280px; }
+    .job-right { flex: 1; }
+
+    .form-field { margin-bottom: 8px; display: flex; align-items: flex-start; gap: 6px; }
+    .form-field label {
+        min-width: 100px; text-align: right; font-size: 12px; padding-top: 5px; color: #495057;
+    }
+    .form-field label.bold { font-weight: 700; color: #00008B; }
+    .form-field label.link {
+        color: #00008B; text-decoration: underline; cursor: pointer; font-size: 12px;
+    }
+    .form-field input, .form-field select, .form-field textarea {
+        flex: 1; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .form-field input:disabled, .form-field select:disabled, .form-field textarea:disabled {
+        background-color: #e9ecef;
+    }
+    .form-field .browse-btn {
+        padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .form-field .browse-btn:hover { background: #e9ecef; }
+
+    .inline-fields { display: flex; gap: 4px; flex: 1; }
+    .inline-fields input { flex: 1; }
+
+    .section-title {
+        font-weight: 700; font-size: 13px; color: #00008B; margin: 12px 0 6px 0;
+    }
+
+    .panel-card {
+        border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; background: #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px;
+    }
+
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Job...</div>
+    </div>
+}
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+        <span class="tool-label">Open</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" @onclick="OnAttachmentsClick">
+        <span class="tool-label">Attachments</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnCorrespondenceClick">
+        <span class="tool-label">Correspondence</span>
+    </button>
+</div>
+
+<h3>@FormCaption</h3>
+
+<div class="job-layout">
+    @* ── LEFT PANEL ─────────────────────────────────────── *@
+    <div class="job-left">
+        <div class="panel-card">
+            @* Job Number *@
+            <div class="form-field">
+                <label class="bold">Job Number</label>
+                <input type="text" @bind="txtJob" @bind:event="oninput" @bind:after="OnJobChanged"
+                       disabled="@(!JobEditable)" maxlength="@JobMaxLength" style="flex:1;" />
+                @if (ShowJobBrowse)
+                {
+                    <button class="browse-btn" @onclick="OnJobBrowseClick" title="Browse Jobs">🔍</button>
+                }
+            </div>
+
+            @* Description *@
+            <div class="form-field">
+                <label>Description</label>
+                <input type="text" @bind="txtDescription" @bind:event="oninput" @bind:after="MarkDirty"
+                       disabled="@(!FieldsEnabled)" maxlength="50" />
+            </div>
+
+            @* External ID *@
+            @if (ShowExternalID)
+            {
+                <div class="form-field">
+                    <label>@ExternalIDLabel</label>
+                    <input type="text" @bind="txtExternalID" disabled maxlength="50" />
+                </div>
+            }
+
+            @* GL Prefix *@
+            @if (ShowGLPrefixCombo)
+            {
+                <div class="form-field">
+                    <label>@GLPrefixLabel</label>
+                    <select @bind="cboGLPrefix" disabled="@(!FieldsEnabled)" @bind:after="MarkDirty">
+                        <option value="">-- Select --</option>
+                        @foreach (var item in GLPrefixItems)
+                        {
+                            <option value="@item.Value">@item.Text</option>
+                        }
+                    </select>
+                </div>
+            }
+            else if (ShowGLPrefixText)
+            {
+                <div class="form-field">
+                    <label>@GLPrefixLabel</label>
+                    <input type="text" @bind="txtGLPrefix" disabled="@(!FieldsEnabled)" @bind:after="MarkDirty" maxlength="10" />
+                </div>
+            }
+
+            @* AR Customer *@
+            @if (ShowARCustomer)
+            {
+                <div class="form-field">
+                    <label class="link" @onclick="OnARCustomerLinkClick">AR Customer</label>
+                    <input type="text" @bind="txtARCustomer" disabled maxlength="50" />
+                    <button class="browse-btn" @onclick="OnARCustomerBrowseClick" title="Browse Customers">🔍</button>
+                </div>
+            }
+
+            @* Community *@
+            <div class="form-field">
+                <label>@CommunityLabel</label>
+                <select @bind="cboCommunity" @bind:after="OnCommunityChanged" disabled="@(!FieldsEnabled)">
+                    <option value="">-- Select --</option>
+                    @foreach (var item in CommunityItems)
+                    {
+                        <option value="@item.Value">@item.Text</option>
+                    }
+                </select>
+            </div>
+
+            @* Phase *@
+            <div class="form-field">
+                <label>Phase</label>
+                <select @bind="cboPhase" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" style="max-width:120px;">
+                    <option value="">-- Select --</option>
+                    @foreach (var item in PhaseItems)
+                    {
+                        <option value="@item.Value">@item.Text</option>
+                    }
+                </select>
+            </div>
+
+            @* Model *@
+            <div class="form-field">
+                <label>Model</label>
+                <select @bind="cboModel" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)">
+                    <option value="">-- Select --</option>
+                    @foreach (var item in ModelItems)
+                    {
+                        <option value="@item.Text">@item.Text</option>
+                    }
+                </select>
+            </div>
+
+            @* Lot/Block/Plan *@
+            <div class="form-field">
+                <label>Lot/Block/Plan</label>
+                <div class="inline-fields">
+                    <input type="text" @bind="txtLot" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="10" placeholder="Lot" />
+                    <input type="text" @bind="txtBlock" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="10" placeholder="Block" />
+                    <input type="text" @bind="txtLotPlan" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="10" placeholder="Plan" />
+                </div>
+            </div>
+
+            @* Status *@
+            <div class="form-field">
+                <label>Status</label>
+                <select @bind="cboStatus" @bind:after="MarkDirty" disabled="@(!StatusEnabled)" style="max-width:150px;">
+                    <option value="0">In progress</option>
+                    <option value="1">Closed</option>
+                </select>
+            </div>
+
+            @* Retainage *@
+            <div class="form-field">
+                <label>Retainage</label>
+                <input type="text" @bind="txtHoldback" @bind:after="MarkDirty" maxlength="10" style="max-width:100px;" />
+            </div>
+
+            @* Address *@
+            <div class="section-title">Address</div>
+            <div class="form-field">
+                <label class="bold">Address</label>
+                <textarea rows="2" @bind="txtAddress" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="75"></textarea>
+            </div>
+            <div class="form-field">
+                <label>City/Prov</label>
+                <div class="inline-fields">
+                    <input type="text" @bind="txtCity" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="30" placeholder="City" />
+                    <select @bind="cboProvince" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" style="max-width:80px;">
+                        <option value="">--</option>
+                        @foreach (var p in ProvinceItems)
+                        {
+                            <option value="@p">@p</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="form-field">
+                <label>Postal</label>
+                <input type="text" @bind="txtPostal" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="7" style="max-width:120px;" />
+            </div>
+            <div class="form-field">
+                <label>Phone</label>
+                <input type="text" @bind="txtPhone" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="25" />
+            </div>
+            <div class="form-field">
+                <label>Fax</label>
+                <input type="text" @bind="txtFax" @bind:after="MarkDirty" disabled="@(!FieldsEnabled)" maxlength="25" />
+            </div>
+        </div>
+
+        @* Properties Grid *@
+        <div class="section-title">Properties</div>
+        <div class="panel-card" style="max-height:400px; overflow-y:auto;">
+            <HfGrid @ref="PropertiesGrid"
+                    TValue="PropertyRow"
+                    DataSource="@PropertiesData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    Height="350px"
+                    EditSettingsRef="@propertiesEditSettings">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(PropertyRow.Category)" HeaderText="Category" Width="100px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(PropertyRow.Name)" HeaderText="Name" Width="150px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(PropertyRow.Value)" HeaderText="Value" Width="150px" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(PropertyRow.DataType)" HeaderText="" Width="1px" Visible="false" />
+                    <HfGridColumn Field="@nameof(PropertyRow.PickList)" HeaderText="" Width="1px" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+
+    @* ── RIGHT PANEL ────────────────────────────────────── *@
+    <div class="job-right">
+        @* Notes *@
+        <div class="section-title">Notes</div>
+        <div class="panel-card">
+            <textarea rows="5" @bind="txtNotes" @bind:after="MarkDirty" style="width:100%;" maxlength="8000" placeholder="Enter notes..."></textarea>
+        </div>
+
+        @* Personnel (Contacts) *@
+        <div class="section-title">Personnel</div>
+        <div class="panel-card">
+            <HfGrid @ref="ContactsGrid"
+                    TValue="ContactRow"
+                    DataSource="@ContactsData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    Height="180px"
+                    EditSettingsRef="@contactsEditSettings">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(ContactRow.ContactType)" HeaderText="Role" Width="100px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.PM)" HeaderText="PM" Width="80px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.PMName)" HeaderText="Name" Width="150px" AllowEditing="false">
+                        <Template>
+                            @{
+                                var data = (ContactRow)context;
+                                <span>@data.PMName</span>
+                                <button class="browse-btn" style="margin-left:4px;" @onclick="() => OnContactBrowseClick(data)">🔍</button>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Cell" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="200px" AllowEditing="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        @* Job Contacts *@
+        <div class="section-title">Contacts</div>
+        <div class="panel-card">
+            <HfGrid @ref="JobContactsGrid"
+                    TValue="JobContactRow"
+                    DataSource="@JobContactsData"
+                    AllowSelection="true"
+                    AllowResizing="true"
+                    Height="250px"
+                    EditSettingsRef="@jobContactsEditSettings">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(JobContactRow.Role)" HeaderText="Role" Width="100px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.ContactID)" HeaderText="ID" Width="60px" Visible="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Company)" HeaderText="Company" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Name)" HeaderText="Name" Width="150px" AllowEditing="false">
+                        <Template>
+                            @{
+                                var data = (JobContactRow)context;
+                                <span>@data.Name</span>
+                                <button class="browse-btn" style="margin-left:4px;" @onclick="() => OnJobContactBrowseClick(data)">🔍</button>
+                            }
+                        </Template>
+                    </HfGridColumn>
+                    <HfGridColumn Field="@nameof(JobContactRow.Phone)" HeaderText="Phone" Width="120px" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Cell)" HeaderText="Cell" Width="120px" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Fax)" HeaderText="Fax" Width="120px" />
+                    <HfGridColumn Field="@nameof(JobContactRow.Email)" HeaderText="Email" Width="200px" />
+                    <HfGridColumn Field="@nameof(JobContactRow.SendVia)" HeaderText="Send Via" Width="80px" />
+                    <HfGridColumn Field="@nameof(JobContactRow.SmsAddress)" HeaderText="SMS" Width="120px" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        @* Purchase Orders *@
+        <div class="section-title">Purchase Orders</div>
+        <div class="panel-card">
+            <HfGrid @ref="POsGrid"
+                    TValue="PORow"
+                    DataSource="@POsData"
+                    AllowSelection="true"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    Height="300px"
+                    SelectionSettingsRef="@poSelectionSettings">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(PORow.PODate)" HeaderText="Date" Width="100px" Format="d" />
+                    <HfGridColumn Field="@nameof(PORow.PONumber)" HeaderText="PO Number" Width="100px" />
+                    <HfGridColumn Field="@nameof(PORow.POIndex)" HeaderText="PO Index" Width="80px" />
+                    <HfGridColumn Field="@nameof(PORow.Description)" HeaderText="Description" Width="200px" />
+                    <HfGridColumn Field="@nameof(PORow.Vendor)" HeaderText="Vendor" Width="80px" />
+                    <HfGridColumn Field="@nameof(PORow.VendorName)" HeaderText="Vendor Name" Width="180px" />
+                    <HfGridColumn Field="@nameof(PORow.Pretax)" HeaderText="Pretax" Width="100px" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+                    <HfGridColumn Field="@nameof(PORow.Tax)" HeaderText="Tax" Width="80px" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+                    <HfGridColumn Field="@nameof(PORow.Total)" HeaderText="Total" Width="100px" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" />
+                    <HfGridColumn Field="@nameof(PORow.Approval)" HeaderText="Approval" Width="200px" />
+                    <HfGridColumn Field="@nameof(PORow.PostingBatch)" HeaderText="Batch" Width="80px" />
+                    <HfGridColumn Field="@nameof(PORow.CancelledBy)" HeaderText="Cancelled By" Width="100px" Visible="false" />
+                    <HfGridColumn Field="@nameof(PORow.CancelledDate)" HeaderText="Cancelled Date" Width="100px" Visible="false" />
+                    <HfGridColumn Field="@nameof(PORow.CancelledNotes)" HeaderText="Cancel Notes" Width="150px" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? JobNumber { get; set; }
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // UI State
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string mJob = "";
+    private bool mIsCanadian = false;
+    private bool mIsAustralia = false;
+    private bool mIsMultifamily = false;
+    private string FormCaption = "Job Setup";
+    private string AccountingSystem = "None";
+    private string SalesSystem = "None";
+
+    // Field visibility/state
+    private bool FieldsEnabled = false;
+    private bool JobEditable = false;
+    private bool StatusEnabled = false;
+    private bool ShowExternalID = false;
+    private bool ShowARCustomer = true;
+    private bool ShowGLPrefixCombo = false;
+    private bool ShowGLPrefixText = false;
+    private bool ShowJobBrowse = false;
+    private string ExternalIDLabel = "ExternalID";
+    private string GLPrefixLabel = "GL Prefix";
+    private string CommunityLabel = "Community";
+    private int JobMaxLength = 12;
+
+    // Form fields
+    private string txtJob = "";
+    private string txtDescription = "";
+    private string txtExternalID = "";
+    private string txtGLPrefix = "";
+    private string cboGLPrefix = "";
+    private string txtARCustomer = "";
+    private string cboCommunity = "";
+    private string cboPhase = "";
+    private string cboModel = "";
+    private string txtLot = "";
+    private string txtBlock = "";
+    private string txtLotPlan = "";
+    private string cboStatus = "0";
+    private string txtHoldback = "";
+    private string txtAddress = "";
+    private string txtCity = "";
+    private string cboProvince = "";
+    private string txtPostal = "";
+    private string txtPhone = "";
+    private string txtFax = "";
+    private string txtNotes = "";
+
+    // Combo data
+    private List<ComboItem> CommunityItems = new();
+    private List<ComboItem> PhaseItems = new();
+    private List<ComboItem> ModelItems = new();
+    private List<ComboItem> GLPrefixItems = new();
+    private List<string> ProvinceItems = new();
+
+    // Grid data
+    private List<PropertyRow> PropertiesData = new();
+    private List<ContactRow> ContactsData = new();
+    private List<JobContactRow> JobContactsData = new();
+    private List<PORow> POsData = new();
+
+    // Grid refs
+    private HfGrid<PropertyRow>? PropertiesGrid;
+    private HfGrid<ContactRow>? ContactsGrid;
+    private HfGrid<JobContactRow>? JobContactsGrid;
+    private HfGrid<PORow>? POsGrid;
+
+    // Grid settings
+    private HfEditSettings propertiesEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+    private HfEditSettings contactsEditSettings = new() { AllowEditing = false };
+    private HfEditSettings jobContactsEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+    private HfSelectionSettings poSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+
+    // Property row indices
+    private int mprop_PermitNumber, mprop_PermitDate, mprop_ShellTemplate, mprop_UnitTemplate;
+    private int mprop_ConstStart, mprop_IntacctDepartment;
+    private int mprop_TarionBuilderNumber, mprop_TarionEnrollmentNumber;
+    private int mprop_LabTax, mprop_MatTax, mprop_SubTax, mprop_EquTax;
+    private int mprop_OvrTax, mprop_OthTax, mprop_ARTax, mprop_UserFlds;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAppSettings();
+        LoadProvinces();
+        await LoadCommunities();
+        await LoadModels();
+        await LoadGLPrefixes();
+
+        if (!string.IsNullOrEmpty(JobNumber))
+        {
+            mJob = JobNumber;
+            await LoadData();
+        }
+        else
+        {
+            mDirty = false;
+        }
+    }
+
+    // ── App Settings ─────────────────────────────────────────────────────
+    private async Task LoadAppSettings()
+    {
+        try
+        {
+            var dt = db.SqlExec("SELECT TOP 1 * FROM system_setup WHERE id=@Id", new { Id = DivisionID });
+            if (dt.Rows.Count > 0)
+            {
+                var row = dt.Rows[0];
+                var country = row["Country"]?.ToString() ?? "US";
+                mIsCanadian = country == "CA";
+                mIsAustralia = country == "AU";
+                AccountingSystem = row["AccountingSystem"]?.ToString() ?? "None";
+                SalesSystem = row["SalesSystem"]?.ToString() ?? "None";
+            }
+
+            mIsMultifamily = await GetOptionValue("MultiFamily") == "true";
+            CommunityLabel = await GetCustomDesc("Community");
+
+            // Configure based on accounting system
+            switch (AccountingSystem)
+            {
+                case "QuickBooks":
+                    ExternalIDLabel = "Quickbooks ID";
+                    ShowExternalID = true;
+                    ShowJobBrowse = true;
+                    break;
+                case "Simply":
+                    ExternalIDLabel = "Simply ID";
+                    ShowExternalID = true;
+                    ShowJobBrowse = true;
+                    break;
+                case "MasterBuilder":
+                    ShowExternalID = false;
+                    ShowARCustomer = false;
+                    ShowJobBrowse = true;
+                    break;
+                case "Timberline":
+                    ShowJobBrowse = true;
+                    ShowExternalID = false;
+                    break;
+                case "Intacct":
+                    GLPrefixLabel = "Location";
+                    ShowJobBrowse = true;
+                    ShowExternalID = false;
+                    break;
+                default:
+                    ShowExternalID = false;
+                    ShowJobBrowse = false;
+                    break;
+            }
+
+            if (mIsMultifamily)
+            {
+                ShowARCustomer = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadAppSettings error: {ex.Message}");
+        }
+    }
+
+    private async Task<string> GetOptionValue(string optionName)
+    {
+        try
+        {
+            var val = db.SqlExec($"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id=@Id", new { Id = DivisionID });
+            if (val.Rows.Count > 0) return val.Rows[0][0]?.ToString() ?? "";
+        }
+        catch { }
+        return "";
+    }
+
+    private async Task<string> GetCustomDesc(string itemName)
+    {
+        try
+        {
+            var dt = db.SqlExec(
+                "SELECT ISNULL(NULLIF(custom_description,''),item) FROM customdescriptions WHERE item=@Item",
+                new { Item = itemName });
+            if (dt.Rows.Count > 0) return dt.Rows[0][0]?.ToString() ?? itemName;
+        }
+        catch { }
+        return itemName;
+    }
+
+    // ── Load Combos ──────────────────────────────────────────────────────
+    private void LoadProvinces()
+    {
+        var provinces = "AB,BC,MB,NB,NL,NS,NT,NU,ON,PE,QC,SK,YT,AK,AL,AR,AZ,CA,CO,CT,DC,DE,FL,GA,GU,HI,IA,ID,IL,IN,KS,KY,LA,MA,MD,ME,MI,MN,MO,MS,MT,NC,ND,NE,NH,NJ,NM,NV,NY,OH,OK,OR,PA,PR,RI,SC,SD,TN,TX,UT,VA,VI,VT,WA,WI,WV,WY";
+        var states = "AK,AL,AR,AZ,CA,CO,CT,DC,DE,FL,GA,GU,HI,IA,ID,IL,IN,KS,KY,LA,MA,MD,ME,MI,MN,MO,MS,MT,NC,ND,NE,NH,NJ,NM,NV,NY,OH,OK,OR,PA,PR,RI,SC,SD,TN,TX,UT,VA,VI,VT,WA,WI,WV,WY,AB,BC,MB,NB,NL,NS,NT,NU,ON,PE,QC,SK,YT";
+        var auStates = "ACT,NSW,NT,Qld,SA,Tas,Vi,WA";
+
+        var s = mIsCanadian ? provinces : states;
+        if (mIsAustralia) s = auStates;
+        ProvinceItems = s.Split(',').ToList();
+    }
+
+    private async Task LoadCommunities()
+    {
+        try
+        {
+            var dt = db.SqlExec(
+                "SELECT c.Description, c.Area FROM tblLocality c JOIN DivisionCommunities d ON c.Area=d.Community WHERE d.DivisionID=@DivisionID ORDER BY c.Description",
+                new { DivisionID });
+            CommunityItems = dt.AsEnumerable().Select(r => new ComboItem
+            {
+                Text = r["Description"]?.ToString() ?? "",
+                Value = r["Area"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadCommunities error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadModels()
+    {
+        try
+        {
+            var dt = db.SqlExec(
+                @"SELECT ISNULL(model,'') + ISNULL(' - ' + description,'') AS Display
+                  FROM tblDBAssemblyMaster WHERE assemblytype=0 AND divisionid=@DivisionID ORDER BY 1",
+                new { DivisionID });
+            ModelItems = dt.AsEnumerable().Select(r => new ComboItem
+            {
+                Text = r["Display"]?.ToString() ?? "",
+                Value = r["Display"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadModels error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadGLPrefixes()
+    {
+        try
+        {
+            if (AccountingSystem == "Intacct")
+            {
+                ShowGLPrefixCombo = true;
+                ShowGLPrefixText = false;
+                var dt = db.SqlExec("SELECT description, gl_prefix FROM gl_prefix WHERE divisionid=@DivisionID",
+                    new { DivisionID });
+                GLPrefixItems = dt.AsEnumerable().Select(r => new ComboItem
+                {
+                    Text = r["description"]?.ToString() ?? "",
+                    Value = r["gl_prefix"]?.ToString() ?? ""
+                }).ToList();
+            }
+            else
+            {
+                ShowGLPrefixCombo = false;
+                ShowGLPrefixText = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadGLPrefixes error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadPhases(string community)
+    {
+        PhaseItems.Clear();
+        if (string.IsNullOrEmpty(community)) return;
+        try
+        {
+            var dt = db.SqlExec(
+                @"SELECT DISTINCT communityphase FROM tbljobs WHERE community=@Community AND ISNULL(communityphase,'')<>''
+                  UNION
+                  SELECT communityphase FROM communityphase WHERE community=@Community
+                  ORDER BY 1",
+                new { Community = community });
+            PhaseItems = dt.AsEnumerable().Select(r => new ComboItem
+            {
+                Text = r[0]?.ToString() ?? "",
+                Value = r[0]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch { }
+    }
+
+    // ── Load Data ────────────────────────────────────────────────────────
+    private async Task LoadData()
+    {
+        if (string.IsNullOrEmpty(mJob)) return;
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var isNewJob = mJob == "\x01";
+
+            if (isNewJob)
+            {
+                JobEditable = true;
+                FieldsEnabled = true;
+                StatusEnabled = true;
+                FormCaption = "Job Setup";
+                ClearFields();
+            }
+            else
+            {
+                JobEditable = false;
+                var dt = db.SqlExec(
+                    @"SELECT j.*, c.ar_customer_deposit
+                      FROM tbljobs j
+                      LEFT OUTER JOIN tblcustomers c ON j.job_no=c.job_no
+                      WHERE j.DivisionID=@DivisionID AND j.job_no=@Job",
+                    new { DivisionID, Job = mJob });
+
+                if (dt.Rows.Count == 0)
+                {
+                    FieldsEnabled = false;
+                    ClearFields();
+                }
+                else
+                {
+                    FieldsEnabled = true;
+                    StatusEnabled = true;
+                    var row = dt.Rows[0];
+
+                    txtJob = row["Job_No"]?.ToString() ?? "";
+                    txtExternalID = row["ExternalJobID"]?.ToString() ?? "";
+                    FormCaption = $"Job Setup - {txtJob}";
+                    txtDescription = row["Description"]?.ToString() ?? "";
+                    txtNotes = row["Notes"]?.ToString() ?? "";
+
+                    if (!mIsMultifamily)
+                        txtARCustomer = row["ar_customer_deposit"]?.ToString() ?? "";
+                    else
+                        txtARCustomer = row["ARCustomer"]?.ToString() ?? "";
+
+                    cboGLPrefix = row["gl_prefix"]?.ToString() ?? "";
+                    txtGLPrefix = row["gl_prefix"]?.ToString() ?? "";
+                    txtAddress = row["municipal_address"]?.ToString() ?? "";
+                    txtCity = row["city"]?.ToString() ?? "";
+                    cboProvince = row["province"]?.ToString() ?? "";
+                    txtPostal = row["zip"]?.ToString() ?? "";
+                    txtPhone = row["sitephone"]?.ToString() ?? "";
+                    txtFax = row["sitefax"]?.ToString() ?? "";
+                    txtLot = row["Lot"]?.ToString() ?? "";
+                    txtBlock = row["Block"]?.ToString() ?? "";
+                    txtLotPlan = row["LotPlan"]?.ToString() ?? "";
+                    txtHoldback = row["HoldbackRate"]?.ToString() ?? "";
+                    if (decimal.TryParse(txtHoldback, out var hb) && hb == 0) txtHoldback = "";
+
+                    cboStatus = (row["inactive"]?.ToString() ?? "") == "True" ? "1" : "0";
+                    cboCommunity = row["Community"]?.ToString() ?? "";
+                    cboPhase = row["CommunityPhase"]?.ToString() ?? "";
+
+                    // Load model display
+                    var modelCode = row["model"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(modelCode))
+                    {
+                        var mdt = db.SqlExec(
+                            @"SELECT ISNULL(model,'') + ISNULL(' - ' + description,'') AS Display
+                              FROM tblDBAssemblyMaster WHERE assemblytype=0 AND divisionid=@DivisionID AND model=@Model",
+                            new { DivisionID, Model = modelCode });
+                        cboModel = mdt.Rows.Count > 0 ? mdt.Rows[0][0]?.ToString() ?? "" : "";
+                    }
+
+                    await LoadPhases(cboCommunity);
+
+                    // Determine job browse visibility
+                    ShowJobBrowse = AccountingSystem switch
+                    {
+                        "QuickBooks" or "Simply" or "MYOB" or "Spectrum" or "Intacct" or "QuickbooksOnline" => true,
+                        "Timberline" or "MasterBuilder" => JobEditable,
+                        _ => false
+                    };
+                }
+            }
+
+            await LoadProperties();
+            await LoadContacts();
+            await LoadJobContacts();
+            await LoadPOs();
+
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading job: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearFields()
+    {
+        txtJob = "";
+        txtARCustomer = "";
+        txtExternalID = "";
+        txtDescription = "";
+        txtNotes = "";
+        txtGLPrefix = "";
+        cboGLPrefix = "";
+        txtAddress = "";
+        txtCity = "";
+        cboProvince = "";
+        txtPostal = "";
+        txtPhone = "";
+        txtFax = "";
+        cboModel = "";
+        txtLot = "";
+        txtBlock = "";
+        txtLotPlan = "";
+        txtHoldback = "";
+        cboStatus = "0";
+        cboCommunity = "";
+        cboPhase = "";
+        PropertiesData = new();
+        ContactsData = new();
+        JobContactsData = new();
+        POsData = new();
+    }
+
+    // ── Load Properties ──────────────────────────────────────────────────
+    private async Task LoadProperties()
+    {
+        PropertiesData = new();
+        int r = 0;
+
+        try
+        {
+            DataTable? rs = null;
+            if (!string.IsNullOrEmpty(mJob) && mJob != "\x01")
+            {
+                rs = db.SqlExec(
+                    @"SELECT j.shellscheduletemplate, j.scheduletemplate, j.permitnumber, j.permitreceiveddate,
+                             j.start_date, j.LabourTaxGroup, j.MaterialTaxGroup, j.SubcontractTaxGroup,
+                             j.EquipmentTaxGroup, j.OverheadTaxGroup, j.OtherTaxGroup, j.ARTaxGroup,
+                             j.IntacctDepartment, j.TarionEnrollmentNumber,
+                             ISNULL(ISNULL(p.TarionBuilderNumber,c.TarionBuilderNumber),j.TarionBuilderNumber) TarionBuilderNumber
+                      FROM tblJobs j
+                      LEFT JOIN tbllocality c ON c.area=j.community
+                      LEFT JOIN CommunityPhase p ON p.community=j.community AND p.communityphase=j.communityphase
+                      WHERE j.DivisionID=@DivisionID AND j.job_no=@Job",
+                    new { DivisionID, Job = mJob });
+            }
+
+            string GetVal(string col)
+            {
+                if (rs == null || rs.Rows.Count == 0) return "";
+                return rs.Rows[0][col]?.ToString() ?? "";
+            }
+
+            // Load tax groups for picklist
+            var taxGroups = "";
+            try
+            {
+                var tgDt = db.SqlExec("SELECT taxgroup, description FROM TaxGroups WHERE DivisionID=@DivisionID ORDER BY 1",
+                    new { DivisionID });
+                taxGroups = string.Join("|", tgDt.AsEnumerable().Select(row => $"{row[0]}\t{row[1]}"));
+            }
+            catch { }
+
+            // Scheduling
+            AddPropertyCategory(ref r, "Scheduling");
+            mprop_PermitNumber = r;
+            AddProperty(ref r, "Scheduling", "Permit Number", GetVal("PermitNumber"), "Str");
+            mprop_PermitDate = r;
+            AddProperty(ref r, "Scheduling", "Permit Received Date", GetVal("PermitReceivedDate"), "DateTime");
+
+            if (mIsMultifamily)
+            {
+                mprop_ShellTemplate = r + 1;
+                AddProperty(ref r, "Scheduling", "Shell Schedule Template", GetVal("ShellScheduleTemplate"), "Str");
+            }
+
+            mprop_UnitTemplate = r + 1;
+            AddProperty(ref r, "Scheduling", mIsMultifamily ? "Unit Schedule Template" : "Schedule Template",
+                GetVal("ScheduleTemplate"), "Str");
+
+            mprop_ConstStart = r + 1;
+            AddProperty(ref r, "Scheduling", "Construction Start Date", GetVal("Start_Date"), "DateTime");
+
+            // Tax Groups
+            AddPropertyCategory(ref r, "Tax Groups");
+            mprop_LabTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Labour", GetVal("LabourTaxGroup"), "Str", taxGroups);
+            mprop_MatTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Material", GetVal("MaterialTaxGroup"), "Str", taxGroups);
+            mprop_SubTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Subcontract", GetVal("SubContractTaxGroup"), "Str", taxGroups);
+            mprop_EquTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Equipment", GetVal("EquipmentTaxGroup"), "Str", taxGroups);
+            mprop_OvrTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Overhead", GetVal("OverheadTaxGroup"), "Str", taxGroups);
+            mprop_OthTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Other", GetVal("OtherTaxGroup"), "Str", taxGroups);
+            mprop_ARTax = r + 1;
+            AddProperty(ref r, "Tax Groups", "Accounts Receivable", GetVal("ARTaxGroup"), "Str", taxGroups);
+
+            mprop_UserFlds = r + 1;
+
+            // Load user-defined fields
+            try
+            {
+                var fieldsDt = db.SqlExec("SELECT * FROM JobCustomFieldDefs ORDER BY Category, Name");
+                DataTable? dataDt = null;
+                if (!string.IsNullOrEmpty(mJob) && mJob != "\x01")
+                {
+                    dataDt = db.SqlExec("SELECT * FROM JobCustomFields WHERE divisionid=@DivisionID AND Job_No=@Job",
+                        new { DivisionID, Job = mJob });
+                }
+
+                string currentCategory = "";
+                foreach (DataRow field in fieldsDt.Rows)
+                {
+                    var cat = field["category"]?.ToString() ?? "";
+                    if (cat != currentCategory)
+                    {
+                        currentCategory = cat;
+                        AddPropertyCategory(ref r, string.IsNullOrEmpty(cat) ? "unclassified" : cat);
+                    }
+
+                    var fieldName = field["Name"]?.ToString() ?? "";
+                    var pickList = field["PickList"]?.ToString() ?? "";
+                    var val = "";
+                    if (dataDt != null && dataDt.Rows.Count > 0 && dataDt.Columns.Contains(fieldName))
+                    {
+                        val = dataDt.Rows[0][fieldName]?.ToString() ?? "";
+                    }
+                    AddProperty(ref r, currentCategory, fieldName, val, "Str", pickList);
+                }
+            }
+            catch { }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadProperties error: {ex.Message}");
+        }
+    }
+
+    private void AddPropertyCategory(ref int r, string category)
+    {
+        PropertiesData.Add(new PropertyRow
+        {
+            Category = category,
+            Name = category,
+            Value = "",
+            DataType = "",
+            PickList = "",
+            IsCategory = true
+        });
+        r = PropertiesData.Count - 1;
+    }
+
+    private void AddProperty(ref int r, string category, string name, string value, string dataType, string pickList = "")
+    {
+        PropertiesData.Add(new PropertyRow
+        {
+            Category = category,
+            Name = name,
+            Value = value,
+            DataType = dataType,
+            PickList = pickList,
+            IsCategory = false
+        });
+        r = PropertiesData.Count - 1;
+    }
+
+    // ── Load Contacts ────────────────────────────────────────────────────
+    private async Task LoadContacts()
+    {
+        ContactsData = new();
+        if (string.IsNullOrEmpty(mJob) || mJob == "\x01") return;
+        try
+        {
+            var dt = db.SqlExec(
+                @"SELECT 'PM' ContactType, p.*
+                  FROM system_setup s
+                  LEFT OUTER JOIN tblJobs j ON j.Job_No=@Job AND j.divisionid=s.id
+                  LEFT OUTER JOIN tblProjectManager p ON j.PM=p.PM
+                  WHERE s.id=@DivisionID
+                  UNION ALL
+                  SELECT 'Estimator', p.*
+                  FROM system_setup s
+                  LEFT OUTER JOIN tblJobs j ON j.Job_No=@Job AND j.divisionid=s.id
+                  LEFT JOIN tblProjectManager p ON j.Estimator=p.PM
+                  WHERE s.id=@DivisionID
+                  UNION ALL
+                  SELECT 'Purchaser', p.*
+                  FROM system_setup s
+                  LEFT OUTER JOIN tblJobs j ON j.Job_No=@Job AND j.divisionid=s.id
+                  LEFT JOIN tblProjectManager p ON j.Purchaser=p.PM
+                  WHERE s.id=@DivisionID",
+                new { DivisionID, Job = mJob });
+
+            foreach (DataRow row in dt.Rows)
+            {
+                ContactsData.Add(new ContactRow
+                {
+                    ContactType = row["ContactType"]?.ToString() ?? "",
+                    PM = row["PM"]?.ToString() ?? "",
+                    PMName = row["PMName"]?.ToString() ?? "",
+                    Phone = row["Phone"]?.ToString() ?? "",
+                    Cell = row["Cell"]?.ToString() ?? "",
+                    Fax = row["Fax"]?.ToString() ?? "",
+                    Email = row["Email"]?.ToString() ?? "",
+                    RowState = "CLEAN"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadContacts error: {ex.Message}");
+        }
+    }
+
+    // ── Load Job Contacts ────────────────────────────────────────────────
+    private async Task LoadJobContacts()
+    {
+        JobContactsData = new();
+        if (string.IsNullOrEmpty(mJob) || mJob == "\x01") return;
+        try
+        {
+            // Load roles
+            var roles = await GetOptionValue("JobContactRoles");
+            if (!string.IsNullOrEmpty(roles))
+            {
+                foreach (var role in roles.Split('|', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!string.IsNullOrWhiteSpace(role))
+                    {
+                        JobContactsData.Add(new JobContactRow { Role = role.Trim() });
+                    }
+                }
+            }
+
+            // Load assigned contacts
+            var dt = db.SqlExec(
+                @"SELECT j.Role AS JobRole, c.*
+                  FROM jobContacts j
+                  JOIN contacts c ON j.contactid=c.contactid
+                  WHERE j.divisionid=@DivisionID AND j.job=@Job",
+                new { DivisionID, Job = mJob });
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var jobRole = row["JobRole"]?.ToString() ?? "";
+                var existing = JobContactsData.FirstOrDefault(r => r.Role == jobRole);
+                if (existing == null)
+                {
+                    existing = new JobContactRow { Role = jobRole };
+                    JobContactsData.Add(existing);
+                }
+                existing.ContactID = row["ContactID"]?.ToString() ?? "";
+                existing.Company = row["CompanyName"]?.ToString() ?? "";
+                existing.Name = row["FirstName"]?.ToString() ?? "";
+                existing.Phone = row["WorkPhone"]?.ToString() ?? "";
+                existing.Cell = row["CellPhone"]?.ToString() ?? "";
+                existing.Fax = row["Fax"]?.ToString() ?? "";
+                existing.Email = row["Email"]?.ToString() ?? "";
+                existing.SendVia = row["CommModeID"]?.ToString() ?? "";
+                existing.SmsAddress = row["SmsAddress"]?.ToString() ?? "";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadJobContacts error: {ex.Message}");
+        }
+    }
+
+    // ── Load POs ─────────────────────────────────────────────────────────
+    private async Task LoadPOs()
+    {
+        POsData = new();
+        if (string.IsNullOrEmpty(mJob) || mJob == "\x01") return;
+        try
+        {
+            var dt = db.SqlExec(
+                @"SELECT p.PONumber, p.PODate, p.POIndex, p.description,
+                         p.Vendor, v.vendor_name,
+                         SUM(d.pretax) Pretax, SUM(d.jctax + d.njctax) Tax,
+                         p.status, p.approvedby, p.approveddate,
+                         p.postingbatch, p.cancelled, p.cancelledBy, p.cancelleddate, p.cancelledNotes,
+                         c.postingbatch CancelPostingBatch
+                  FROM pomaster p
+                  LEFT OUTER JOIN tblvendors v ON p.vendor=v.vendor_id AND v.DivisionID=p.DivisionID
+                  LEFT OUTER JOIN poitems d ON p.ponumber=d.ponumber AND p.DivisionID=d.DivisionID
+                  LEFT OUTER JOIN pochangeorders c ON p.ponumber=c.ponumber AND p.DivisionID=d.DivisionID
+                  WHERE p.DivisionID=@DivisionID AND p.job=@Job
+                  GROUP BY p.PODate, p.PONumber, p.POIndex, p.description, p.Vendor, v.vendor_name, p.postingbatch,
+                           p.cancelled, p.cancelledBy, c.postingbatch, p.cancelleddate, p.cancellednotes,
+                           p.status, p.approvedby, p.approveddate
+                  ORDER BY p.ponumber",
+                new { DivisionID, Job = mJob });
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var pretax = SafeDecimal(row["Pretax"]);
+                var tax = SafeDecimal(row["Tax"]);
+                var cancelled = row["Cancelled"]?.ToString() == "True";
+                var status = row["status"]?.ToString() ?? "";
+
+                var approval = "";
+                if (cancelled)
+                    approval = "Cancelled";
+                else if (status == "Pending")
+                    approval = "Approval Required";
+                else
+                    approval = $"{row["approvedby"]}: {(row["approveddate"] != DBNull.Value ? Convert.ToDateTime(row["approveddate"]).ToString("MMM d, yyyy") : "")}";
+
+                POsData.Add(new PORow
+                {
+                    PODate = row["PODate"] != DBNull.Value ? Convert.ToDateTime(row["PODate"]).ToString("d") : "",
+                    PONumber = row["PONumber"]?.ToString() ?? "",
+                    POIndex = row["POIndex"]?.ToString() ?? "",
+                    Description = row["description"]?.ToString() ?? "",
+                    Vendor = row["Vendor"]?.ToString() ?? "",
+                    VendorName = row["vendor_name"]?.ToString() ?? "",
+                    Pretax = pretax,
+                    Tax = tax,
+                    Total = pretax + tax,
+                    Approval = approval,
+                    PostingBatch = row["postingbatch"]?.ToString() ?? "",
+                    CancelledBy = row["cancelledBy"]?.ToString() ?? "",
+                    CancelledDate = row["cancelleddate"] != DBNull.Value ? Convert.ToDateTime(row["cancelleddate"]).ToString("d") : "",
+                    CancelledNotes = row["cancelledNotes"]?.ToString() ?? "",
+                    Status = status,
+                    IsCancelled = cancelled
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadPOs error: {ex.Message}");
+        }
+    }
+
+    // ── Save Data ────────────────────────────────────────────────────────
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var result = await JSRuntime.InvokeAsync<bool>("confirm",
+                "Job Setup has changed.\n\nDo you want to save these changes?");
+            if (!result) return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(txtJob))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "A job number is required.");
+            return false;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var community = cboCommunity;
+            var communityPhase = cboPhase;
+            var glPrefix = ShowGLPrefixCombo ? cboGLPrefix : txtGLPrefix;
+            var model = cboModel.Contains(" - ") ? cboModel.Split(" - ")[0] : cboModel;
+            var isNewJob = mJob == "\x01";
+
+            if (isNewJob)
+            {
+                // Insert into tblcustomers (trigger creates tbljobs)
+                await db.ExecuteAsync(
+                    @"INSERT INTO tblcustomers (home_selection, presale_selection, DivisionID, Customer_No, Job_no,
+                        ar_customer_deposit, Description, bal_sheet_Prefix, community, phase,
+                        address1, city, province, zip, phone, fax, purchased, approved, contract_assigned,
+                        cancelled, inactive, lot, block, lotplan, model, sale_posted)
+                      VALUES('Spec Home','Spec Home', @DivisionID, @Job, @Job, @ARCustomer, @Description,
+                        @GLPrefix, @Community, @Phase, @Address, @City, @Province, @Postal, @Phone, @Fax,
+                        1, 1, 1, 0, 0, @Lot, @Block, @LotPlan, @Model, 1)",
+                    new
+                    {
+                        DivisionID, Job = txtJob.Trim(), ARCustomer = txtARCustomer,
+                        Description = txtDescription, GLPrefix = glPrefix, Community = community,
+                        Phase = communityPhase, Address = txtAddress, City = txtCity,
+                        Province = cboProvince, Postal = txtPostal, Phone = txtPhone, Fax = txtFax,
+                        Lot = txtLot, Block = txtBlock, LotPlan = txtLotPlan, Model = model
+                    });
+
+                // Update tbljobs with additional fields
+                await db.ExecuteAsync(
+                    @"UPDATE tblJobs SET isquote=0, ExternalJobID=@ExternalID, Description=@Description,
+                        Notes=@Notes, GL_Prefix=@GLPrefix, Community=@Community, CommunityPhase=@Phase,
+                        municipal_address=@Address, city=@City, province=@Province, zip=@Postal,
+                        sitephone=@Phone, sitefax=@Fax, Inactive=@Inactive, arcustomer=@ARCustomer,
+                        Lot=@Lot, Block=@Block, LotPlan=@LotPlan, Model=@Model, HoldbackRate=@Holdback
+                      WHERE DivisionID=@DivisionID AND job_no=@Job",
+                    new
+                    {
+                        DivisionID, Job = txtJob.Trim(), ExternalID = txtExternalID,
+                        Description = txtDescription, Notes = txtNotes, GLPrefix = glPrefix,
+                        Community = community, Phase = communityPhase, Address = txtAddress,
+                        City = txtCity, Province = cboProvince, Postal = txtPostal,
+                        Phone = txtPhone, Fax = txtFax, Inactive = cboStatus == "1",
+                        ARCustomer = txtARCustomer, Lot = txtLot, Block = txtBlock,
+                        LotPlan = txtLotPlan, Model = model,
+                        Holdback = decimal.TryParse(txtHoldback, out var hb) ? hb : 0m
+                    });
+
+                mJob = txtJob.Trim();
+                JobEditable = false;
+                ShowJobBrowse = false;
+
+                // Insert manual estimates assembly
+                try
+                {
+                    await db.ExecuteAsync(
+                        @"INSERT INTO EstimateAssemblies(job, Customer_no, EstimateIndex, HFDescription, AssemblyType, OptionType, DivisionID, salesqty)
+                          VALUES(@Job, @Job, 0, 'Manual Estimates', -1, -1, @DivisionID, 1)",
+                        new { Job = mJob, DivisionID });
+                }
+                catch { }
+            }
+            else
+            {
+                // Update existing job
+                await db.ExecuteAsync(
+                    @"UPDATE tblJobs SET Description=@Description, Notes=@Notes, GL_Prefix=@GLPrefix,
+                        Community=@Community, CommunityPhase=@Phase, Municipal_Address=@Address,
+                        City=@City, Province=@Province, Zip=@Postal, SitePhone=@Phone, SiteFax=@Fax,
+                        Inactive=@Inactive, Lot=@Lot, Block=@Block, LotPlan=@LotPlan, Model=@Model,
+                        HoldbackRate=@Holdback, arcustomer=@ARCustomer
+                      WHERE Job_No=@Job AND DivisionID=@DivisionID",
+                    new
+                    {
+                        DivisionID, Job = mJob, Description = txtDescription, Notes = txtNotes,
+                        GLPrefix = glPrefix, Community = community, Phase = communityPhase,
+                        Address = txtAddress, City = txtCity, Province = cboProvince, Postal = txtPostal,
+                        Phone = txtPhone, Fax = txtFax, Inactive = cboStatus == "1",
+                        Lot = txtLot, Block = txtBlock, LotPlan = txtLotPlan, Model = model,
+                        Holdback = decimal.TryParse(txtHoldback, out var hb) ? hb : 0m,
+                        ARCustomer = txtARCustomer
+                    });
+
+                // Update tblcustomers if no sales system
+                if (SalesSystem == "None" || SalesSystem == "")
+                {
+                    await db.ExecuteAsync(
+                        @"UPDATE tblcustomers SET ar_customer_deposit=@ARCustomer, Description=@Description,
+                            bal_sheet_Prefix=@GLPrefix, Community=@Community, Phase=@Phase,
+                            Address1=@Address, City=@City, Province=@Province, Zip=@Postal,
+                            Phone=@Phone, Fax=@Fax, Lot=@Lot, Block=@Block, LotPlan=@LotPlan, Model=@Model
+                          WHERE Customer_No=@Job AND DivisionID=@DivisionID",
+                        new
+                        {
+                            DivisionID, Job = mJob, ARCustomer = txtARCustomer,
+                            Description = txtDescription, GLPrefix = glPrefix,
+                            Community = community, Phase = communityPhase,
+                            Address = txtAddress, City = txtCity, Province = cboProvince,
+                            Postal = txtPostal, Phone = txtPhone, Fax = txtFax,
+                            Lot = txtLot, Block = txtBlock, LotPlan = txtLotPlan, Model = model
+                        });
+                }
+            }
+
+            // Save contacts
+            foreach (var contact in ContactsData.Where(c => c.RowState == "DIRTY"))
+            {
+                await db.ExecuteAsync(
+                    $"UPDATE tblJobs SET {contact.ContactType}=@PM WHERE divisionid=@DivisionID AND Job_No=@Job",
+                    new { contact.PM, DivisionID, Job = mJob });
+                contact.RowState = "CLEAN";
+            }
+
+            // Save job contacts
+            foreach (var jc in JobContactsData.Where(c => c.RowState == "DIRTY"))
+            {
+                if (!string.IsNullOrEmpty(jc.ContactID))
+                {
+                    try
+                    {
+                        // TODO: implement save logic for job contacts.
+                        jc.RowState = "CLEAN";
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Save job contact error: {ex.Message}");
+                    }
+                }
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveData error: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Event Handlers ─────────────────────────────────────────────────
+    private void MarkDirty() { mDirty = true; }
+
+    private async Task OnOpenClick()
+    {
+        if (mDirty)
+        {
+            var ok = await SaveData(true);
+            if (!ok) return;
+        }
+        // TODO: Show job picker dialog
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private void OnAttachmentsClick()
+    {
+        NavigationManager.NavigateTo($"/attachments/{mJob}");
+    }
+
+    private void OnCorrespondenceClick()
+    {
+        NavigationManager.NavigateTo($"/correspondence/{mJob}");
+    }
+
+    private void OnJobChanged()
+    {
+        mDirty = true;
+        FormCaption = string.IsNullOrEmpty(txtJob) ? "Job Setup" : $"Job Setup - {txtJob}";
+    }
+
+    private void OnJobBrowseClick()
+    {
+        // TODO: Show job browse dialog
+    }
+
+    private void OnARCustomerLinkClick()
+    {
+        if (!string.IsNullOrEmpty(txtARCustomer))
+        {
+            NavigationManager.NavigateTo($"/customer/{txtARCustomer}");
+        }
+    }
+
+    private void OnARCustomerBrowseClick()
+    {
+        // TODO: Show AR customer browse dialog
+    }
+
+    private async Task OnCommunityChanged()
+    {
+        mDirty = true;
+        await LoadPhases(cboCommunity);
+        cboPhase = "";
+    }
+
+    private void OnContactBrowseClick(ContactRow contact)
+    {
+        // TODO: Show contact picker dialog for the given contact type
+    }
+
+    private void OnJobContactBrowseClick(JobContactRow jobContact)
+    {
+        // TODO: Show job contact picker dialog for the given role
+    }
+
+    private static decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+
+    private sealed class ComboItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    private sealed class PropertyRow
+    {
+        public string Category { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Value { get; set; } = "";
+        public string DataType { get; set; } = "";
+        public string PickList { get; set; } = "";
+        public bool IsCategory { get; set; }
+    }
+
+    private sealed class ContactRow
+    {
+        public string ContactType { get; set; } = "";
+        public string PM { get; set; } = "";
+        public string PMName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    private sealed class JobContactRow
+    {
+        public string Role { get; set; } = "";
+        public string ContactID { get; set; } = "";
+        public string Company { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Cell { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string SendVia { get; set; } = "";
+        public string SmsAddress { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    private sealed class PORow
+    {
+        public string PODate { get; set; } = "";
+        public string PONumber { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string VendorName { get; set; } = "";
+        public decimal Pretax { get; set; }
+        public decimal Tax { get; set; }
+        public decimal Total { get; set; }
+        public string Approval { get; set; } = "";
+        public string PostingBatch { get; set; } = "";
+        public string CancelledBy { get; set; } = "";
+        public string CancelledDate { get; set; } = "";
+        public string CancelledNotes { get; set; } = "";
+        public string Status { get; set; } = "";
+        public bool IsCancelled { get; set; }
+    }
+}

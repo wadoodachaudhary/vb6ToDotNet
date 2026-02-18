@@ -1,0 +1,1375 @@
+```razor
+@page "/takeoff"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Models
+@using System.Data
+@using Microsoft.Data.SqlClient
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Takeoff - HomeFront</PageTitle>
+
+<style>
+    .takeoff-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 80px);
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    .onscreen-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .onscreen-bar label {
+        font-size: 12px;
+        text-align: right;
+        min-width: 110px;
+    }
+
+    .onscreen-bar input {
+        flex: 1;
+        padding: 2px 6px;
+        border: none;
+        background: #f0f0f0;
+        font-size: 12px;
+    }
+
+    .onscreen-bar button {
+        padding: 2px 8px;
+        border: 1px solid #ced4da;
+        background: #fff;
+        cursor: pointer;
+        border-radius: 3px;
+    }
+
+    .top-section {
+        display: flex;
+        flex: 0 0 auto;
+        min-height: 200px;
+        max-height: 45%;
+        border-bottom: 3px solid #c9c9c9;
+        resize: vertical;
+        overflow: hidden;
+    }
+
+    .list-panel {
+        width: 280px;
+        min-width: 180px;
+        border-right: 3px solid #c9c9c9;
+        overflow: auto;
+        resize: horizontal;
+    }
+
+    .variables-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .variables-grid-area {
+        flex: 1;
+        overflow: auto;
+        border-bottom: 2px solid #c9c9c9;
+    }
+
+    .help-area {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        min-height: 60px;
+        max-height: 120px;
+        overflow: auto;
+    }
+
+    .help-text {
+        flex: 1;
+        background: #f0f0f0;
+        border: none;
+        padding: 4px;
+        font-size: 12px;
+        resize: none;
+        overflow-y: auto;
+    }
+
+    .pass-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        justify-content: flex-end;
+    }
+
+    .pass-buttons button {
+        width: 28px;
+        height: 28px;
+        border: 1px solid #ced4da;
+        background: #f7f7f7;
+        cursor: pointer;
+        border-radius: 3px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .pass-buttons button:hover:not(:disabled) {
+        background: #e0e0e0;
+    }
+
+    .pass-buttons button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .bottom-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .items-grid-area {
+        flex: 1;
+        overflow: auto;
+    }
+
+    .footer-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 8px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .footer-bar label {
+        font-size: 12px;
+        text-align: right;
+    }
+
+    .footer-bar select,
+    .footer-bar input {
+        padding: 2px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+
+    .footer-bar .btn {
+        padding: 4px 16px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #f7f7f7;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .footer-bar .btn:hover {
+        background: #e0e0e0;
+    }
+
+    .footer-bar .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .tree-node {
+        padding: 2px 4px;
+        cursor: pointer;
+        user-select: none;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .tree-node:hover {
+        background: #e8f0fe;
+    }
+
+    .tree-node.selected {
+        background: #cce5ff;
+        font-weight: 600;
+    }
+
+    .tree-node.bold {
+        font-weight: 700;
+    }
+
+    .tree-toggle {
+        display: inline-block;
+        width: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #666;
+        cursor: pointer;
+    }
+
+    .tree-children {
+        padding-left: 16px;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.7);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        font-weight: 500;
+    }
+</style>
+
+<div class="takeoff-container" style="position: relative;">
+
+    @if (IsLoading)
+    {
+        <div class="loading-overlay">⏳ Loading...</div>
+    }
+
+    @* ── OnScreen Project Bar ─────────────────────────────── *@
+    @if (ShowOnScreenBar)
+    {
+        <div class="onscreen-bar">
+            <label>OnCenter Project</label>
+            <input type="text" readonly value="@OnScreenProjectName" />
+            <button @onclick="OnBrowseProject">📂</button>
+        </div>
+    }
+
+    @* ── Top Section: List + Variables ─────────────────────── *@
+    <div class="top-section">
+        @* Left: Assembly/Item List *@
+        <div class="list-panel">
+            @foreach (var node in ListNodes)
+            {
+                @RenderListNode(node, 0)
+            }
+        </div>
+
+        @* Right: Variables + Help *@
+        <div class="variables-panel">
+            <div class="variables-grid-area">
+                @if (ShowHFVariables)
+                {
+                    <HfGrid @ref="HFVariablesGrid"
+                            TValue="HFVariableRow"
+                            DataSource="@HFVariablesData"
+                            AllowSelection="true"
+                            AllowResizing="true"
+                            Height="100%"
+                            EditSettingsRef="@variableEditSettings">
+                        <HfGridColumnsBase>
+                            <HfGridColumn Field="@nameof(HFVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="true" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionName)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionType)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionUOM)" HeaderText="" Width="1px" Visible="false" />
+                        </HfGridColumnsBase>
+                    </HfGrid>
+                }
+                else if (ShowTLVariables)
+                {
+                    <HfGrid @ref="TLVariablesGrid"
+                            TValue="TLVariableRow"
+                            DataSource="@TLVariablesData"
+                            AllowSelection="true"
+                            AllowResizing="true"
+                            Height="100%"
+                            EditSettingsRef="@variableEditSettings">
+                        <HfGridColumnsBase>
+                            <HfGridColumn Field="@nameof(TLVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
+                            <HfGridColumn Field="@nameof(TLVariableRow.IsYesNo)" HeaderText="" Width="1px" Visible="false" />
+                        </HfGridColumnsBase>
+                    </HfGrid>
+                }
+            </div>
+
+            <div class="help-area">
+                <textarea class="help-text" readonly rows="3">@HelpText</textarea>
+                <div class="pass-buttons">
+                    <button disabled="@(!AddPassEnabled)" title="Undo Pass" @onclick="OnUndoPass">↩</button>
+                    <button disabled="@(!AddPassEnabled)" title="Add Pass" @onclick="OnAddPass">➕</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Bottom Section: Items Grid ───────────────────────── *@
+    <div class="bottom-section">
+        <div class="items-grid-area">
+            <HfGrid @ref="ItemsGrid"
+                    TValue="TakeoffItemRow"
+                    DataSource="@ItemsData"
+                    AllowSelection="true"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowFiltering="false"
+                    EnableHover="true"
+                    Height="100%"
+                    EditSettingsRef="@itemEditSettings"
+                    SelectionSettingsRef="@itemSelectionSettings">
+                <HfGridColumnsBase>
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Assembly)" HeaderText="Assembly" Width="100px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.AssemblyDescription)" HeaderText="Asm Desc" Width="140px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Model)" HeaderText="Model" Width="80px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Phase)" HeaderText="Phase" Width="70px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Item)" HeaderText="Item" Width="70px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Description)" HeaderText="Description" Width="200px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.TakeoffQty)" HeaderText="Takeoff Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.OrderQty)" HeaderText="Order Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.OrderUOM)" HeaderText="Order UOM" Width="80px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.ConversionFactor)" HeaderText="Conv Factor" Width="90px" Format="N4" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.WastePercent)" HeaderText="Waste %" Width="70px" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.JCCostCode)" HeaderText="Cost Code" Width="90px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.JCCategory)" HeaderText="Category" Width="80px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Price)" HeaderText="Price" Width="80px" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="PO Index" Width="80px" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Location)" HeaderText="Location" Width="100px" AllowEditing="true" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Notes)" HeaderText="Notes" Width="120px" AllowEditing="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.RawFormula)" HeaderText="Formula" Width="120px" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.ResolvedFormula)" HeaderText="Resolved" Width="120px" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.Job)" HeaderText="Job" Width="80px" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.RoundTo)" HeaderText="Round To" Width="70px" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.RoundDir)" HeaderText="Round Dir" Width="70px" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.PassTakeoffQty)" HeaderText="Pass TkOff" Width="90px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" Visible="false" />
+                    <HfGridColumn Field="@nameof(TakeoffItemRow.PassOrderQty)" HeaderText="Pass Order" Width="90px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" Visible="false" />
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
+
+        @* ── Footer Bar ───────────────────────────────────── *@
+        <div class="footer-bar">
+            <label>Override JC Category</label>
+            <select @bind="OverrideCategory" style="width: 200px;">
+                <option value=""></option>
+                @foreach (var cat in CategoryList)
+                {
+                    <option value="@cat.Value">@cat.Text</option>
+                }
+            </select>
+
+            <label style="margin-left: 16px;">Sale Qty</label>
+            <input type="number" @bind="SaleQty" style="width: 70px;" step="any" />
+
+            <span style="flex: 1;"></span>
+
+            <button class="btn btn-primary" style="@(OkVisible ? "" : "display:none")" @onclick="OnOkClick">&amp;OK</button>
+            <button class="btn" @onclick="OnCloseClick">@CloseButtonCaption</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    // ── Database ──────────────────────────────────────────────
+    private HomeFront.Data.DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // ── State ─────────────────────────────────────────────────
+    private bool IsLoading = false;
+    private bool ShowOnScreenBar = false;
+    private bool ShowHFVariables = false;
+    private bool ShowTLVariables = false;
+    private bool AddPassEnabled = false;
+    private bool OkVisible = false;
+    private string CloseButtonCaption = "Close";
+    private string HelpText = "";
+    private double SaleQty = 0;
+    private string OverrideCategory = "";
+
+    // ── Takeoff Parameters ────────────────────────────────────
+    private string mSessionID = "";
+    private string mTakeoffMode = "Assembly"; // Assembly, Item, Custom, OneTime
+    private int mAssemblyType = 0;
+    private string mAssemblyDescription = "";
+    private string mCommunity = "";
+    private string mCommunityPhase = "";
+    private string mAssembly = "";
+    private string mModel = "";
+    private string mOptionID = "";
+    private string mJob = "";
+    private string mVendor = "";
+    private bool mIsChangeOrder = false;
+    private bool mUseAltCostCodesForCO = false;
+    private long mOnScreenBidID = 0;
+    private string OnScreenProjectName = "";
+    private bool mCommercial = false;
+    private int mViewIndex = 0;
+
+    // ── Grid Refs ─────────────────────────────────────────────
+    private HfGrid<TakeoffItemRow>? ItemsGrid;
+    private HfGrid<HFVariableRow>? HFVariablesGrid;
+    private HfGrid<TLVariableRow>? TLVariablesGrid;
+
+    // ── Grid Settings ─────────────────────────────────────────
+    private HfEditSettings variableEditSettings = new()
+    {
+        AllowEditing = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfEditSettings itemEditSettings = new()
+    {
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfSelectionSettings itemSelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true
+    };
+
+    // ── Data Sources ──────────────────────────────────────────
+    private List<TakeoffItemRow> ItemsData = new();
+    private List<HFVariableRow> HFVariablesData = new();
+    private List<TLVariableRow> TLVariablesData = new();
+    private List<ListTreeNode> ListNodes = new();
+    private List<ComboItem> CategoryList = new();
+
+    // ── View Definitions ──────────────────────────────────────
+    private List<ViewDef> Views = new();
+
+    // ── Lifecycle ─────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        mSessionID = $"{Environment.MachineName}_{Environment.ProcessId}";
+        await LoadCategories();
+        LoadViewDefinitions();
+        await LoadListAsync(true);
+    }
+
+    // ── Load Categories ───────────────────────────────────────
+    private async Task LoadCategories()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                $"SELECT ISNULL(Category,'') + ' - ' + ISNULL(Description,'') AS Display, Category FROM StandardCategories WHERE DivisionID = {DivisionID} ORDER BY Category");
+            CategoryList = rows.Select(r => new ComboItem
+            {
+                Value = r["Category"]?.ToString() ?? "",
+                Text = r["Display"]?.ToString() ?? ""
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadCategories error: {ex.Message}");
+        }
+    }
+
+    // ── View Definitions ──────────────────────────────────────
+    private void LoadViewDefinitions()
+    {
+        Views = new List<ViewDef>
+        {
+            // 0: HF Assemblies (Models)
+            new ViewDef
+            {
+                Name = "Assemblies",
+                KeyFlds = "m.community|m.model+'~'+m.assembly",
+                DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional  -- ')|m.Assembly + isnull(' - '+m.description,'')",
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=0",
+                Database = "HomeFront"
+            },
+            // 1: Specific Extras
+            new ViewDef
+            {
+                Name = "Assemblies Specific Extras",
+                KeyFlds = "m.community|m.model|m.optionid+'~'+m.assembly",
+                DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional -- ')|m.Model + isnull(' - ' +em.description,'')|m.Assembly + isnull(' - '+m.description,'')",
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join estmodellist em on(m.model=em.model) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=2",
+                Database = "HomeFront"
+            },
+            // 2: Global Extras
+            new ViewDef
+            {
+                Name = "Global Extras",
+                KeyFlds = "m.community|m.category|m.optionid+'~'+m.assembly",
+                DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional -- ')|m.category+isnull(' - '+c.description,'')|m.Assembly + isnull(' - '+m.description,'')",
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=3",
+                Database = "HomeFront"
+            },
+            // 3: Design Center Options
+            new ViewDef
+            {
+                Name = "Design Center Options",
+                KeyFlds = "m.community|m.category|m.optionid+'~'+m.assembly",
+                DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional Options -- ')|m.category+isnull(' - '+c.description,'')|m.Assembly + isnull(' - '+m.description,'')",
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=4",
+                Database = "HomeFront"
+            },
+            // 4: Quotes
+            new ViewDef
+            {
+                Name = "Quotes",
+                KeyFlds = "job|changeorder|assembly",
+                DisplayFlds = "job + ' - ' + jobdesc|changeorderdesc|assemblydesc",
+                SortFlds = "||assemblytype",
+                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {DivisionID} and isquote=1",
+                Database = "HomeFront"
+            },
+            // 5: Open Jobs
+            new ViewDef
+            {
+                Name = "Open Jobs",
+                KeyFlds = "job|changeorder|assembly",
+                DisplayFlds = "job + ' - ' + jobdesc|changeorderdesc|assemblydesc",
+                SortFlds = "||assemblytype",
+                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {DivisionID} and isquote=0",
+                Database = "HomeFront"
+            },
+            // 6-7: Estimating Assemblies (placeholder)
+            new ViewDef { Name = "Estimating Assemblies", Database = "Estimating" },
+            new ViewDef { Name = "Estimating Assemblies Alpha", Database = "Estimating" },
+            // 8: Items by Groups & Phases
+            new ViewDef
+            {
+                Name = "Items by Groups & Phases",
+                KeyFlds = "GrpPhase|Phase|Phase+'/'+Item",
+                SortFlds = "GrpSortOrder|PhaseSortOrder|ItemSortOrder",
+                DisplayFlds = "GrpPhase + '   ' + GrpDesc|Phase + '   ' + PhaseDesc|Item + '   ' + ItemDesc",
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
+                Database = "HomeFront"
+            },
+            // 9: Items by Purchase Orders
+            new ViewDef
+            {
+                Name = "Items by Purchase Orders",
+                KeyFlds = "POIndex|Phase+'/'+item",
+                DisplayFlds = "POIndex + '   ' + POIndexDescription|ItemDesc",
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
+                Database = "HomeFront"
+            },
+            // 10: Items by Cost Codes
+            new ViewDef
+            {
+                Name = "Items by Cost Codes",
+                KeyFlds = "JCCostCode|Phase+'/'+item",
+                DisplayFlds = "JCCostCode + '   ' + JCCostCodeDesc|ItemDesc",
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
+                Database = "HomeFront"
+            },
+            // 11: Items alphabetical
+            new ViewDef
+            {
+                Name = "Items",
+                KeyFlds = "left(itemdesc,1)|Phase+'/'+item",
+                DisplayFlds = "left(itemdesc,1)|ItemDesc",
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
+                Database = "HomeFront"
+            }
+        };
+    }
+
+    // ── Load List (Tree) ──────────────────────────────────────
+    private async Task LoadListAsync(bool clearTree)
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            if (clearTree) ListNodes.Clear();
+
+            if (mViewIndex >= Views.Count || string.IsNullOrEmpty(Views[mViewIndex].FromWhere))
+            {
+                IsLoading = false;
+                StateHasChanged();
+                return;
+            }
+
+            var view = Views[mViewIndex];
+            var keyFields = view.KeyFlds?.Split('|') ?? Array.Empty<string>();
+            var displayFields = view.DisplayFlds?.Split('|') ?? Array.Empty<string>();
+            var sortFields = view.SortFlds?.Split('|') ?? Array.Empty<string>();
+
+            if (keyFields.Length == 0) return;
+
+            // Load first level
+            var keyFld = keyFields[0];
+            var displayFld = displayFields.Length > 0 ? displayFields[0] : keyFld;
+            var sortFld = sortFields.Length > 0 && !string.IsNullOrEmpty(sortFields[0]) ? sortFields[0] : "2";
+
+            var sql = $"SELECT DISTINCT {keyFld} AS KeyVal, {displayFld} AS DisplayVal, {sortFld} AS SortVal {view.FromWhere} ORDER BY {sortFld}";
+            sql = sql.Replace("|", ",");
+
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                var node = new ListTreeNode
+                {
+                    KeyValue = row["KeyVal"]?.ToString() ?? "",
+                    DisplayText = (row["DisplayVal"]?.ToString() ?? "").Trim(),
+                    KeyFieldName = keyFld,
+                    Level = 0,
+                    HasChildren = keyFields.Length > 1,
+                    WhereClause = $" AND {keyFld} = '{row["KeyVal"]}'",
+                    ViewIndex = mViewIndex
+                };
+                ListNodes.Add(node);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadListAsync error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Render Tree Node ──────────────────────────────────────
+    private RenderFragment RenderListNode(ListTreeNode node, int depth) => __builder =>
+    {
+        <div style="padding-left: @(depth * 16)px;">
+            <div class="tree-node @(node.IsSelected ? "selected" : "") @(node.IsBold ? "bold" : "")"
+                 @ondblclick="() => OnListNodeDblClick(node)"
+                 @onclick="() => OnListNodeClick(node)">
+                @if (node.HasChildren)
+                {
+                    <span class="tree-toggle" @onclick="() => ToggleListNode(node)" @onclick:stopPropagation="true">
+                        @(node.Expanded ? "▼" : "▶")
+                    </span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+                @node.DisplayText
+            </div>
+            @if (node.Expanded && node.Children != null)
+            {
+                @foreach (var child in node.Children)
+                {
+                    @RenderListNode(child, depth + 1)
+                }
+            }
+        </div>
+    };
+
+    private async Task ToggleListNode(ListTreeNode node)
+    {
+        if (node.Expanded)
+        {
+            node.Expanded = false;
+        }
+        else
+        {
+            if (node.Children == null || node.Children.Count == 0)
+            {
+                await LoadChildNodes(node);
+            }
+            node.Expanded = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadChildNodes(ListTreeNode parentNode)
+    {
+        try
+        {
+            var view = Views[parentNode.ViewIndex];
+            var keyFields = view.KeyFlds?.Split('|') ?? Array.Empty<string>();
+            var displayFields = view.DisplayFlds?.Split('|') ?? Array.Empty<string>();
+            var sortFields = view.SortFlds?.Split('|') ?? Array.Empty<string>();
+
+            var nextLevel = parentNode.Level + 1;
+            if (nextLevel >= keyFields.Length) return;
+
+            var keyFld = keyFields[nextLevel];
+            var displayFld = displayFields.Length > nextLevel ? displayFields[nextLevel] : keyFld;
+            var sortFld = sortFields.Length > nextLevel && !string.IsNullOrEmpty(sortFields[nextLevel]) ? sortFields[nextLevel] : "2";
+
+            var sql = $"SELECT DISTINCT {keyFld} AS KeyVal, {displayFld} AS DisplayVal, {sortFld} AS SortVal {view.FromWhere} {parentNode.WhereClause} ORDER BY {sortFld}";
+            sql = sql.Replace("|", ",");
+
+            var rows = await db.QueryAsync(sql);
+            parentNode.Children = new List<ListTreeNode>();
+            foreach (var row in rows)
+            {
+                var child = new ListTreeNode
+                {
+                    KeyValue = row["KeyVal"]?.ToString() ?? "",
+                    DisplayText = (row["DisplayVal"]?.ToString() ?? "").Trim(),
+                    KeyFieldName = keyFld,
+                    Level = nextLevel,
+                    HasChildren = nextLevel + 1 < keyFields.Length,
+                    WhereClause = parentNode.WhereClause + $" AND {keyFld} = '{row["KeyVal"]}'",
+                    ViewIndex = parentNode.ViewIndex
+                };
+                parentNode.Children.Add(child);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadChildNodes error: {ex.Message}");
+        }
+    }
+
+    private void OnListNodeClick(ListTreeNode node)
+    {
+        ClearListSelection(ListNodes);
+        node.IsSelected = true;
+        StateHasChanged();
+    }
+
+    private async Task OnListNodeDblClick(ListTreeNode node)
+    {
+        ClearListBold(ListNodes);
+        node.IsBold = true;
+
+        var view = Views[node.ViewIndex];
+        var keyFields = view.KeyFlds?.Split('|') ?? Array.Empty<string>();
+        var levels = keyFields.Length;
+
+        // If not at lowest level, toggle expand
+        if (node.Level + 1 < levels && node.HasChildren)
+        {
+            await ToggleListNode(node);
+            return;
+        }
+
+        // At lowest level - load assembly/item
+        SaleQty = 0;
+        await LoadAssemblyOrItem(node);
+    }
+
+    private void ClearListSelection(List<ListTreeNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            n.IsSelected = false;
+            if (n.Children != null) ClearListSelection(n.Children);
+        }
+    }
+
+    private void ClearListBold(List<ListTreeNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            n.IsBold = false;
+            if (n.Children != null) ClearListBold(n.Children);
+        }
+    }
+
+    // ── Load Assembly or Item ─────────────────────────────────
+    private async Task LoadAssemblyOrItem(ListTreeNode node)
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            // Determine if this is an HF assembly or item based on view index
+            if (mViewIndex >= 0 && mViewIndex <= 3)
+            {
+                // HF Assembly
+                await LoadModelOrOption(node);
+            }
+            else if (mViewIndex >= 4 && mViewIndex <= 5)
+            {
+                // Quote/Job
+                await LoadQuote(node);
+            }
+            else if (mViewIndex >= 8 && mViewIndex <= 11)
+            {
+                // Item
+                var parts = node.KeyValue.Split('/');
+                if (parts.Length == 2)
+                    await AddItem(parts[0], parts[1]);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadAssemblyOrItem error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Load Model/Option Assembly ────────────────────────────
+    private async Task LoadModelOrOption(ListTreeNode node)
+    {
+        ShowTLVariables = false;
+        ShowHFVariables = true;
+        HFVariablesData = new List<HFVariableRow>();
+        HelpText = "";
+        AddPassEnabled = true;
+        OkVisible = true;
+        CloseButtonCaption = "Cancel";
+
+        var whereClause = node.WhereClause?.Replace(" AND ", " AND m.") ?? "";
+        // Build the key from the node's where clause
+        var sql = $@"
+            SELECT m.assembly, m.description AS assemblydescription, m.assemblytype, m.model, m.optionid,
+                   i.phase, i.item, d.itemchart, i.description, d.formula, d.TakeoffQty,
+                   i.takeoffuom, i.conversionfactor, i.orderuom,
+                   isnull(nullif(i.JCCostCode,''),isnull(p.JCCostCode,'')) jccostcode,
+                   i.jccategory, i.altjccostcode, i.altjccategory, i.price,
+                   i.roundto, i.rounddir, isnull(nullif(d.POIndex,''),isnull(i.POIndex,'')) poindex,
+                   i.wastepercent,
+                   isnull(nullif(d.notes,''),i.notes) Notes,
+                   isnull(nullif(d.location,''),i.location) Location
+            FROM tbldbassemblymaster m
+            LEFT OUTER JOIN tbldbassemblydetails d ON(m.DivisionID = d.DivisionID AND m.community=d.community AND m.model=d.model AND m.optionid=d.optionid AND m.assembly=d.assembly)
+            LEFT OUTER JOIN tblphaseitem i ON(i.DivisionID = d.DivisionID AND i.phase=d.phase AND i.item=d.item)
+            LEFT OUTER JOIN tblPOIndex p ON(p.DivisionID = d.DivisionID AND isnull(nullif(d.POIndex,''),isnull(i.POIndex,''))=p.POIndex)
+            WHERE m.DivisionID = {DivisionID} {whereClause}";
+
+        var rows = await db.QueryAsync(sql);
+        ItemsData = new List<TakeoffItemRow>();
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrEmpty(mAssembly))
+            {
+                mAssemblyType = Convert.ToInt32(row["assemblytype"] ?? 0);
+                mAssembly = row["assembly"]?.ToString() ?? "";
+                mAssemblyDescription = row["assemblydescription"]?.ToString() ?? "";
+                mModel = row["model"]?.ToString() ?? "";
+                mOptionID = row["optionid"]?.ToString() ?? "";
+            }
+
+            var item = new TakeoffItemRow
+            {
+                Assembly = row["assembly"]?.ToString() ?? "",
+                AssemblyDescription = row["assemblydescription"]?.ToString() ?? "",
+                Model = row["model"]?.ToString() ?? "",
+                Phase = row["phase"]?.ToString() ?? "",
+                Item = row["item"]?.ToString() ?? "",
+                Description = row["description"]?.ToString() ?? "",
+                Job = mJob,
+                WastePercent = ToDouble(row["wastepercent"]),
+                RawFormula = row["formula"]?.ToString() ?? "",
+                TakeoffUOM = row["takeoffuom"]?.ToString() ?? "",
+                TakeoffQty = 0,
+                OrderQty = 0,
+                OrderUOM = row["orderuom"]?.ToString() ?? "",
+                ConversionFactor = ToDouble(row["conversionfactor"]),
+                JCCostCode = row["jccostcode"]?.ToString() ?? "",
+                JCCategory = row["jccategory"]?.ToString() ?? "",
+                Price = ToDouble(row["price"]),
+                RoundTo = ToDouble(row["roundto"]),
+                RoundDir = ToDouble(row["rounddir"]),
+                POIndex = row["poindex"]?.ToString() ?? "",
+                Notes = row["Notes"]?.ToString() ?? "",
+                Location = row["Location"]?.ToString() ?? "",
+                P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
+            };
+
+            item.ResolvedFormula = item.RawFormula; // Simplified - would call ResolveFormula
+            if (string.IsNullOrEmpty(item.ResolvedFormula))
+                item.ResolvedFormula = (row["TakeoffQty"] ?? "0").ToString() ?? "0";
+
+            ItemsData.Add(item);
+        }
+
+        // Load variables - simplified: just add Quantity
+        HFVariablesData = new List<HFVariableRow>
+        {
+            new HFVariableRow { Name = "Quantity", Value = "1", UOM = "each", DisplayOrder = -1 }
+        };
+    }
+
+    // ── Load Quote ────────────────────────────────────────────
+    private async Task LoadQuote(ListTreeNode node)
+    {
+        ShowTLVariables = false;
+        ShowHFVariables = true;
+        HFVariablesData = new List<HFVariableRow>();
+        HelpText = "";
+        AddPassEnabled = true;
+        OkVisible = true;
+        CloseButtonCaption = "Cancel";
+
+        var sql = $@"
+            SELECT * FROM estimateditems
+            WHERE (isnull(BudgetDeleted,0)=0 or isnull(PODeleted,0)=0)
+            {node.WhereClause}";
+
+        var rows = await db.QueryAsync(sql);
+        ItemsData = new List<TakeoffItemRow>();
+
+        foreach (var row in rows)
+        {
+            if (string.IsNullOrEmpty(mAssembly))
+            {
+                mAssemblyType = Convert.ToInt32(row["AssemblyType"] ?? 0);
+                mAssembly = row["Assembly"]?.ToString() ?? "";
+                mAssemblyDescription = row["AssemblyDescription"]?.ToString() ?? "";
+                mModel = row["Model"]?.ToString() ?? "";
+                mOptionID = row["OptionID"]?.ToString() ?? "";
+            }
+
+            var item = new TakeoffItemRow
+            {
+                Assembly = row["Assembly"]?.ToString() ?? "",
+                AssemblyDescription = row["AssemblyDescription"]?.ToString() ?? "",
+                Model = row["Model"]?.ToString() ?? "",
+                Phase = row["EstPhase"]?.ToString() ?? "",
+                Item = row["EstItem"]?.ToString() ?? "",
+                Description = row["ItemDesc"]?.ToString() ?? "",
+                RawFormula = row["formula"]?.ToString() ?? "",
+                TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
+                TakeoffQty = ToDouble(row["TakeoffQty"]),
+                OrderQty = ToDouble(row["POQty"]),
+                OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+                ConversionFactor = ToDouble(row["ConversionFactor"]),
+                JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+                JCCategory = row["JCCategory"]?.ToString() ?? "",
+                Price = ToDouble(row["PORate"]),
+                RoundTo = ToDouble(row["RoundTo"]),
+                RoundDir = ToDouble(row["RoundDir"]),
+                POIndex = row["POIndex"]?.ToString() ?? "",
+                Location = row["Location"]?.ToString() ?? "",
+                P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
+            };
+
+            item.ResolvedFormula = item.RawFormula;
+            if (string.IsNullOrEmpty(item.ResolvedFormula))
+                item.ResolvedFormula = item.TakeoffQty.ToString();
+
+            ItemsData.Add(item);
+        }
+    }
+
+    // ── Add Item ──────────────────────────────────────────────
+    private async Task AddItem(string phase, string item)
+    {
+        ShowTLVariables = false;
+        ShowHFVariables = true;
+        HelpText = "";
+        AddPassEnabled = true;
+        OkVisible = true;
+        CloseButtonCaption = "Cancel";
+
+        var sql = $@"
+            SELECT * FROM EstimatingItems
+            WHERE DivisionID = {DivisionID}
+              AND phase = @Phase AND item = @Item";
+
+        var rows = await db.QueryAsync(sql, new { Phase = phase, Item = item });
+        if (!rows.Any()) return;
+
+        var row = rows.First();
+        var newItem = new TakeoffItemRow
+        {
+            Model = mModel,
+            Assembly = mAssembly,
+            AssemblyDescription = mAssemblyDescription,
+            Phase = row["Phase"]?.ToString() ?? "",
+            Item = row["Item"]?.ToString() ?? "",
+            Description = row["ItemDesc"]?.ToString() ?? "",
+            RawFormula = row["Formula"]?.ToString() ?? "",
+            TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
+            TakeoffQty = 0,
+            OrderQty = 0,
+            OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+            ConversionFactor = ToDouble(row["ConversionFactor"]),
+            JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+            JCCategory = row["JCCategory"]?.ToString() ?? "",
+            Price = ToDouble(row["Price"]),
+            WastePercent = ToDouble(row["WastePercent"]),
+            RoundTo = ToDouble(row["RoundTo"]),
+            RoundDir = ToDouble(row["RoundDir"]),
+            POIndex = row["POIndex"]?.ToString() ?? "",
+            Notes = row["Notes"]?.ToString() ?? "",
+            Location = row["Location"]?.ToString() ?? "",
+            P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
+        };
+
+        newItem.ResolvedFormula = newItem.RawFormula;
+        if (string.IsNullOrEmpty(newItem.ResolvedFormula))
+            newItem.ResolvedFormula = "1";
+
+        ItemsData.Add(newItem);
+
+        // Ensure Quantity variable exists
+        if (!HFVariablesData.Any(v => v.Name == "Quantity"))
+        {
+            HFVariablesData = new List<HFVariableRow>
+            {
+                new HFVariableRow { Name = "Quantity", Value = "1", UOM = "each", DisplayOrder = -1 }
+            };
+        }
+    }
+
+    // ── Add Pass ──────────────────────────────────────────────
+    private async Task OnAddPass()
+    {
+        if (!ShowHFVariables || HFVariablesData.Count == 0) return;
+
+        try
+        {
+            var qtyVar = HFVariablesData.FirstOrDefault(v => v.Name == "Quantity");
+            double qty = qtyVar != null ? ToDouble(qtyVar.Value) : 1;
+
+            foreach (var item in ItemsData)
+            {
+                // Shift pass history
+                item.P5 = item.P4;
+                item.P4 = item.P3;
+                item.P3 = item.P2;
+                item.P2 = item.P1;
+                item.P1 = item.TakeoffQty;
+
+                // Evaluate formula (simplified - just use resolved formula as number)
+                double formulaResult = 0;
+                if (double.TryParse(item.ResolvedFormula, out var parsed))
+                    formulaResult = parsed;
+                else
+                    formulaResult = 1;
+
+                item.PassTakeoffQty = qty * formulaResult;
+                item.TakeoffQty += item.PassTakeoffQty;
+
+                // Calculate order qty
+                RecalculateOrderQty(item);
+            }
+
+            SaleQty += qty;
+
+            if (ItemsGrid != null)
+                await ItemsGrid.Refresh();
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error adding pass: {ex.Message}");
+        }
+    }
+
+    // ── Undo Pass ─────────────────────────────────────────────
+    private async Task OnUndoPass()
+    {
+        foreach (var item in ItemsData)
+        {
+            item.TakeoffQty = item.P1;
+            item.P1 = item.P2;
+            item.P2 = item.P3;
+            item.P3 = item.P4;
+            item.P4 = item.P5;
+            item.P5 = 0;
+
+            RecalculateOrderQty(item);
+        }
+
+        if (ItemsGrid != null)
+            await ItemsGrid.Refresh();
+
+        StateHasChanged();
+    }
+
+    // ── Recalculate Order Qty ─────────────────────────────────
+    private void RecalculateOrderQty(TakeoffItemRow item)
+    {
+        double conversion = item.ConversionFactor;
+        if (conversion == 0) conversion = 1;
+        double waste = item.WastePercent;
+        double orderQty = item.TakeoffQty * (100 + waste) / 100 * conversion;
+
+        // Apply rounding
+        if (item.RoundTo > 0)
+        {
+            if (item.RoundDir > 0)
+                orderQty = Math.Ceiling(orderQty / item.RoundTo) * item.RoundTo;
+            else if (item.RoundDir < 0)
+                orderQty = Math.Floor(orderQty / item.RoundTo) * item.RoundTo;
+            else
+                orderQty = Math.Round(orderQty / item.RoundTo) * item.RoundTo;
+        }
+
+        item.OrderQty = orderQty;
+    }
+
+    // ── Save Data ─────────────────────────────────────────────
+    private async Task<bool> SaveData()
+    {
+        try
+        {
+            // Check for zero qty items
+            bool hasZeroQty = ItemsData.Any(i => i.OrderQty == 0);
+            if (hasZeroQty)
+            {
+                var include = await JSRuntime.InvokeAsync<bool>("confirm",
+                    "You have items with an order quantity of zero.\nDo you want to add these items anyway?");
+                if (!include)
+                {
+                    // Filter out zero qty items
+                    ItemsData = ItemsData.Where(i => i.OrderQty != 0).ToList();
+                }
+            }
+
+            // In a real implementation, this would call the parent form's AddItem method
+            // For now, just signal success
+            await JSRuntime.InvokeVoidAsync("alert", $"Takeoff saved with {ItemsData.Count} items. Sale Qty: {SaleQty}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            return false;
+        }
+    }
+
+    // ── Button Handlers ───────────────────────────────────────
+    private async Task OnOkClick()
+    {
+        if (await SaveData())
+        {
+            ResetToListMode();
+        }
+    }
+
+    private async Task OnCloseClick()
+    {
+        if (CloseButtonCaption == "Cancel")
+        {
+            ResetToListMode();
+        }
+        else
+        {
+            // Close
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private void ResetToListMode()
+    {
+        ItemsData = new List<TakeoffItemRow>();
+        HFVariablesData = new List<HFVariableRow>();
+        TLVariablesData = new List<TLVariableRow>();
+        HelpText = "";
+        SaleQty = 0;
+        OkVisible = false;
+        AddPassEnabled = false;
+        CloseButtonCaption = "Close";
+        StateHasChanged();
+    }
+
+    private async Task OnBrowseProject()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Browse OnCenter Project - not implemented");
+    }
+
+    // ── Public Methods (for external callers) ─────────────────
+    public async Task Takeoff(
+        bool isChangeOrder,
+        string takeoffMode,
+        long onScreenBidID,
+        string onScreenProjectName,
+        int assemblyType,
+        string assemblyDescription,
+        string community,
+        string communityPhase,
+        string model,
+        string optionID,
+        string assembly,
+        string job,
+        string vendor = "")
+    {
+        mTakeoffMode = takeoffMode;
+        mAssemblyType = assemblyType;
+        mAssemblyDescription = assemblyDescription;
+        mCommunity = community;
+        mCommunityPhase = communityPhase;
+        mAssembly = assembly;
+        mModel = model;
+        mVendor = vendor;
+        mOptionID = optionID;
+        mOnScreenBidID = onScreenBidID;
+        OnScreenProjectName = onScreenProjectName;
+        mIsChangeOrder = isChangeOrder;
+        mJob = job;
+
+        switch (mTakeoffMode)
+        {
+            case "Item":
+                mViewIndex = 8;
+                break;
+            case "Assembly":
+                mViewIndex = 0;
+                break;
+        }
+
+        await LoadListAsync(true);
+    }
+
+    public void SetView(int viewIndex)
+    {
+        mViewIndex = viewIndex;
+        _ = LoadListAsync(true);
+    }
+
+    // ── GetItemTotal (formula lookup support) ─────────────────
+    public double GetItemTotal(string totalType, string poIndex, string costCode, string phase, string item)
+    {
+        double v = 0;
+        string col = totalType switch
+        {
+            "OrderQty" or "Cost" => "PassOrderQty",
+            "TakeoffQty" => "PassTakeoffQty",
+            _ => "PassOrderQty"
+        };
+
+        foreach (var row in ItemsData)
+        {
+            if ((string.IsNullOrEmpty(poIndex) || poIndex == row.POIndex) &&
+                (string.IsNullOrEmpty(costCode) || costCode == row.JCCostCode) &&
+                (string.IsNullOrEmpty(phase) || phase == row.Phase) &&
+                (string.IsNullOrEmpty(item) || item == row.Item))
+            {
+                double val = col == "PassOrderQty" ? row.PassOrderQty : row.PassTakeoffQty;
+                v += val;
+            }
+        }
+
+        return v;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────
+    private double ToDouble(object? val)
+    {
+        if (val == null || val is DBNull) return 0;
+        if (val is string s) return double.TryParse(s, out var d) ? d : 0;
+        try { return Convert.ToDouble(val); }
+        catch { return 0; }
+    }
+
+    // ── Model Classes ─────────────────────────────────────────
+    public class ViewDef
+    {
+        public string Name { get; set; } = "";
+        public string KeyFlds { get; set; } = "";
+        public string SortFlds { get; set; } = "";
+        public string DisplayFlds { get; set; } = "";
+        public string FromWhere { get; set; } = "";
+        public string Database { get; set; } = "HomeFront";
+    }
+
+    public class ListTreeNode
+    {
+        public string KeyValue { get; set; } = "";
+        public string DisplayText { get; set; } = "";
+        public string KeyFieldName { get; set; } = "";
+        public int Level { get; set; }
+        public bool HasChildren { get; set; }
+        public bool Expanded { get; set; }
+        public bool IsSelected { get; set; }
+        public bool IsBold { get; set; }
+        public string WhereClause { get; set; } = "";
+        public int ViewIndex { get; set; }
+        public List<ListTreeNode>? Children { get; set; }
+    }
+
+    public class TakeoffItemRow
+    {
+        public string Assembly { get; set; } = "";
+        public string AssemblyDescription { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Job { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public double OrderQty { get; set; }
+        public string OrderUOM { get; set; } = "";
+        public double ConversionFactor { get; set; } = 1;
+        public double WastePercent { get; set; }
+        public double RoundTo { get; set; }
+        public double RoundDir { get; set; }
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCExtra { get; set; } = "";
+        public double Price { get; set; }
+        public string POIndex { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string Location { get; set; } = "";
+        public string RawFormula { get; set; } = "";
+        public string ResolvedFormula { get; set; } = "";
+        public string ItemChart { get; set; } = "";
+        public string Variable1 { get; set; } = "";
+        public string Variable2 { get; set; } = "";
+        public string Variable3 { get; set; } = "";
+        public int Flag { get; set; }
+        public double PassTakeoffQty { get; set; }
+        public double PassOrderQty { get; set; }
+        public double P1 { get; set; }
+        public double P2 { get; set; }
+        public double P3 { get; set; }
+        public double P4 { get; set; }
+        public double P5 { get; set; }
+        public Dictionary<int, string> WBS { get; set; } = Enumerable.Range(1, 40).ToDictionary(i => i, _ => "");
+    }
+
+    public class HFVariableRow
+    {
+        public string Name { get; set; } = "";
+        public string Value { get; set; } = "";
+        public string UOM { get; set; } = "";
+        public double DisplayOrder { get; set; }
+        public double Min { get; set; }
+        public double Max { get; set; }
+        public string Help { get; set; } = "";
+        public string ListOfValues { get; set; } = "";
+        public string ConditionName { get; set; } = "";
+        public string ConditionType { get; set; } = "";
+        public string ConditionUOM { get; set; } = "";
+    }
+
+    public class TLVariableRow
+    {
+        public string Name { get; set; } = "";
+        public string Value { get; set; } = "";
+        public string UOM { get; set; } = "";
+        public double DisplayOrder { get; set; }
+        public double Min { get; set; }
+        public double Max { get; set; }
+        public string Help { get; set; } = "";
+        public bool IsYesNo { get; set; }
+        public string ConditionName { get; set; } = "";
+        public string ConditionType { get; set; } = "";
+        public string ConditionUOM { get; set; } = "";
+        public string ConditionTakeoffUOM { get; set; } = "";
+    }
+
+    public class ComboItem
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+}
+```

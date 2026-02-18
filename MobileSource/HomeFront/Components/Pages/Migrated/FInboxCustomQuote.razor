@@ -1,0 +1,866 @@
+```razor
+@page "/inbox-custom-quote"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Data
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Custom Requests - HomeFront</PageTitle>
+
+<style>
+    .wizard-header {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 12px 16px;
+        margin-bottom: 10px;
+    }
+    .wizard-header h3 { margin: 0; font-size: 18px; }
+    .wizard-header p { margin: 4px 0 0 0; color: #6c757d; font-size: 13px; }
+    .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 8px 12px;
+        margin-bottom: 10px;
+    }
+    .toolbar label { font-weight: 600; font-size: 13px; }
+    .toolbar select {
+        padding: 4px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #fff;
+    }
+    .toolbar .spacer { flex: 1; }
+    .dirty-indicator { color: #dc3545; font-weight: 600; font-size: 12px; }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #fff;
+    }
+    .btn-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+    }
+    .btn-bar button {
+        padding: 6px 14px;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .btn-bar button.btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+    .btn-bar button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .cell-edit-btn {
+        padding: 1px 6px;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: #fff;
+        font-size: 11px;
+        cursor: pointer;
+        margin-left: 4px;
+    }
+    .cell-edit-btn:hover { background: #e9ecef; }
+
+    .loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+    }
+    .loading-panel {
+        background: #fff;
+        padding: 14px 20px;
+        border-radius: 6px;
+        box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+        font-size: 14px;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-panel">Loading requests...</div>
+    </div>
+}
+
+<div class="wizard-header">
+    <h3>Prepare quotes for custom requests</h3>
+    <p>Double click on a request to build the quote. Requests can also be declined.</p>
+</div>
+
+<div class="toolbar">
+    <label>View:</label>
+    <select @onchange="OnViewChanged" value="@CurrentViewIndex">
+        @for (var i = 0; i < ViewOptions.Count; i++)
+        {
+            <option value="@i">@ViewOptions[i]</option>
+        }
+    </select>
+    <span class="spacer"></span>
+    @if (mDirty)
+    {
+        <span class="dirty-indicator">Unsaved changes</span>
+    }
+</div>
+
+<div class="grid-container">
+    <HfGrid @ref="DataGrid"
+            TValue="CustomQuoteRow"
+            DataSource="@Rows"
+            AllowPaging="true"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            EnableHover="true"
+            Height="calc(100vh - 310px)"
+            FilterSettingsRef="@filterSettings"
+            PageSettingsRef="@pageSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EditSettingsRef="@editSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            <HfGridColumn HeaderText="Quote" Width="70px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <button class="cell-edit-btn" @onclick="() => OnBuildQuote(row)">Quote</button>
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.CreationDate)" HeaderText="Date" Width="110px" Format="d" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.CommunityDesc)" HeaderText="Community" Width="140px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Customer_No)" HeaderText="Cust #" Width="90px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Customer)" HeaderText="Customer" Width="160px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Job_No)" HeaderText="Job" Width="90px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Model)" HeaderText="Model" Width="90px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.ChangeOrderNo)" HeaderText="CO #" Width="90px" AllowEditing="false" />
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Description)" HeaderText="Description" Width="260px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <span title="@row.Description">@Truncate(row.Description, 40)</span>
+                        @if (CanEdit)
+                        {
+                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Description), "Description", 200)'>✏️</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Qty)" HeaderText="Qty" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.UOM)" HeaderText="UOM" Width="70px" AllowEditing="@CanEdit" />
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Cost)" HeaderText="Cost" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Price)" HeaderText="Price" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Status)" HeaderText="Status" Width="90px" AllowEditing="@CanEdit" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Bldr_Declined_Reason)" HeaderText="Decline Reason" Width="200px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <span title="@row.Bldr_Declined_Reason">@Truncate(row.Bldr_Declined_Reason, 30)</span>
+                        @if (CanEdit)
+                        {
+                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Bldr_Declined_Reason), "Decline Reason", 500)'>✏️</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.CategoryDesc)" HeaderText="Category" Width="160px" AllowEditing="@CanEdit">
+                <EditTemplate>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <select @bind="row.CategoryDesc" @bind:after="() => OnCategorySelected(row)">
+                            <option value="">-- Select --</option>
+                            @foreach (var cat in CategoryItems)
+                            {
+                                <option value="@cat.Description">@cat.Description</option>
+                            }
+                        </select>
+                    }
+                </EditTemplate>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Comments)" HeaderText="Comments" Width="200px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <span title="@row.Comments">@Truncate(row.Comments, 30)</span>
+                        @if (CanEdit)
+                        {
+                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Comments), "Comments", 4000)'>✏️</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.EstimatorNotes)" HeaderText="Estimator Notes" Width="200px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (CustomQuoteRow)context;
+                        <span title="@row.EstimatorNotes">@Truncate(row.EstimatorNotes, 30)</span>
+                        @if (CanEdit)
+                        {
+                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.EstimatorNotes), "Estimator Notes", 4000)'>✏️</button>
+                        }
+                    }
+                </Template>
+            </HfGridColumn>
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Location)" HeaderText="Location" Width="110px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Sales_Person_Name)" HeaderText="Sales Rep" Width="140px" AllowEditing="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.TaxRate)" HeaderText="Tax %" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" />
+
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Seq)" HeaderText="Seq" Width="80px" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Category)" HeaderText="Category Code" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Major_Group)" HeaderText="Major Group" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.AttachmentID)" HeaderText="AttachmentID" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Community)" HeaderText="CommunityCode" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.OptionID)" HeaderText="OptionID" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.CommunityPhase)" HeaderText="CommunityPhase" Visible="false" />
+            <HfGridColumn Field="@nameof(CustomQuoteRow.Extra)" HeaderText="Extra" Visible="false" />
+        </HfGridColumnsBase>
+    </HfGrid>
+</div>
+
+<div class="btn-bar">
+    <button class="btn-primary" disabled="@(!CanEdit)" @onclick="OnOkClick">OK</button>
+    <button @onclick="OnCloseClick">Close</button>
+</div>
+
+<HfDialog @bind-Visible="IsTextDialogVisible" Width="600px" Header="@TextDialogTitle"
+          IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
+    <ChildContent>
+        <textarea @bind="EditingText" rows="8" style="width:100%; padding:8px; border:1px solid #c9c9c9; border-radius:4px;"></textarea>
+    </ChildContent>
+    <FooterContent>
+        <button class="btn-primary" @onclick="OnTextDialogOk">OK</button>
+        <button @onclick="@(() => IsTextDialogVisible = false)">Cancel</button>
+    </FooterContent>
+</HfDialog>
+
+@code {
+    private readonly DbWrapperSqlServer db = new();
+    private HfGrid<CustomQuoteRow>? DataGrid;
+
+    private bool IsLoading = false;
+    private bool mReadOnly = true;
+    private bool mDirty = false;
+
+    private int CurrentViewIndex = 0;
+    private readonly List<string> ViewOptions = new()
+    {
+        "New requests", "180 days old", "1 year old", "All old requests"
+    };
+
+    private List<CustomQuoteRow> Rows = new();
+    private List<CategoryItem> CategoryItems = new();
+
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 50 };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditing = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<CustomQuoteRow> gridEvents = new();
+
+    private bool CanEdit => CurrentViewIndex == 0;
+
+    // Text dialog
+    private bool IsTextDialogVisible = false;
+    private string TextDialogTitle = "";
+    private string EditingText = "";
+    private CustomQuoteRow? EditingRow;
+    private string EditingField = "";
+    private int EditingMaxLength = 4000;
+
+    private int DivisionID = 1;
+
+    private static readonly Dictionary<string, string> AppOptions = new()
+    {
+        { "MaxUnQuotedOptions", "5500" },
+        { "IncludeTax", "True" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CustomQuoteRow>>(this, OnCellSaved);
+        await LoadCategoriesAsync();
+        await LoadDataAsync();
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        var sql = "SELECT Description, category, group_code AS major_group FROM tblcategories ORDER BY 1";
+        var rows = await db.QueryAsync(sql);
+        CategoryItems = rows.Select(r => new CategoryItem
+        {
+            Description = r["Description"]?.ToString() ?? "",
+            Category = r["category"]?.ToString() ?? "",
+            MajorGroup = r["major_group"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            mReadOnly = CurrentViewIndex != 0;
+            editSettings.AllowEditing = CanEdit;
+
+            var maxRows = GetOptionInt("MaxUnQuotedOptions", 5500);
+            var topClause = maxRows > 0 ? $"TOP {maxRows}" : "";
+            var statusSelect = CurrentViewIndex == 0 ? "'' AS Status" : "o.Status AS Status";
+            var fromTable = CurrentViewIndex == 0 ? "UnQuotedOptions" : "QuotedOptions";
+
+            var extraFilter = CurrentViewIndex switch
+            {
+                1 => " AND DATEDIFF(day, o.quote_entered_date, GETDATE()) <= 180",
+                2 => " AND DATEDIFF(year, o.quote_entered_date, GETDATE()) <= 1",
+                _ => ""
+            };
+
+            var sql = $@"
+                SELECT {topClause}
+                    o.CommunityDesc AS CommunityDesc,
+                    o.Customer_No AS Customer_No,
+                    o.Customer AS Customer,
+                    o.creationdate AS CreationDate,
+                    o.Model AS Model,
+                    o.ModelDesc AS ModelDesc,
+                    o.Job_No AS Job_No,
+                    o.TaxRate AS TaxRate,
+                    o.Address AS Address,
+                    o.Location AS Location,
+                    o.Sales_Person_Name AS Sales_Person_Name,
+                    o.ChangeOrderNo AS ChangeOrderNo,
+                    o.Description AS Description,
+                    o.Comments AS Comments,
+                    o.Category AS Category,
+                    o.major_group AS Major_Group,
+                    o.CategoryDesc AS CategoryDesc,
+                    o.EstimatorNotes AS EstimatorNotes,
+                    o.Seq AS Seq,
+                    o.Qty AS Qty,
+                    o.UOM AS UOM,
+                    o.OptionType AS OptionType,
+                    o.Cost AS Cost,
+                    o.Price AS Price,
+                    o.Community AS Community,
+                    o.AttachmentID AS AttachmentID,
+                    o.saleslocation AS SalesLocation,
+                    o.color AS Color,
+                    o.style AS Style,
+                    o.finish AS Finish,
+                    o.other AS Other,
+                    o.bldr_declined_reason AS Bldr_Declined_Reason,
+                    o.OptionID AS OptionID,
+                    o.CommunityPhase AS CommunityPhase,
+                    o.Extra AS Extra,
+                    {statusSelect}
+                FROM {fromTable} o
+                WHERE o.divisionid = @DivisionID {extraFilter}
+                ORDER BY o.creationdate DESC, o.communitydesc, o.customer_no, o.changeorderno, o.seq";
+
+            var result = await db.QueryAsync(sql, new { DivisionID });
+
+            Rows = result.Select(r => new CustomQuoteRow
+            {
+                CommunityDesc = GetString(r, "CommunityDesc"),
+                Customer_No = GetString(r, "Customer_No"),
+                Customer = GetString(r, "Customer"),
+                CreationDate = GetDate(r, "CreationDate"),
+                Model = GetString(r, "Model"),
+                ModelDesc = GetString(r, "ModelDesc"),
+                Job_No = FormatJob(GetString(r, "Job_No")),
+                TaxRate = GetDecimal(r, "TaxRate"),
+                Address = GetString(r, "Address"),
+                Location = GetString(r, "Location"),
+                Sales_Person_Name = GetString(r, "Sales_Person_Name"),
+                ChangeOrderNo = GetString(r, "ChangeOrderNo"),
+                Description = GetString(r, "Description"),
+                Comments = GetString(r, "Comments"),
+                Category = GetString(r, "Category"),
+                Major_Group = GetString(r, "Major_Group"),
+                CategoryDesc = GetString(r, "CategoryDesc"),
+                EstimatorNotes = GetString(r, "EstimatorNotes"),
+                Seq = GetLong(r, "Seq"),
+                Qty = GetDecimal(r, "Qty"),
+                UOM = GetString(r, "UOM"),
+                OptionType = GetString(r, "OptionType"),
+                Cost = GetDecimal(r, "Cost"),
+                Price = GetDecimal(r, "Price"),
+                Community = GetString(r, "Community"),
+                AttachmentID = GetString(r, "AttachmentID"),
+                SalesLocation = GetString(r, "SalesLocation"),
+                Color = GetString(r, "Color"),
+                Style = GetString(r, "Style"),
+                Finish = GetString(r, "Finish"),
+                Other = GetString(r, "Other"),
+                Bldr_Declined_Reason = GetString(r, "Bldr_Declined_Reason"),
+                OptionID = GetString(r, "OptionID"),
+                CommunityPhase = GetString(r, "CommunityPhase"),
+                Extra = GetString(r, "Extra"),
+                Status = GetString(r, "Status")
+            }).ToList();
+
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs e)
+    {
+        if (mDirty && !await SaveDataAsync(true))
+            return;
+
+        if (int.TryParse(e.Value?.ToString(), out var idx))
+            CurrentViewIndex = idx;
+        await LoadDataAsync();
+    }
+
+    private async Task OnOkClick()
+    {
+        await SaveDataAsync(false);
+    }
+
+    private async Task OnCloseClick()
+    {
+        if (await SaveDataAsync(true))
+            NavigationManager.NavigateTo("/");
+    }
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (mReadOnly || !mDirty) return true;
+
+        if (prompt)
+        {
+            var save = await JSRuntime.InvokeAsync<bool>("confirm",
+                "This data has changed.\n\nDo you want to save these changes?");
+            if (!save) return true;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            foreach (var row in Rows.Where(r => r.RowState == "DIRTY"))
+            {
+                var qty = row.Qty == 0 ? 1 : row.Qty;
+                var taxRate = GetOptionBool("IncludeTax", true) ? row.TaxRate / 100m : 0m;
+
+                var amount = row.Price;
+                var cost = row.Cost;
+
+                var table = row.Location?.ToUpperInvariant() switch
+                {
+                    "ADDENDUM" => "tblscheduleb",
+                    "CHANGEORDER" => "changeorderdetails",
+                    "DESIGNCENTER" => "designcenterdetails",
+                    _ => ""
+                };
+                if (string.IsNullOrEmpty(table))
+                    throw new Exception($"invalid option location: {row.Location}");
+
+                var quoteDate = string.IsNullOrWhiteSpace(row.Status) ? (DateTime?)null : DateTime.Now;
+                var requireQuote = string.IsNullOrWhiteSpace(row.Status);
+                var declined = string.Equals(row.Status, "Declined", StringComparison.OrdinalIgnoreCase);
+
+                var tax = Math.Round(amount * taxRate, 2);
+                var total = Math.Round(amount * (1 + taxRate), 2);
+                var overrideAmount = qty * amount;
+                var netTax = Math.Round(qty * amount * taxRate, 2);
+                var grandTotal = Math.Round(qty * amount * (1 + taxRate), 2);
+
+                var overrideColumn = table == "designcenterdetails" ? "amount" : "override_price";
+
+                var sql = $@"
+UPDATE {table} SET
+    quote_entered_date = @QuoteEnteredDate,
+    Require_Quote = @RequireQuote,
+    Bldr_Declined = @Declined,
+    Bldr_Declined_Reason = @DeclineReason,
+    EstimatorNotes = @EstimatorNotes,
+    Description = @Description,
+    category = @Category,
+    major_group = @MajorGroup,
+    Comments = @Comments,
+    UOM = @UOM,
+    Qty = @Qty,
+    Rate = @Rate,
+    Cost_amount = @CostAmount,
+    tax = @Tax,
+    totalamount = @TotalAmount,
+    {overrideColumn} = @OverrideAmount,
+    nettax = @NetTax,
+    grandtotal = @GrandTotal
+WHERE seq = @Seq";
+
+                await db.ExecuteAsync(sql, new
+                {
+                    QuoteEnteredDate = quoteDate,
+                    RequireQuote = requireQuote,
+                    Declined = declined,
+                    DeclineReason = row.Bldr_Declined_Reason ?? "",
+                    EstimatorNotes = row.EstimatorNotes ?? "",
+                    Description = row.Description ?? "",
+                    Category = row.Category ?? "",
+                    MajorGroup = row.Major_Group ?? "",
+                    Comments = row.Comments ?? "",
+                    UOM = row.UOM ?? "",
+                    Qty = qty,
+                    Rate = amount,
+                    CostAmount = cost,
+                    Tax = tax,
+                    TotalAmount = total,
+                    OverrideAmount = overrideAmount,
+                    NetTax = netTax,
+                    GrandTotal = grandTotal,
+                    Seq = row.Seq
+                });
+
+                await RecalculateTotalsAsync(row.Location, row.Customer_No);
+                await SendSaleRepEmailAsync(row.Location, row.Seq);
+
+                row.RowState = "CLEAN";
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RecalculateTotalsAsync(string location, string customer)
+    {
+        switch (location?.ToUpperInvariant())
+        {
+            case "ADDENDUM":
+                await db.ExecuteAsync("Exec dbo.CalcAddendumTotals @Customer", new { Customer = customer });
+                break;
+            case "CHANGEORDER":
+                await db.ExecuteAsync("Exec dbo.SalesCalcCustCOMaster @Customer", new { Customer = customer });
+                await db.ExecuteAsync("Exec dbo.CalcCOMasterTotals @Customer", new { Customer = customer });
+                break;
+            case "DESIGNCENTER":
+                await db.ExecuteAsync("Exec dbo.SalesCalcCustDCMaster @Customer", new { Customer = customer });
+                await db.ExecuteAsync("Exec dbo.CalcDCCOMasterTotals @Customer", new { Customer = customer });
+                break;
+        }
+        await db.ExecuteAsync("Exec dbo.CustomerCalcTotals @Customer", new { Customer = customer });
+    }
+
+    private async Task SendSaleRepEmailAsync(string location, long seq)
+    {
+        var sql = @"
+select
+  isnull(nullif(s.email,''),u.email) Email
+ ,c.customer_no,c.Description CustDesc,c.Job_no,c.municipal_address
+ ,o.changeorderno
+ ,case when o.bldr_declined=1 then 'declined' else 'completed' end status
+ ,o.description
+ ,o.bldr_declined_reason reason
+from alloptions o
+ join tblcustomers c on o.customer_no=c.customer_no
+ left join tblsales_persons s on o.sales_person_id = s.sales_person_id
+ left join user_manager u on o.sales_person_id = u.user_id
+where o.require_quote=0
+  and isnull(isnull(nullif(s.email,''),u.email),'') <> ''
+  and o.location=@Location
+  and o.seq=@Seq";
+
+        var rows = await db.QueryAsync(sql, new { Location = location, Seq = seq });
+        var row = rows.FirstOrDefault();
+        if (row == null) return;
+
+        var email = row["Email"]?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(email)) return;
+
+        var status = row["status"]?.ToString() ?? "";
+        var body = $"Your price request has been {status}\n\n" +
+                   $"Job: {row["Job_No"]}  {row["municipal_address"]}\n" +
+                   $"Customer: {row["customer_no"]}  {row["CustDesc"]}\n" +
+                   $"ChangeOrder: {row["changeorderno"]}\n" +
+                   $"Description: {row["description"]}\n\n";
+        if (status == "declined")
+            body += $"Reason: {row["reason"]}";
+
+        await JSRuntime.InvokeVoidAsync("console.log", $"SendMail to {email}: {body}");
+    }
+
+    private async Task OnCellSaved(CellSaveArgs<CustomQuoteRow> args)
+    {
+        if (args.Data == null) return;
+        var row = args.Data;
+        var field = args.ColumnName ?? "";
+
+        switch (field)
+        {
+            case nameof(CustomQuoteRow.Status):
+                if (string.Equals(row.Status, "Declined", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.IsNullOrWhiteSpace(row.Bldr_Declined_Reason))
+                    {
+                        var reason = await JSRuntime.InvokeAsync<string>("prompt", "Reason:", row.Bldr_Declined_Reason ?? "");
+                        if (string.IsNullOrWhiteSpace(reason))
+                            row.Status = "";
+                        else
+                        {
+                            row.Bldr_Declined_Reason = reason;
+                            row.Price = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    row.Bldr_Declined_Reason = "";
+                }
+                break;
+            case nameof(CustomQuoteRow.Bldr_Declined_Reason):
+                if (!string.IsNullOrWhiteSpace(row.Bldr_Declined_Reason))
+                    row.Status = "Declined";
+                break;
+            case nameof(CustomQuoteRow.Price):
+                if (row.Price != 0)
+                    row.Status = "Approved";
+                break;
+        }
+
+        MarkDirty(row);
+    }
+
+    private void OnCategorySelected(CustomQuoteRow row)
+    {
+        var cat = CategoryItems.FirstOrDefault(c => c.Description == row.CategoryDesc);
+        if (cat != null)
+        {
+            row.Category = cat.Category;
+            row.Major_Group = cat.MajorGroup;
+        }
+        MarkDirty(row);
+    }
+
+    private void OpenTextDialog(CustomQuoteRow row, string field, string title, int maxLength)
+    {
+        if (!CanEdit) return;
+        EditingRow = row;
+        EditingField = field;
+        EditingMaxLength = maxLength;
+        EditingText = field switch
+        {
+            nameof(CustomQuoteRow.Description) => row.Description ?? "",
+            nameof(CustomQuoteRow.Comments) => row.Comments ?? "",
+            nameof(CustomQuoteRow.EstimatorNotes) => row.EstimatorNotes ?? "",
+            nameof(CustomQuoteRow.Bldr_Declined_Reason) => row.Bldr_Declined_Reason ?? "",
+            _ => ""
+        };
+        TextDialogTitle = title;
+        IsTextDialogVisible = true;
+    }
+
+    private void OnTextDialogOk()
+    {
+        if (EditingRow == null)
+        {
+            IsTextDialogVisible = false;
+            return;
+        }
+
+        var text = (EditingText ?? "").Trim();
+        if (text.Length > EditingMaxLength)
+            text = text[..EditingMaxLength];
+
+        switch (EditingField)
+        {
+            case nameof(CustomQuoteRow.Description):
+                EditingRow.Description = text;
+                break;
+            case nameof(CustomQuoteRow.Comments):
+                EditingRow.Comments = text;
+                break;
+            case nameof(CustomQuoteRow.EstimatorNotes):
+                EditingRow.EstimatorNotes = text;
+                break;
+            case nameof(CustomQuoteRow.Bldr_Declined_Reason):
+                EditingRow.Bldr_Declined_Reason = text;
+                if (!string.IsNullOrWhiteSpace(text))
+                    EditingRow.Status = "Declined";
+                break;
+        }
+
+        MarkDirty(EditingRow);
+        IsTextDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task OnBuildQuote(CustomQuoteRow row)
+    {
+        if (!CanEdit) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Build quote for {row.Customer_No}?");
+        if (!confirm) return;
+
+        // Placeholder: actual quote builder not implemented.
+        MarkDirty(row);
+        await JSRuntime.InvokeVoidAsync("alert", "Quote builder not implemented in this build.");
+    }
+
+    private void MarkDirty(CustomQuoteRow row)
+    {
+        row.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    private static string Truncate(string? text, int max) =>
+        string.IsNullOrEmpty(text) ? "" : (text.Length <= max ? text : text[..max] + "...");
+
+    private static string GetString(Dictionary<string, object> row, string key) =>
+        GetValue(row, key)?.ToString() ?? "";
+
+    private static DateTime? GetDate(Dictionary<string, object> row, string key)
+    {
+        var v = GetValue(row, key);
+        return v == null || v == DBNull.Value ? null : Convert.ToDateTime(v);
+    }
+
+    private static decimal GetDecimal(Dictionary<string, object> row, string key)
+    {
+        var v = GetValue(row, key);
+        return v == null || v == DBNull.Value ? 0m : Convert.ToDecimal(v);
+    }
+
+    private static long GetLong(Dictionary<string, object> row, string key)
+    {
+        var v = GetValue(row, key);
+        return v == null || v == DBNull.Value ? 0L : Convert.ToInt64(v);
+    }
+
+    private static object? GetValue(Dictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var v)) return v;
+        foreach (var kv in row)
+        {
+            if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase))
+                return kv.Value;
+        }
+        return null;
+    }
+
+    private static string FormatJob(string job) => job?.Trim() ?? "";
+
+    private static int GetOptionInt(string key, int defaultValue)
+    {
+        return AppOptions.TryGetValue(key, out var val) && int.TryParse(val, out var result) ? result : defaultValue;
+    }
+
+    private static bool GetOptionBool(string key, bool defaultValue)
+    {
+        if (!AppOptions.TryGetValue(key, out var val)) return defaultValue;
+        return val.Equals("true", StringComparison.OrdinalIgnoreCase) || val == "1";
+    }
+
+    public class CustomQuoteRow
+    {
+        public string CommunityDesc { get; set; } = "";
+        public string Customer_No { get; set; } = "";
+        public string Customer { get; set; } = "";
+        public DateTime? CreationDate { get; set; }
+        public string Model { get; set; } = "";
+        public string ModelDesc { get; set; } = "";
+        public string Job_No { get; set; } = "";
+        public decimal TaxRate { get; set; }
+        public string Address { get; set; } = "";
+        public string Location { get; set; } = "";
+        public string Sales_Person_Name { get; set; } = "";
+        public string ChangeOrderNo { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string Major_Group { get; set; } = "";
+        public string CategoryDesc { get; set; } = "";
+        public string EstimatorNotes { get; set; } = "";
+        public long Seq { get; set; }
+        public decimal Qty { get; set; }
+        public string UOM { get; set; } = "";
+        public string OptionType { get; set; } = "";
+        public decimal Cost { get; set; }
+        public decimal Price { get; set; }
+        public string Community { get; set; } = "";
+        public string AttachmentID { get; set; } = "";
+        public string SalesLocation { get; set; } = "";
+        public string Color { get; set; } = "";
+        public string Style { get; set; } = "";
+        public string Finish { get; set; } = "";
+        public string Other { get; set; } = "";
+        public string Bldr_Declined_Reason { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public string CommunityPhase { get; set; } = "";
+        public string Extra { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    public class CategoryItem
+    {
+        public string Description { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string MajorGroup { get; set; } = "";
+    }
+}
+```

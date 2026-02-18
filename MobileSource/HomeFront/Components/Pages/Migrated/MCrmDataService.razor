@@ -1,0 +1,209 @@
+```razor
+@* MCrmDataService.razor - Converted from VB6 MCrmDataService.bas *@
+@* This is a non-visual service component providing CRM data integration *@
+
+@using System.Data
+@using HomeFront.Data
+
+@code {
+    // === Private State (mirrors VB6 module-level variables) ===
+    private bool _loaded = false;
+    private string _crmApiKey = "";
+    private string _crmClientId = "";
+    private string _crmEnvironment = "";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Dependencies (injected or set by parent) ===
+    [Parameter] public Func<string, string>? GetOptionValue { get; set; }
+    [Parameter] public string? ProductName { get; set; }
+
+    /// <summary>
+    /// Sets a custom option quote in the CRM sales system.
+    /// Corresponds to VB6: Public Sub Sales_SetCustomOptionQuote(Location As String, seq As Long)
+    /// </summary>
+    public void Sales_SetCustomOptionQuote(string location, long seq)
+    {
+        if (!Integrated()) return;
+
+        string tableName;
+        switch (location.ToUpperInvariant())
+        {
+            case "ADDENDUM":
+                tableName = "tblscheduleb";
+                break;
+            case "CHANGEORDER":
+                tableName = "changeorderdetails";
+                break;
+            case "DESIGNCENTER":
+                // Not implemented
+                return;
+            default:
+                return;
+        }
+
+        var sql = $@"
+            SELECT
+                 CRMID AS CRMID
+                ,Bldr_Declined AS Declined
+                ,Bldr_Declined_Reason AS DeclineReason
+                ,Category
+                ,Description
+                ,Comments
+                ,EstimatorNotes
+                ,CAST(override_price AS varchar(50)) AS ExtendedPrice
+                ,CAST(tax AS varchar(50)) AS Tax
+                ,CAST(Cost_Amount AS varchar(50)) AS CostPerUnit
+                ,CAST(Rate AS varchar(50)) AS PricePerUnit
+                ,CAST(Qty AS varchar(50)) AS Units
+                ,UOM
+            FROM {tableName}
+            WHERE seq = @Seq
+            FOR XML PATH('SetCustomOptionQuote'), ROOT('Request')";
+
+        var dt = db.SqlExec(sql, new { Seq = seq });
+
+        var xml = "";
+        foreach (DataRow row in dt.Rows)
+        {
+            xml += row[0]?.ToString() ?? "";
+        }
+
+        // Expected XML structure:
+        // <Request>
+        //   <SetCustomOptionQuote>
+        //     <CRMID />
+        //     <Declined />
+        //     <DeclineReason />
+        //     <Category />
+        //     <Description />
+        //     <Comments />
+        //     <EstimatorNotes />
+        //     <ExtendedPrice />
+        //     <Tax />
+        //     <CostPerUnit />
+        //     <PricePerUnit />
+        //     <Units />
+        //     <UOM />
+        //   </SetCustomOptionQuote>
+        // </Request>
+
+        SalesWrapperPost(xml);
+    }
+
+    /// <summary>
+    /// Sets the estimate index in the CRM sales system.
+    /// Corresponds to VB6: Public Sub Sales_SetEstimateIndex(InboxBatchID As String)
+    /// </summary>
+    public void Sales_SetEstimateIndex(string inboxBatchId)
+    {
+        if (!Integrated()) return;
+
+        var sql = @"
+            SELECT CRMID, EstimateIndex
+            FROM estimateassemblies
+            WHERE InboxBatchID = @InboxBatchID
+            FOR XML PATH('SetEstimateIndex'), ROOT('Request')";
+
+        var dt = db.SqlExec(sql, new { InboxBatchID = inboxBatchId });
+
+        var xml = "";
+        foreach (DataRow row in dt.Rows)
+        {
+            xml += row[0]?.ToString() ?? "";
+        }
+
+        // Expected XML structure:
+        // <Request>
+        //   <SetEstimateIndex>
+        //     <CRMID />
+        //     <EstimateIndex />
+        //   </SetEstimateIndex>
+        // </Request>
+
+        if (!string.IsNullOrEmpty(xml))
+        {
+            SalesWrapperPost(xml);
+        }
+    }
+
+    /// <summary>
+    /// Checks whether CRM integration is configured and active.
+    /// Corresponds to VB6: Private Function Integrated() As Boolean
+    /// </summary>
+    private bool Integrated()
+    {
+        if (!_loaded)
+        {
+            _crmApiKey = GetOptionValue?.Invoke("CrmApiKey") ?? "";
+            _crmClientId = GetOptionValue?.Invoke("CrmClientID") ?? "";
+            _crmEnvironment = GetOptionValue?.Invoke("CrmEnvironment") ?? "";
+            _loaded = true;
+
+            var validEnvironments = new[] { "Production", "User Acceptance Testing (UAT)", "" };
+            if (!validEnvironments.Contains(_crmEnvironment))
+            {
+                // In Blazor we cannot use MsgBox; log a warning or notify the user via UI
+                Console.WriteLine($"[MCrmDataService] Invalid system settings. Check your Sales System settings. CrmEnvironment='{_crmEnvironment}'");
+                return false;
+            }
+        }
+
+        return !string.IsNullOrEmpty(_crmApiKey)
+            && !string.IsNullOrEmpty(_crmClientId)
+            && !string.IsNullOrEmpty(_crmEnvironment);
+    }
+
+    /// <summary>
+    /// Posts XML to the CRM sales wrapper service.
+    /// Corresponds to VB6: Private Function SalesWrapper(xml As String) As String
+    /// </summary>
+    private string SalesWrapperPost(string xml)
+    {
+        try
+        {
+            // In VB6 this instantiated HyphenSys.SalesWrapper COM object and called PostXml.
+            // In .NET, replace with an HTTP call or equivalent service client.
+            // Placeholder implementation:
+            bool isProduction = string.Equals(_crmEnvironment, "Production", StringComparison.OrdinalIgnoreCase);
+            string version = "1";
+
+            // TODO: Replace with actual HTTP client call to CRM API
+            // Example:
+            // using var httpClient = new HttpClient();
+            // var content = new StringContent(xml, Encoding.UTF8, "application/xml");
+            // content.Headers.Add("X-ClientID", _crmClientId);
+            // content.Headers.Add("X-ApiKey", _crmApiKey);
+            // content.Headers.Add("X-Version", version);
+            // content.Headers.Add("X-IsProduction", isProduction.ToString());
+            // var response = await httpClient.PostAsync("https://crm-api-endpoint/sales", content);
+            // return await response.Content.ReadAsStringAsync();
+
+            Console.WriteLine($"[MCrmDataService] SalesWrapper PostXml called. ClientID={_crmClientId}, IsProduction={isProduction}, Version={version}, XML Length={xml.Length}");
+            return "";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MCrmDataService] SalesWrapper error: {ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Resets the loaded state, forcing re-read of CRM settings on next call.
+    /// </summary>
+    public void ResetConfiguration()
+    {
+        _loaded = false;
+        _crmApiKey = "";
+        _crmClientId = "";
+        _crmEnvironment = "";
+    }
+
+    /// <summary>
+    /// Returns whether CRM integration is currently active (for UI binding).
+    /// </summary>
+    public bool IsIntegrated => Integrated();
+}
+```

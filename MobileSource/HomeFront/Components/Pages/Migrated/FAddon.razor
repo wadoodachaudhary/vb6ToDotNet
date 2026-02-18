@@ -1,0 +1,420 @@
+```razor
+@using HomeFront.Components.Hf
+
+<HfDialog Visible="@Visible"
+          Header="Addon"
+          Width="480px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="Cancel">
+    <ChildContent>
+        <div class="faddon">
+            <div class="form-row">
+                <label class="field-label">Title</label>
+                <HfTextBox @bind-Value="Title" CssClass="field-input" />
+            </div>
+
+            <div class="form-row">
+                <label class="field-label">Cost Basis</label>
+                <div class="basis-group">
+                    <button type="button" class="@BasisButtonClass(BasisType.LumpSum)" @onclick="() => SetBasis(BasisType.LumpSum)">Lump Sum</button>
+                    <button type="button" class="@BasisButtonClass(BasisType.Cost)" @onclick="() => SetBasis(BasisType.Cost)">Cost</button>
+                    <button type="button" class="@BasisButtonClass(BasisType.PreviousSubTotal)" @onclick="() => SetBasis(BasisType.PreviousSubTotal)">Previous SubTotal</button>
+                    <button type="button" class="@BasisButtonClass(BasisType.RunningTotal)" @onclick="() => SetBasis(BasisType.RunningTotal)">Running Total</button>
+                </div>
+            </div>
+
+            @if (ShowRates)
+            {
+                <div class="frame">
+                    <div class="frame-title">Amount</div>
+                    <div class="rate-types">
+                        <label><input type="radio" name="rateType" checked="@(RateType == RateTypeEnum.Markup)" @onchange="() => SetRateType(RateTypeEnum.Markup)" /> Mark-up</label>
+                        <label><input type="radio" name="rateType" checked="@(RateType == RateTypeEnum.Margin)" @onchange="() => SetRateType(RateTypeEnum.Margin)" /> Margin</label>
+                        <label><input type="radio" name="rateType" checked="@(RateType == RateTypeEnum.AmountPer)" @onchange="() => SetRateType(RateTypeEnum.AmountPer)" /> Amount Per</label>
+                    </div>
+
+                    <div class="rate-inputs">
+                        <div class="rate-row">
+                            <span class="rate-label">Percentage</span>
+                            <div class="inline-input">
+                                <HfNumericTextBox TValue="decimal"
+                                                  @bind-Value="Percentage"
+                                                  Format="N2"
+                                                  Width="90px"
+                                                  Enabled="@EnablePercentage"
+                                                  ValueChange="OnPercentageChanged" />
+                                <span class="suffix">%</span>
+                            </div>
+                        </div>
+
+                        <div class="rate-row">
+                            <span class="rate-label">Amount Per</span>
+                            <div class="inline-input">
+                                <HfNumericTextBox TValue="decimal"
+                                                  @bind-Value="Rate1"
+                                                  Format="N2"
+                                                  Width="90px"
+                                                  Enabled="@EnableAmountPer"
+                                                  ValueChange="OnRateChanged" />
+                                <span class="slash">/</span>
+                                <HfNumericTextBox TValue="decimal"
+                                                  @bind-Value="Rate2"
+                                                  Format="N2"
+                                                  Width="90px"
+                                                  Enabled="@EnableAmountPer"
+                                                  ValueChange="OnRateChanged" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (ShowLumpSum)
+            {
+                <div class="frame">
+                    <div class="frame-title">Amount</div>
+                    <HfNumericTextBox TValue="decimal" @bind-Value="LumpSumAmt" Format="N2" Width="140px" />
+                </div>
+            }
+
+            @if (ShowCategories)
+            {
+                <div class="frame">
+                    <div class="frame-title">Categories</div>
+                    <div class="categories">
+                        <HfCheckBox @bind-Checked="CostMaterial" Label="Material" />
+                        <HfCheckBox @bind-Checked="CostEquipment" Label="Equipment" />
+                        <HfCheckBox @bind-Checked="CostSubcontract" Label="Subcontract" />
+                        <HfCheckBox @bind-Checked="CostLabour" Label="Labour" />
+                        <HfCheckBox @bind-Checked="CostOther" Label="Other" />
+                    </div>
+                </div>
+            }
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="HandleOk">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="Cancel">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .faddon {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .form-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .field-label {
+        width: 90px;
+        font-weight: 600;
+        color: #4a4a4a;
+    }
+
+    .field-input {
+        flex: 1;
+    }
+
+    .basis-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .basis-group button {
+        padding: 6px 10px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .basis-group button.active {
+        background: #d9e7ff;
+        border-color: #4b7fe3;
+        font-weight: 600;
+    }
+
+    .frame {
+        border: 1px solid #c9c9c9;
+        border-radius: 6px;
+        padding: 10px;
+        background: #fbfbfb;
+    }
+
+    .frame-title {
+        font-weight: 700;
+        color: #3a3a3a;
+        margin-bottom: 8px;
+    }
+
+    .rate-types {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 8px;
+        font-size: 12px;
+    }
+
+    .rate-inputs {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .rate-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .rate-label {
+        width: 90px;
+        font-size: 12px;
+        color: #4a4a4a;
+    }
+
+    .inline-input {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .suffix {
+        font-size: 12px;
+        color: #666;
+    }
+
+    .slash {
+        font-weight: 600;
+        color: #666;
+    }
+
+    .categories {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 6px;
+    }
+
+    .hf-dialog-btn {
+        padding: 6px 14px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+    }
+</style>
+
+@code {
+    private static BasisType DefaultBasis = BasisType.LumpSum;
+    private bool _wasVisible;
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public AddonRow? Model { get; set; }
+    [Parameter] public IList<AddonRow>? DataSource { get; set; }
+    [Parameter] public int EditIndex { get; set; } = -1;
+    [Parameter] public bool IsCreate { get; set; } = true;
+    [Parameter] public EventCallback<AddonRow> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string Title = "";
+    private BasisType Basis = BasisType.LumpSum;
+    private RateTypeEnum RateType = RateTypeEnum.Margin;
+    private decimal Percentage = 25;
+    private decimal Rate1;
+    private decimal Rate2;
+    private decimal LumpSumAmt;
+
+    private bool CostMaterial;
+    private bool CostEquipment;
+    private bool CostSubcontract;
+    private bool CostLabour;
+    private bool CostOther;
+
+    private bool ShowCategories => Basis == BasisType.Cost;
+    private bool ShowLumpSum => Basis == BasisType.LumpSum;
+    private bool ShowRates => !ShowLumpSum;
+
+    private bool EnablePercentage => RateType == RateTypeEnum.Markup;
+    private bool EnableAmountPer => RateType == RateTypeEnum.AmountPer;
+
+    protected override void OnParametersSet()
+    {
+        if (Visible && !_wasVisible)
+        {
+            LoadFromModel();
+        }
+
+        _wasVisible = Visible;
+    }
+
+    private void LoadFromModel()
+    {
+        if (IsCreate || Model == null)
+        {
+            Title = "";
+            Basis = DefaultBasis;
+            RateType = RateTypeEnum.Margin;
+            Percentage = 25;
+            Rate1 = 0;
+            Rate2 = 0;
+            LumpSumAmt = 0;
+            CostMaterial = CostEquipment = CostSubcontract = CostLabour = CostOther = false;
+        }
+        else
+        {
+            Title = Model.Title;
+            Basis = BasisFromString(Model.Basis);
+            RateType = (RateTypeEnum)Math.Clamp(Model.RateType, 0, 3);
+            Percentage = Model.Percentage;
+            Rate1 = Model.Rate1;
+            Rate2 = Model.Rate2;
+            LumpSumAmt = Model.LumpSumAmt;
+            CostMaterial = Model.Mat;
+            CostEquipment = Model.Eq;
+            CostSubcontract = Model.Sub;
+            CostLabour = Model.Lab;
+            CostOther = Model.Oth;
+        }
+
+        if (Basis == BasisType.LumpSum)
+            RateType = RateTypeEnum.Lump;
+        else if (RateType == RateTypeEnum.Lump)
+            RateType = RateTypeEnum.Markup;
+    }
+
+    private async Task HandleOk()
+    {
+        var row = Model ?? new AddonRow();
+        row.Title = Title;
+        row.Basis = BasisToString(Basis);
+        row.RateType = Basis == BasisType.LumpSum ? (int)RateTypeEnum.Lump : (int)RateType;
+        row.Percentage = Percentage;
+        row.Rate1 = Rate1;
+        row.Rate2 = Rate2;
+        row.LumpSumAmt = LumpSumAmt;
+        row.Mat = CostMaterial;
+        row.Eq = CostEquipment;
+        row.Sub = CostSubcontract;
+        row.Lab = CostLabour;
+        row.Oth = CostOther;
+
+        if (DataSource != null)
+        {
+            if (IsCreate || EditIndex < 0 || EditIndex >= DataSource.Count)
+                DataSource.Add(row);
+            else
+                DataSource[EditIndex] = row;
+        }
+
+        if (OnSave.HasDelegate)
+            await OnSave.InvokeAsync(row);
+
+        DefaultBasis = Basis;
+        await CloseDialog();
+    }
+
+    private async Task Cancel()
+    {
+        if (OnCancel.HasDelegate)
+            await OnCancel.InvokeAsync();
+
+        DefaultBasis = Basis;
+        await CloseDialog();
+    }
+
+    private async Task CloseDialog()
+    {
+        if (VisibleChanged.HasDelegate)
+            await VisibleChanged.InvokeAsync(false);
+    }
+
+    private void SetBasis(BasisType basis)
+    {
+        Basis = basis;
+        if (Basis == BasisType.LumpSum)
+            RateType = RateTypeEnum.Lump;
+        else if (RateType == RateTypeEnum.Lump)
+            RateType = RateTypeEnum.Markup;
+    }
+
+    private void SetRateType(RateTypeEnum rateType)
+    {
+        RateType = rateType;
+    }
+
+    private Task OnPercentageChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        Percentage = args.Value is decimal v ? v : 0;
+        if (RateType != RateTypeEnum.Markup)
+            RateType = RateTypeEnum.Markup;
+        return Task.CompletedTask;
+    }
+
+    private Task OnRateChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    {
+        if (RateType != RateTypeEnum.AmountPer)
+            RateType = RateTypeEnum.AmountPer;
+        return Task.CompletedTask;
+    }
+
+    private string BasisButtonClass(BasisType basis) => basis == Basis ? "active" : "";
+
+    private static BasisType BasisFromString(string basis) => basis switch
+    {
+        "LumpSum" => BasisType.LumpSum,
+        "Category" => BasisType.Cost,
+        "LastSubTotal" => BasisType.PreviousSubTotal,
+        "RunningTotal" => BasisType.RunningTotal,
+        _ => DefaultBasis
+    };
+
+    private static string BasisToString(BasisType basis) => basis switch
+    {
+        BasisType.LumpSum => "LumpSum",
+        BasisType.Cost => "Category",
+        BasisType.PreviousSubTotal => "LastSubTotal",
+        BasisType.RunningTotal => "RunningTotal",
+        _ => "LumpSum"
+    };
+
+    public class AddonRow
+    {
+        public string Title { get; set; } = "";
+        public string Basis { get; set; } = "LumpSum";
+        public int RateType { get; set; } = 2;
+        public decimal Percentage { get; set; }
+        public decimal Rate1 { get; set; }
+        public decimal Rate2 { get; set; }
+        public decimal LumpSumAmt { get; set; }
+        public bool Mat { get; set; }
+        public bool Eq { get; set; }
+        public bool Sub { get; set; }
+        public bool Lab { get; set; }
+        public bool Oth { get; set; }
+    }
+
+    public enum BasisType
+    {
+        Cost = 0,
+        PreviousSubTotal = 1,
+        RunningTotal = 2,
+        LumpSum = 3
+    }
+
+    public enum RateTypeEnum
+    {
+        Markup = 0,
+        AmountPer = 1,
+        Lump = 2,
+        Margin = 3
+    }
+}
+```

@@ -1,0 +1,237 @@
+```razor
+@using HomeFront.Data
+@using HomeFront.Components.Hf
+@inject IJSRuntime JSRuntime
+
+<HfDialog Visible="@Visible"
+          Header="Tax Change Wizard"
+          Width="650px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="OnCancel">
+    <ChildContent>
+        <div class="wiz-head">
+            <div class="wiz-title">Tax Changes</div>
+            <div class="wiz-desc">Change tax groups on estimated items</div>
+        </div>
+
+        <p class="wiz-body-text">
+            Select how you want to update tax groups for estimated items.
+        </p>
+
+        <div class="option-row">
+            <input type="radio" name="mode" checked="@(ModeIndex == 0)" @onchange="() => ModeIndex = 0" />
+            <label>Tax rate has changed. Recalculate tax amounts.</label>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label @(IsRecalcMode ? "" : "disabled")">Tax group</label>
+            <HfDropDownList TValue="string" TItem="string"
+                            DataSource="@TaxGroups"
+                            @bind-Value="SelectedTaxGroup0"
+                            Enabled="@IsRecalcMode"
+                            Width="100%" />
+        </div>
+
+        <div class="option-row">
+            <input type="radio" name="mode" checked="@(ModeIndex == 1)" @onchange="() => ModeIndex = 1" />
+            <label>Change one tax group to another</label>
+        </div>
+
+        <div class="form-row">
+            <label class="form-label @(!IsRecalcMode ? "" : "disabled")">Old tax group</label>
+            <HfDropDownList TValue="string" TItem="string"
+                            DataSource="@TaxGroups"
+                            @bind-Value="SelectedTaxGroup1"
+                            Enabled="@(!IsRecalcMode)"
+                            Width="100%" />
+        </div>
+
+        <div class="form-row">
+            <label class="form-label @(!IsRecalcMode ? "" : "disabled")">New tax group</label>
+            <HfDropDownList TValue="string" TItem="string"
+                            DataSource="@TaxGroups"
+                            @bind-Value="SelectedTaxGroup2"
+                            Enabled="@(!IsRecalcMode)"
+                            Width="100%" />
+        </div>
+    </ChildContent>
+
+    <FooterContent>
+        <div class="dialog-footer">
+            <HfButton CssClass="hf-button-primary" OnClick="OnOk">OK</HfButton>
+            <HfButton CssClass="hf-button-secondary" OnClick="OnCancel">Cancel</HfButton>
+        </div>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .wiz-head {
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+    }
+
+    .wiz-title {
+        font-size: 18px;
+        font-weight: 700;
+    }
+
+    .wiz-desc {
+        font-size: 13px;
+        color: #555;
+    }
+
+    .wiz-body-text {
+        margin: 8px 0 16px;
+    }
+
+    .option-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 8px;
+        align-items: center;
+        margin: 6px 0 10px;
+    }
+
+    .form-label {
+        text-align: right;
+        font-weight: 600;
+    }
+
+    .form-label.disabled {
+        color: #999;
+    }
+
+    .dialog-footer {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+    }
+</style>
+
+@code {
+    private readonly DbWrapperSqlServer db = new();
+    private bool _loaded;
+
+    [Parameter] public bool Visible { get; set; } = true;
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+    [Parameter] public EventCallback<bool> Closed { get; set; }
+    [Parameter] public int DivisionId { get; set; } = 1;
+    [Parameter] public string DefaultTaxGroup { get; set; } = "";
+
+    private int ModeIndex { get; set; } = 0;
+    private bool IsRecalcMode => ModeIndex == 0;
+
+    private List<string> TaxGroups { get; set; } = new();
+    private string SelectedTaxGroup0 { get; set; } = "";
+    private string SelectedTaxGroup1 { get; set; } = "";
+    private string SelectedTaxGroup2 { get; set; } = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible && !_loaded)
+        {
+            await LoadDataAsync();
+            _loaded = true;
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        var rows = await db.QueryAsync(
+            "SELECT '' AS TaxGroup, '' AS Description UNION ALL SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID = @DivisionID",
+            new { DivisionID = DivisionId });
+
+        TaxGroups = rows.Select(r => r["TaxGroup"]?.ToString() ?? "").ToList();
+
+        if (!string.IsNullOrWhiteSpace(DefaultTaxGroup) && TaxGroups.Contains(DefaultTaxGroup))
+        {
+            SelectedTaxGroup0 = DefaultTaxGroup;
+            SelectedTaxGroup1 = DefaultTaxGroup;
+            SelectedTaxGroup2 = DefaultTaxGroup;
+        }
+        else if (TaxGroups.Count > 0)
+        {
+            SelectedTaxGroup0 = TaxGroups[0];
+            SelectedTaxGroup1 = TaxGroups[0];
+            SelectedTaxGroup2 = TaxGroups[0];
+        }
+    }
+
+    private async Task OnOk()
+    {
+        if (await SaveDataAsync())
+        {
+            await CloseAsync(true);
+        }
+    }
+
+    private async Task OnCancel()
+    {
+        await CloseAsync(false);
+    }
+
+    private async Task CloseAsync(bool result)
+    {
+        if (VisibleChanged.HasDelegate)
+            await VisibleChanged.InvokeAsync(false);
+        if (Closed.HasDelegate)
+            await Closed.InvokeAsync(result);
+    }
+
+    private async Task<bool> SaveDataAsync()
+    {
+        var oldgrp = IsRecalcMode ? SelectedTaxGroup0 : SelectedTaxGroup1;
+        var newgrp = IsRecalcMode ? SelectedTaxGroup0 : SelectedTaxGroup2;
+
+        if (string.IsNullOrWhiteSpace(newgrp))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select a tax group.");
+            return false;
+        }
+
+        var message = IsRecalcMode
+            ? $"Are you sure you want to reapply tax group {newgrp}?"
+            : $"Are you sure you want to replace tax group {oldgrp} with {newgrp}?";
+
+        var ok = await JSRuntime.InvokeAsync<bool>("confirm", message);
+        if (!ok)
+            return false;
+
+        var sql1 = @"
+update e
+set budgettaxgroup = t.taxgroup,
+    budgetjctax = round(e.budgetpretax * t.jcrate / 100, 2),
+    budgetjctaxrate = t.jcrate,
+    budgetnjctax = round(e.budgetpretax * t.njcrate / 100, 2),
+    budgetnjctaxrate = t.njcrate
+from estimateitems e
+join taxgroups t on e.DivisionID = t.DivisionID and t.taxgroup = @NewGroup
+where e.DivisionID = @DivisionID and budgetgenerated = 0 and budgettaxgroup = @OldGroup";
+
+        var sql2 = @"
+update e
+set potaxgroup = t.taxgroup,
+    pojctax = round(e.popretax * t.jcrate / 100, 2),
+    pojctaxrate = t.jcrate,
+    ponjctax = round(e.popretax * t.njcrate / 100, 2),
+    ponjctaxrate = t.njcrate
+from estimateitems e
+join taxgroups t on e.DivisionID = t.DivisionID and t.taxgroup = @NewGroup
+where e.DivisionID = @DivisionID and pogenbatch = 0 and potaxgroup = @OldGroup";
+
+        await db.ExecuteAsync(sql1, new { DivisionID = DivisionId, NewGroup = newgrp, OldGroup = oldgrp });
+        await db.ExecuteAsync(sql2, new { DivisionID = DivisionId, NewGroup = newgrp, OldGroup = oldgrp });
+
+        return true;
+    }
+}
+```

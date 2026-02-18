@@ -1,0 +1,224 @@
+```razor
+@namespace HomeFront.Components.Pages
+
+@inject IJSRuntime JSRuntime
+
+<style>
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        width: 380px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .dialog-header button:hover {
+        color: #212529;
+    }
+
+    .dialog-body {
+        padding: 20px;
+    }
+
+    .dialog-body .prompt-label {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .dialog-body .prompt-label img {
+        width: 48px;
+        height: 48px;
+    }
+
+    .option-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-left: 60px;
+    }
+
+    .option-group label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        cursor: pointer;
+    }
+
+    .option-group input[type="radio"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+
+    .dialog-footer .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .dialog-footer .btn:hover {
+        background: #e9ecef;
+    }
+
+    .dialog-footer .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .dialog-footer .btn-primary:hover {
+        background: #0b5ed7;
+    }
+</style>
+
+@if (IsVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Generation Options</span>
+                <button @onclick="OnCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="prompt-label">
+                    <img src="images/32/question.ico" alt="?" onerror="this.style.display='none'" />
+                    <span>How do you want to generate these POs?</span>
+                </div>
+                <div class="option-group">
+                    <label>
+                        <input type="radio" name="poGenerationOption" value="Vendor"
+                               checked="@(SelectedOption == "Vendor")"
+                               @onchange="@(() => SelectedOption = "Vendor")" />
+                        One PO per Vendor
+                    </label>
+                    <label>
+                        <input type="radio" name="poGenerationOption" value="Job"
+                               checked="@(SelectedOption == "Job")"
+                               @onchange="@(() => SelectedOption = "Job")" />
+                        One PO per Job
+                    </label>
+                    <label>
+                        <input type="radio" name="poGenerationOption" value="Unit"
+                               checked="@(SelectedOption == "Unit")"
+                               @onchange="@(() => SelectedOption = "Unit")" />
+                        One PO per Unit
+                    </label>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// Controls visibility of the dialog.
+    /// </summary>
+    [Parameter] public bool IsVisible { get; set; }
+
+    /// <summary>
+    /// Two-way binding support for IsVisible.
+    /// </summary>
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    /// <summary>
+    /// Fires when the user confirms a selection. Returns "Vendor", "Job", or "Unit".
+    /// </summary>
+    [Parameter] public EventCallback<string> OnChoose { get; set; }
+
+    /// <summary>
+    /// The currently selected option. Defaults to "Job" (matching VB6 default).
+    /// </summary>
+    private string SelectedOption { get; set; } = "Job";
+
+    /// <summary>
+    /// Mirrors the VB6 Choose() function. Opens the dialog, waits for user input,
+    /// and returns the selected generation option.
+    /// Call this from a parent component instead of toggling IsVisible manually.
+    /// </summary>
+    private TaskCompletionSource<string>? _tcs;
+
+    public async Task<string> ChooseAsync()
+    {
+        SelectedOption = "Job"; // Reset to default each time
+        _tcs = new TaskCompletionSource<string>();
+        IsVisible = true;
+        await IsVisibleChanged.InvokeAsync(true);
+        StateHasChanged();
+        return await _tcs.Task;
+    }
+
+    private async Task OnOkClick()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+
+        if (OnChoose.HasDelegate)
+        {
+            await OnChoose.InvokeAsync(SelectedOption);
+        }
+
+        _tcs?.TrySetResult(SelectedOption);
+        StateHasChanged();
+    }
+
+    private async Task OnCancel()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+
+        // Return empty string on cancel (no selection made)
+        _tcs?.TrySetResult(string.Empty);
+        StateHasChanged();
+    }
+}
+```

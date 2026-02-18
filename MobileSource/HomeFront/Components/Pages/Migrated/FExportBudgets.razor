@@ -1,0 +1,909 @@
+```razor
+@page "/export-budgets"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Budget Posting Wizard - HomeFront</PageTitle>
+
+<style>
+    .wizard-container {
+        max-width: 700px;
+        margin: 0 auto;
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        background: #fff;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        overflow: hidden;
+    }
+
+    .wiz-header {
+        background: linear-gradient(to right, #003366, #336699);
+        color: #fff;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .wiz-header img { width: 48px; height: 48px; }
+    .wiz-header-text h3 { margin: 0; font-size: 16px; font-weight: 700; }
+    .wiz-header-text p { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
+
+    .wiz-body {
+        min-height: 280px;
+        padding: 20px 24px;
+        display: flex;
+        gap: 16px;
+    }
+    .wiz-body-icon { flex-shrink: 0; width: 48px; height: 48px; }
+    .wiz-body-content { flex: 1; }
+
+    .wiz-footer {
+        border-top: 1px solid #dee2e6;
+        padding: 10px 20px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        background: #f8f9fa;
+    }
+    .wiz-footer button {
+        padding: 6px 18px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 13px;
+        min-width: 80px;
+    }
+    .wiz-footer button:hover:not(:disabled) { background: #e9ecef; }
+    .wiz-footer button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .wiz-footer button.btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .wiz-footer button.btn-primary:hover:not(:disabled) { background: #0b5ed7; }
+
+    .wiz-message { margin-bottom: 12px; font-weight: 500; }
+
+    .wiz-radio-group { margin-bottom: 8px; }
+    .wiz-radio-group label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
+
+    .wiz-checkbox-group label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
+
+    .wiz-link {
+        color: #0d6efd;
+        text-decoration: underline;
+        cursor: pointer;
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+    }
+    .wiz-link:hover { color: #0a58ca; }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: auto;
+        max-height: 240px;
+    }
+    .grid-container table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .grid-container th {
+        background: #f0f0f0;
+        border-bottom: 2px solid #ccc;
+        padding: 6px 8px;
+        text-align: left;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .grid-container td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+    .grid-container tr { cursor: pointer; }
+    .grid-container tr:hover { background: #f0f7ff; }
+    .grid-container tr.selected { background: #cce5ff; font-weight: 600; }
+
+    .loading-overlay {
+        position: absolute; inset: 0;
+        background: rgba(255,255,255,0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 100; font-size: 14px; font-weight: 500;
+    }
+
+    .error-message { color: #dc3545; margin-top: 8px; }
+</style>
+
+<div class="wizard-container" style="position: relative;">
+    @if (IsLoading)
+    {
+        <div class="loading-overlay">⏳ Processing...</div>
+    }
+
+    @* ── HEADER ─────────────────────────────────────────── *@
+    <div class="wiz-header">
+        <img src="images/32/budget.ico" alt="Budget" onerror="this.style.display='none'" />
+        <div class="wiz-header-text">
+            <h3>Post Budgets to Accounting</h3>
+            <p>The posting wizard will send budgets to accounting</p>
+        </div>
+    </div>
+
+    @* ── BODY ───────────────────────────────────────────── *@
+    <div class="wiz-body">
+        <img class="wiz-body-icon" src="images/32/budget.ico" alt="" onerror="this.style.display='none'" />
+        <div class="wiz-body-content">
+
+            @* ── FRAME 0: Task Selection ─────────────────── *@
+            @if (CurrentFrame == 0)
+            {
+                <div class="wiz-message">Choose the task you would like to perform</div>
+                <div class="wiz-radio-group">
+                    <label>
+                        <input type="radio" name="taskChoice" checked="@IsPostNew" @onchange="() => SetTaskChoice(true)" />
+                        Post new budgets
+                    </label>
+                    <label>
+                        <input type="radio" name="taskChoice" checked="@(!IsPostNew)" @onchange="() => SetTaskChoice(false)" />
+                        Review a previous posting
+                    </label>
+                </div>
+            }
+
+            @* ── FRAME 1: Data Selection Grid ────────────── *@
+            @if (CurrentFrame == 1)
+            {
+                <div class="wiz-message">@ListDescription</div>
+                <div class="grid-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                @foreach (var col in GridColumns)
+                                {
+                                    <th>@col</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (GridData.Count == 0)
+                            {
+                                <tr><td colspan="@GridColumns.Count" style="text-align:center; color:#999;">No records found.</td></tr>
+                            }
+                            else
+                            {
+                                @for (int i = 0; i < GridData.Count; i++)
+                                {
+                                    var rowIndex = i;
+                                    var row = GridData[rowIndex];
+                                    <tr class="@(SelectedRows.Contains(rowIndex) ? "selected" : "")"
+                                        @onclick="() => OnGridRowClick(rowIndex)"
+                                        @onclick:stopPropagation="true">
+                                        @foreach (var col in GridColumns)
+                                        {
+                                            <td>@(row.ContainsKey(col) ? row[col]?.ToString() ?? "" : "")</td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @* ── FRAME 2: Post / Review ──────────────────── *@
+            @if (CurrentFrame == 2)
+            {
+                <div class="wiz-message">@StatusMessage</div>
+
+                @if (!IsPostNew)
+                {
+                    @* Review mode: show task links *@
+                    <a class="wiz-link" @onclick="OnOpenPostingSummary" @onclick:preventDefault>
+                        Open the posting summary report
+                    </a>
+                    @if (ShowTimberlineOptions)
+                    {
+                        <a class="wiz-link" @onclick="OnReviewPostingFile" @onclick:preventDefault>
+                            Review the posting file
+                        </a>
+                        <a class="wiz-link" @onclick="OnReviewRejectedRecords" @onclick:preventDefault>
+                            Review the rejected records
+                        </a>
+                        <a class="wiz-link" @onclick="OnOpenProcessingJournal" @onclick:preventDefault>
+                            Open the processing journal
+                        </a>
+                    }
+                }
+                else
+                {
+                    @* Post mode: show options *@
+                    @if (PostFrameVisible)
+                    {
+                        <div class="wiz-checkbox-group">
+                            <label>
+                                <input type="checkbox" @bind="ShowBatchReport" />
+                                Show posting summary report when finished.
+                            </label>
+                            @if (ShowTimberlineOptions)
+                            {
+                                <label>
+                                    <input type="checkbox" @bind="ShowProcessingJournal" />
+                                    Show processing journal when finished.
+                                </label>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(ErrorMessage))
+                    {
+                        <div class="error-message">@ErrorMessage</div>
+                    }
+                }
+            }
+        </div>
+    </div>
+
+    @* ── FOOTER ─────────────────────────────────────────── *@
+    <div class="wiz-footer">
+        <button @onclick="OnCancelClick">Cancel</button>
+        <button disabled="@(!CanGoBack)" @onclick="OnBackClick">&lt; Back</button>
+        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">Next &gt;</button>
+        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">Finish</button>
+    </div>
+</div>
+
+@code {
+    // ── Database ──────────────────────────────────────────────────────────
+    private DbWrapperSqlServer db = new();
+
+    // ── App State (would come from a shared service in production) ────────
+    private int DivisionID = 1;
+    private string LoginID = "admin";
+    private int AccountingSystem = 2; // 1=Timberline, 2=MasterBuilder, 3=QuickBooks, 4=Sage50, etc.
+    private bool PostSummarizedBudgets = false;
+
+    // ── Constants ─────────────────────────────────────────────────────────
+    private const int asTimberline = 1;
+    private const int asMasterBuilder = 2;
+    private const int asQuickBooks = 3;
+    private const int asIntacct = 8;
+    private const int asQuickbooksOnline = 9;
+
+    // ── Wizard State ──────────────────────────────────────────────────────
+    private int CurrentFrame = 0;
+    private const int MaxFrame = 2;
+    private bool IsLoading = false;
+
+    // Frame 0: Task choice
+    private bool IsPostNew = true;
+
+    // Frame 1: Grid data
+    private string ListDescription = "";
+    private List<string> GridColumns = new();
+    private List<Dictionary<string, object>> GridData = new();
+    private HashSet<int> SelectedRows = new();
+    private bool AllowMultiSelect = true;
+
+    // Frame 2: Post/Review
+    private string StatusMessage = "";
+    private string ErrorMessage = "";
+    private bool PostFrameVisible = false;
+    private bool ShowBatchReport = true;
+    private bool ShowProcessingJournal = false;
+    private bool ShowTimberlineOptions = false;
+
+    // Batch tracking
+    private long mBatch = 0;
+    private long mCOBatch = 0;
+    private string WhereClause = "";
+
+    // ── Navigation Properties ─────────────────────────────────────────────
+    private bool CanGoBack => CurrentFrame > 0;
+    private bool CanGoNext => CurrentFrame < MaxFrame && (CurrentFrame != 1 || SelectedRows.Count > 0);
+    private bool CanFinish => CurrentFrame == MaxFrame && (PostFrameVisible || !IsPostNew);
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        ShowTimberlineOptions = AccountingSystem == asTimberline;
+        ShowBatchReport = true;
+        ShowProcessingJournal = ShowTimberlineOptions;
+    }
+
+    // ── Task Choice ───────────────────────────────────────────────────────
+    private void SetTaskChoice(bool postNew)
+    {
+        IsPostNew = postNew;
+        StateHasChanged();
+    }
+
+    // ── Grid Row Click ────────────────────────────────────────────────────
+    private void OnGridRowClick(int rowIndex)
+    {
+        if (AllowMultiSelect)
+        {
+            if (SelectedRows.Contains(rowIndex))
+                SelectedRows.Remove(rowIndex);
+            else
+                SelectedRows.Add(rowIndex);
+        }
+        else
+        {
+            SelectedRows.Clear();
+            SelectedRows.Add(rowIndex);
+        }
+        StateHasChanged();
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────────
+    private async Task OnCancelClick()
+    {
+        await SaveOptions();
+        NavigationManager.NavigateTo("/");
+    }
+
+    private async Task OnBackClick()
+    {
+        if (CurrentFrame > 0)
+        {
+            CurrentFrame--;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnNextClick()
+    {
+        if (CurrentFrame < MaxFrame)
+        {
+            CurrentFrame++;
+            await OnFrameChanged();
+        }
+    }
+
+    private async Task OnFinishClick()
+    {
+        if (!IsPostNew)
+        {
+            await SaveOptions();
+            NavigationManager.NavigateTo("/");
+        }
+        else
+        {
+            await CreateBatch();
+            await SaveOptions();
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task OnFrameChanged()
+    {
+        switch (CurrentFrame)
+        {
+            case 1:
+                await LoadData();
+                break;
+            case 2:
+                await LoadTasks();
+                break;
+        }
+        StateHasChanged();
+    }
+
+    // ── LoadData ──────────────────────────────────────────────────────────
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            SelectedRows.Clear();
+            GridData.Clear();
+            GridColumns.Clear();
+
+            string sql;
+
+            if (!IsPostNew)
+            {
+                // Review mode: show previous batches
+                sql = $@"
+                    SELECT Batch, TStmp AS Posted, UStmp AS PostedBy
+                    FROM Batches
+                    WHERE (DivisionID = {DivisionID} OR ISNULL(DivisionID,0)=0)
+                      AND BatchType='Budget Posting'
+                    ORDER BY Batch DESC";
+
+                ListDescription = "Select the batch you would like to review.";
+                AllowMultiSelect = false;
+                GridColumns.AddRange(new[] { "Batch", "Posted", "PostedBy" });
+            }
+            else
+            {
+                // Post mode: show jobs with unposted budgets
+                sql = $@"
+                    SELECT i.Job, j.Description AS [Job Description]
+                    FROM EstimateItems i
+                    JOIN tbljobs j ON i.Job = j.Job_No AND i.DivisionID = j.DivisionID
+                    WHERE BudgetGenerated = 1
+                      AND BudgetPostingBatch = 0
+                      {(DivisionID > 0 ? $"AND i.DivisionID = {DivisionID}" : "")}
+                    UNION
+                    SELECT cb.Job, j.Description AS [Job Description]
+                    FROM CancelledBudgets cb
+                    JOIN tbljobs j ON cb.Job = j.Job_No AND cb.DivisionID = j.DivisionID
+                    WHERE ISNULL(cb.PostBatch,0) = 0
+                      {(DivisionID > 0 ? $"AND cb.DivisionID = {DivisionID}" : "")}";
+
+                ListDescription = "Select the budgets you would like to post.";
+                AllowMultiSelect = true;
+                GridColumns.AddRange(new[] { "Job", "Job Description" });
+            }
+
+            var rows = await db.QueryAsync(sql);
+            GridData = rows;
+
+            // Auto-select first row if any
+            if (GridData.Count > 0 && !AllowMultiSelect)
+            {
+                SelectedRows.Add(0);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportBudgets.LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── LoadTasks ─────────────────────────────────────────────────────────
+    private async Task LoadTasks()
+    {
+        ErrorMessage = "";
+        PostFrameVisible = false;
+
+        if (!IsPostNew)
+        {
+            // Review mode
+            if (SelectedRows.Count > 0)
+            {
+                var selectedIndex = SelectedRows.First();
+                if (selectedIndex < GridData.Count && GridData[selectedIndex].ContainsKey("Batch"))
+                {
+                    mBatch = Convert.ToInt64(GridData[selectedIndex]["Batch"]);
+                }
+            }
+            StatusMessage = $"Review batch {mBatch}. Select a task below:";
+        }
+        else
+        {
+            // Post mode
+            StatusMessage = "The posting wizard is ready to proceed.";
+            PostFrameVisible = true;
+
+            if (AccountingSystem == asMasterBuilder)
+            {
+                // In production, check if MB API is running
+                bool mbApiRunning = await CheckMbApiRunning();
+                if (mbApiRunning)
+                {
+                    StatusMessage = "The posting wizard is ready to proceed.";
+                    PostFrameVisible = true;
+                }
+                else
+                {
+                    StatusMessage = "The posting wizard is not able to process these budgets.\n\nThe Master Builder API is not accepting requests.";
+                    PostFrameVisible = false;
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private Task<bool> CheckMbApiRunning()
+    {
+        // Placeholder: in production, check actual API status
+        return Task.FromResult(true);
+    }
+
+    // ── CreateBatch ───────────────────────────────────────────────────────
+    private async Task CreateBatch()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Create new batch
+            var insertSql = $@"
+                INSERT INTO Batches(BatchType, UStmp, TStmp, DivisionID)
+                VALUES('Budget Posting', '{LoginID}', GETDATE(), {DivisionID})";
+            await db.ExecuteAsync(insertSql);
+
+            mBatch = await db.ExecuteScalarAsync<long>("SELECT IDENT_CURRENT('Batches')");
+
+            if (mBatch == 0)
+            {
+                ErrorMessage = "Failed to create batch.";
+                return;
+            }
+
+            // Build WHERE clause from selected rows
+            var jobConditions = new List<string>();
+            var jobConditionsWithAlias = new List<string>();
+
+            foreach (var idx in SelectedRows)
+            {
+                if (idx < GridData.Count && GridData[idx].ContainsKey("Job"))
+                {
+                    var job = GridData[idx]["Job"]?.ToString() ?? "";
+                    jobConditions.Add($"(Job_No='{EscapeSql(job)}')");
+                    jobConditionsWithAlias.Add($"(e.Job_No='{EscapeSql(job)}')");
+                }
+            }
+
+            if (jobConditions.Count == 0)
+            {
+                ErrorMessage = "No jobs selected.";
+                return;
+            }
+
+            var whereJobs = string.Join(" OR ", jobConditions);
+            WhereClause = string.Join(" OR ", jobConditionsWithAlias);
+
+            // Update EstimateItems and CancelledBudgets with batch number
+            switch (AccountingSystem)
+            {
+                case asTimberline:
+                case asMasterBuilder:
+                case asIntacct:
+                    await db.ExecuteAsync($@"
+                        UPDATE EstimateItems
+                        SET BudgetPostingBatch = {mBatch}
+                        WHERE BudgetGenerated = 1
+                          AND ISNULL(BudgetPostingBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE {whereJobs})");
+
+                    var cancelWhereJobs = whereJobs.Replace("Job_No=", "Job=");
+                    await db.ExecuteAsync($@"
+                        UPDATE CancelledBudgets
+                        SET PostBatch = {mBatch}
+                        WHERE ISNULL(PostBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM CancelledBudgets WHERE {cancelWhereJobs})");
+
+                    await SendBatch();
+                    break;
+
+                case asQuickBooks:
+                case asQuickbooksOnline:
+                    await SendBatch();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportBudgets.CreateBatch] Error: {ex.Message}");
+            ErrorMessage = $"Error creating batch: {ex.Message}";
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── SendBatch ─────────────────────────────────────────────────────────
+    private async Task SendBatch()
+    {
+        try
+        {
+            switch (AccountingSystem)
+            {
+                case asMasterBuilder:
+                case asIntacct:
+                    // Ensure jobs exist in accounting
+                    var jobRs = await db.QueryAsync($@"
+                        SELECT DISTINCT Job FROM EstimateItems
+                        WHERE BudgetPostingBatch = {mBatch}");
+                    foreach (var row in jobRs)
+                    {
+                        var job = row["Job"]?.ToString() ?? "";
+                        await WriteJobToAccounting(job);
+                    }
+                    break;
+            }
+
+            // Dispatch to accounting system
+            switch (AccountingSystem)
+            {
+                case asIntacct:
+                    await SendEstimatesToIntacct(mBatch);
+                    break;
+                case asTimberline:
+                    await SendBatchToSage300();
+                    break;
+                case asMasterBuilder:
+                    await SendBatchToSage100();
+                    break;
+                case asQuickBooks:
+                    await SendBatchToQB();
+                    break;
+                case asQuickbooksOnline:
+                    await SendBatchToQBOnline();
+                    break;
+            }
+
+            // Show summary report
+            if (ShowBatchReport)
+            {
+                await JSRuntime.InvokeVoidAsync("alert",
+                    $"Budget posting batch {mBatch} completed successfully.\nPosting summary report would be displayed here.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FExportBudgets.SendBatch] Error: {ex.Message}");
+            ErrorMessage = $"Error sending batch: {ex.Message}";
+        }
+    }
+
+    // ── Accounting System Stubs ───────────────────────────────────────────
+    private async Task SendBatchToSage100()
+    {
+        try
+        {
+            await db.ExecuteAsync($@"
+                UPDATE EstimateItems SET BudgetPostingDate = NULL
+                WHERE BudgetPostingBatch = {mBatch}");
+
+            string sql;
+            if (PostSummarizedBudgets)
+            {
+                sql = $@"
+                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS JCCostCode,
+                           SUM(CASE WHEN JCCategory=1 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct1,
+                           SUM(CASE WHEN JCCategory=2 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct2,
+                           SUM(CASE WHEN JCCategory=3 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct3,
+                           SUM(CASE WHEN JCCategory=4 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct4,
+                           SUM(CASE WHEN JCCategory=5 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct5,
+                           SUM(BudgetQty) AS Qty, 'Summarized' AS Description
+                    FROM EstimatedItems
+                    WHERE BudgetPostingBatch = {mBatch}
+                    GROUP BY ChangeOrder, Job_No, JCExtra, ExternalCostCode
+                    ORDER BY 1,2,3,4";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS JCCostCode,
+                           BudgetPretax+ISNULL(BudgetJCTax,0) AS Amount,
+                           BudgetQty AS Qty,
+                           ISNULL(NULLIF(ItemDesc,''),'?') AS Description
+                    FROM EstimatedItems
+                    WHERE BudgetPostingBatch = {mBatch}
+                    ORDER BY 1,2,3,4";
+            }
+
+            var rows = await db.QueryAsync(sql);
+
+            // Mark items as posted
+            await db.ExecuteAsync($@"
+                UPDATE EstimateItems SET BudgetPostingDate = GETDATE()
+                WHERE BudgetPostingBatch = {mBatch}");
+
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"Sage 100 posting: {rows.Count} budget line(s) processed for batch {mBatch}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SendBatchToSage100] Error: {ex.Message}");
+            // Rollback unposted items
+            await db.ExecuteAsync($@"
+                UPDATE EstimateItems SET BudgetPostingBatch = 0
+                WHERE BudgetPostingDate IS NULL AND BudgetPostingBatch = {mBatch}");
+            throw;
+        }
+    }
+
+    private async Task SendBatchToSage300()
+    {
+        try
+        {
+            string sql;
+            if (PostSummarizedBudgets)
+            {
+                sql = $@"
+                    SELECT Job AS Job_No, '' AS JobDesc, JCExtra, NULL AS JCExtraDesc,
+                           JCCostCode, JCCategory, 0 AS Qty, '' AS UOM,
+                           SUM(Pretax+Tax) AS Amount
+                    FROM CancelledBudgets
+                    WHERE PostBatch = {mBatch}
+                    GROUP BY Job, JCExtra, JCCostCode, JCCategory
+                    UNION ALL
+                    SELECT Job_No, JobDesc, JCExtra, LEFT(AssemblyDescription,30) AS JCExtraDesc,
+                           JCCostCode, JCCategory, 0 AS Qty, '' AS UOM,
+                           SUM(BudgetPretax+BudgetJCTax) AS Amount
+                    FROM EstimatedItems
+                    WHERE BudgetPostingBatch = {mBatch}
+                    GROUP BY Job_No, JobDesc, JCExtra, LEFT(AssemblyDescription,30), JCCostCode, JCCategory
+                    ORDER BY Job_No, JCExtra, JCCostCode, JCCategory";
+            }
+            else
+            {
+                sql = $@"
+                    SELECT Job AS Job_No, '' AS JobDesc, JCExtra, NULL AS JCExtraDesc,
+                           JCCostCode, JCCategory, Qty, UOM, Pretax+Tax AS Amount
+                    FROM CancelledBudgets
+                    WHERE PostBatch = {mBatch}
+                    UNION ALL
+                    SELECT Job_No, JobDesc, JCExtra, LEFT(AssemblyDescription,30) AS JCExtraDesc,
+                           JCCostCode, JCCategory, BudgetQty AS Qty, OrderUOM AS UOM,
+                           BudgetPretax+BudgetJCTax AS Amount
+                    FROM EstimatedItems
+                    WHERE BudgetPostingBatch = {mBatch}
+                    ORDER BY Job_No, JCExtra, JCCostCode, JCCategory";
+            }
+
+            var rows = await db.QueryAsync(sql);
+
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"Sage 300 (Timberline) posting: {rows.Count} budget line(s) processed for batch {mBatch}.\n" +
+                "In production, this would generate JCE files and run the Timberline macro.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SendBatchToSage300] Error: {ex.Message}");
+            // Rollback
+            await db.ExecuteAsync($@"UPDATE EstimateItems SET BudgetPostingBatch=0 WHERE BudgetPostingBatch={mBatch}");
+            await db.ExecuteAsync($@"UPDATE CancelledBudgets SET PostBatch=0 WHERE PostBatch={mBatch}");
+            await db.ExecuteAsync($@"DELETE Batches WHERE Batch={mBatch}");
+            throw;
+        }
+    }
+
+    private async Task SendBatchToQB()
+    {
+        try
+        {
+            var sql = $@"
+                SELECT cc.ExternalID AS JCCostCode, cat.ExternalID AS JCCategory,
+                       SUM(e.BudgetPretax)+SUM(e.BudgetJCTax) AS Amount,
+                       e.BudgetTaxGroup, e.JCCostCodeDesc AS ItemDesc,
+                       j.ExternalJobID, e.Job_No
+                FROM EstimatedItems e
+                JOIN tbljobs j ON e.Job_No = j.Job_No
+                JOIN StandardCostCodes cc ON e.ExternalCostCode = cc.ExternalID
+                JOIN StandardCategories cat ON e.ExternalCategory = cat.ExternalID
+                WHERE ({WhereClause}) AND e.DivisionID = {DivisionID}
+                  AND e.BudgetPostingBatch = 0 AND e.BudgetGenerated = 1 AND e.JCCostCode <> ''
+                GROUP BY cc.ExternalID, cat.ExternalID, e.BudgetTaxGroup, e.JCCostCodeDesc, j.ExternalJobID, e.Job_No
+                ORDER BY 6, 5";
+
+            var rows = await db.QueryAsync(sql);
+
+            // Mark as posted
+            foreach (var row in rows)
+            {
+                var jobNo = row["Job_No"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(jobNo))
+                {
+                    await db.ExecuteAsync($@"
+                        UPDATE EstimateItems SET BudgetPostingBatch = {mBatch}
+                        WHERE BudgetGenerated = 1 AND ISNULL(BudgetPostingBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(jobNo)}')");
+                }
+            }
+
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"QuickBooks posting: {rows.Count} budget line(s) processed for batch {mBatch}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SendBatchToQB] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task SendBatchToQBOnline()
+    {
+        try
+        {
+            // Similar to QB but uses online API
+            await SendBatchToQB();
+            // In production, would use QBO REST API instead of desktop SDK
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SendBatchToQBOnline] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task SendEstimatesToIntacct(long batch)
+    {
+        try
+        {
+            var rows = await db.QueryAsync($@"
+                SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode,
+                       BudgetPretax+ISNULL(BudgetJCTax,0) AS Amount,
+                       BudgetQty, ItemDesc AS Description
+                FROM EstimatedItems
+                WHERE BudgetPostingBatch = {batch}
+                ORDER BY Job_No, ChangeOrder, JCExtra, ExternalCostCode");
+
+            await db.ExecuteAsync($@"
+                UPDATE EstimateItems SET BudgetPostingDate = GETDATE()
+                WHERE BudgetPostingBatch = {batch}");
+
+            await JSRuntime.InvokeVoidAsync("alert",
+                $"Intacct posting: {rows.Count} budget line(s) processed for batch {batch}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SendEstimatesToIntacct] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    private Task WriteJobToAccounting(string job)
+    {
+        // Placeholder: in production, would create job in accounting system
+        Console.WriteLine($"WriteJobToAccounting: {job}");
+        return Task.CompletedTask;
+    }
+
+    // ── Review Task Links ─────────────────────────────────────────────────
+    private async Task OnOpenPostingSummary()
+    {
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Opening posting summary report for batch {mBatch}.\n" +
+            "In production, this would open a Crystal Report or equivalent.");
+    }
+
+    private async Task OnReviewPostingFile()
+    {
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Opening posting data file for batch {mBatch}.\n" +
+            "In production, this would retrieve and display the JCE file from the database.");
+    }
+
+    private async Task OnReviewRejectedRecords()
+    {
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Opening rejected records for batch {mBatch}.\n" +
+            "In production, this would retrieve and display the reject file from the database.");
+    }
+
+    private async Task OnOpenProcessingJournal()
+    {
+        await JSRuntime.InvokeVoidAsync("alert",
+            $"Opening processing journal for batch {mBatch}.\n" +
+            "In production, this would retrieve and display the import print file.");
+    }
+
+    // ── Save Options ──────────────────────────────────────────────────────
+    private Task SaveOptions()
+    {
+        // In production, persist ShowBatchReport and ShowProcessingJournal to app options
+        Console.WriteLine($"SaveOptions: ShowBatchReport={ShowBatchReport}, ShowProcessingJournal={ShowProcessingJournal}");
+        return Task.CompletedTask;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    private string EscapeSql(string value)
+    {
+        return value?.Replace("'", "''") ?? "";
+    }
+}
+```

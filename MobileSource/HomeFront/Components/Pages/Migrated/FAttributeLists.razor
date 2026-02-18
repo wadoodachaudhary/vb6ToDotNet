@@ -1,0 +1,939 @@
+```razor
+@page "/attribute-lists"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Option Attribute Lists - HomeFront</PageTitle>
+
+<style>
+    .attr-container {
+        display: flex;
+        gap: 16px;
+        height: calc(100vh - 200px);
+        min-height: 500px;
+    }
+
+    .left-panel {
+        width: 380px;
+        min-width: 280px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .right-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+    }
+
+    .panel-title {
+        font-weight: 700;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .panel-actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    .icon-btn {
+        width: 28px;
+        height: 28px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        transition: background 0.15s;
+    }
+
+    .icon-btn:hover {
+        background: #e9ecef;
+    }
+
+    .icon-btn.danger:hover {
+        background: #f8d7da;
+        color: #dc3545;
+    }
+
+    .properties-section {
+        margin-bottom: 12px;
+    }
+
+    .properties-section .section-title {
+        font-weight: 700;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 8px;
+    }
+
+    .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+        font-size: 13px;
+    }
+
+    .checkbox-row input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+    }
+
+    .values-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .values-section .section-title {
+        font-weight: 700;
+        font-size: 14px;
+        color: #333;
+        margin-bottom: 6px;
+    }
+
+    .button-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid #dee2e6;
+        margin-top: 12px;
+    }
+
+    .btn {
+        padding: 6px 20px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .btn:hover {
+        background: #e9ecef;
+    }
+
+    .btn-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .btn-primary:hover {
+        background: #0b5ed7;
+    }
+
+    .list-item {
+        padding: 6px 10px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+        user-select: none;
+    }
+
+    .list-item:hover {
+        background: #e8f0fe;
+    }
+
+    .list-item.selected {
+        background: #cce5ff;
+        font-weight: 600;
+    }
+
+    .list-item.deleted {
+        text-decoration: line-through;
+        color: #999;
+        background: #f8d7da;
+    }
+
+    .list-container {
+        flex: 1;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow-y: auto;
+        background: #fff;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    /* Dialog */
+    .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .dialog-panel {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+        min-width: 400px;
+        max-width: 600px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        font-weight: 600;
+        font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .dialog-header button {
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #6c757d;
+        padding: 0 4px;
+    }
+
+    .dialog-header button:hover {
+        color: #212529;
+    }
+
+    .dialog-body {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 12px 20px;
+        border-top: 1px solid #dee2e6;
+        background: #f8f9fa;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Attribute Lists...</div>
+    </div>
+}
+
+<h3 style="margin-bottom: 16px;">Option Attribute Lists</h3>
+
+<div class="attr-container">
+    @* ── Left Panel: Attribute Lists ──────────────────────── *@
+    <div class="left-panel">
+        <div class="panel-header">
+            <span class="panel-title">Attribute Lists</span>
+            <div class="panel-actions">
+                <button class="icon-btn" @onclick="OnNewListClick" title="New List">➕</button>
+                <button class="icon-btn danger" @onclick="OnDeleteListClick" title="Delete List"
+                        disabled="@(SelectedList == null)">🗑️</button>
+            </div>
+        </div>
+        <div class="list-container">
+            @foreach (var list in AttributeLists.Where(l => !l.IsDeleted))
+            {
+                <div class="list-item @(SelectedList == list ? "selected" : "")"
+                     @onclick="() => OnListSelected(list)">
+                    @list.Name
+                </div>
+            }
+        </div>
+    </div>
+
+    @* ── Right Panel: Properties & Values ─────────────────── *@
+    <div class="right-panel">
+        @* Properties Section *@
+        <div class="properties-section">
+            <div class="section-title">List Properties</div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="chkRequired" disabled="@(SelectedList == null)"
+                       checked="@(SelectedList?.Required ?? false)"
+                       @onchange="OnRequiredChanged" />
+                <label for="chkRequired">Mandatory - Sales agent must enter a value when the option is selected.</label>
+            </div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="chkStrict" disabled="@(SelectedList == null)"
+                       checked="@(SelectedList?.Strict ?? false)"
+                       @onchange="OnStrictChanged" />
+                <label for="chkStrict">Restricted - The agent must select from this list of values. No other values will be allowed.</label>
+            </div>
+            <div class="checkbox-row">
+                <input type="checkbox" id="chkDeferred" disabled="@(SelectedList == null)"
+                       checked="@(SelectedList?.Deferred ?? false)"
+                       @onchange="OnDeferredChanged" />
+                <label for="chkDeferred">Deferred - Value selection does not have to happen immediately.</label>
+            </div>
+        </div>
+
+        @* Values Section *@
+        <div class="values-section">
+            <div class="section-title">Attribute Values</div>
+            @if (SelectedList != null)
+            {
+                <HfGrid @ref="ValuesGrid"
+                        TValue="AttributeValueRow"
+                        DataSource="@CurrentValues"
+                        AllowSorting="false"
+                        AllowResizing="true"
+                        AllowSelection="true"
+                        Height="100%"
+                        EditSettingsRef="@valuesEditSettings"
+                        SelectionSettingsRef="@valuesSelectionSettings"
+                        EventsRef="@valuesGridEvents">
+                    <HfGridColumnsBase>
+                        <HfGridColumn Field="@nameof(AttributeValueRow.ValueId)" HeaderText="ID" Width="60px"
+                                      AllowEditing="false" Visible="false" IsPrimaryKey="true" />
+                        <HfGridColumn Field="@nameof(AttributeValueRow.Value)" HeaderText="Value" Width="250px"
+                                      AllowEditing="true" />
+                        <HfGridColumn Field="@nameof(AttributeValueRow.Upcharge)" HeaderText="Upcharge" Width="100px"
+                                      AllowEditing="true" Format="N2" TextAlign="TextAlign.Right"
+                                      Type="ColumnType.Number" />
+                        <HfGridColumn Field="@nameof(AttributeValueRow.OtherListId)" HeaderText="Other List" Width="120px"
+                                      AllowEditing="true">
+                            <EditTemplate>
+                                @{
+                                    var data = (AttributeValueRow)context;
+                                    <select @bind="data.OtherListId">
+                                        <option value="0">(none)</option>
+                                        @foreach (var al in AttributeLists.Where(l => !l.IsDeleted))
+                                        {
+                                            <option value="@al.ListId">@al.Name</option>
+                                        }
+                                    </select>
+                                }
+                            </EditTemplate>
+                        </HfGridColumn>
+                    </HfGridColumnsBase>
+                </HfGrid>
+            }
+            else
+            {
+                <div style="padding: 20px; text-align: center; color: #6c757d; border: 1px solid #dee2e6; border-radius: 4px; flex: 1;">
+                    Select an attribute list to view its values.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@* ── Button Bar ───────────────────────────────────────────── *@
+<div class="button-bar">
+    <button class="btn btn-primary" @onclick="OnOkClick">&amp;OK</button>
+    <button class="btn" @onclick="OnCancelClick">&amp;Cancel</button>
+</div>
+
+@* ── Rename Dialog ────────────────────────────────────────── *@
+@if (IsRenameDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsRenameDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>@(IsNewListMode ? "New Attribute List" : "Rename Attribute List")</span>
+                <button @onclick="() => IsRenameDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <label style="display:block; font-weight:500; margin-bottom:4px; font-size:13px;">List Name:</label>
+                <input type="text" @bind="EditingListName" style="width:100%; padding:8px 10px; border:1px solid #ced4da; border-radius:4px; font-size:14px;" />
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnRenameDialogOk">OK</button>
+                <button class="btn" @onclick="() => IsRenameDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Unsaved Changes Dialog ───────────────────────────────── *@
+@if (IsUnsavedDialogVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Unsaved Changes</span>
+            </div>
+            <div class="dialog-body">
+                <p>This data has changed.</p>
+                <p>Do you want to save these changes?</p>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnUnsavedYes">Yes</button>
+                <button class="btn" @onclick="OnUnsavedNo">No</button>
+                <button class="btn" @onclick="OnUnsavedCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const string SRCFILE = "FAttributeLists::";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private bool mLoading = false;
+    private long mInitialListID = 0;
+
+    // === Grid Settings ===
+    private HfGrid<AttributeValueRow>? ValuesGrid;
+
+    private HfEditSettings valuesEditSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+
+    private HfSelectionSettings valuesSelectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+
+    private HfGridEvents<AttributeValueRow> valuesGridEvents = new();
+
+    // === Data ===
+    private List<AttributeListRow> AttributeLists = new();
+    private AttributeListRow? SelectedList;
+    private List<AttributeValueRow> CurrentValues = new();
+
+    // === Dialog State ===
+    private bool IsRenameDialogVisible = false;
+    private bool IsNewListMode = false;
+    private string EditingListName = "";
+    private AttributeListRow? EditingList;
+
+    private bool IsUnsavedDialogVisible = false;
+    private TaskCompletionSource<string>? _unsavedTcs;
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        valuesGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<AttributeValueRow>>(this, OnValueCellSaved);
+
+        await LoadData();
+    }
+
+    // === ShowForm (entry point, equivalent to VB6 ShowForm) ===
+    public async Task ShowForm(long selectedListId = 0)
+    {
+        mInitialListID = selectedListId;
+        await LoadData();
+    }
+
+    // === LoadData ===
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var sql = @"
+                SELECT l.listid, l.name, l.required, l.strictlist AS strict, ISNULL(l.deferred, 0) AS deferred,
+                       v.valueid, v.value, v.upcharge, v.otherlistid
+                FROM attributelists l
+                LEFT OUTER JOIN attributelistvalues v ON l.listid = v.listid
+                WHERE ISNULL(l.inactive, 0) = 0
+                  AND ISNULL(v.inactive, 0) = 0
+                ORDER BY l.name, l.listid, v.sortorder";
+
+            var rows = await db.QueryAsync(sql);
+
+            AttributeLists.Clear();
+            long currentListId = -999;
+            AttributeListRow? currentList = null;
+
+            foreach (var row in rows)
+            {
+                var listId = Convert.ToInt64(row["listid"] ?? 0);
+
+                if (listId != currentListId)
+                {
+                    currentList = new AttributeListRow
+                    {
+                        ListId = listId,
+                        Name = row["name"]?.ToString() ?? "",
+                        Required = Convert.ToBoolean(row["required"] ?? false),
+                        Strict = Convert.ToBoolean(row["strict"] ?? false),
+                        Deferred = Convert.ToBoolean(row["deferred"] ?? false),
+                        IsDirty = false,
+                        IsDeleted = false,
+                        Values = new List<AttributeValueRow>()
+                    };
+                    AttributeLists.Add(currentList);
+                    currentListId = listId;
+                }
+
+                var valueIdObj = row["valueid"];
+                if (valueIdObj != null && valueIdObj != DBNull.Value)
+                {
+                    currentList!.Values.Add(new AttributeValueRow
+                    {
+                        ValueId = Convert.ToInt64(valueIdObj),
+                        Value = (row["value"]?.ToString() ?? "").Trim(),
+                        Upcharge = Convert.ToDecimal(row["upcharge"] ?? 0),
+                        OtherListId = Convert.ToInt64(row["otherlistid"] ?? 0)
+                    });
+                }
+            }
+
+            // Select initial list
+            if (mInitialListID > 0)
+            {
+                SelectedList = AttributeLists.FirstOrDefault(l => l.ListId == mInitialListID);
+            }
+            else
+            {
+                SelectedList = AttributeLists.FirstOrDefault();
+            }
+
+            LoadAttributeList();
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FAttributeLists.LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading attribute lists: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === LoadAttributeList (populate right panel from selected list) ===
+    private void LoadAttributeList()
+    {
+        mLoading = true;
+        try
+        {
+            if (SelectedList != null)
+            {
+                // Clone values for editing
+                CurrentValues = SelectedList.Values
+                    .Select(v => new AttributeValueRow
+                    {
+                        ValueId = v.ValueId,
+                        Value = v.Value,
+                        Upcharge = v.Upcharge,
+                        OtherListId = v.OtherListId
+                    })
+                    .ToList();
+
+                // Add an empty row at the end for new entries
+                CurrentValues.Add(new AttributeValueRow());
+            }
+            else
+            {
+                CurrentValues = new List<AttributeValueRow>();
+            }
+        }
+        finally
+        {
+            mLoading = false;
+        }
+    }
+
+    // === SaveAttributeList (save right panel back to selected list) ===
+    private void SaveAttributeList()
+    {
+        if (SelectedList == null || mLoading) return;
+
+        // Save values back (exclude empty trailing rows)
+        SelectedList.Values = CurrentValues
+            .Where(v => !string.IsNullOrWhiteSpace(v.Value) || v.Upcharge != 0)
+            .Select(v => new AttributeValueRow
+            {
+                ValueId = v.ValueId,
+                Value = v.Value,
+                Upcharge = v.Upcharge,
+                OtherListId = v.OtherListId
+            })
+            .ToList();
+
+        SelectedList.IsDirty = true;
+        mDirty = true;
+    }
+
+    // === List Selection ===
+    private void OnListSelected(AttributeListRow list)
+    {
+        // Save current list values before switching
+        SaveAttributeList();
+
+        SelectedList = list;
+        LoadAttributeList();
+        StateHasChanged();
+    }
+
+    // === Checkbox Handlers ===
+    private void OnRequiredChanged(ChangeEventArgs e)
+    {
+        if (SelectedList == null || mLoading) return;
+        SelectedList.Required = (bool)(e.Value ?? false);
+        SelectedList.IsDirty = true;
+        mDirty = true;
+    }
+
+    private void OnStrictChanged(ChangeEventArgs e)
+    {
+        if (SelectedList == null || mLoading) return;
+        SelectedList.Strict = (bool)(e.Value ?? false);
+        SelectedList.IsDirty = true;
+        mDirty = true;
+    }
+
+    private void OnDeferredChanged(ChangeEventArgs e)
+    {
+        if (SelectedList == null || mLoading) return;
+        SelectedList.Deferred = (bool)(e.Value ?? false);
+        SelectedList.IsDirty = true;
+        mDirty = true;
+    }
+
+    // === Grid Events ===
+    private void OnValueCellSaved(CellSaveArgs<AttributeValueRow> args)
+    {
+        if (args.Data != null)
+        {
+            // If editing the last row, add a new empty row
+            var lastNonEmpty = CurrentValues.LastOrDefault(v => !string.IsNullOrWhiteSpace(v.Value) || v.Upcharge != 0);
+            if (lastNonEmpty == args.Data)
+            {
+                CurrentValues.Add(new AttributeValueRow());
+            }
+
+            SaveAttributeList();
+            StateHasChanged();
+        }
+    }
+
+    // === New List ===
+    private void OnNewListClick()
+    {
+        IsNewListMode = true;
+        EditingListName = "New Attribute List";
+        EditingList = null;
+        IsRenameDialogVisible = true;
+    }
+
+    private void OnRenameDialogOk()
+    {
+        if (string.IsNullOrWhiteSpace(EditingListName))
+        {
+            return;
+        }
+
+        if (IsNewListMode)
+        {
+            var newList = new AttributeListRow
+            {
+                ListId = 0,
+                Name = EditingListName.Trim(),
+                Required = false,
+                Strict = false,
+                Deferred = false,
+                IsDirty = true,
+                IsDeleted = false,
+                Values = new List<AttributeValueRow>()
+            };
+            AttributeLists.Add(newList);
+            SelectedList = newList;
+            LoadAttributeList();
+            mDirty = true;
+        }
+        else if (EditingList != null)
+        {
+            EditingList.Name = EditingListName.Trim();
+            EditingList.IsDirty = true;
+            mDirty = true;
+        }
+
+        IsRenameDialogVisible = false;
+        StateHasChanged();
+    }
+
+    // === Delete List ===
+    private void OnDeleteListClick()
+    {
+        if (SelectedList == null) return;
+
+        SelectedList.IsDeleted = true;
+        mDirty = true;
+
+        // Select next visible list
+        var nextList = AttributeLists.FirstOrDefault(l => !l.IsDeleted && l != SelectedList);
+        SelectedList = nextList;
+        LoadAttributeList();
+        StateHasChanged();
+    }
+
+    // === OK / Cancel ===
+    private async Task OnOkClick()
+    {
+        SaveAttributeList();
+        if (await SaveData(false))
+        {
+            NavigationManager.NavigateTo("/");
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        if (mDirty)
+        {
+            var result = await PromptUnsavedChanges();
+            if (result == "cancel") return;
+            if (result == "yes")
+            {
+                SaveAttributeList();
+                if (!await SaveData(false)) return;
+            }
+        }
+        NavigationManager.NavigateTo("/");
+    }
+
+    // === Unsaved Changes Prompt ===
+    private async Task<string> PromptUnsavedChanges()
+    {
+        _unsavedTcs = new TaskCompletionSource<string>();
+        IsUnsavedDialogVisible = true;
+        StateHasChanged();
+        var result = await _unsavedTcs.Task;
+        IsUnsavedDialogVisible = false;
+        StateHasChanged();
+        return result;
+    }
+
+    private void OnUnsavedYes() => _unsavedTcs?.TrySetResult("yes");
+    private void OnUnsavedNo() => _unsavedTcs?.TrySetResult("no");
+    private void OnUnsavedCancel() => _unsavedTcs?.TrySetResult("cancel");
+
+    // === SaveData ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var result = await PromptUnsavedChanges();
+            switch (result)
+            {
+                case "no": return true;
+                case "cancel": return false;
+            }
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Process deleted lists
+            foreach (var list in AttributeLists.Where(l => l.IsDeleted && l.ListId > 0).ToList())
+            {
+                await db.ExecuteAsync(
+                    "UPDATE attributelists SET inactive = 1 WHERE listid = @ListId",
+                    new { list.ListId });
+                AttributeLists.Remove(list);
+            }
+            AttributeLists.RemoveAll(l => l.IsDeleted);
+
+            // Process dirty lists
+            foreach (var list in AttributeLists.Where(l => l.IsDirty))
+            {
+                string section = "List";
+                try
+                {
+                    if (list.ListId == 0)
+                    {
+                        // Insert new list
+                        await db.ExecuteAsync(
+                            @"INSERT INTO AttributeLists (name, required, strictlist, deferred)
+                              VALUES (@Name, @Required, @Strict, @Deferred)",
+                            new { list.Name, list.Required, list.Strict, list.Deferred });
+
+                        var idResult = await db.ExecuteScalarAsync<long>(
+                            "SELECT IDENT_CURRENT('AttributeLists')");
+                        list.ListId = idResult;
+                    }
+                    else
+                    {
+                        // Update existing list
+                        await db.ExecuteAsync(
+                            @"UPDATE AttributeLists
+                              SET name = @Name, required = @Required, strictlist = @Strict, deferred = @Deferred
+                              WHERE listid = @ListId",
+                            new { list.Name, list.Required, list.Strict, list.Deferred, list.ListId });
+                    }
+
+                    // Process values
+                    section = "Values";
+
+                    // Mark all existing values as inactive
+                    await db.ExecuteAsync(
+                        "UPDATE attributelistvalues SET inactive = 1 WHERE listid = @ListId",
+                        new { list.ListId });
+
+                    // Insert/update values
+                    int sortOrder = 1;
+                    foreach (var val in list.Values)
+                    {
+                        if (string.IsNullOrWhiteSpace(val.Value) && val.Upcharge == 0)
+                            continue;
+
+                        if (val.ValueId == 0)
+                        {
+                            await db.ExecuteAsync(
+                                @"INSERT INTO attributelistvalues (listid, value, upcharge, otherlistid, sortorder)
+                                  VALUES (@ListId, @Value, @Upcharge, @OtherListId, @SortOrder)",
+                                new
+                                {
+                                    list.ListId,
+                                    val.Value,
+                                    val.Upcharge,
+                                    OtherListId = val.OtherListId == 0 ? (long?)null : val.OtherListId,
+                                    SortOrder = sortOrder
+                                });
+                        }
+                        else
+                        {
+                            await db.ExecuteAsync(
+                                @"UPDATE attributelistvalues SET
+                                    inactive = 0, value = @Value, upcharge = @Upcharge,
+                                    otherlistid = @OtherListId, sortorder = @SortOrder
+                                  WHERE valueid = @ValueId",
+                                new
+                                {
+                                    val.Value,
+                                    val.Upcharge,
+                                    OtherListId = val.OtherListId == 0 ? (long?)null : val.OtherListId,
+                                    SortOrder = sortOrder,
+                                    val.ValueId
+                                });
+                        }
+                        sortOrder++;
+                    }
+
+                    list.IsDirty = false;
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) && section == "List")
+                    {
+                        await JSRuntime.InvokeVoidAsync("alert",
+                            $"You already have a list named \"{list.Name}\". Please use a different name.");
+                        IsLoading = false;
+                        StateHasChanged();
+                        return false;
+                    }
+                    else if (section == "Values")
+                    {
+                        // Skip duplicate value errors (resume next equivalent)
+                        continue;
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            mDirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Models ===
+    public class AttributeListRow
+    {
+        public long ListId { get; set; }
+        public string Name { get; set; } = "";
+        public bool Required { get; set; }
+        public bool Strict { get; set; }
+        public bool Deferred { get; set; }
+        public bool IsDirty { get; set; }
+        public bool IsDeleted { get; set; }
+        public List<AttributeValueRow> Values { get; set; } = new();
+    }
+
+    public class AttributeValueRow
+    {
+        public long ValueId { get; set; }
+        public string Value { get; set; } = "";
+        public decimal Upcharge { get; set; }
+        public long OtherListId { get; set; }
+    }
+}
+```

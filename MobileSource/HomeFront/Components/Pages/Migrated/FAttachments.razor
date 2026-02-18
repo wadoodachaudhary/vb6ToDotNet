@@ -1,0 +1,417 @@
+@using System.IO
+@using System.Text
+@using HomeFront.Components.Grid
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@inject IJSRuntime JS
+
+<HfDialog Visible="@IsVisible"
+          Header="@Caption"
+          Width="1000px"
+          Height="650px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="Close">
+    <ChildContent>
+        <div class="attachments-toolbar">
+            <HfButton CssClass="tbar-btn" OnClick="() => AddFileForSelectedAsync(true)">Insert File...</HfButton>
+            <HfButton CssClass="tbar-btn" OnClick="() => AddFileForSelectedAsync(false)">Link to File...</HfButton>
+            <span class="tbar-sep"></span>
+            <HfButton CssClass="tbar-btn" Disabled="@(_selectedRow == null)" OnClick="OpenSelectedAsync">Open</HfButton>
+            <HfButton CssClass="tbar-btn" Disabled="@(_selectedRow == null)" OnClick="PrintSelectedAsync">Print</HfButton>
+            <HfButton CssClass="tbar-btn" Disabled="@(_selectedRow == null)" OnClick="SaveAsSelectedAsync">Save As...</HfButton>
+            <HfButton CssClass="tbar-btn" Disabled="@(_selectedRow == null)" OnClick="RemoveSelectedAsync">Remove</HfButton>
+        </div>
+
+        <HfGrid TValue="AttachmentRow"
+                DataSource="@Rows"
+                AllowSorting="true"
+                AllowFiltering="true"
+                AllowSelection="true"
+                AllowGrouping="true"
+                GroupColumns="@GroupColumns"
+                Height="520px"
+                SelectionSettingsRef="@SelectionSettings"
+                EventsRef="@GridEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(AttachmentRow.Folder)" HeaderText="Folder" Visible="false" />
+                <HfGridColumn Field="@nameof(AttachmentRow.FileTitle)" HeaderText="Name" Width="220px">
+                    <Template>
+                        @{
+                            var row = (AttachmentRow)context;
+                            if (row.Embedded)
+                            {
+                                <span class="embedded-indicator">📎</span>
+                            }
+                            @row.FileTitle
+                        }
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Classification" Width="180px">
+                    <Template>
+                        @{
+                            var row = (AttachmentRow)context;
+                        }
+                        <HfTextBox Value="@row.DocumentClass"
+                                   ValueChanged="val => OnDocumentClassChanged(row, val)"
+                                   Enabled="@row.HasFile"
+                                   CssClass="doc-class-input" />
+                    </Template>
+                </HfGridColumn>
+                <HfGridColumn Field="@nameof(AttachmentRow.LocationDisplay)" HeaderText="Location" Width="220px" />
+                <HfGridColumn Field="@nameof(AttachmentRow.FileSizeDisplay)" HeaderText="Size" Width="100px" TextAlign="TextAlign.Right" />
+                <HfGridColumn Field="@nameof(AttachmentRow.ModifiedDate)" HeaderText="Date Modified" Width="140px" Format="g" />
+                <HfGridColumn Field="@nameof(AttachmentRow.CreatedDate)" HeaderText="Date Created" Width="140px" Format="g" />
+                <HfGridColumn Field="@nameof(AttachmentRow.AttachedDate)" HeaderText="Date Attached" Width="140px" Format="g" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="Close">Close</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .attachments-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 0 10px;
+        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+    }
+
+    .tbar-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+    }
+
+    .tbar-sep {
+        width: 1px;
+        height: 28px;
+        background: #d0d0d0;
+        margin: 0 4px;
+    }
+
+    .embedded-indicator {
+        color: #c00000;
+        margin-right: 6px;
+    }
+
+    .doc-class-input input {
+        width: 100%;
+    }
+</style>
+
+@code {
+    private const string SRCFILE = "FAttachments::";
+
+    private readonly DbWrapperSqlServer _db = new();
+    private readonly HfGridEvents<AttachmentRow> GridEvents = new();
+    private readonly HfSelectionSettings SelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+
+    private List<AttachmentRow> Rows { get; set; } = new();
+    private AttachmentRow? _selectedRow;
+    private string Caption { get; set; } = "Attachments";
+    private bool IsVisible { get; set; }
+    private List<(string ObjectId, string FolderName)> _targets = new();
+
+    private List<string> GroupColumns => new() { nameof(AttachmentRow.Folder) };
+
+    protected override void OnInitialized()
+    {
+        GridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<AttachmentRow>>(this, OnRowSelected);
+        GridEvents.OnRecordDoubleClick = EventCallback.Factory.Create<CellClickEventArgs<AttachmentRow>>(this, OnRowDoubleClick);
+    }
+
+    public async Task ShowForm(string formCaption, params (string ObjectId, string FolderName)[] objectIdsAndFolders)
+    {
+        Caption = formCaption;
+        _targets = objectIdsAndFolders.ToList();
+        await LoadDataAsync();
+        IsVisible = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadDataAsync()
+    {
+        Rows.Clear();
+
+        if (_targets.Count == 0)
+            return;
+
+        var folderByObject = _targets
+            .GroupBy(t => t.ObjectId)
+            .ToDictionary(g => g.Key, g => g.First().FolderName);
+
+        var objectIds = folderByObject.Keys.ToList();
+        var inClause = string.Join(",", objectIds.Select(id => $"'{id.Replace("'", "''")}'"));
+        var sql = $@"
+            SELECT objectid, filename, documentclass, filesize, filetitle, path,
+                   modifieddate, createddate, attacheddate, embedded
+            FROM attachments
+            WHERE objectid IN ({inClause})
+            ORDER BY objectid, filetitle, filename";
+
+        var result = await _db.QueryAsync(sql);
+        foreach (var row in result)
+        {
+            var objectId = row["objectid"]?.ToString() ?? "";
+            var fileName = row["filename"]?.ToString() ?? "";
+            var embedded = ToBool(row["embedded"]);
+
+            var fileTitle = row["filetitle"]?.ToString();
+            if (string.IsNullOrWhiteSpace(fileTitle))
+                fileTitle = Path.GetFileName(fileName);
+
+            var path = row["path"]?.ToString();
+            if (string.IsNullOrWhiteSpace(path))
+                path = Path.GetDirectoryName(fileName) ?? "";
+
+            var fileSize = ToLong(row["filesize"]);
+            if (fileSize <= 0 && File.Exists(fileName))
+                fileSize = new FileInfo(fileName).Length;
+
+            var modified = ToDate(row["modifieddate"]);
+            var created = ToDate(row["createddate"]);
+            var attached = ToDate(row["attacheddate"]);
+
+            Rows.Add(new AttachmentRow
+            {
+                ObjectID = objectId,
+                Folder = folderByObject.TryGetValue(objectId, out var folder) ? folder : "",
+                FileName = fileName,
+                FileTitle = fileTitle ?? "",
+                DocumentClass = row["documentclass"]?.ToString() ?? "",
+                Path = path ?? "",
+                FileSizeBytes = fileSize,
+                FileSizeDisplay = FormatFileSize(fileSize),
+                ModifiedDate = modified,
+                CreatedDate = created,
+                AttachedDate = attached,
+                Embedded = embedded
+            });
+        }
+    }
+
+    private async Task AddFileForSelectedAsync(bool embedded)
+    {
+        var objectId = _selectedRow?.ObjectID ?? _targets.FirstOrDefault().ObjectId;
+        if (string.IsNullOrWhiteSpace(objectId))
+            return;
+
+        await AddFileAsync(objectId, embedded, null);
+    }
+
+    public async Task AddFileAsync(string objectId, bool embedded, string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = await JS.InvokeAsync<string>("prompt", "Enter file path to attach:");
+        }
+
+        if (string.IsNullOrWhiteSpace(fileName))
+            return;
+
+        if (!File.Exists(fileName))
+        {
+            await JS.InvokeVoidAsync("alert", "File not found.");
+            return;
+        }
+
+        var fileInfo = new FileInfo(fileName);
+
+        var sql = @"
+            INSERT INTO attachments(objectid, filename, modifieddate, createddate, attacheddate, embedded)
+            VALUES(@ObjectID, @FileName, @ModifiedDate, @CreatedDate, GETDATE(), @Embedded)";
+        await _db.ExecuteAsync(sql, new
+        {
+            ObjectID = objectId,
+            FileName = fileName,
+            ModifiedDate = fileInfo.LastWriteTime,
+            CreatedDate = fileInfo.CreationTime,
+            Embedded = embedded
+        });
+
+        if (embedded)
+        {
+            await PutEmbeddedFileAsync(objectId, fileName);
+        }
+
+        await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PutEmbeddedFileAsync(string objectId, string fileName)
+    {
+        try
+        {
+            var data = await File.ReadAllBytesAsync(fileName);
+            var sql = "UPDATE attachments SET FileImage=@Data WHERE objectid=@ObjectID AND filename=@FileName";
+            await _db.ExecuteAsync(sql, new { Data = data, ObjectID = objectId, FileName = fileName });
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task<string?> GetEmbeddedFileAsync(AttachmentRow row)
+    {
+        var sql = "SELECT FileImage FROM attachments WHERE objectid=@ObjectID AND filename=@FileName";
+        var table = _db.SqlExec(sql, new { ObjectID = row.ObjectID, FileName = row.FileName });
+        if (table.Rows.Count == 0 || table.Rows[0][0] is not byte[] data)
+            return null;
+
+        var tempFile = Path.Combine(Path.GetTempPath(), Path.GetFileName(row.FileName));
+        await File.WriteAllBytesAsync(tempFile, data);
+        return tempFile;
+    }
+
+    private async Task OpenSelectedAsync()
+    {
+        if (_selectedRow == null || !_selectedRow.HasFile)
+            return;
+
+        var filePath = _selectedRow.FileName;
+        if (_selectedRow.Embedded)
+        {
+            var temp = await GetEmbeddedFileAsync(_selectedRow);
+            if (!string.IsNullOrWhiteSpace(temp))
+                filePath = temp!;
+        }
+
+        await JS.InvokeVoidAsync("open", filePath, "_blank");
+    }
+
+    private async Task PrintSelectedAsync()
+    {
+        if (_selectedRow == null || !_selectedRow.HasFile)
+            return;
+
+        await JS.InvokeVoidAsync("alert", $"Print: {_selectedRow.FileTitle}");
+    }
+
+    private async Task SaveAsSelectedAsync()
+    {
+        if (_selectedRow == null || !_selectedRow.HasFile)
+            return;
+
+        var target = await JS.InvokeAsync<string>("prompt", "Save As - enter file path:");
+        if (string.IsNullOrWhiteSpace(target))
+            return;
+
+        var source = _selectedRow.FileName;
+        if (_selectedRow.Embedded)
+        {
+            var temp = await GetEmbeddedFileAsync(_selectedRow);
+            if (!string.IsNullOrWhiteSpace(temp))
+                source = temp!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(source))
+            File.Copy(source, target, true);
+    }
+
+    private async Task RemoveSelectedAsync()
+    {
+        if (_selectedRow == null || !_selectedRow.HasFile)
+            return;
+
+        var sql = "DELETE FROM attachments WHERE objectid=@ObjectID AND filename=@FileName";
+        await _db.ExecuteAsync(sql, new { ObjectID = _selectedRow.ObjectID, FileName = _selectedRow.FileName });
+
+        Rows.Remove(_selectedRow);
+        _selectedRow = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRowSelected(RowSelectEventArgs<AttachmentRow> args)
+    {
+        _selectedRow = args.Data;
+    }
+
+    private async Task OnRowDoubleClick(CellClickEventArgs<AttachmentRow> args)
+    {
+        if (args.Data != null && args.Data.HasFile)
+            await OpenSelectedAsync();
+    }
+
+    private async Task OnDocumentClassChanged(AttachmentRow row, string? value)
+    {
+        if (!row.HasFile)
+            return;
+
+        row.DocumentClass = value ?? "";
+        var sql = "UPDATE attachments SET documentclass=@Doc WHERE objectid=@ObjectID AND filename=@FileName";
+        await _db.ExecuteAsync(sql, new { Doc = row.DocumentClass, ObjectID = row.ObjectID, FileName = row.FileName });
+    }
+
+    private void Close()
+    {
+        IsVisible = false;
+        StateHasChanged();
+    }
+
+    private static bool ToBool(object? value)
+    {
+        if (value == null || value == DBNull.Value) return false;
+        if (value is bool b) return b;
+        if (value is int i) return i != 0;
+        return value.ToString()?.Equals("True", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static long ToLong(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        if (value is long l) return l;
+        if (long.TryParse(value.ToString(), out var parsed)) return parsed;
+        return 0;
+    }
+
+    private static DateTime? ToDate(object? value)
+    {
+        if (value == null || value == DBNull.Value) return null;
+        if (value is DateTime dt) return dt;
+        if (DateTime.TryParse(value.ToString(), out var parsed)) return parsed;
+        return null;
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0) return "";
+        if (bytes < 1024) return $"{bytes} B";
+        var kb = bytes / 1024d;
+        if (kb < 1024) return $"{kb:0.##} KB";
+        var mb = kb / 1024d;
+        if (mb < 1024) return $"{mb:0.##} MB";
+        var gb = mb / 1024d;
+        return $"{gb:0.##} GB";
+    }
+
+    public class AttachmentRow
+    {
+        public string ObjectID { get; set; } = "";
+        public string Folder { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string FileTitle { get; set; } = "";
+        public string DocumentClass { get; set; } = "";
+        public string Path { get; set; } = "";
+        public long FileSizeBytes { get; set; }
+        public string FileSizeDisplay { get; set; } = "";
+        public DateTime? ModifiedDate { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public DateTime? AttachedDate { get; set; }
+        public bool Embedded { get; set; }
+
+        public bool HasFile => !string.IsNullOrWhiteSpace(FileName);
+        public string LocationDisplay => Embedded ? "Embedded" : Path;
+    }
+}

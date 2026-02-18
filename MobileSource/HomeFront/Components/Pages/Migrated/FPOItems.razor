@@ -1,0 +1,1189 @@
+```razor
+@page "/po-items"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Purchase Order Setup - HomeFront</PageTitle>
+
+<style>
+    .po-items-container {
+        height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        font-family: 'MS Sans Serif', Arial, sans-serif;
+        font-size: 13px;
+    }
+
+    .header-row {
+        display: flex;
+        align-items: center;
+        padding: 4px 8px;
+        gap: 8px;
+    }
+
+    .header-row label {
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .view-label {
+        margin-left: auto;
+        font-size: 13px;
+        text-align: right;
+    }
+
+    .view-select {
+        padding: 4px 8px;
+        border: 1px solid #c9c9c9;
+        border-radius: 4px;
+        font-size: 13px;
+        background: #fff;
+    }
+
+    .split-container {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+
+    .items-panel {
+        flex: 1;
+        min-width: 300px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .slider-handle {
+        width: 6px;
+        background: #dee2e6;
+        cursor: col-resize;
+        flex-shrink: 0;
+        transition: background 0.15s;
+    }
+
+    .slider-handle:hover {
+        background: #adb5bd;
+    }
+
+    .pos-panel {
+        flex: 1;
+        min-width: 300px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .panel-header {
+        padding: 4px 8px;
+        font-weight: 700;
+        font-size: 13px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .grid-wrapper {
+        flex: 1;
+        overflow: auto;
+    }
+
+    /* Tree node styling */
+    .tree-list {
+        list-style: none;
+        padding-left: 0;
+        margin: 0;
+    }
+
+    .tree-list ul {
+        list-style: none;
+        padding-left: 20px;
+        margin: 0;
+    }
+
+    .tree-node-row {
+        display: flex;
+        align-items: center;
+        padding: 2px 6px;
+        cursor: pointer;
+        user-select: none;
+        font-size: 13px;
+        gap: 4px;
+    }
+
+    .tree-node-row:hover {
+        background-color: #e8f0fe;
+    }
+
+    .tree-node-row.selected {
+        background-color: #cce5ff;
+        font-weight: 600;
+    }
+
+    .tree-node-row.checked-item {
+        color: #198754;
+    }
+
+    .tree-toggle {
+        width: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #666;
+        flex-shrink: 0;
+    }
+
+    .tree-icon {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+    }
+
+    .tree-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .po-index-col {
+        color: #6c757d;
+        font-size: 11px;
+        margin-left: 8px;
+    }
+
+    /* Drop indicator */
+    .drop-indicator {
+        height: 2px;
+        background: #0d6efd;
+        margin: 0 4px;
+    }
+
+    /* Drag styling */
+    .dragging {
+        opacity: 0.5;
+    }
+
+    .drag-over {
+        background-color: #e3f2fd !important;
+    }
+
+    /* Loading */
+    .loading-overlay {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .loading-spinner {
+        padding: 20px 40px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+        font-size: 16px;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .hidden-node {
+        display: none;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading...</div>
+    </div>
+}
+
+<div class="po-items-container">
+    <!-- Header Row -->
+    <div class="header-row">
+        <label>Items</label>
+        <span class="view-label">View:</span>
+        <select class="view-select" value="@ItemViewIndex" @onchange="OnItemViewChanged">
+            <option value="0">all items</option>
+            <option value="1">un-assigned items only</option>
+        </select>
+        <label style="margin-left: 24px;">PO Indexes</label>
+    </div>
+
+    <!-- Split Container -->
+    <div class="split-container">
+        <!-- Left: Items Panel -->
+        <div class="items-panel">
+            <div class="grid-wrapper" style="padding: 4px;">
+                <ul class="tree-list">
+                    @foreach (var node in ItemNodes)
+                    {
+                        @RenderItemNode(node)
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slider -->
+        <div class="slider-handle" title="Drag to resize"></div>
+
+        <!-- Right: PO Indexes Panel -->
+        <div class="pos-panel">
+            <div class="grid-wrapper" style="padding: 4px;">
+                <ul class="tree-list">
+                    @foreach (var node in PONodes)
+                    {
+                        @RenderPONode(node)
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ── Confirm Save Dialog ─────────────────────────────────────── *@
+@if (IsConfirmDialogVisible)
+{
+    <div style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,0.2);min-width:400px;max-width:500px;padding:20px;">
+            <h5 style="margin-bottom:12px;">@ConfirmDialogTitle</h5>
+            <p>@ConfirmDialogMessage</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <button class="btn btn-primary btn-sm" @onclick="OnConfirmYes">Yes</button>
+                <button class="btn btn-secondary btn-sm" @onclick="OnConfirmNo">No</button>
+                <button class="btn btn-outline-secondary btn-sm" @onclick="OnConfirmCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const string SRCFILE = "FPOItems::";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private bool mLoading = false;
+    private int ItemViewIndex = 0;
+
+    // === Tree Data ===
+    private List<ItemTreeNode> ItemNodes = new();
+    private List<POTreeNode> PONodes = new();
+
+    // === Selection ===
+    private ItemTreeNode? SelectedItemNode;
+    private POTreeNode? SelectedPONode;
+    private List<ItemTreeNode> SelectedItemNodes = new();
+    private List<POTreeNode> SelectedPONodes = new();
+
+    // === Drag & Drop ===
+    private bool IsDraggingFromItems = false;
+    private bool IsDraggingFromPOs = false;
+    private List<ItemTreeNode> DraggedItemNodes = new();
+    private List<POTreeNode> DraggedPONodes = new();
+    private POTreeNode? DropTargetPONode;
+
+    // === Confirm Dialog ===
+    private bool IsConfirmDialogVisible = false;
+    private string ConfirmDialogTitle = "";
+    private string ConfirmDialogMessage = "";
+    private TaskCompletionSource<int>? _confirmTcs;
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllData();
+    }
+
+    private async Task LoadAllData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            await LoadItems();
+            await LoadPOs();
+            CollapseAllItems();
+            CollapseAllPOs();
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"{SRCFILE}LoadAllData error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Item View Changed ===
+    private async Task OnItemViewChanged(ChangeEventArgs e)
+    {
+        if (mLoading) return;
+
+        var newIndex = int.Parse(e.Value?.ToString() ?? "0");
+
+        if (mDirty)
+        {
+            var result = await ShowConfirmDialog("Purchase Order Setup",
+                "This data has changed.\n\nDo you want to save the changes?");
+            if (result == 2) // Cancel
+            {
+                // Revert selection
+                ItemViewIndex = ItemViewIndex == 0 ? 1 : 0;
+                StateHasChanged();
+                return;
+            }
+            if (result == 0) // Yes
+            {
+                await SaveItems();
+            }
+        }
+
+        ItemViewIndex = newIndex;
+
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            await LoadItems();
+            await LoadPOs();
+            CollapseAllItems();
+            CollapseAllPOs();
+            mDirty = false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var result = await ShowConfirmDialog("Purchase Order Setup",
+                "This data has changed.\n\nDo you want to save the changes?");
+            switch (result)
+            {
+                case 1: return true;  // No
+                case 2: return false;  // Cancel
+            }
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            await SaveItems();
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+        return true;
+    }
+
+    private async Task SaveItems()
+    {
+        try
+        {
+            foreach (var node in GetAllItemLeafNodes())
+            {
+                if (node.RowState == "DIRTY")
+                {
+                    var phase = node.Phase;
+                    var item = node.Item;
+                    var poIndex = node.POIndex ?? "";
+
+                    var sql = @"UPDATE tblPhaseItem
+                                SET POIndex = @POIndex
+                                WHERE DivisionID = @DivisionID
+                                  AND Phase = @Phase
+                                  AND Item = @Item";
+                    await db.ExecuteAsync(sql, new { POIndex = poIndex, DivisionID, Phase = phase, Item = item });
+                    node.RowState = "CLEAN";
+                }
+            }
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"{SRCFILE}SaveItems error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+        }
+    }
+
+    // === Load Items ===
+    private async Task LoadItems()
+    {
+        ItemNodes.Clear();
+
+        var sql = @"SELECT p.Phase
+                          ,p.Description AS PhaseDesc
+                          ,p.GroupPhase
+                          ,i.Item
+                          ,i.Description AS ItemDesc
+                          ,i.POIndex
+                      FROM tblEstPhases p
+                      LEFT OUTER JOIN tblPhaseItem i ON i.DivisionID = p.DivisionID AND i.Phase = p.Phase";
+
+        if (ItemViewIndex == 1)
+        {
+            sql += " AND ISNULL(i.POIndex,'')=''";
+        }
+
+        sql += @" WHERE p.DivisionID = @DivisionID
+                   ORDER BY p.SortOrder";
+
+        var rows = await db.QueryAsync(sql, new { DivisionID });
+
+        string currentGroup = "";
+        string currentPhase = "";
+        ItemTreeNode? groupNode = null;
+        ItemTreeNode? phaseNode = null;
+
+        foreach (var row in rows)
+        {
+            var isGroupPhase = Convert.ToBoolean(row["GroupPhase"] ?? false);
+            var phase = (row["Phase"]?.ToString() ?? "").Trim();
+            var phaseDesc = row["PhaseDesc"]?.ToString() ?? "";
+            var item = (row["Item"]?.ToString() ?? "").Trim();
+            var itemDesc = row["ItemDesc"]?.ToString() ?? "";
+            var poIndex = row["POIndex"]?.ToString() ?? "";
+
+            if (isGroupPhase)
+            {
+                currentGroup = phase;
+                groupNode = new ItemTreeNode
+                {
+                    Key = currentGroup,
+                    DisplayText = $"{currentGroup} - {phaseDesc}",
+                    NodeType = ItemNodeType.Group,
+                    OutlineLevel = 0,
+                    IsExpanded = false
+                };
+                ItemNodes.Add(groupNode);
+                currentPhase = "";
+                phaseNode = null;
+            }
+            else
+            {
+                if (currentPhase != phase)
+                {
+                    currentPhase = phase;
+                    phaseNode = new ItemTreeNode
+                    {
+                        Key = $"{phase}\x01",
+                        DisplayText = $"{phase} - {phaseDesc}",
+                        NodeType = ItemNodeType.Phase,
+                        OutlineLevel = 1,
+                        IsExpanded = false
+                    };
+                    if (groupNode != null)
+                        groupNode.Children.Add(phaseNode);
+                    else
+                        ItemNodes.Add(phaseNode);
+                }
+
+                if (!string.IsNullOrEmpty(item) && phaseNode != null)
+                {
+                    var itemNode = new ItemTreeNode
+                    {
+                        Key = $"{phase}\x01{item}",
+                        Phase = phase,
+                        Item = item,
+                        DisplayText = $"{item} - {itemDesc}",
+                        POIndex = poIndex,
+                        NodeType = ItemNodeType.Item,
+                        OutlineLevel = 2,
+                        IsExpanded = false,
+                        RowState = "CLEAN"
+                    };
+                    phaseNode.Children.Add(itemNode);
+                }
+            }
+        }
+
+        // If viewing unassigned only, remove empty group/phase nodes
+        if (ItemViewIndex == 1)
+        {
+            RemoveEmptyParentNodes(ItemNodes);
+        }
+    }
+
+    private void RemoveEmptyParentNodes(List<ItemTreeNode> nodes)
+    {
+        for (int i = nodes.Count - 1; i >= 0; i--)
+        {
+            var node = nodes[i];
+            if (node.Children.Count > 0)
+            {
+                RemoveEmptyParentNodes(node.Children);
+            }
+            if (node.NodeType != ItemNodeType.Item && node.Children.Count == 0)
+            {
+                nodes.RemoveAt(i);
+            }
+        }
+    }
+
+    // === Load POs ===
+    private async Task LoadPOs()
+    {
+        PONodes.Clear();
+
+        var sql = @"SELECT p.POIndex AS PO
+                          ,i.Phase
+                          ,i.Item
+                          ,i.Description AS ItemDesc
+                          ,p.Notes
+                          ,p.JCCostCode
+                          ,p.JCCategory
+                      FROM tblPOIndex p
+                      LEFT OUTER JOIN tblPhaseItem i ON p.DivisionID = i.DivisionID AND p.POIndex = i.POIndex
+                     WHERE p.DivisionID = @DivisionID
+                     ORDER BY 1";
+
+        var rows = await db.QueryAsync(sql, new { DivisionID });
+
+        string currentPO = "\x01";
+        POTreeNode? poNode = null;
+
+        foreach (var row in rows)
+        {
+            var po = (row["PO"]?.ToString() ?? "").Trim();
+            var phase = (row["Phase"]?.ToString() ?? "").Trim();
+            var item = (row["Item"]?.ToString() ?? "").Trim();
+            var itemDesc = row["ItemDesc"]?.ToString() ?? "";
+            var notes = row["Notes"]?.ToString() ?? "";
+            var jcCostCode = row["JCCostCode"]?.ToString() ?? "";
+            var jcCategory = row["JCCategory"]?.ToString() ?? "";
+
+            if (po != currentPO)
+            {
+                currentPO = po;
+                poNode = new POTreeNode
+                {
+                    Key = "",
+                    POIndex = po,
+                    DisplayText = po,
+                    Notes = notes,
+                    JCCostCode = jcCostCode,
+                    JCCategory = jcCategory,
+                    NodeType = PONodeType.POIndex,
+                    OutlineLevel = 0,
+                    IsExpanded = false,
+                    RowState = "CLEAN",
+                    IsHidden = false
+                };
+                PONodes.Add(poNode);
+            }
+
+            if (!string.IsNullOrEmpty(item) && poNode != null)
+            {
+                var childNode = new POTreeNode
+                {
+                    Key = $"{phase}\x01{item}",
+                    POIndex = po,
+                    DisplayText = $"{item} - {itemDesc}",
+                    NodeType = PONodeType.Item,
+                    OutlineLevel = 1,
+                    IsExpanded = false,
+                    RowState = "CLEAN",
+                    IsHidden = false
+                };
+                poNode.Children.Add(childNode);
+            }
+        }
+    }
+
+    // === Collapse/Expand Helpers ===
+    private void CollapseAllItems()
+    {
+        foreach (var node in ItemNodes)
+            SetExpandedRecursive(node, false);
+    }
+
+    private void CollapseAllPOs()
+    {
+        foreach (var node in PONodes)
+            node.IsExpanded = false;
+    }
+
+    private void SetExpandedRecursive(ItemTreeNode node, bool expanded)
+    {
+        node.IsExpanded = expanded;
+        foreach (var child in node.Children)
+            SetExpandedRecursive(child, expanded);
+    }
+
+    private void ExpandToNode(ItemTreeNode target, List<ItemTreeNode> roots)
+    {
+        foreach (var root in roots)
+        {
+            if (ExpandToNodeRecursive(root, target))
+                break;
+        }
+    }
+
+    private bool ExpandToNodeRecursive(ItemTreeNode current, ItemTreeNode target)
+    {
+        if (current == target) return true;
+        foreach (var child in current.Children)
+        {
+            if (ExpandToNodeRecursive(child, target))
+            {
+                current.IsExpanded = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // === Get All Leaf Nodes ===
+    private IEnumerable<ItemTreeNode> GetAllItemLeafNodes()
+    {
+        return GetAllItemLeafNodesRecursive(ItemNodes);
+    }
+
+    private IEnumerable<ItemTreeNode> GetAllItemLeafNodesRecursive(List<ItemTreeNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == ItemNodeType.Item)
+                yield return node;
+            foreach (var child in GetAllItemLeafNodesRecursive(node.Children))
+                yield return child;
+        }
+    }
+
+    private ItemTreeNode? FindItemNodeByKey(string key)
+    {
+        return FindItemNodeByKeyRecursive(ItemNodes, key);
+    }
+
+    private ItemTreeNode? FindItemNodeByKeyRecursive(List<ItemTreeNode> nodes, string key)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Key == key) return node;
+            var found = FindItemNodeByKeyRecursive(node.Children, key);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private POTreeNode? FindPOChildByKey(string key)
+    {
+        foreach (var po in PONodes)
+        {
+            foreach (var child in po.Children)
+            {
+                if (child.Key == key) return child;
+            }
+        }
+        return null;
+    }
+
+    // === Item Tree: Double-Click → Navigate to PO ===
+    private void OnItemNodeDoubleClick(ItemTreeNode node)
+    {
+        if (node.NodeType != ItemNodeType.Item) return;
+        if (string.IsNullOrEmpty(node.POIndex)) return;
+
+        // Find the corresponding PO child node
+        var poChild = FindPOChildByKey(node.Key);
+        if (poChild == null) return;
+
+        // Expand parent PO node
+        var parentPO = PONodes.FirstOrDefault(p => p.Children.Contains(poChild));
+        if (parentPO != null)
+            parentPO.IsExpanded = true;
+
+        SelectedPONode = poChild;
+        StateHasChanged();
+    }
+
+    // === PO Tree: Double-Click → Navigate to Item ===
+    private void OnPONodeDoubleClick(POTreeNode node)
+    {
+        if (node.NodeType != PONodeType.Item) return;
+
+        var itemNode = FindItemNodeByKey(node.Key);
+        if (itemNode == null) return;
+
+        ExpandToNode(itemNode, ItemNodes);
+        SelectedItemNode = itemNode;
+        StateHasChanged();
+    }
+
+    // === Item Node Click ===
+    private void OnItemNodeClick(ItemTreeNode node)
+    {
+        SelectedItemNode = node;
+
+        if (node.NodeType != ItemNodeType.Item)
+        {
+            node.IsExpanded = !node.IsExpanded;
+        }
+    }
+
+    // === PO Node Click ===
+    private void OnPONodeClick(POTreeNode node)
+    {
+        SelectedPONode = node;
+
+        if (node.NodeType == PONodeType.POIndex)
+        {
+            node.IsExpanded = !node.IsExpanded;
+        }
+    }
+
+    // === Key Handling for Items ===
+    private void OnItemNodeKeyDown(ItemTreeNode node, KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                OnItemNodeDoubleClick(node);
+                break;
+            case " ":
+                node.IsExpanded = !node.IsExpanded;
+                break;
+            case "ArrowLeft":
+                if (node.Children.Count > 0 && node.IsExpanded)
+                    node.IsExpanded = false;
+                break;
+            case "ArrowRight":
+                if (node.Children.Count > 0 && !node.IsExpanded)
+                    node.IsExpanded = true;
+                break;
+        }
+        StateHasChanged();
+    }
+
+    // === Key Handling for POs ===
+    private async Task OnPONodeKeyDown(POTreeNode node, KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                OnPONodeDoubleClick(node);
+                break;
+            case " ":
+                node.IsExpanded = !node.IsExpanded;
+                break;
+            case "ArrowLeft":
+                if (node.Children.Count > 0 && node.IsExpanded)
+                    node.IsExpanded = false;
+                break;
+            case "ArrowRight":
+                if (node.Children.Count > 0 && !node.IsExpanded)
+                    node.IsExpanded = true;
+                break;
+            case "Delete":
+                await DeleteSelectedPONodes(node);
+                break;
+        }
+        StateHasChanged();
+    }
+
+    // === Delete PO Nodes ===
+    private async Task DeleteSelectedPONodes(POTreeNode node)
+    {
+        if (node.NodeType == PONodeType.POIndex)
+        {
+            // Remove all children and unassign items
+            foreach (var child in node.Children.ToList())
+            {
+                UnassignItemFromPO(child.Key);
+                node.Children.Remove(child);
+            }
+            node.RowState = "DELETED";
+            node.IsHidden = true;
+        }
+        else if (node.NodeType == PONodeType.Item)
+        {
+            UnassignItemFromPO(node.Key);
+
+            // Mark parent PO as dirty
+            var parentPO = PONodes.FirstOrDefault(p => p.Children.Contains(node));
+            if (parentPO != null)
+            {
+                parentPO.RowState = "DIRTY";
+                parentPO.Children.Remove(node);
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void UnassignItemFromPO(string key)
+    {
+        var itemNode = FindItemNodeByKey(key);
+        if (itemNode != null)
+        {
+            itemNode.RowState = "DIRTY";
+            itemNode.POIndex = "";
+            mDirty = true;
+
+            // Show node if it was hidden in unassigned view
+            // (it's now unassigned so should be visible)
+        }
+    }
+
+    // === Drag & Drop: Items → POs ===
+    private void OnItemDragStart(ItemTreeNode node)
+    {
+        if (node.NodeType != ItemNodeType.Item) return;
+        IsDraggingFromItems = true;
+        DraggedItemNodes.Clear();
+        DraggedItemNodes.Add(node);
+    }
+
+    private void OnPODragOver(POTreeNode node)
+    {
+        DropTargetPONode = node;
+    }
+
+    private void OnPODrop(POTreeNode targetNode)
+    {
+        if (!IsDraggingFromItems && !IsDraggingFromPOs) return;
+
+        if (IsDraggingFromItems)
+        {
+            HandleItemDropOnPO(targetNode);
+        }
+        else if (IsDraggingFromPOs)
+        {
+            HandlePOItemReorder(targetNode);
+        }
+
+        IsDraggingFromItems = false;
+        IsDraggingFromPOs = false;
+        DraggedItemNodes.Clear();
+        DraggedPONodes.Clear();
+        DropTargetPONode = null;
+        StateHasChanged();
+    }
+
+    private void HandleItemDropOnPO(POTreeNode targetNode)
+    {
+        // Find the parent PO node
+        POTreeNode? parentPO = null;
+        if (targetNode.NodeType == PONodeType.POIndex)
+            parentPO = targetNode;
+        else
+            parentPO = PONodes.FirstOrDefault(p => p.Children.Contains(targetNode));
+
+        if (parentPO == null) return;
+
+        foreach (var draggedItem in DraggedItemNodes)
+        {
+            var key = draggedItem.Key;
+            var displayText = draggedItem.DisplayText;
+
+            // Remove from any existing PO
+            foreach (var po in PONodes)
+            {
+                var existing = po.Children.FirstOrDefault(c => c.Key == key);
+                if (existing != null)
+                {
+                    po.Children.Remove(existing);
+                    break;
+                }
+            }
+
+            // Add to target PO
+            var newChild = new POTreeNode
+            {
+                Key = key,
+                POIndex = parentPO.POIndex,
+                DisplayText = displayText,
+                NodeType = PONodeType.Item,
+                OutlineLevel = 1,
+                IsExpanded = false,
+                RowState = "CLEAN",
+                IsHidden = false
+            };
+
+            // Insert after target if target is a child, otherwise append
+            if (targetNode.NodeType == PONodeType.Item)
+            {
+                var idx = parentPO.Children.IndexOf(targetNode);
+                if (idx >= 0)
+                    parentPO.Children.Insert(idx + 1, newChild);
+                else
+                    parentPO.Children.Add(newChild);
+            }
+            else
+            {
+                parentPO.Children.Add(newChild);
+            }
+
+            // Update item node
+            var poIndex = parentPO.POIndex;
+            draggedItem.POIndex = poIndex;
+            draggedItem.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    // === Drag & Drop: PO Items reorder ===
+    private void OnPOItemDragStart(POTreeNode node)
+    {
+        if (node.NodeType != PONodeType.Item) return;
+        IsDraggingFromPOs = true;
+        DraggedPONodes.Clear();
+        DraggedPONodes.Add(node);
+    }
+
+    private void HandlePOItemReorder(POTreeNode targetNode)
+    {
+        // For now, just move items between PO parents
+        POTreeNode? targetParent = null;
+        if (targetNode.NodeType == PONodeType.POIndex)
+            targetParent = targetNode;
+        else
+            targetParent = PONodes.FirstOrDefault(p => p.Children.Contains(targetNode));
+
+        if (targetParent == null) return;
+
+        foreach (var draggedPOItem in DraggedPONodes)
+        {
+            // Remove from current parent
+            var currentParent = PONodes.FirstOrDefault(p => p.Children.Contains(draggedPOItem));
+            if (currentParent != null)
+            {
+                currentParent.Children.Remove(draggedPOItem);
+                currentParent.RowState = "DIRTY";
+            }
+
+            // Add to new parent
+            draggedPOItem.POIndex = targetParent.POIndex;
+            targetParent.Children.Add(draggedPOItem);
+
+            // Update item node
+            var itemNode = FindItemNodeByKey(draggedPOItem.Key);
+            if (itemNode != null)
+            {
+                itemNode.POIndex = targetParent.POIndex;
+                itemNode.RowState = "DIRTY";
+                mDirty = true;
+            }
+        }
+    }
+
+    private void OnDragEnd()
+    {
+        IsDraggingFromItems = false;
+        IsDraggingFromPOs = false;
+        DraggedItemNodes.Clear();
+        DraggedPONodes.Clear();
+        DropTargetPONode = null;
+    }
+
+    // === Confirm Dialog ===
+    private async Task<int> ShowConfirmDialog(string title, string message)
+    {
+        ConfirmDialogTitle = title;
+        ConfirmDialogMessage = message;
+        IsConfirmDialogVisible = true;
+        _confirmTcs = new TaskCompletionSource<int>();
+        StateHasChanged();
+        return await _confirmTcs.Task;
+    }
+
+    private void OnConfirmYes()
+    {
+        IsConfirmDialogVisible = false;
+        _confirmTcs?.SetResult(0); // Yes
+    }
+
+    private void OnConfirmNo()
+    {
+        IsConfirmDialogVisible = false;
+        _confirmTcs?.SetResult(1); // No
+    }
+
+    private void OnConfirmCancel()
+    {
+        IsConfirmDialogVisible = false;
+        _confirmTcs?.SetResult(2); // Cancel
+    }
+
+    // === Render Item Tree Node ===
+    private RenderFragment RenderItemNode(ItemTreeNode node) => __builder =>
+    {
+        <li>
+            <div class="tree-node-row @(SelectedItemNode == node ? "selected" : "") @(!string.IsNullOrEmpty(node.POIndex) ? "checked-item" : "")"
+                 tabindex="0"
+                 @onclick="() => OnItemNodeClick(node)"
+                 @ondblclick="() => OnItemNodeDoubleClick(node)"
+                 @onkeydown="(e) => OnItemNodeKeyDown(node, e)"
+                 draggable="@(node.NodeType == ItemNodeType.Item ? "true" : "false")"
+                 @ondragstart="() => OnItemDragStart(node)"
+                 @ondragend="OnDragEnd">
+
+                @if (node.Children.Count > 0)
+                {
+                    <span class="tree-toggle">@(node.IsExpanded ? "▼" : "▶")</span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+
+                @switch (node.NodeType)
+                {
+                    case ItemNodeType.Group:
+                        <span>📁</span>
+                        break;
+                    case ItemNodeType.Phase:
+                        <span>📋</span>
+                        break;
+                    case ItemNodeType.Item:
+                        <span>@(!string.IsNullOrEmpty(node.POIndex) ? "☑️" : "📄")</span>
+                        break;
+                }
+
+                <span class="tree-text">@node.DisplayText</span>
+
+                @if (node.NodeType == ItemNodeType.Item && !string.IsNullOrEmpty(node.POIndex))
+                {
+                    <span class="po-index-col">[@node.POIndex]</span>
+                }
+            </div>
+
+            @if (node.IsExpanded && node.Children.Count > 0)
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderItemNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    // === Render PO Tree Node ===
+    private RenderFragment RenderPONode(POTreeNode node) => __builder =>
+    {
+        if (node.IsHidden) return;
+
+        <li>
+            <div class="tree-node-row @(SelectedPONode == node ? "selected" : "") @(DropTargetPONode == node ? "drag-over" : "")"
+                 tabindex="0"
+                 @onclick="() => OnPONodeClick(node)"
+                 @ondblclick="() => OnPONodeDoubleClick(node)"
+                 @onkeydown="async (e) => await OnPONodeKeyDown(node, e)"
+                 draggable="@(node.NodeType == PONodeType.Item ? "true" : "false")"
+                 @ondragstart="() => OnPOItemDragStart(node)"
+                 @ondragover:preventDefault="true"
+                 @ondragover="() => OnPODragOver(node)"
+                 @ondrop="() => OnPODrop(node)"
+                 @ondragend="OnDragEnd">
+
+                @if (node.Children.Count > 0)
+                {
+                    <span class="tree-toggle">@(node.IsExpanded ? "▼" : "▶")</span>
+                }
+                else if (node.NodeType == PONodeType.POIndex)
+                {
+                    <span class="tree-toggle">▶</span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+
+                @switch (node.NodeType)
+                {
+                    case PONodeType.POIndex:
+                        <span>📦</span>
+                        break;
+                    case PONodeType.Item:
+                        <span>📄</span>
+                        break;
+                }
+
+                <span class="tree-text">@node.DisplayText</span>
+
+                @if (node.NodeType == PONodeType.POIndex && !string.IsNullOrEmpty(node.Notes))
+                {
+                    <span class="po-index-col" title="@node.Notes">📝</span>
+                }
+            </div>
+
+            @if (node.IsExpanded && node.Children.Count > 0)
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderPONode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    // === Model Classes ===
+    public enum ItemNodeType { Group, Phase, Item }
+    public enum PONodeType { POIndex, Item }
+
+    public class ItemTreeNode
+    {
+        public string Key { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string DisplayText { get; set; } = "";
+        public string? POIndex { get; set; }
+        public ItemNodeType NodeType { get; set; }
+        public int OutlineLevel { get; set; }
+        public bool IsExpanded { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+        public List<ItemTreeNode> Children { get; set; } = new();
+    }
+
+    public class POTreeNode
+    {
+        public string Key { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string DisplayText { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public PONodeType NodeType { get; set; }
+        public int OutlineLevel { get; set; }
+        public bool IsExpanded { get; set; }
+        public bool IsHidden { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+        public List<POTreeNode> Children { get; set; } = new();
+    }
+}
+```

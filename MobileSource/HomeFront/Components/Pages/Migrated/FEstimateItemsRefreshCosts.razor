@@ -1,0 +1,375 @@
+```razor
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<style>
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        width: 540px; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    .form-icon-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .form-icon-row img { width: 48px; height: 48px; }
+    .form-options { flex: 1; }
+    .form-options .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+    .form-options .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; }
+    .field-row { display: flex; align-items: center; margin-bottom: 10px; }
+    .field-row label { min-width: 90px; font-size: 13px; text-align: right; padding-right: 10px; font-weight: 500; }
+    .field-row select, .field-row input { flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; }
+    .field-row select:focus, .field-row input:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .radio-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; margin-left: 20px; }
+    .radio-row input[type="radio"] { width: 16px; height: 16px; }
+    .forecast-list {
+        border: 1px solid #ced4da; border-radius: 4px; background: #fff;
+        max-height: 180px; overflow-y: auto; margin-left: 40px; margin-top: 4px;
+    }
+    .forecast-list.disabled { background: #e9ecef; pointer-events: none; opacity: 0.6; }
+    .forecast-item {
+        padding: 4px 10px; cursor: pointer; font-size: 13px;
+    }
+    .forecast-item:hover { background: #e8f0fe; }
+    .forecast-item.selected { background: #cce5ff; font-weight: 600; }
+    .date-input-group { display: flex; align-items: center; gap: 4px; }
+    .date-input-group input { width: 150px; }
+    .date-input-group button {
+        padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 12px;
+    }
+    .date-input-group button:hover { background: #e9ecef; }
+</style>
+
+@if (IsVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Refresh Costs</span>
+                <button @onclick="OnCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-icon-row">
+                    <img src="images/32/refresh.ico" alt="Refresh" onerror="this.style.display='none'" />
+                    <div class="form-options">
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="chkRefreshOverridden" @bind="RefreshOverridden" />
+                            <label for="chkRefreshOverridden">Refresh costs on manually updated items.</label>
+                        </div>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="chkSetVarianceCat" @bind="ApplyVarianceCat" />
+                            <label for="chkSetVarianceCat">Set the variance category on all changed items.</label>
+                        </div>
+                    </div>
+                </div>
+
+                @if (ApplyVarianceCat)
+                {
+                    <div class="field-row">
+                        <label>Category:</label>
+                        <select @bind="VarianceCat">
+                            <option value="">-- Select --</option>
+                            @foreach (var cat in VarianceCategoryList)
+                            {
+                                <option value="@cat.Value">@cat.Text</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div class="radio-row">
+                    <input type="radio" id="optCurrent" name="costBasis" checked="@(UseCurrent)" @onchange="() => SetCostBasis(true)" />
+                    <label for="optCurrent">Refresh costs using current prices</label>
+                </div>
+
+                @if (UseCurrent)
+                {
+                    <div class="field-row" style="margin-left: 40px;">
+                        <label>Effective:</label>
+                        <div class="date-input-group">
+                            <input type="date" @bind="EffectiveDate" />
+                        </div>
+                    </div>
+                }
+
+                <div class="radio-row">
+                    <input type="radio" id="optForecast" name="costBasis" checked="@(!UseCurrent)" @onchange="() => SetCostBasis(false)" />
+                    <label for="optForecast">Refresh costs using a forecast</label>
+                </div>
+
+                <div class="forecast-list @(UseCurrent ? "disabled" : "")">
+                    @for (int i = 0; i < ForecastItems.Count; i++)
+                    {
+                        var idx = i;
+                        <div class="forecast-item @(SelectedForecastIndex == idx ? "selected" : "")"
+                             @onclick="() => SelectForecast(idx)">
+                            @ForecastItems[idx]
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnOk">OK</button>
+                <button class="btn" @onclick="OnCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Parameters ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public string DivisionID { get; set; } = "1";
+    [Parameter] public string InitialVarianceCat { get; set; } = "";
+    [Parameter] public EventCallback<RefreshCostsResult> OnConfirmed { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === State ===
+    private bool RefreshOverridden = false;
+    private bool ApplyVarianceCat = false;
+    private string VarianceCat = "";
+    private bool UseCurrent = true;
+    private DateTime EffectiveDate = DateTime.Today;
+    private int SelectedForecastIndex = -1;
+    private List<string> ForecastItems = new();
+    private List<ComboItem> VarianceCategoryList = new();
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFormData();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible)
+        {
+            VarianceCat = InitialVarianceCat;
+            await LoadFormData();
+        }
+    }
+
+    private async Task LoadFormData()
+    {
+        try
+        {
+            EffectiveDate = DateTime.Today;
+
+            // Load forecast descriptions
+            ForecastItems.Clear();
+            for (int i = 1; i <= 12; i++)
+                ForecastItems.Add($"Forecast {i}");
+
+            var forecastSql = @"
+                SELECT MAX(Custom_Description) AS Desc, 0 AS Idx FROM CustomDescriptions WHERE Item='Forecast1' UNION ALL
+                SELECT MAX(Custom_Description), 1 FROM CustomDescriptions WHERE Item='Forecast2' UNION ALL
+                SELECT MAX(Custom_Description), 2 FROM CustomDescriptions WHERE Item='Forecast3' UNION ALL
+                SELECT MAX(Custom_Description), 3 FROM CustomDescriptions WHERE Item='Forecast4' UNION ALL
+                SELECT MAX(Custom_Description), 4 FROM CustomDescriptions WHERE Item='Forecast5' UNION ALL
+                SELECT MAX(Custom_Description), 5 FROM CustomDescriptions WHERE Item='Forecast6' UNION ALL
+                SELECT MAX(Custom_Description), 6 FROM CustomDescriptions WHERE Item='Forecast7' UNION ALL
+                SELECT MAX(Custom_Description), 7 FROM CustomDescriptions WHERE Item='Forecast8' UNION ALL
+                SELECT MAX(Custom_Description), 8 FROM CustomDescriptions WHERE Item='Forecast9' UNION ALL
+                SELECT MAX(Custom_Description), 9 FROM CustomDescriptions WHERE Item='Forecast10' UNION ALL
+                SELECT MAX(Custom_Description), 10 FROM CustomDescriptions WHERE Item='Forecast11' UNION ALL
+                SELECT MAX(Custom_Description), 11 FROM CustomDescriptions WHERE Item='Forecast12'";
+
+            var forecastRows = await db.QueryAsync(forecastSql);
+            foreach (var row in forecastRows)
+            {
+                var idx = Convert.ToInt32(row["Idx"]);
+                var desc = row["Desc"]?.ToString() ?? "";
+                if (!string.IsNullOrWhiteSpace(desc) && idx >= 0 && idx < ForecastItems.Count)
+                {
+                    ForecastItems[idx] = desc;
+                }
+            }
+
+            // Load variance categories
+            var catSql = @"
+                SELECT category + ' - ' + description AS DisplayText, category AS Value
+                FROM standardcategories
+                WHERE isvariance = 1 AND divisionid = @DivisionID
+                ORDER BY description";
+            var catRows = await db.QueryAsync(catSql, new { DivisionID });
+            VarianceCategoryList = catRows.Select(r => new ComboItem
+            {
+                Text = r["DisplayText"]?.ToString() ?? "",
+                Value = r["Value"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load saved preferences
+            try
+            {
+                var refreshOverriddenVal = await db.ExecuteScalarAsync<string>(
+                    "SELECT Value FROM AppOptions WHERE Name = 'RefreshOverridden'");
+                RefreshOverridden = string.Equals(refreshOverriddenVal, "True", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { RefreshOverridden = false; }
+
+            try
+            {
+                var applyVarCatVal = await db.ExecuteScalarAsync<string>(
+                    "SELECT Value FROM AppOptions WHERE Name = 'ApplyVarianceCategory'");
+                ApplyVarianceCat = string.Equals(applyVarCatVal, "True", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { ApplyVarianceCat = false; }
+
+            // Set initial variance cat selection
+            if (!string.IsNullOrEmpty(InitialVarianceCat))
+                VarianceCat = InitialVarianceCat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FEstimateItemsRefreshCosts.LoadFormData] Error: {ex.Message}");
+        }
+    }
+
+    // === UI Handlers ===
+    private void SetCostBasis(bool useCurrent)
+    {
+        UseCurrent = useCurrent;
+        if (!UseCurrent && SelectedForecastIndex < 0 && ForecastItems.Count > 0)
+            SelectedForecastIndex = 0;
+    }
+
+    private void SelectForecast(int index)
+    {
+        if (!UseCurrent)
+            SelectedForecastIndex = index;
+    }
+
+    private async Task OnOk()
+    {
+        // Validation
+        if (UseCurrent && EffectiveDate == default)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "You must specify an effective date");
+            return;
+        }
+
+        if (!UseCurrent && SelectedForecastIndex < 0)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "You must select a forecast");
+            return;
+        }
+
+        // Save preferences
+        try
+        {
+            await db.ExecuteAsync(
+                "UPDATE AppOptions SET Value = @Value WHERE Name = 'ApplyVarianceCategory'",
+                new { Value = ApplyVarianceCat.ToString() });
+            await db.ExecuteAsync(
+                "UPDATE AppOptions SET Value = @Value WHERE Name = 'RefreshOverridden'",
+                new { Value = RefreshOverridden.ToString() });
+        }
+        catch { /* ignore preference save errors */ }
+
+        var result = new RefreshCostsResult
+        {
+            CostBasis = UseCurrent ? CostBasisTypes.Current : (CostBasisTypes)((int)CostBasisTypes.Forecast1 + SelectedForecastIndex),
+            EffectiveDate = UseCurrent ? EffectiveDate : default,
+            ApplyVarianceCat = ApplyVarianceCat,
+            VarianceCat = VarianceCat,
+            RefreshOverridden = RefreshOverridden
+        };
+
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+        await OnConfirmed.InvokeAsync(result);
+    }
+
+    private async Task OnCancel()
+    {
+        // Save preferences on close
+        try
+        {
+            await db.ExecuteAsync(
+                "UPDATE AppOptions SET Value = @Value WHERE Name = 'ApplyVarianceCategory'",
+                new { Value = ApplyVarianceCat.ToString() });
+            await db.ExecuteAsync(
+                "UPDATE AppOptions SET Value = @Value WHERE Name = 'RefreshOverridden'",
+                new { Value = RefreshOverridden.ToString() });
+        }
+        catch { /* ignore */ }
+
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+        await OnCancelled.InvokeAsync();
+    }
+
+    // === Enums & Models ===
+    public enum CostBasisTypes
+    {
+        Current = 0,
+        Forecast1 = 1,
+        Forecast2 = 2,
+        Forecast3 = 3,
+        Forecast4 = 4,
+        Forecast5 = 5,
+        Forecast6 = 6,
+        Forecast7 = 7,
+        Forecast8 = 8,
+        Forecast9 = 9,
+        Forecast10 = 10,
+        Forecast11 = 11,
+        Forecast12 = 12
+    }
+
+    public class RefreshCostsResult
+    {
+        public CostBasisTypes CostBasis { get; set; }
+        public DateTime EffectiveDate { get; set; }
+        public bool ApplyVarianceCat { get; set; }
+        public string VarianceCat { get; set; } = "";
+        public bool RefreshOverridden { get; set; }
+    }
+
+    public class ComboItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+}
+```

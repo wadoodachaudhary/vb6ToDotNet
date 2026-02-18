@@ -1,0 +1,1208 @@
+@* MMain.razor - Converted from VB6 MMain.bas *@
+@* This is a utility/service module, not a visual component. *@
+@* Exposed as a Blazor component with static helper methods and shared state. *@
+
+@using System.Data
+@using System.Text
+@using System.Text.RegularExpressions
+@using HomeFront.Data
+
+@code {
+    // ── Constants ────────────────────────────────────────────────────────
+    private const string SRCFILE = "MMain::";
+    public const int MARKUPPRECISION = 2;
+    public const int BUFFER_SIZE = 32767;
+
+    // File menu constants
+    public const int mcFILE_SAVE = 1;
+    public const int mcFILE_CHANGEDIV = 3;
+    public const int mcFILE_CLOSE = 4;
+
+    // View menu constants
+    public const int mcVIEW_TASKPANEL = 0;
+    public const int mcVIEW_WORKFLOW = 1;
+
+    // Grid menu constants
+    public const int mcGRID_GROUP = 0;
+    public const int mcGRID_EXPANDALL = 1;
+    public const int mcGRID_COLLAPSEALL = 2;
+    public const int mcGRID_HIDE = 4;
+    public const int mcGRID_INSERT = 5;
+    public const int mcGRID_RENAME = 6;
+    public const int mcGRID_PRINT = 8;
+    public const int mcGRID_SAVEAS = 9;
+    public const int mcGRID_ATTACHMENTS = 10;
+
+    // Pricing worksheet grid
+    public const int mcPRICE_REFRESHCOSTS = 1;
+    public const int mcPRICE_ADJUSTPRICES = 2;
+    public const int mcPRICE_REMOVEASSEMBLY = 4;
+
+    // ShellExecute error codes
+    public const int SW_SHOWNORMAL = 1;
+    public const int SE_ERR_FNF = 2;
+    public const int SE_ERR_PNF = 3;
+    public const int SE_ERR_ACCESSDENIED = 5;
+    public const int SE_ERR_OOM = 8;
+    public const int SE_ERR_DLLNOTFOUND = 32;
+    public const int SE_ERR_SHARE = 26;
+    public const int SE_ERR_ASSOCINCOMPLETE = 27;
+    public const int SE_ERR_DDETIMEOUT = 28;
+    public const int SE_ERR_DDEFAIL = 29;
+    public const int SE_ERR_DDEBUSY = 30;
+    public const int SE_ERR_NOASSOC = 31;
+    public const int ERROR_BAD_FORMAT = 11;
+
+    // ── Enums ────────────────────────────────────────────────────────────
+    public enum EstimatingSystems
+    {
+        esNone = 0,
+        esPipeline = 1,
+        esTimberline = 2
+    }
+
+    public enum TakeoffSystems
+    {
+        tsNone = 0,
+        tsPlanSwift = 1
+    }
+
+    public enum SortAlgorithms
+    {
+        InsertSort,
+        MergeSort,
+        QuickSort,
+        SelectionSort
+    }
+
+    public enum OptionLocations
+    {
+        olModel,
+        olScheduleB,
+        olChangeOrder,
+        olDesignCenter,
+        olDeletedItems
+    }
+
+    public enum AssemblyStatuses
+    {
+        asOpen,
+        asPriceOnly,
+        asClosed
+    }
+
+    public enum AssemblyTypes
+    {
+        atModel = 0,
+        atElevation = 1,
+        atOption = 2,
+        atGlobal = 3,
+        atDesignCenter = 4,
+        atCustomOption = -1
+    }
+
+    public enum OptionTypes
+    {
+        otModel = 0,
+        otOption = 1,
+        otGlobal = 2,
+        otDesignCenter = 3
+    }
+
+    public enum DeliveryTypes
+    {
+        dtPrint,
+        dtEmail,
+        dtFax
+    }
+
+    public enum CostBasisTypes
+    {
+        cbCurrent,
+        cbNext1,
+        cbNext2,
+        cbLast1,
+        cbLast2,
+        cbLast3,
+        cbForecast1,
+        cbForecast2,
+        cbForecast3,
+        cbForecast4,
+        cbForecast5,
+        cbForecast6,
+        cbForecast7,
+        cbForecast8,
+        cbForecast9,
+        cbForecast10,
+        cbForecast11,
+        cbForecast12
+    }
+
+    public enum ZeroQtyTakeoffModes
+    {
+        ztPrompt = 0,
+        ztIgnore = 1,
+        ztAccept = 2
+    }
+
+    public enum MultiStateEnum
+    {
+        msNone = 0,
+        msSome = 1,
+        msAll = 2
+    }
+
+    public enum PrinterStatusCodes
+    {
+        psReady = 0x0,
+        psPaused = 0x1,
+        psError = 0x2,
+        psPendingDeletion = 0x4,
+        psPaperJam = 0x8,
+        psPaperOut = 0x10,
+        psManualFeed = 0x20,
+        psPaperProblem = 0x40,
+        psOffline = 0x80,
+        psIoActive = 0x100,
+        psBusy = 0x200,
+        psPrinting = 0x400,
+        psOutputBinFull = 0x800,
+        psNotAvailable = 0x1000,
+        psWaiting = 0x2000,
+        psProcessing = 0x4000,
+        psInitializing = 0x8000,
+        psWarmingUp = 0x10000,
+        psTonerLow = 0x20000,
+        psNoToner = 0x40000,
+        psPagePrint = 0x80000,
+        psUserIntervention = 0x100000,
+        psOutOfMemory = 0x200000,
+        psDoorOpen = 0x400000,
+        psServerUnknown = 0x800000
+    }
+
+    public enum PrinterAttributeCodes
+    {
+        paQueued = 0x1,
+        paDirect = 0x2,
+        paDefault = 0x4,
+        paShared = 0x8,
+        paNetwork = 0x10,
+        paHidden = 0x20,
+        paLocal = 0x40,
+        paEnableDevQ = 0x80
+    }
+
+    // ── Public State ─────────────────────────────────────────────────────
+    public static bool ProjectBased { get; set; }
+    public static bool ProjectPhaseBased { get; set; }
+    public static TakeoffSystems TakeoffSystem { get; set; }
+    public static bool IsMultiFamily { get; set; }
+    public static bool PostPOQtyToAccounting { get; set; }
+    public static string LoadedForm { get; set; } = "";
+    public static double MaxPOAmount { get; set; }
+
+    // ── Database ─────────────────────────────────────────────────────────
+    private static DbWrapperSqlServer db = new();
+
+    // ── Utility: Parse ───────────────────────────────────────────────────
+    /// <summary>
+    /// Parses items out of a delimited string.
+    /// If index == 0, returns the count of items.
+    /// If index > 0, returns the Nth item (1-based).
+    /// </summary>
+    public static string Parse(string delimitedString, int index = 0, string delimiter = ",")
+    {
+        if (string.IsNullOrEmpty(delimitedString))
+            return index == 0 ? "0" : "";
+
+        if (index < 0) return "";
+
+        var parts = delimitedString.Split(new[] { delimiter }, StringSplitOptions.None);
+
+        if (index == 0)
+            return parts.Length.ToString();
+
+        if (index > parts.Length)
+            return "";
+
+        return parts[index - 1];
+    }
+
+    /// <summary>Returns the count of delimited items.</summary>
+    public static int ParseCount(string delimitedString, string delimiter = ",")
+    {
+        if (string.IsNullOrEmpty(delimitedString)) return 0;
+        return delimitedString.Split(new[] { delimiter }, StringSplitOptions.None).Length;
+    }
+
+    // ── Utility: Update ──────────────────────────────────────────────────
+    /// <summary>Updates items in a delimited string at a given 1-based column.</summary>
+    public static string Update(string inputString, int col, string value, string delimiter = ",")
+    {
+        var parts = (inputString ?? "").Split(new[] { delimiter }, StringSplitOptions.None).ToList();
+        while (parts.Count < col)
+            parts.Add("");
+        parts[col - 1] = value;
+        return string.Join(delimiter, parts);
+    }
+
+    // ── Utility: Min / Max ───────────────────────────────────────────────
+    public static T Min<T>(params T[] items) where T : IComparable<T>
+    {
+        var result = items[0];
+        for (int i = 1; i < items.Length; i++)
+            if (items[i].CompareTo(result) < 0) result = items[i];
+        return result;
+    }
+
+    public static T Max<T>(params T[] items) where T : IComparable<T>
+    {
+        var result = items[0];
+        for (int i = 1; i < items.Length; i++)
+            if (items[i].CompareTo(result) > 0) result = items[i];
+        return result;
+    }
+
+    // ── Utility: IsBetween / Between ─────────────────────────────────────
+    public static bool IsBetween<T>(T value, T minimum, T maximum, bool inclusive = true) where T : IComparable<T>
+    {
+        if (inclusive)
+            return value.CompareTo(minimum) >= 0 && value.CompareTo(maximum) <= 0;
+        else
+            return value.CompareTo(minimum) > 0 && value.CompareTo(maximum) < 0;
+    }
+
+    public static T Between<T>(T minimum, T maximum, T value) where T : IComparable<T>
+    {
+        if (value.CompareTo(maximum) > 0) value = maximum;
+        if (value.CompareTo(minimum) < 0) value = minimum;
+        return value;
+    }
+
+    // ── Utility: ItemInList ──────────────────────────────────────────────
+    public static bool ItemInList(string item, string list, string delimiter = ",")
+    {
+        var wrappedList = delimiter + list + delimiter;
+        var wrappedItem = delimiter + item + delimiter;
+        return wrappedList.Contains(wrappedItem, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ── Utility: ParseDistinctList ───────────────────────────────────────
+    public static string ParseDistinctList(string list, string delimiter = ",")
+    {
+        var parts = list.Split(new[] { delimiter }, StringSplitOptions.None);
+        var distinct = new List<string>();
+        foreach (var part in parts)
+        {
+            if (!distinct.Contains(part, StringComparer.OrdinalIgnoreCase))
+                distinct.Add(part);
+        }
+        return string.Join(delimiter, distinct);
+    }
+
+    // ── Utility: IsIn ────────────────────────────────────────────────────
+    public static bool IsIn(string expression, params string[] items)
+    {
+        foreach (var item in items)
+            if (string.Equals(expression, item, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    // ── Utility: CSV ─────────────────────────────────────────────────────
+    public static string Csv(params object[] values)
+    {
+        return string.Join(",", values.Select(v => v?.ToString() ?? ""));
+    }
+
+    // ── File Path Utilities ──────────────────────────────────────────────
+    public static string FileTitle(string fullpath)
+    {
+        if (string.IsNullOrEmpty(fullpath)) return "";
+        return Path.GetFileName(fullpath);
+    }
+
+    public static string FileName(string fullpath)
+    {
+        if (string.IsNullOrEmpty(fullpath)) return "";
+        return Path.GetFileNameWithoutExtension(fullpath);
+    }
+
+    public static string FilePath(string fullpath)
+    {
+        if (string.IsNullOrEmpty(fullpath)) return "";
+        return Path.GetDirectoryName(fullpath) ?? "";
+    }
+
+    public static string FileExt(string fullpath)
+    {
+        if (string.IsNullOrEmpty(fullpath)) return "";
+        var ext = Path.GetExtension(fullpath);
+        return string.IsNullOrEmpty(ext) ? "" : ext.TrimStart('.').ToLower();
+    }
+
+    public static string ForceExt(string fileName, string extension)
+    {
+        if (string.IsNullOrEmpty(extension)) return fileName;
+        return Path.ChangeExtension(fileName, extension);
+    }
+
+    public static string StripExtension(string fileName)
+    {
+        if (string.IsNullOrEmpty(fileName)) return "";
+        return Path.GetFileNameWithoutExtension(fileName);
+    }
+
+    public static bool FileExists(string fileName)
+    {
+        try { return File.Exists(fileName); }
+        catch { return false; }
+    }
+
+    public static bool PathExists(string path)
+    {
+        try { return Directory.Exists(path) || File.Exists(path); }
+        catch { return false; }
+    }
+
+    public static string CleanFileName(string fileName)
+    {
+        var invalidChars = new[] { '/', '\\', '*', '?', ':', '<', '>', '|' };
+        foreach (var c in invalidChars)
+            fileName = fileName.Replace(c.ToString(), "");
+        return fileName;
+    }
+
+    public static string PathAppend(params string[] paths)
+    {
+        if (paths.Length == 0) return "";
+        var result = paths[0].TrimEnd('\\');
+        for (int i = 1; i < paths.Length; i++)
+        {
+            var segment = paths[i].Trim().TrimStart('\\').TrimEnd('\\');
+            result = result + "\\" + segment;
+        }
+        return result;
+    }
+
+    public static string QualifyPath(string path)
+    {
+        if (!path.EndsWith("\\")) return path + "\\";
+        return path;
+    }
+
+    public static void CreatePath(string pathDescription, string path)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
+                Directory.CreateDirectory(path);
+        }
+        catch { /* ignore */ }
+    }
+
+    public static string FileDrive(string fullpath)
+    {
+        fullpath = (fullpath ?? "").Trim();
+        if (fullpath.StartsWith("\\\\"))
+        {
+            var parts = fullpath.Substring(2).Split('\\');
+            return "\\\\" + (parts.Length > 0 ? parts[0] : "");
+        }
+        return fullpath.Length >= 2 ? fullpath.Substring(0, 2) : "";
+    }
+
+    // ── Temp File Utilities ──────────────────────────────────────────────
+    public static string TempPath()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "HomeFront");
+        CreatePath("", path);
+        return path;
+    }
+
+    public static string TempFile(string extension = "")
+    {
+        var fileName = Guid.NewGuid().ToString("N");
+        if (!string.IsNullOrEmpty(extension))
+            fileName = Path.ChangeExtension(fileName, extension);
+        return Path.Combine(TempPath(), fileName);
+    }
+
+    // ── String Utilities ─────────────────────────────────────────────────
+    public static string VbQuote => "\"";
+
+    public static string VbBullet => "•";
+
+    public static string AddQuotes(string s) => $"\"{s}\"";
+
+    public static string Quote(string s, bool removeFormatting = true, int length = 0, bool removeSpecial = true)
+    {
+        if (removeFormatting)
+        {
+            s = s.Replace("\t", " ").Replace("\n", " ").Replace("\r", " ");
+        }
+        if (removeSpecial)
+            s = RemoveSpecialChar(s);
+        s = s.Replace("\"", "''");
+        if (length > 0 && s.Length > length)
+            s = s.Substring(0, length);
+        return "\"" + s + "\"";
+    }
+
+    private static string RemoveSpecialChar(string text)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in text)
+        {
+            if (c <= 0x7F)
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    public static string StripFormatting(string s)
+    {
+        const string formatChars = "+=_-)(*&^%$#@!~`[]{}\\|/?'\"<>;:,";
+        foreach (var c in formatChars)
+            s = s.Replace(c.ToString(), "");
+        return s;
+    }
+
+    // ── SpaceCase ────────────────────────────────────────────────────────
+    public static string SpaceCase(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        s = s.Replace("_", "").Replace(" ", "");
+        var sb = new StringBuilder();
+        for (int i = 0; i < s.Length; i++)
+        {
+            char cPrev = i > 0 ? s[i - 1] : '\0';
+            char cThis = s[i];
+            char cNext = i < s.Length - 1 ? s[i + 1] : 'Z';
+            if (char.IsUpper(cThis) && (char.IsLower(cPrev) || char.IsLower(cNext)))
+                sb.Append(' ');
+            sb.Append(cThis);
+        }
+        return sb.ToString().Trim();
+    }
+
+    // ── FormatExcelColRef ────────────────────────────────────────────────
+    public static string FormatExcelColRef(int index)
+    {
+        const string abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        var s = "";
+        if (index > 26)
+        {
+            int i = (index - 1) / 26;
+            if (i > 0) s += abc[i - 1];
+        }
+        int remainder = index % 26;
+        s += remainder == 0 ? "Z" : abc[remainder - 1].ToString();
+        return s;
+    }
+
+    // ── FormatPhone ──────────────────────────────────────────────────────
+    public static string FormatPhone(string number, string countryCode = "US")
+    {
+        if (string.IsNullOrWhiteSpace(number)) return "";
+        number = number.Trim();
+        var digitsOnly = new string(number.Where(char.IsDigit).ToArray());
+
+        switch (countryCode.ToUpper())
+        {
+            case "AU":
+                if (digitsOnly.Length == 11) digitsOnly = "+" + digitsOnly;
+                if (digitsOnly.Length == 9) digitsOnly = "0" + digitsOnly;
+                bool isInternational = number.StartsWith("+");
+                bool isMobile;
+                if (isInternational)
+                    isMobile = digitsOnly.Length >= 4 && IsIn(digitsOnly[3].ToString(), "4", "5");
+                else
+                    isMobile = digitsOnly.Length >= 2 && IsIn(digitsOnly.Substring(0, 2), "04", "05");
+
+                if (!digitsOnly.All(char.IsDigit)) return number;
+                if (isMobile && isInternational && digitsOnly.Length == 12)
+                    return $"+{digitsOnly.Substring(0, 2)} {digitsOnly.Substring(2, 3)} {digitsOnly.Substring(5, 3)} {digitsOnly.Substring(8, 3)}";
+                if (isMobile && digitsOnly.Length == 10)
+                    return $"{digitsOnly.Substring(0, 4)} {digitsOnly.Substring(4, 3)} {digitsOnly.Substring(7, 3)}";
+                if (isInternational && digitsOnly.Length == 12)
+                    return $"+{digitsOnly.Substring(0, 2)} {digitsOnly.Substring(2, 1)} {digitsOnly.Substring(3, 4)} {digitsOnly.Substring(7, 4)}";
+                if (digitsOnly.Length == 10)
+                    return $"{digitsOnly.Substring(0, 2)} {digitsOnly.Substring(2, 4)} {digitsOnly.Substring(6, 4)}";
+                return number;
+
+            default: // US/CA
+                if (!digitsOnly.All(char.IsDigit)) return number;
+                return digitsOnly.Length switch
+                {
+                    10 => $"({digitsOnly.Substring(0, 3)}) {digitsOnly.Substring(3, 3)}-{digitsOnly.Substring(6, 4)}",
+                    11 => $"{digitsOnly[0]} ({digitsOnly.Substring(1, 3)}) {digitsOnly.Substring(4, 3)}-{digitsOnly.Substring(7, 4)}",
+                    7 => $"{digitsOnly.Substring(0, 3)}-{digitsOnly.Substring(3, 4)}",
+                    _ => number
+                };
+        }
+    }
+
+    // ── SimpleEncrypt ────────────────────────────────────────────────────
+    public static string SimpleEncrypt(string secret, string key)
+    {
+        if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(key)) return secret;
+        var chars = secret.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            int keyIndex = i % key.Length;
+            chars[i] = (char)(chars[i] ^ key[keyIndex]);
+        }
+        return new string(chars);
+    }
+
+    // ── CreateGUID ───────────────────────────────────────────────────────
+    public static string CreateGUID() => Guid.NewGuid().ToString("B").ToUpper();
+
+    // ── NetworkLoginName ─────────────────────────────────────────────────
+    public static string NetworkLoginName() => Environment.UserName;
+
+    // ── MachineName ──────────────────────────────────────────────────────
+    public static string MachineName() => Environment.MachineName;
+
+    // ── Trunc ────────────────────────────────────────────────────────────
+    public static string Trunc(double number, int precision)
+    {
+        return number.ToString("F" + precision);
+    }
+
+    // ── CleanXML ─────────────────────────────────────────────────────────
+    public static string CleanXML(string s)
+    {
+        // Current implementation just returns as-is (matches VB6 which exits early)
+        return s;
+    }
+
+    // ── Sort Utilities ───────────────────────────────────────────────────
+    public static void Sort(string[] strings, bool ascending = true, bool caseSensitive = false, SortAlgorithms algorithm = SortAlgorithms.QuickSort)
+    {
+        var comparer = caseSensitive ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+        Array.Sort(strings, comparer);
+        if (!ascending)
+            Array.Reverse(strings);
+    }
+
+    // ── RollPrices ───────────────────────────────────────────────────────
+    /// <summary>
+    /// Checks for expired vendor pricing and rolls prices forward.
+    /// Returns a message describing what happened.
+    /// </summary>
+    public static async Task<string> RollPrices(int divisionId, bool prompt = true)
+    {
+        var checkSql = @"
+            SELECT ISNULL(SUM(CASE WHEN next_effective1<=CONVERT(datetime, getdate()) AND ISNULL(next_cost1,0)=0 THEN 1 ELSE 0 END),0) ZeroRows1
+                  ,ISNULL(SUM(CASE WHEN next_effective2<=CONVERT(datetime, getdate()) AND ISNULL(next_cost2,0)=0 THEN 1 ELSE 0 END),0) ZeroRows2
+                  ,COUNT(*) AllRows
+            FROM tblvendorcost
+            WHERE (next_effective1<=CONVERT(datetime, getdate()) OR next_effective2<=CONVERT(datetime, getdate()))
+              AND (divisionid=0 OR DivisionID = @DivisionID)";
+
+        var dt = db.SqlExec(checkSql, new { DivisionID = divisionId });
+        if (dt.Rows.Count == 0)
+            return "No pricing data found.";
+
+        var row = dt.Rows[0];
+        int zeroRows = Math.Max(Convert.ToInt32(row[0]), Convert.ToInt32(row[1]));
+        int allRows = Convert.ToInt32(row[2]);
+
+        if (allRows == 0)
+        {
+            return prompt ? "" : "No prices have expired. Your pricing database is current.";
+        }
+
+        // Execute the roll
+        var rollSql = @"
+            UPDATE tblVendorCost
+            SET last_cost3      = ISNULL(last_cost2,0)
+               ,last3_expiry    = last2_expiry
+               ,last_cost2      = ISNULL(last_cost1,0)
+               ,last2_expiry    = last1_expiry
+               ,last_cost1      = ISNULL(current_cost,0)
+               ,last1_expiry    = CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime)
+               ,Current_Cost    = ISNULL(next_Cost1,0)
+               ,next_cost1      = ISNULL(next_cost2,0)
+               ,next_effective1 = next_effective2
+               ,next_cost2      = 0
+               ,next_effective2 = NULL
+            WHERE (next_effective1 <= CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime)
+               OR  next_effective2 <= CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime))
+              AND (divisionid=0 OR DivisionID = @DivisionID)";
+
+        db.SqlExec(rollSql, new { DivisionID = divisionId });
+        // Execute twice as in VB6
+        db.SqlExec(rollSql, new { DivisionID = divisionId });
+
+        return $"{allRows} items have been updated. Your pricing database is current.";
+    }
+
+    // ── FixGroupPhaseValue ───────────────────────────────────────────────
+    public static void FixGroupPhaseValue(int divisionId)
+    {
+        var sql = @"
+            UPDATE pp
+            SET GroupPhaseValue=gg.phase
+            FROM
+            (
+              SELECT p.divisionid,MAX(g.sortorder) groupsort,p.phase
+              FROM tblestphases p
+              JOIN estgroups g ON g.divisionid=p.divisionid AND g.sortorder<p.sortorder
+              WHERE p.groupphase=0
+              GROUP BY p.divisionid,p.sortorder,p.phase
+            ) x
+            JOIN tblestphases pp ON pp.divisionid=x.divisionid AND pp.phase=x.phase
+            JOIN estgroups gg ON gg.divisionid=x.divisionid AND gg.sortorder=x.groupsort
+            WHERE x.DivisionID = @DivisionID
+
+            UPDATE tblestphases
+            SET GroupPhaseValue=Phase
+            WHERE DivisionID = @DivisionID AND GroupPhase=1
+
+            UPDATE tblestphases
+            SET groupphasevalue=(SELECT MIN(phase) FROM tblestphases WHERE divisionid=@DivisionID AND groupphase=1)
+            WHERE groupphasevalue IS NULL";
+
+        db.SqlExec(sql, new { DivisionID = divisionId });
+    }
+
+    // ── PublishPricingWorksheet ───────────────────────────────────────────
+    public static void PublishPricingWorksheet(int worksheet, int divisionId)
+    {
+        var selectSql = @"
+            SELECT sd.assemblytype, sd.community, sd.CommunityPhase, sd.OptionID, sd.model,
+                   sd.JCExtra, sd.elevation, sd.series, sd.description, sd.AssemblyUOM,
+                   sd.floorarea, sd.bedrooms, sd.bathrooms, sd.style, sd.cost, sd.pretax,
+                   sd.copretax, sd.IncludeTax, sd.IncentiveCost, sd.IncentiveRetail,
+                   sd.tax, sd.cotax, sd.optionid, sd.constcutoff, sd.assembly, sd.category,
+                   sd.GraphicPath, sd.SpecDocument, sd.MaxWidth, sd.MaxLength, sd.Inactive,
+                   sd.color, sd.location, sd.qty, sd.includedoption,
+                   oc.group_code, sd.notes, sd.comments, sd.Markup, sd.Margin,
+                   sd.pretax2, sd.tax2, sd.Margin2, sd.Markup2,
+                   sd.pretax3, sd.tax3, sd.Margin3, sd.Markup3,
+                   sd.pretax4, sd.tax4, sd.Margin4, sd.Markup4,
+                   sd.pretax5, sd.tax5, sd.Margin5, sd.Markup5,
+                   sd.pretax6, sd.tax6, sd.Margin6, sd.Markup6,
+                   sd.pretax7, sd.tax7, sd.Margin7, sd.Markup7,
+                   sd.pretax8, sd.tax8, sd.Margin8, sd.Markup8,
+                   sd.pretax9, sd.tax9, sd.Margin9, sd.Markup9,
+                   sd.pretax10, sd.tax10, sd.Margin10, sd.Markup10,
+                   sd.ColorListID, sd.StyleListID, sd.FinishListID, sd.OtherListID,
+                   sd.StyleValue, sd.FinishValue, sd.OtherValue, m.Worksheet,
+                   sd.DesignCenterSalesOnly, sd.SelectByRoom, sd.DisplayTotalOnly
+            FROM tblSalesSheetDetails sd
+            JOIN tblSalesSheetMaster m ON m.Worksheet=sd.Worksheet
+            LEFT OUTER JOIN tblCategories oc ON sd.Category=oc.Category
+            WHERE sd.Worksheet=@Worksheet";
+
+        var dt = db.SqlExec(selectSql, new { Worksheet = worksheet });
+
+        foreach (DataRow rs in dt.Rows)
+        {
+            try
+            {
+                var assemblyType = (AssemblyTypes)Convert.ToInt32(rs["AssemblyType"] ?? 0);
+
+                switch (assemblyType)
+                {
+                    case AssemblyTypes.atModel:
+                        PublishModel(rs, worksheet, divisionId);
+                        break;
+                    case AssemblyTypes.atOption:
+                        PublishOption(rs, worksheet, divisionId);
+                        break;
+                    case AssemblyTypes.atDesignCenter:
+                        PublishDesignCenter(rs, worksheet, divisionId);
+                        break;
+                    case AssemblyTypes.atGlobal:
+                        PublishGlobal(rs, worksheet, divisionId);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Skip duplicates, rethrow others
+                if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                    throw;
+            }
+        }
+
+        db.SqlExec("UPDATE tblSalesSheetMaster SET SalesEffectiveDate=GETDATE() WHERE Worksheet=@Worksheet",
+            new { Worksheet = worksheet });
+        db.SqlExec("UPDATE tblSalesSheetDetails SET ReadyToPublish = 0 WHERE Worksheet=@Worksheet",
+            new { Worksheet = worksheet });
+    }
+
+    private static void PublishModel(DataRow rs, int worksheet, int divisionId)
+    {
+        var insertSql = @"
+            INSERT INTO tblModels(DivisionID,Area,CommunityPhase,Model,Series,Elevation,Inactive)
+            VALUES(@DivisionID, @Community, @CommunityPhase, @Model, @Series, @Elevation, 0)";
+        try
+        {
+            db.SqlExec(insertSql, new
+            {
+                DivisionID = divisionId,
+                Community = rs["Community"]?.ToString() ?? "",
+                CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                Model = rs["Model"]?.ToString() ?? "",
+                Series = rs["Series"]?.ToString() ?? "",
+                Elevation = rs["Elevation"]?.ToString() ?? ""
+            });
+        }
+        catch { /* duplicate - ignore */ }
+
+        var includeTax = Convert.ToBoolean(rs["IncludeTax"] ?? false);
+        var pretax = Convert.ToDouble(rs["Pretax"] ?? 0);
+        var tax = Convert.ToDouble(rs["Tax"] ?? 0);
+
+        var updateSql = $@"
+            UPDATE tblModels
+            SET LastSalesWorksheet=SalesWorksheet
+               ,SalesWorksheet=@Worksheet
+               ,Assembly=@Assembly
+               ,Description=@Description
+               ,model_picture=@GraphicPath
+               ,Spec_Document=@SpecDocument
+               ,Max_Width=@MaxWidth
+               ,Max_Length=@MaxLength
+               ,Inactive=@Inactive
+               ,Comments=@Comments
+               ,Style=@Style
+               ,NoOfBedrooms=@Bedrooms
+               ,NoOfBathrooms=@Bathrooms
+               ,ModelSize=@FloorArea
+               ,IncentiveCost=@IncentiveCost
+               ,IncentiveRetail=@IncentiveRetail
+               ,Cost_amount=@Cost
+               ,base_house=@Pretax
+               ,Margin=@Margin
+               ,Markup=@Markup
+               ,UseTax=@UseTax
+               ,NetTax=@NetTax
+               ,TotalAmount=@TotalAmount
+            WHERE ISNULL(Area,'')=@Community
+              AND ISNULL(CommunityPhase,'')=@CommunityPhase
+              AND ISNULL(Model,'')=@Model
+              AND ISNULL(Series,'')=@Series
+              AND ISNULL(Elevation,'')=@Elevation
+              AND DivisionID = @DivisionID";
+
+        db.SqlExec(updateSql, new
+        {
+            Worksheet = worksheet,
+            Assembly = (rs["Assembly"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Assembly"]?.ToString() ?? "").Length)),
+            Description = (rs["Description"]?.ToString() ?? "").Substring(0, Math.Min(50, (rs["Description"]?.ToString() ?? "").Length)),
+            GraphicPath = rs["GraphicPath"]?.ToString() ?? "",
+            SpecDocument = rs["SpecDocument"]?.ToString() ?? "",
+            MaxWidth = Convert.ToDouble(rs["MaxWidth"] ?? 0),
+            MaxLength = Convert.ToDouble(rs["MaxLength"] ?? 0),
+            Inactive = Convert.ToBoolean(rs["Inactive"] ?? false),
+            Comments = rs["Comments"]?.ToString() ?? "",
+            Style = rs["Style"]?.ToString() ?? "",
+            Bedrooms = (rs["Bedrooms"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Bedrooms"]?.ToString() ?? "").Length)),
+            Bathrooms = (rs["Bathrooms"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Bathrooms"]?.ToString() ?? "").Length)),
+            FloorArea = Convert.ToDouble(rs["FloorArea"] ?? 0),
+            IncentiveCost = Convert.ToDouble(rs["IncentiveCost"] ?? 0),
+            IncentiveRetail = Convert.ToDouble(rs["IncentiveRetail"] ?? 0),
+            Cost = Convert.ToDouble(rs["Cost"] ?? 0),
+            Pretax = pretax,
+            Margin = Convert.ToDouble(rs["Margin"] ?? 0),
+            Markup = Convert.ToDouble(rs["Markup"] ?? 0),
+            UseTax = includeTax ? 1 : 0,
+            NetTax = includeTax ? tax : 0.0,
+            TotalAmount = includeTax ? tax + pretax : pretax,
+            Community = rs["Community"]?.ToString() ?? "",
+            CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+            Model = (rs["Model"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Model"]?.ToString() ?? "").Length)),
+            Series = (rs["Series"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Series"]?.ToString() ?? "").Length)),
+            Elevation = (rs["Elevation"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Elevation"]?.ToString() ?? "").Length)),
+            DivisionID = divisionId
+        });
+    }
+
+    private static void PublishOption(DataRow rs, int worksheet, int divisionId)
+    {
+        // Insert if not exists
+        try
+        {
+            db.SqlExec(@"
+                INSERT INTO tblOptions(DivisionID,Area,CommunityPhase,Model,Series,Elevation,Opt,Option_Type,Option_Type_Desc,Inactive)
+                VALUES(@DivisionID, @Community, @CommunityPhase, @Model, @Series, @Elevation, @OptionID, 1, 'Sales Center', 0)",
+                new
+                {
+                    DivisionID = divisionId,
+                    Community = rs["Community"]?.ToString() ?? "",
+                    CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                    Model = (rs["Model"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Model"]?.ToString() ?? "").Length)),
+                    Series = (rs["Series"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Series"]?.ToString() ?? "").Length)),
+                    Elevation = (rs["Elevation"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Elevation"]?.ToString() ?? "").Length)),
+                    OptionID = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length))
+                });
+        }
+        catch { /* duplicate */ }
+
+        var includeTax = Convert.ToBoolean(rs["IncludeTax"] ?? false);
+        var pretax = Convert.ToDouble(rs["Pretax"] ?? 0);
+        var tax = Convert.ToDouble(rs["Tax"] ?? 0);
+        var coPretax = Convert.ToDouble(rs["COPretax"] ?? 0);
+        var coTax = Convert.ToDouble(rs["COTax"] ?? 0);
+
+        db.SqlExec($@"
+            UPDATE tblOptions
+            SET LastSalesWorksheet=SalesWorksheet
+               ,SalesWorksheet=@Worksheet
+               ,Assembly=@Assembly
+               ,UOM=@UOM
+               ,Description=@Description
+               ,Color=@Color
+               ,ColorListID=@ColorListID
+               ,StyleListID=@StyleListID
+               ,FinishListID=@FinishListID
+               ,OtherListID=@OtherListID
+               ,Style=@StyleValue
+               ,Finish=@FinishValue
+               ,Other=@OtherValue
+               ,location=@Location
+               ,qty=@Qty
+               ,includedoption=@IncludedOption
+               ,Construction_Cut_Off=@ConstCutoff
+               ,Graphic_Path=@GraphicPath
+               ,Inactive=@Inactive
+               ,DesignCenterSalesOnly=@DesignCenterSalesOnly
+               ,SelectByRoom=@SelectByRoom
+               ,DisplayTotalOnly=@DisplayTotalOnly
+               ,Cost_Amount=@Cost
+               ,Category=@Category
+               ,Major_Group=@GroupCode
+               ,EstimatorNotes=@Notes
+               ,comments=@Comments
+               ,TL_Extra=@JCExtra
+               ,Price=@Pretax
+               ,CO_Price=@COPrice
+               ,Margin=@Margin
+               ,Markup=@Markup
+               ,UseTax=@UseTax
+               ,NetTax=@NetTax
+               ,TotalAmount=@TotalAmount
+               ,NetCOTax=@NetCOTax
+               ,TotalCOAmount=@TotalCOAmount
+            WHERE ISNULL(Area,'')=@Community
+              AND ISNULL(CommunityPhase,'')=@CommunityPhase
+              AND Model=@Model
+              AND Elevation=@Elevation
+              AND Series=@Series
+              AND Opt=@OptionID
+              AND DivisionID = @DivisionID",
+            new
+            {
+                Worksheet = worksheet,
+                Assembly = (rs["Assembly"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Assembly"]?.ToString() ?? "").Length)),
+                UOM = (rs["AssemblyUOM"]?.ToString() ?? "").Substring(0, Math.Min(10, (rs["AssemblyUOM"]?.ToString() ?? "").Length)),
+                Description = (rs["Description"]?.ToString() ?? "").Substring(0, Math.Min(200, (rs["Description"]?.ToString() ?? "").Length)),
+                Color = (rs["Color"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Color"]?.ToString() ?? "").Length)),
+                ColorListID = Convert.ToInt32(rs["ColorListID"] ?? 0),
+                StyleListID = Convert.ToInt32(rs["StyleListID"] ?? 0),
+                FinishListID = Convert.ToInt32(rs["FinishListID"] ?? 0),
+                OtherListID = Convert.ToInt32(rs["OtherListID"] ?? 0),
+                StyleValue = rs["StyleValue"]?.ToString() ?? "",
+                FinishValue = rs["FinishValue"]?.ToString() ?? "",
+                OtherValue = rs["OtherValue"]?.ToString() ?? "",
+                Location = (rs["Location"]?.ToString() ?? "").Substring(0, Math.Min(50, (rs["Location"]?.ToString() ?? "").Length)),
+                Qty = Convert.ToDouble(rs["Qty"] ?? 0),
+                IncludedOption = Convert.ToBoolean(rs["IncludedOption"] ?? false),
+                ConstCutoff = Convert.ToDouble(rs["ConstCutoff"] ?? 0),
+                GraphicPath = rs["GraphicPath"]?.ToString() ?? "",
+                Inactive = Convert.ToBoolean(rs["Inactive"] ?? false),
+                DesignCenterSalesOnly = Convert.ToBoolean(rs["DesignCenterSalesOnly"] ?? false),
+                SelectByRoom = Convert.ToBoolean(rs["SelectByRoom"] ?? false),
+                DisplayTotalOnly = Convert.ToBoolean(rs["DisplayTotalOnly"] ?? false),
+                Cost = Convert.ToDouble(rs["Cost"] ?? 0),
+                Category = (rs["Category"]?.ToString() ?? "").Substring(0, Math.Min(15, (rs["Category"]?.ToString() ?? "").Length)),
+                GroupCode = (rs["Group_Code"]?.ToString() ?? "").Substring(0, Math.Min(10, (rs["Group_Code"]?.ToString() ?? "").Length)),
+                Notes = (rs["Notes"]?.ToString() ?? "").Substring(0, Math.Min(4000, (rs["Notes"]?.ToString() ?? "").Length)),
+                Comments = (rs["Comments"]?.ToString() ?? "").Substring(0, Math.Min(4000, (rs["Comments"]?.ToString() ?? "").Length)),
+                JCExtra = (rs["JCExtra"]?.ToString() ?? "").Substring(0, Math.Min(10, (rs["JCExtra"]?.ToString() ?? "").Length)),
+                Pretax = pretax,
+                COPrice = Math.Max(pretax, coPretax),
+                Margin = Convert.ToDouble(rs["Margin"] ?? 0),
+                Markup = Convert.ToDouble(rs["Markup"] ?? 0),
+                UseTax = includeTax ? 1 : 0,
+                NetTax = includeTax ? tax : 0.0,
+                TotalAmount = includeTax ? tax + pretax : pretax,
+                NetCOTax = includeTax ? coTax : 0.0,
+                TotalCOAmount = includeTax ? coTax + coPretax : coPretax,
+                Community = rs["Community"]?.ToString() ?? "",
+                CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                Model = (rs["Model"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Model"]?.ToString() ?? "").Length)),
+                Elevation = (rs["Elevation"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Elevation"]?.ToString() ?? "").Length)),
+                Series = (rs["Series"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Series"]?.ToString() ?? "").Length)),
+                OptionID = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length)),
+                DivisionID = divisionId
+            });
+    }
+
+    private static void PublishDesignCenter(DataRow rs, int worksheet, int divisionId)
+    {
+        try
+        {
+            db.SqlExec(@"
+                INSERT INTO tblDCOptions(DivisionID,Option_Type,Community,CommunityPhase,Opt,Inactive)
+                VALUES(@DivisionID, 3, @Community, @CommunityPhase, @OptionID, 0)",
+                new
+                {
+                    DivisionID = divisionId,
+                    Community = rs["Community"]?.ToString() ?? "",
+                    CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                    OptionID = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length))
+                });
+        }
+        catch { /* duplicate */ }
+
+        // Build update with forecast columns
+        var sb = new StringBuilder();
+        sb.AppendLine("UPDATE tblDCOptions SET");
+        sb.AppendLine($"  SalesWorksheet=@Worksheet");
+        sb.AppendLine($" ,Assembly=@Assembly");
+        sb.AppendLine($" ,TL_Extra=@JCExtra");
+        sb.AppendLine($" ,Description=@Description");
+        sb.AppendLine($" ,UOM=@UOM");
+        sb.AppendLine($" ,EstimatorNotes=@Notes");
+        sb.AppendLine($" ,comments=@Comments");
+        sb.AppendLine($" ,Item1=@Pretax");
+        sb.AppendLine($" ,Item1_Cost=@Cost");
+        sb.AppendLine($" ,Color=@Color");
+        sb.AppendLine($" ,ColorListID=@ColorListID");
+        sb.AppendLine($" ,StyleListID=@StyleListID");
+        sb.AppendLine($" ,FinishListID=@FinishListID");
+        sb.AppendLine($" ,OtherListID=@OtherListID");
+        sb.AppendLine($" ,DesignCenterSalesOnly=@DesignCenterSalesOnly");
+        sb.AppendLine($" ,SelectByRoom=@SelectByRoom");
+        sb.AppendLine($" ,DisplayTotalOnly=@DisplayTotalOnly");
+        sb.AppendLine($" ,Style=@StyleValue");
+        sb.AppendLine($" ,Finish=@FinishValue");
+        sb.AppendLine($" ,Graphic_Path=@GraphicPath");
+        sb.AppendLine($" ,Inactive=@Inactive");
+        sb.AppendLine($" ,Other=@OtherValue");
+        sb.AppendLine($" ,location=@Location");
+        sb.AppendLine($" ,qty=@Qty");
+        sb.AppendLine($" ,includedoption=@IncludedOption");
+        sb.AppendLine($" ,Nettax1=@Tax");
+        sb.AppendLine($" ,TotalAmount1=@TotalAmount1");
+        sb.AppendLine($" ,Margin1=@Margin");
+        sb.AppendLine($" ,Markup1=@Markup");
+        sb.AppendLine($" ,Category=@Category");
+
+        for (int i = 2; i <= 10; i++)
+        {
+            var pretaxI = Convert.ToDouble(rs[$"Pretax{i}"] ?? 0);
+            var taxI = Convert.ToDouble(rs[$"Tax{i}"] ?? 0);
+            sb.AppendLine($" ,Margin{i}=@Margin{i}");
+            sb.AppendLine($" ,Markup{i}=@Markup{i}");
+            sb.AppendLine($" ,Item{i}=@Pretax{i}");
+            sb.AppendLine($" ,Item{i}_Cost=@Cost");
+            sb.AppendLine($" ,Nettax{i}=@Tax{i}");
+            sb.AppendLine($" ,TotalAmount{i}=@TotalAmount{i}");
+        }
+
+        sb.AppendLine("WHERE ISNULL(Community,'')=@Community");
+        sb.AppendLine("  AND ISNULL(CommunityPhase,'')=@CommunityPhase");
+        sb.AppendLine("  AND Opt=@OptionID");
+        sb.AppendLine("  AND DivisionID = @DivisionID");
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["Worksheet"] = worksheet,
+            ["Assembly"] = (rs["Assembly"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["Assembly"]?.ToString() ?? "").Length)),
+            ["JCExtra"] = (rs["JCExtra"]?.ToString() ?? "").Substring(0, Math.Min(10, (rs["JCExtra"]?.ToString() ?? "").Length)),
+            ["Description"] = (rs["Description"]?.ToString() ?? "").Substring(0, Math.Min(200, (rs["Description"]?.ToString() ?? "").Length)),
+            ["UOM"] = (rs["AssemblyUOM"]?.ToString() ?? "").Substring(0, Math.Min(10, (rs["AssemblyUOM"]?.ToString() ?? "").Length)),
+            ["Notes"] = (rs["Notes"]?.ToString() ?? "").Substring(0, Math.Min(4000, (rs["Notes"]?.ToString() ?? "").Length)),
+            ["Comments"] = (rs["Comments"]?.ToString() ?? "").Substring(0, Math.Min(4000, (rs["Comments"]?.ToString() ?? "").Length)),
+            ["Pretax"] = Convert.ToDouble(rs["Pretax"] ?? 0),
+            ["Cost"] = Convert.ToDouble(rs["Cost"] ?? 0),
+            ["Color"] = (rs["Color"]?.ToString() ?? "").Substring(0, Math.Min(30, (rs["Color"]?.ToString() ?? "").Length)),
+            ["ColorListID"] = Convert.ToInt32(rs["ColorListID"] ?? 0),
+            ["StyleListID"] = Convert.ToInt32(rs["StyleListID"] ?? 0),
+            ["FinishListID"] = Convert.ToInt32(rs["FinishListID"] ?? 0),
+            ["OtherListID"] = Convert.ToInt32(rs["OtherListID"] ?? 0),
+            ["DesignCenterSalesOnly"] = Convert.ToBoolean(rs["DesignCenterSalesOnly"] ?? false),
+            ["SelectByRoom"] = Convert.ToBoolean(rs["SelectByRoom"] ?? false),
+            ["DisplayTotalOnly"] = Convert.ToBoolean(rs["DisplayTotalOnly"] ?? false),
+            ["StyleValue"] = rs["StyleValue"]?.ToString() ?? "",
+            ["FinishValue"] = rs["FinishValue"]?.ToString() ?? "",
+            ["GraphicPath"] = rs["GraphicPath"]?.ToString() ?? "",
+            ["Inactive"] = Convert.ToBoolean(rs["Inactive"] ?? false),
+            ["OtherValue"] = rs["OtherValue"]?.ToString() ?? "",
+            ["Location"] = (rs["Location"]?.ToString() ?? "").Substring(0, Math.Min(50, (rs["Location"]?.ToString() ?? "").Length)),
+            ["Qty"] = Convert.ToDouble(rs["Qty"] ?? 0),
+            ["IncludedOption"] = Convert.ToBoolean(rs["IncludedOption"] ?? false),
+            ["Tax"] = Convert.ToDouble(rs["Tax"] ?? 0),
+            ["TotalAmount1"] = Convert.ToDouble(rs["Pretax"] ?? 0) + Convert.ToDouble(rs["Tax"] ?? 0),
+            ["Margin"] = Convert.ToDouble(rs["Margin"] ?? 0),
+            ["Markup"] = Convert.ToDouble(rs["Markup"] ?? 0),
+            ["Category"] = (rs["Category"]?.ToString() ?? "").Substring(0, Math.Min(15, (rs["Category"]?.ToString() ?? "").Length)),
+            ["Community"] = rs["Community"]?.ToString() ?? "",
+            ["CommunityPhase"] = rs["CommunityPhase"]?.ToString() ?? "",
+            ["OptionID"] = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length)),
+            ["DivisionID"] = divisionId
+        };
+
+        for (int i = 2; i <= 10; i++)
+        {
+            var pretaxI = Convert.ToDouble(rs[$"Pretax{i}"] ?? 0);
+            var taxI = Convert.ToDouble(rs[$"Tax{i}"] ?? 0);
+            parameters[$"Margin{i}"] = Convert.ToDouble(rs[$"Margin{i}"] ?? 0);
+            parameters[$"Markup{i}"] = Convert.ToDouble(rs[$"Markup{i}"] ?? 0);
+            parameters[$"Pretax{i}"] = pretaxI;
+            parameters[$"Tax{i}"] = taxI;
+            parameters[$"TotalAmount{i}"] = pretaxI + taxI;
+        }
+
+        db.SqlExec(sb.ToString(), parameters);
+    }
+
+    private static void PublishGlobal(DataRow rs, int worksheet, int divisionId)
+    {
+        try
+        {
+            db.SqlExec(@"
+                INSERT INTO tblGlobalOptions(DivisionID,Option_Type,Community,CommunityPhase,Category,Opt,Inactive)
+                VALUES(@DivisionID, 2, @Community, @CommunityPhase, @Category, @OptionID, 0)",
+                new
+                {
+                    DivisionID = divisionId,
+                    Community = rs["Community"]?.ToString() ?? "",
+                    CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                    Category = (rs["Category"]?.ToString() ?? "").Substring(0, Math.Min(15, (rs["Category"]?.ToString() ?? "").Length)),
+                    OptionID = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length))
+                });
+        }
+        catch { /* duplicate */ }
+
+        var includeTax = Convert.ToBoolean(rs["IncludeTax"] ?? false);
+        var pretax = Convert.ToDouble(rs["Pretax"] ?? 0);
+        var tax = Convert.ToDouble(rs["Tax"] ?? 0);
+        var coPretax = Convert.ToDouble(rs["COPretax"] ?? 0);
+        var coTax = Convert.ToDouble(rs["COTax"] ?? 0);
+
+        db.SqlExec($@"
+            UPDATE tblGlobalOptions
+            SET LastSalesWorksheet=SalesWorksheet
+               ,SalesWorksheet=@Worksheet
+               ,Assembly=@Assembly
+               ,UOM=@UOM
+               ,Description=@Description
+               ,Construction_Cut_Off=@ConstCutoff
+               ,Graphic_Path=@GraphicPath
+               ,Inactive=@Inactive
+               ,Cost_Amount=@Cost
+               ,DesignCenterSalesOnly=@DesignCenterSalesOnly
+               ,SelectByRoom=@SelectByRoom
+               ,DisplayTotalOnly=@DisplayTotalOnly
+               ,Category=@Category
+               ,TL_Extra=@JCExtra
+               ,Major_Group=@GroupCode
+               ,Color=@Color
+               ,ColorListID=@ColorListID
+               ,StyleListID=@StyleListID
+               ,FinishListID=@FinishListID
+               ,OtherListID=@OtherListID
+               ,Style=@StyleValue
+               ,Finish=@FinishValue
+               ,Other=@OtherValue
+               ,location=@Location
+               ,qty=@Qty
+               ,includedoption=@IncludedOption
+               ,EstimatorNotes=@Notes
+               ,comments=@Comments
+               ,Price=@Pretax
+               ,CO_Price=@COPrice
+               ,Margin=@Margin
+               ,Markup=@Markup
+               ,UseTax=@UseTax
+               ,NetTax=@NetTax
+               ,TotalAmount=@TotalAmount
+               ,NetCOTax=@NetCOTax
+               ,TotalCOAmount=@TotalCOAmount
+            WHERE ISNULL(Community,'')=@Community
+              AND ISNULL(CommunityPhase,'')=@CommunityPhase
+              AND Opt=@OptionID
+              AND DivisionID = @DivisionID",
+            new
+            {
+                Worksheet = worksheet,
+                Assembly = rs["Assembly"]?.ToString() ?? "",
+                UOM = rs["AssemblyUOM"]?.ToString() ?? "",
+                Description = rs["Description"]?.ToString() ?? "",
+                ConstCutoff = Convert.ToDouble(rs["ConstCutoff"] ?? 0),
+                GraphicPath = rs["GraphicPath"]?.ToString() ?? "",
+                Inactive = Convert.ToBoolean(rs["Inactive"] ?? false),
+                Cost = Convert.ToDouble(rs["Cost"] ?? 0),
+                DesignCenterSalesOnly = Convert.ToBoolean(rs["DesignCenterSalesOnly"] ?? false),
+                SelectByRoom = Convert.ToBoolean(rs["SelectByRoom"] ?? false),
+                DisplayTotalOnly = Convert.ToBoolean(rs["DisplayTotalOnly"] ?? false),
+                Category = rs["Category"]?.ToString() ?? "",
+                JCExtra = rs["JCExtra"]?.ToString() ?? "",
+                GroupCode = rs["Group_Code"]?.ToString() ?? "",
+                Color = rs["Color"]?.ToString() ?? "",
+                ColorListID = Convert.ToInt32(rs["ColorListID"] ?? 0),
+                StyleListID = Convert.ToInt32(rs["StyleListID"] ?? 0),
+                FinishListID = Convert.ToInt32(rs["FinishListID"] ?? 0),
+                OtherListID = Convert.ToInt32(rs["OtherListID"] ?? 0),
+                StyleValue = rs["StyleValue"]?.ToString() ?? "",
+                FinishValue = rs["FinishValue"]?.ToString() ?? "",
+                OtherValue = rs["OtherValue"]?.ToString() ?? "",
+                Location = rs["Location"]?.ToString() ?? "",
+                Qty = Convert.ToDouble(rs["Qty"] ?? 0),
+                IncludedOption = Convert.ToBoolean(rs["IncludedOption"] ?? false),
+                Notes = rs["Notes"]?.ToString() ?? "",
+                Comments = rs["Comments"]?.ToString() ?? "",
+                Pretax = pretax,
+                COPrice = Math.Max(pretax, coPretax),
+                Margin = Convert.ToDouble(rs["Margin"] ?? 0),
+                Markup = Convert.ToDouble(rs["Markup"] ?? 0),
+                UseTax = includeTax ? 1 : 0,
+                NetTax = includeTax ? tax : 0.0,
+                TotalAmount = includeTax ? tax + pretax : pretax,
+                NetCOTax = includeTax ? coTax : 0.0,
+                TotalCOAmount = includeTax ? coTax + coPretax : coPretax,
+                Community = rs["Community"]?.ToString() ?? "",
+                CommunityPhase = rs["CommunityPhase"]?.ToString() ?? "",
+                OptionID = (rs["OptionID"]?.ToString() ?? "").Substring(0, Math.Min(20, (rs["OptionID"]?.ToString() ?? "").Length)),
+                DivisionID = divisionId
+            });
+    }
+
+    // ── LoadCostTypes ────────────────────────────────────────────────────
+    /// <summary>Returns a list of cost type display names (Current, Next 1, ..., Forecast 1-12).</summary>
+    public static List<string> LoadCostTypes(int divisionId, bool forecastsOnly = false)
+    {
+        var result = new List<string>();
+        if (!forecastsOnly)
+        {
+            result.AddRange(new[] { "Current", "Next 1", "Next 2", "Last 1", "Last 2", "Last 3" });
+        }
+
+        var sql = @"
+            SELECT Item, MAX(Custom_Description), 'Forecast 1'  FROM CustomDescriptions WHERE Item='Forecast1' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 2'  FROM CustomDescriptions WHERE Item='Forecast2' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 3'  FROM CustomDescriptions WHERE Item='Forecast3' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 4'  FROM CustomDescriptions WHERE Item='Forecast4' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 5'  FROM CustomDescriptions WHERE Item='Forecast5' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 6'  FROM CustomDescriptions WHERE Item='Forecast6' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 7'  FROM CustomDescriptions WHERE Item='Forecast7' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 8'  FROM CustomDescriptions WHERE Item='Forecast8' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 9'  FROM CustomDescriptions WHERE Item='Forecast9' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 10' FROM CustomDescriptions WHERE Item='Forecast10' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 11' FROM CustomDescriptions WHERE Item='Forecast11' GROUP BY Item UNION ALL
+            SELECT Item, MAX(Custom_Description), 'Forecast 12' FROM CustomDescriptions WHERE Item='Forecast12' GROUP BY Item";
+
+        // TODO: Execute query and populate result from database rows
+        return result;
+    }
+}

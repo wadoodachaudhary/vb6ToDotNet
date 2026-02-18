@@ -1,0 +1,1241 @@
+@page "/quote"
+@page "/quote/{QuoteNumber}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Models
+@using System.Data
+@using System.Globalization
+@using Microsoft.Data.SqlClient
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Quote - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+    .form-field { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .form-field label { min-width: 100px; text-align: right; font-weight: 600; font-size: 13px; }
+    .form-field input, .form-field select, .form-field textarea {
+        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .panel-card {
+        border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; background: #fff;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .section-title {
+        font-weight: 700; font-size: 13px; color: #0d6efd; margin-bottom: 10px;
+    }
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+    .warning-icon { color: #dc3545; font-size: 14px; margin-right: 4px; }
+    .info-icon { color: #0d6efd; font-size: 14px; margin-right: 4px; }
+    .row-warning { background-color: #fff3cd !important; }
+    .row-locked { color: #6c757d !important; }
+    .row-zero { color: #999 !important; font-style: italic; }
+    .row-negative { color: #dc3545 !important; }
+    .row-overridden { color: #856404 !important; font-weight: bold; }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Quote...</div>
+    </div>
+}
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <span>📂</span>
+        <span class="tool-label">Open</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <span>💾</span>
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnSaveAsClick">
+        <span>💾</span>
+        <span class="tool-label">Save As</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnAttachmentsClick">
+        <span>📎</span>
+        <span class="tool-label">Attachments</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnTakeoffOneTimeClick">
+        <span class="tool-label">One Time</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnTakeoffItemClick">
+        <span class="tool-label">Item</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnTakeoffAssemblyClick">
+        <span class="tool-label">Assembly</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnTakeoffCustomClick">
+        <span class="tool-label">Custom</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnPreviewClick">
+        <span>🖨️</span>
+        <span class="tool-label">Preview</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnRePriceClick">
+        <span>🔄</span>
+        <span class="tool-label">Rfrsh Costs</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(!IsExistingQuote)" @onclick="OnGenerateJobClick">
+        <span>🏗️</span>
+        <span class="tool-label">Create Job</span>
+    </button>
+</div>
+
+<h3 style="margin-bottom: 16px;">@FormCaption</h3>
+
+@* ── HEADER SECTION ─────────────────────────────────── *@
+<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px; margin-bottom: 16px;">
+    @* LEFT: Quote Info *@
+    <div class="panel-card">
+        <div class="section-title">Quote Information</div>
+        <div class="form-field">
+            <label>Quote #</label>
+            <input type="text" @bind="txtJob" @bind:event="oninput" @bind:after="OnJobChanged"
+                   disabled="@(!JobFieldEnabled)" maxlength="12" />
+        </div>
+        <div class="form-field">
+            <label>Description</label>
+            <input type="text" @bind="txtDescription" @bind:event="oninput" @bind:after="OnDescriptionChanged"
+                   disabled="@(!FieldsEnabled)" maxlength="50" />
+        </div>
+        <div class="form-field">
+            <label>GL Prefix</label>
+            @if (ShowGLPrefixCombo)
+            {
+                <select @bind="cboGLPrefixValue" disabled="@(!FieldsEnabled)" @bind:after="OnGLPrefixChanged">
+                    <option value="">-- Select --</option>
+                    @foreach (var item in GLPrefixItems)
+                    {
+                        <option value="@item.Value">@item.Text</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <input type="text" @bind="txtGLPrefix" @bind:event="oninput" @bind:after="OnGLPrefixTextChanged"
+                       disabled="@(!FieldsEnabled)" />
+            }
+        </div>
+    </div>
+
+    @* RIGHT: Notes *@
+    <div class="panel-card">
+        <div class="section-title">Notes</div>
+        <textarea rows="5" @bind="txtNotes" @bind:event="oninput" @bind:after="OnNotesChanged"
+                  disabled="@(!FieldsEnabled)" maxlength="8000"
+                  style="width:100%; resize:vertical;"></textarea>
+    </div>
+</div>
+
+@* ── ITEMS GRID ─────────────────────────────────────── *@
+<div class="panel-card">
+    <div class="section-title">Items</div>
+    <HfGrid @ref="ItemsGrid"
+            TValue="QuoteItemRow"
+            DataSource="@ItemsData"
+            AllowSelection="true"
+            AllowSorting="true"
+            AllowResizing="true"
+            EnableHover="true"
+            Height="600px"
+            RowHeight="32"
+            FilterSettingsRef="@filterSettings"
+            PageSettingsRef="@pageSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EditSettingsRef="@editSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            <HfGridColumn Field="EstItemID" HeaderText="ID" Width="1px" Visible="false" IsPrimaryKey="true" AllowEditing="false" />
+            <HfGridColumn Field="RowState" HeaderText="" Width="1px" Visible="false" AllowEditing="false" />
+            <HfGridColumn Field="Selected" HeaderText="✓" Width="50px" Type="ColumnType.CheckBox" />
+            <HfGridColumn Field="Assembly" HeaderText="Assembly" Width="100px" AllowEditing="false" />
+            <HfGridColumn Field="AssemblyDescription" HeaderText="Assembly Desc" Width="150px" AllowEditing="false" />
+            <HfGridColumn Field="EstPhase" HeaderText="Phase" Width="80px" AllowEditing="false" />
+            <HfGridColumn Field="EstItem" HeaderText="Item" Width="80px" AllowEditing="false" />
+            <HfGridColumn Field="ItemDesc" HeaderText="Description" Width="200px" />
+            <HfGridColumn Field="JCExtra" HeaderText="Extra" Width="80px" />
+            <HfGridColumn Field="JCCostCode" HeaderText="Cost Code" Width="100px" />
+            <HfGridColumn Field="JCCostCodeDesc" HeaderText="Cost Code Desc" Width="140px" AllowEditing="false" />
+            <HfGridColumn Field="JCCategory" HeaderText="Category" Width="80px" />
+            <HfGridColumn Field="JCCategoryDesc" HeaderText="Category Desc" Width="140px" AllowEditing="false" />
+            <HfGridColumn Field="TakeoffQty" HeaderText="Takeoff Qty" Width="100px" Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetVendor" HeaderText="Budget Vendor" Width="100px" />
+            <HfGridColumn Field="BudgetVendorName" HeaderText="Budget Vendor Name" Width="150px" />
+            <HfGridColumn Field="BudgetQty" HeaderText="Budget Qty" Width="90px" Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetRate" HeaderText="Budget Rate" Width="100px" Format="N4" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetPretax" HeaderText="Budget Pretax" Width="110px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetTaxGroup" HeaderText="Budget Tax Grp" Width="100px" />
+            <HfGridColumn Field="BudgetJCTax" HeaderText="Budget JC Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetNJCTax" HeaderText="Budget NJC Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="BudgetTax" HeaderText="Budget Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+            <HfGridColumn Field="POVendor" HeaderText="PO Vendor" Width="100px" />
+            <HfGridColumn Field="POVendorName" HeaderText="PO Vendor Name" Width="150px" />
+            <HfGridColumn Field="POQty" HeaderText="PO Qty" Width="90px" Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="PORate" HeaderText="PO Rate" Width="100px" Format="N4" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="POPretax" HeaderText="PO Pretax" Width="110px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="POTaxGroup" HeaderText="PO Tax Grp" Width="100px" />
+            <HfGridColumn Field="POJCTax" HeaderText="PO JC Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="PONJCTax" HeaderText="PO NJC Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+            <HfGridColumn Field="POTax" HeaderText="PO Tax" Width="100px" Format="C2" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+            <HfGridColumn Field="OrderUOM" HeaderText="UOM" Width="70px" />
+            <HfGridColumn Field="POIndex" HeaderText="PO Index" Width="80px" />
+            <HfGridColumn Field="PONumber" HeaderText="PO Number" Width="100px" AllowEditing="false" />
+            <HfGridColumn Field="ItemComments" HeaderText="Comments" Width="150px" />
+            <HfGridColumn Field="ExcludeFromPO" HeaderText="Exclude PO" Width="80px" Type="ColumnType.CheckBox" />
+            <HfGridColumn Field="BudgetGenerated" HeaderText="Budget Gen" Width="80px" AllowEditing="false" Visible="false" />
+            <HfGridColumn Field="BudgetOverridden" HeaderText="Budget Ovr" Width="80px" AllowEditing="false" Visible="false" />
+            <HfGridColumn Field="POOverridden" HeaderText="PO Ovr" Width="80px" AllowEditing="false" Visible="false" />
+            <HfGridColumn Field="WarningMessage" HeaderText="⚠" Width="40px" AllowEditing="false" />
+        </HfGridColumnsBase>
+    </HfGrid>
+</div>
+
+@* ── CONFIRM SAVE DIALOG ────────────────────────────── *@
+@if (ShowSavePrompt)
+{
+    <div style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,0.2);min-width:400px;padding:24px;">
+            <h5>@FormCaption has changed.</h5>
+            <p>Do you want to save these changes?</p>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <button class="btn btn-primary" @onclick="OnSavePromptYes">Yes</button>
+                <button class="btn btn-secondary" @onclick="OnSavePromptNo">No</button>
+                <button class="btn btn-outline-secondary" @onclick="OnSavePromptCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? QuoteNumber { get; set; }
+
+    // ── Database ──────────────────────────────────────────────
+    private HomeFront.Data.DbWrapperSqlServer db = new();
+
+    // ── Constants ─────────────────────────────────────────────
+    private const string SrcFile = "FQuote::";
+    private const bool ShowBudgets = true;
+
+    // ── State ─────────────────────────────────────────────────
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string mJob = "\x01"; // Chr(1) = new quote
+    private long mEstAssemblyID = 0;
+
+    // ── Form Fields ───────────────────────────────────────────
+    private string txtJob = "";
+    private string txtDescription = "";
+    private string txtNotes = "";
+    private string txtGLPrefix = "";
+    private string cboGLPrefixValue = "";
+    private bool ShowGLPrefixCombo = false;
+
+    // ── UI Flags ──────────────────────────────────────────────
+    private bool JobFieldEnabled = true;
+    private bool FieldsEnabled = false;
+    private bool IsExistingQuote => mJob != "\x01";
+    private string FormCaption => IsExistingQuote ? $"Quote - {txtJob}" : "Quote";
+
+    // ── Save Prompt ───────────────────────────────────────────
+    private bool ShowSavePrompt = false;
+    private TaskCompletionSource<int>? _savePromptTcs;
+
+    // ── Grid ──────────────────────────────────────────────────
+    private HfGrid<QuoteItemRow>? ItemsGrid;
+    private List<QuoteItemRow> ItemsData = new();
+
+    private HfFilterSettings filterSettings = new() { Type = FilterType.Menu };
+    private HfPageSettings pageSettings = new() { PageSize = 100 };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowAdding = false,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<QuoteItemRow> gridEvents = new();
+
+    // ── Combo Data ────────────────────────────────────────────
+    private List<ComboItem> GLPrefixItems = new();
+
+    // ── Models ────────────────────────────────────────────────
+    public class ComboItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    public class QuoteItemRow
+    {
+        public string EstItemID { get; set; } = "";
+        public string EstAssemblyID { get; set; } = "";
+        public bool Selected { get; set; } = false;
+        public string Job_No { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string AssemblyDescription { get; set; } = "";
+        public string EstPhase { get; set; } = "";
+        public string EstItem { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public string ItemComments { get; set; } = "";
+        public string JCExtra { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
+        public string OriginalJCCategory { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public double ConversionFactor { get; set; } = 1;
+        public double RoundTo { get; set; }
+        public int RoundDir { get; set; }
+        public double WastePercent { get; set; }
+        public string Model { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public string BudgetVendor { get; set; } = "";
+        public string BudgetVendorName { get; set; } = "";
+        public double BudgetQty { get; set; }
+        public double BudgetRate { get; set; }
+        public double BudgetPretax { get; set; }
+        public string BudgetTaxGroup { get; set; } = "";
+        public double BudgetJCTaxRate { get; set; }
+        public double BudgetNJCTaxRate { get; set; }
+        public double BudgetJCTax { get; set; }
+        public double BudgetNJCTax { get; set; }
+        public double BudgetTax { get; set; }
+        public string BudgetOverridden { get; set; } = "False";
+        public string BudgetGenerated { get; set; } = "0";
+        public string POVendor { get; set; } = "";
+        public string POVendorName { get; set; } = "";
+        public double POQty { get; set; }
+        public double PORate { get; set; }
+        public double POPretax { get; set; }
+        public string POTaxGroup { get; set; } = "";
+        public double POJCTaxRate { get; set; }
+        public double PONJCTaxRate { get; set; }
+        public double POJCTax { get; set; }
+        public double PONJCTax { get; set; }
+        public double POTax { get; set; }
+        public string POOverridden { get; set; } = "False";
+        public string PONumber { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string POIndexDescription { get; set; } = "";
+        public bool ExcludeFromPO { get; set; } = false;
+        public int Seq { get; set; }
+        public string WarningMessage { get; set; } = "";
+        public string RowState { get; set; } = ""; // "", "NEW", "DIRTY", "DELETE"
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<QuoteItemRow>>(this, OnCellSaved);
+
+        await LoadGLPrefixes();
+
+        if (!string.IsNullOrEmpty(QuoteNumber))
+        {
+            mJob = QuoteNumber;
+            await LoadData();
+        }
+        else
+        {
+            mJob = "\x01";
+            SetFieldsForNewQuote();
+        }
+    }
+
+    // ── Dirty Property ────────────────────────────────────────
+    private bool Dirty
+    {
+        get => mDirty;
+        set => mDirty = value;
+    }
+
+    // ── Load GL Prefixes ──────────────────────────────────────
+    private async Task LoadGLPrefixes()
+    {
+        try
+        {
+            // Simplified: just show text input. In full implementation, check accounting system type.
+            ShowGLPrefixCombo = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadGLPrefixes error: {ex.Message}");
+        }
+    }
+
+    // ── Load Data ─────────────────────────────────────────────
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (mJob == "\x01")
+            {
+                SetFieldsForNewQuote();
+            }
+            else
+            {
+                JobFieldEnabled = false;
+                var sql = @"
+                    SELECT j.job_no, j.Notes, j.description, j.gl_prefix,
+                           j.community, j.communityphase, j.model, j.lot, j.block, j.lotplan,
+                           j.inactive, j.municipal_address, j.city, j.province, j.zip,
+                           j.sitephone, j.sitefax
+                    FROM tblJobs j
+                    WHERE job_no = @JobNo";
+                var dt = db.SqlExec(sql, new { JobNo = mJob });
+
+                if (dt.Rows.Count > 0)
+                {
+                    var row = dt.Rows[0];
+                    txtJob = row["Job_No"]?.ToString() ?? "";
+                    txtDescription = row["Description"]?.ToString() ?? "";
+                    txtNotes = row["Notes"]?.ToString() ?? "";
+                    txtGLPrefix = row["gl_prefix"]?.ToString() ?? "";
+                    cboGLPrefixValue = row["gl_prefix"]?.ToString() ?? "";
+                    FieldsEnabled = true;
+                }
+                else
+                {
+                    FieldsEnabled = false;
+                }
+            }
+
+            await LoadItems();
+            Dirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading quote: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetFieldsForNewQuote()
+    {
+        JobFieldEnabled = true;
+        FieldsEnabled = true;
+        txtJob = "";
+        txtDescription = "";
+        txtNotes = "";
+        txtGLPrefix = "";
+        cboGLPrefixValue = "";
+        ItemsData = new();
+    }
+
+    // ── Load Items ────────────────────────────────────────────
+    private async Task LoadItems()
+    {
+        ItemsData = new();
+        if (mJob == "\x01") return;
+
+        try
+        {
+            var sql = "SELECT * FROM EstimatedItems WHERE Job_no = @JobNo";
+            var dt = db.SqlExec(sql, new { JobNo = mJob });
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var estAssemblyId = ToInt(row["EstAssemblyID"]);
+                if (estAssemblyId == 0) continue;
+
+                var budgetDeleted = row["BudgetDeleted"]?.ToString() == "True";
+                var poDeleted = row["PODeleted"]?.ToString() == "True";
+
+                if ((ShowBudgets && budgetDeleted) || (!ShowBudgets && poDeleted))
+                    continue;
+
+                mEstAssemblyID = estAssemblyId;
+
+                var convFactor = ToDouble(row["ConversionFactor"]);
+                var budgetQty = ToDouble(row[ShowBudgets ? "BudgetQty" : "POQty"]);
+                var takeoffQty = convFactor != 0 ? budgetQty / convFactor : budgetQty;
+
+                var item = new QuoteItemRow
+                {
+                    EstItemID = row["EstItemID"]?.ToString() ?? "",
+                    EstAssemblyID = row["EstAssemblyID"]?.ToString() ?? "",
+                    Job_No = row["Job_No"]?.ToString() ?? "",
+                    Assembly = row["Assembly"]?.ToString() ?? "",
+                    AssemblyDescription = row["AssemblyDescription"]?.ToString() ?? "",
+                    EstPhase = row["EstPhase"]?.ToString() ?? "",
+                    EstItem = row["EstItem"]?.ToString() ?? "",
+                    ItemDesc = row["Description"]?.ToString() ?? "",
+                    ItemComments = row["Comments"]?.ToString() ?? "",
+                    JCExtra = row["JCExtra"]?.ToString() ?? "",
+                    JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+                    JCCostCodeDesc = row["JCCostCodeDesc"]?.ToString() ?? "",
+                    JCCategory = row["JCCategory"]?.ToString() ?? "",
+                    JCCategoryDesc = row["JCCategoryDesc"]?.ToString() ?? "",
+                    OriginalJCCategory = row["OriginalJCCategory"]?.ToString() ?? "",
+                    TakeoffQty = takeoffQty,
+                    TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
+                    OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+                    ConversionFactor = convFactor,
+                    Model = row["Model"]?.ToString() ?? "",
+                    BudgetVendor = row["BudgetVendor"]?.ToString() ?? "",
+                    BudgetVendorName = row["BudgetVendorName"]?.ToString() ?? "",
+                    BudgetQty = ToDouble(row["BudgetQty"]),
+                    BudgetRate = ToDouble(row["BudgetRate"]),
+                    BudgetPretax = ToDouble(row["BudgetPretax"]),
+                    BudgetTaxGroup = row["BudgetTaxGroup"]?.ToString() ?? "",
+                    BudgetJCTaxRate = ToDouble(row["BudgetJCTaxRate"]),
+                    BudgetNJCTaxRate = ToDouble(row["BudgetNJCTaxRate"]),
+                    BudgetJCTax = ToDouble(row["BudgetJCTax"]),
+                    BudgetNJCTax = ToDouble(row["BudgetNJCTax"]),
+                    BudgetOverridden = row["BudgetOverridden"]?.ToString() ?? "False",
+                    BudgetGenerated = row["BudgetGenerated"]?.ToString() ?? "0",
+                    POVendor = row["POVendor"]?.ToString() ?? "",
+                    POVendorName = row["POVendorName"]?.ToString() ?? "",
+                    POQty = ToDouble(row["POQty"]),
+                    PORate = ToDouble(row["PORate"]),
+                    POPretax = ToDouble(row["POPretax"]),
+                    POTaxGroup = row["POTaxGroup"]?.ToString() ?? "",
+                    POJCTaxRate = ToDouble(row["POJCTaxRate"]),
+                    PONJCTaxRate = ToDouble(row["PONJCTaxRate"]),
+                    POJCTax = ToDouble(row["POJCTax"]),
+                    PONJCTax = ToDouble(row["PONJCTax"]),
+                    POOverridden = row["POOverridden"]?.ToString() ?? "False",
+                    PONumber = row["PONumber"]?.ToString() ?? "",
+                    POIndex = row["POIndex"]?.ToString() ?? "",
+                    ExcludeFromPO = row["ExcludeFromPO"]?.ToString() == "True" || row["ExcludeFromPO"]?.ToString() == "1",
+                    RowState = ""
+                };
+
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                item.POTax = item.POJCTax + item.PONJCTax;
+
+                ColorizeItem(item);
+                ItemsData.Add(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadItems error: {ex.Message}");
+        }
+
+        Dirty = false;
+    }
+
+    // ── Colorize / Validate Items ─────────────────────────────
+    private void ColorizeItem(QuoteItemRow item)
+    {
+        var warnings = new List<string>();
+        var rowBudgeted = item.BudgetGenerated != "0" && item.BudgetGenerated != "False";
+        var rowPOed = !string.IsNullOrWhiteSpace(item.PONumber);
+        var rowLocked = (rowBudgeted && ShowBudgets) || (rowPOed && !ShowBudgets);
+
+        if (!rowLocked)
+        {
+            if (ShowBudgets)
+            {
+                if (string.IsNullOrWhiteSpace(item.POIndex)) warnings.Add("PO Index not specified");
+                if (string.IsNullOrWhiteSpace(item.JCCostCode)) warnings.Add("Cost Code not specified");
+                if (string.IsNullOrWhiteSpace(item.JCCategory)) warnings.Add("Category not specified");
+                if (string.IsNullOrWhiteSpace(item.BudgetVendor)) warnings.Add("Vendor not specified");
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(item.POIndex)) warnings.Add("PO Index not specified");
+                if (string.IsNullOrWhiteSpace(item.JCCostCode)) warnings.Add("Cost code not specified");
+                if (string.IsNullOrWhiteSpace(item.JCCategory)) warnings.Add("Category not specified");
+                if (string.IsNullOrWhiteSpace(item.POVendor)) warnings.Add("Vendor not specified");
+            }
+        }
+
+        item.WarningMessage = warnings.Count > 0 ? "⚠" : "";
+    }
+
+    private void ColorizeAllItems()
+    {
+        foreach (var item in ItemsData)
+            ColorizeItem(item);
+    }
+
+    // ── Save Data ─────────────────────────────────────────────
+    private async Task<bool> SaveData(bool prompt, bool createJob = false)
+    {
+        if (!Dirty) return true;
+
+        if (prompt)
+        {
+            var result = await PromptSave();
+            if (result == 0) return false; // Cancel
+            if (result == 2) return true;  // No (discard)
+        }
+
+        if (string.IsNullOrWhiteSpace(txtJob))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "A quote number is required.");
+            return false;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var glPrefix = ShowGLPrefixCombo ? cboGLPrefixValue : txtGLPrefix;
+
+            if (mJob == "\x01")
+            {
+                // INSERT new job
+                var insertSql = @"
+                    INSERT INTO tblJobs(isquote, Job_No, Description, Notes, GL_Prefix, Inactive)
+                    VALUES(@IsQuote, @JobNo, @Description, @Notes, @GLPrefix, 0)";
+                await db.ExecuteAsync(insertSql, new
+                {
+                    IsQuote = !createJob,
+                    JobNo = txtJob.Trim(),
+                    Description = txtDescription,
+                    Notes = txtNotes,
+                    GLPrefix = glPrefix
+                });
+
+                mJob = txtJob.Trim();
+                JobFieldEnabled = false;
+
+                // Insert customer record
+                var custSql = @"
+                    INSERT INTO tblcustomers (Customer_No, Job_no, Description, bal_sheet_Prefix, purchased, approved, contract_assigned, cancelled, inactive, sale_posted)
+                    VALUES(@CustNo, @JobNo, @Description, @GLPrefix, 1, 1, 1, 0, 0, 1)";
+                await db.ExecuteAsync(custSql, new
+                {
+                    CustNo = txtJob.Trim(),
+                    JobNo = txtJob.Trim(),
+                    Description = txtDescription,
+                    GLPrefix = glPrefix
+                });
+
+                // Insert estimate assembly
+                var asmSql = @"
+                    INSERT INTO EstimateAssemblies(job, Customer_no, EstimateIndex, HFDescription, AssemblyType, OptionType, salesqty)
+                    VALUES(@Job, @CustNo, 0, 'Quoted Items', -1, -1, 1)";
+                await db.ExecuteAsync(asmSql, new { Job = txtJob.Trim(), CustNo = txtJob.Trim() });
+
+                // Get identity
+                var idDt = db.SqlExec("SELECT IDENT_CURRENT('EstimateAssemblies')");
+                if (idDt.Rows.Count > 0)
+                    mEstAssemblyID = Convert.ToInt64(idDt.Rows[0][0]);
+            }
+            else
+            {
+                // UPDATE existing job
+                var updateSql = @"
+                    UPDATE tblJobs
+                    SET Description = @Description,
+                        Notes = @Notes,
+                        GL_Prefix = @GLPrefix
+                    WHERE Job_No = @JobNo";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    Description = txtDescription,
+                    Notes = txtNotes,
+                    GLPrefix = glPrefix,
+                    JobNo = txtJob.Trim()
+                });
+            }
+
+            // Save items
+            await SaveItems();
+
+            Dirty = false;
+            IsLoading = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            StateHasChanged();
+
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                if (createJob)
+                    await JSRuntime.InvokeVoidAsync("alert", $"Unable to create job '{txtJob}'. It already exists.\n\nPlease use a different job number.");
+                else
+                    await JSRuntime.InvokeVoidAsync("alert", $"Unable to save this quote. '{txtJob}' has already been used.\n\nPlease enter a different number.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    // ── Save Items ────────────────────────────────────────────
+    private async Task<bool> SaveItems()
+    {
+        try
+        {
+            for (int i = 0; i < ItemsData.Count; i++)
+            {
+                var item = ItemsData[i];
+
+                if (item.RowState == "NEW")
+                {
+                    var sql = @"
+                        INSERT INTO EstimateItems(EstAssemblyID, Assembly, AssemblyDescription, POIndex, Model,
+                            Phase, Item, Job, JCExtra, JCCostCode, JCCategory, SortOrder, Description, Comments,
+                            TakeoffQty, TakeoffUOM, ConversionFactor, OrderUOM,
+                            BudgetVendor, BudgetQty, BudgetRate, BudgetPretax, BudgetTaxGroup,
+                            BudgetJCTax, BudgetJCTaxRate, BudgetNJCTax, BudgetNJCTaxRate, BudgetGenerated,
+                            POVendor, POQty, PORate, POPretax, POTaxGroup,
+                            POJCTax, POJCTaxRate, PONJCTax, PONJCTaxRate, PONumber,
+                            POOverridden, BudgetOverridden, ExcludeFromPO, OriginalJCCategory)
+                        VALUES(@EstAssemblyID, @Assembly, @AssemblyDescription, @POIndex, @Model,
+                            @Phase, @Item, @Job, @JCExtra, @JCCostCode, @JCCategory, @SortOrder, @Description, @Comments,
+                            @TakeoffQty, @TakeoffUOM, @ConversionFactor, @OrderUOM,
+                            @BudgetVendor, @BudgetQty, @BudgetRate, @BudgetPretax, @BudgetTaxGroup,
+                            @BudgetJCTax, @BudgetJCTaxRate, @BudgetNJCTax, @BudgetNJCTaxRate, @BudgetGenerated,
+                            @POVendor, @POQty, @PORate, @POPretax, @POTaxGroup,
+                            @POJCTax, @POJCTaxRate, @PONJCTax, @PONJCTaxRate, @PONumber,
+                            @POOverridden, @BudgetOverridden, @ExcludeFromPO, @OriginalJCCategory)";
+                    await db.ExecuteAsync(sql, new
+                    {
+                        EstAssemblyID = mEstAssemblyID,
+                        item.Assembly, item.AssemblyDescription, item.POIndex, item.Model,
+                        Phase = item.EstPhase, Item = item.EstItem, Job = mJob,
+                        item.JCExtra, item.JCCostCode, item.JCCategory,
+                        SortOrder = i + 1,
+                        Description = item.ItemDesc, Comments = item.ItemComments,
+                        item.TakeoffQty, item.TakeoffUOM, item.ConversionFactor, item.OrderUOM,
+                        item.BudgetVendor, item.BudgetQty, item.BudgetRate, item.BudgetPretax, item.BudgetTaxGroup,
+                        item.BudgetJCTax, item.BudgetJCTaxRate, item.BudgetNJCTax, item.BudgetNJCTaxRate,
+                        BudgetGenerated = ToInt(item.BudgetGenerated),
+                        item.POVendor, item.POQty, item.PORate, item.POPretax, item.POTaxGroup,
+                        item.POJCTax, item.POJCTaxRate, item.PONJCTax, item.PONJCTaxRate, item.PONumber,
+                        POOverridden = item.POOverridden == "True",
+                        BudgetOverridden = item.BudgetOverridden == "True",
+                        ExcludeFromPO = item.ExcludeFromPO ? 1 : 0,
+                        item.OriginalJCCategory
+                    });
+
+                    var idDt = db.SqlExec("SELECT IDENT_CURRENT('EstimateItems')");
+                    if (idDt.Rows.Count > 0)
+                        item.EstItemID = idDt.Rows[0][0]?.ToString() ?? "";
+
+                    item.Selected = false;
+                    item.RowState = "";
+                }
+                else if (item.RowState == "DIRTY")
+                {
+                    var sql = @"
+                        UPDATE EstimateItems SET
+                            Assembly=@Assembly, AssemblyDescription=@AssemblyDescription,
+                            POIndex=@POIndex, JCExtra=@JCExtra, JCCostCode=@JCCostCode, JCCategory=@JCCategory,
+                            Description=@Description, Comments=@Comments, OrderUOM=@OrderUOM,
+                            BudgetVendor=@BudgetVendor, BudgetQty=@BudgetQty, BudgetRate=@BudgetRate,
+                            BudgetPretax=@BudgetPretax, BudgetTaxGroup=@BudgetTaxGroup,
+                            BudgetJCTax=@BudgetJCTax, BudgetJCTaxRate=@BudgetJCTaxRate,
+                            BudgetNJCTax=@BudgetNJCTax, BudgetNJCTaxRate=@BudgetNJCTaxRate,
+                            POVendor=@POVendor, POQty=@POQty, PORate=@PORate,
+                            POPretax=@POPretax, POTaxGroup=@POTaxGroup,
+                            POJCTax=@POJCTax, POJCTaxRate=@POJCTaxRate,
+                            PONJCTax=@PONJCTax, PONJCTaxRate=@PONJCTaxRate,
+                            ExcludeFromPO=@ExcludeFromPO,
+                            BudgetOverridden=@BudgetOverridden, POOverridden=@POOverridden
+                        WHERE EstItemID=@EstItemID";
+                    await db.ExecuteAsync(sql, new
+                    {
+                        item.Assembly, item.AssemblyDescription, item.POIndex,
+                        item.JCExtra, item.JCCostCode, item.JCCategory,
+                        Description = item.ItemDesc, Comments = item.ItemComments, item.OrderUOM,
+                        item.BudgetVendor, item.BudgetQty, item.BudgetRate, item.BudgetPretax, item.BudgetTaxGroup,
+                        item.BudgetJCTax, item.BudgetJCTaxRate, item.BudgetNJCTax, item.BudgetNJCTaxRate,
+                        item.POVendor, item.POQty, item.PORate, item.POPretax, item.POTaxGroup,
+                        item.POJCTax, item.POJCTaxRate, item.PONJCTax, item.PONJCTaxRate,
+                        ExcludeFromPO = item.ExcludeFromPO ? 1 : 0,
+                        BudgetOverridden = item.BudgetOverridden == "True",
+                        POOverridden = item.POOverridden == "True",
+                        EstItemID = Convert.ToInt64(item.EstItemID)
+                    });
+                    item.RowState = "";
+                }
+            }
+
+            // Process deletes
+            var toDelete = ItemsData.Where(i => i.RowState == "DELETE").ToList();
+            foreach (var item in toDelete)
+            {
+                var canDeleteBudget = item.BudgetGenerated != "True";
+                var canDeletePO = string.IsNullOrWhiteSpace(item.PONumber);
+
+                if (canDeleteBudget && canDeletePO)
+                {
+                    await db.ExecuteAsync("DELETE FROM EstimateItems WHERE EstItemID=@Id",
+                        new { Id = Convert.ToInt64(item.EstItemID) });
+                }
+                else if (canDeleteBudget)
+                {
+                    await db.ExecuteAsync("UPDATE EstimateItems SET BudgetDeleted=1 WHERE EstItemID=@Id",
+                        new { Id = Convert.ToInt64(item.EstItemID) });
+                }
+                else if (canDeletePO)
+                {
+                    await db.ExecuteAsync("UPDATE EstimateItems SET PODeleted=1 WHERE EstItemID=@Id",
+                        new { Id = Convert.ToInt64(item.EstItemID) });
+                }
+
+                ItemsData.Remove(item);
+            }
+
+            Dirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveItems error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving items: {ex.Message}");
+            return false;
+        }
+    }
+
+    // ── Save Prompt ───────────────────────────────────────────
+    // Returns: 0=Cancel, 1=Yes, 2=No
+    private async Task<int> PromptSave()
+    {
+        _savePromptTcs = new TaskCompletionSource<int>();
+        ShowSavePrompt = true;
+        StateHasChanged();
+        var result = await _savePromptTcs.Task;
+        ShowSavePrompt = false;
+        StateHasChanged();
+        return result;
+    }
+
+    private void OnSavePromptYes() => _savePromptTcs?.SetResult(1);
+    private void OnSavePromptNo() => _savePromptTcs?.SetResult(2);
+    private void OnSavePromptCancel() => _savePromptTcs?.SetResult(0);
+
+    // ── Toolbar Handlers ──────────────────────────────────────
+    private async Task OnOpenClick()
+    {
+        if (!await SaveData(true)) return;
+
+        var quoteNum = await JSRuntime.InvokeAsync<string>("prompt", "Enter Quote Number to open (or leave blank for new):");
+        if (quoteNum == null) return; // user cancelled
+
+        if (string.IsNullOrWhiteSpace(quoteNum))
+        {
+            mJob = "\x01";
+            SetFieldsForNewQuote();
+            Dirty = false;
+            StateHasChanged();
+        }
+        else
+        {
+            mJob = quoteNum.Trim();
+            await LoadData();
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task OnSaveAsClick()
+    {
+        var newNum = await JSRuntime.InvokeAsync<string>("prompt", "Enter a new quote number:");
+        if (string.IsNullOrWhiteSpace(newNum)) return;
+
+        txtJob = newNum.Trim();
+        JobFieldEnabled = true;
+        mJob = "\x01";
+
+        foreach (var item in ItemsData)
+            item.RowState = "NEW";
+
+        await SaveData(false);
+    }
+
+    private async Task OnAttachmentsClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", $"Attachments for {txtJob} - {txtDescription}");
+    }
+
+    private async Task OnTakeoffOneTimeClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Takeoff One Time - not yet implemented");
+    }
+
+    private async Task OnTakeoffItemClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Takeoff Item - not yet implemented");
+    }
+
+    private async Task OnTakeoffAssemblyClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Takeoff Assembly - not yet implemented");
+    }
+
+    private async Task OnTakeoffCustomClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Takeoff Custom - not yet implemented");
+    }
+
+    private async Task OnPreviewClick()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Preview - not yet implemented");
+    }
+
+    private async Task OnRePriceClick()
+    {
+        if (!await SaveData(true)) return;
+
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Refresh costs for selected items?");
+        if (!confirm) return;
+
+        // In full implementation, would call stored procedures to refresh rates
+        await JSRuntime.InvokeVoidAsync("alert", "Refresh Costs - not yet fully implemented.\nWould update rates from vendor price lists.");
+        await LoadItems();
+        StateHasChanged();
+    }
+
+    private async Task OnGenerateJobClick()
+    {
+        if (!await SaveData(false)) return;
+
+        var jobNumber = await JSRuntime.InvokeAsync<string>("prompt", "Enter Job Number:");
+        if (string.IsNullOrWhiteSpace(jobNumber)) return;
+
+        // Save as job
+        var originalQuote = txtJob;
+        txtJob = jobNumber.Trim();
+        mJob = "\x01";
+
+        foreach (var item in ItemsData)
+            item.RowState = "NEW";
+
+        if (await SaveData(false, true))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Job {jobNumber} created successfully from quote {originalQuote}.");
+            NavigationManager.NavigateTo($"/job/{jobNumber}");
+        }
+        else
+        {
+            // Restore quote number
+            txtJob = originalQuote;
+            mJob = originalQuote;
+        }
+    }
+
+    // ── Grid Event Handlers ───────────────────────────────────
+    private void OnCellSaved(CellSaveArgs<QuoteItemRow> args)
+    {
+        if (args.Data == null) return;
+
+        var item = args.Data;
+        var colName = args.ColumnName ?? "";
+
+        // Recalculate based on which column changed
+        RecalculateAfterEdit(item, colName);
+
+        if (colName != "Selected")
+        {
+            Dirty = true;
+            if (item.RowState != "NEW")
+                item.RowState = "DIRTY";
+        }
+
+        ColorizeItem(item);
+        StateHasChanged();
+    }
+
+    private void RecalculateAfterEdit(QuoteItemRow item, string colName)
+    {
+        var rowBudgeted = item.BudgetGenerated != "0" && item.BudgetGenerated != "False";
+        var rowPOed = !string.IsNullOrWhiteSpace(item.PONumber);
+
+        switch (colName)
+        {
+            case "TakeoffQty":
+                if (ShowBudgets)
+                {
+                    item.BudgetQty = RoundToValue(item.TakeoffQty * (100 + item.WastePercent) / 100 * item.ConversionFactor, item.RoundTo, item.RoundDir);
+                    item.BudgetPretax = Math.Round(item.BudgetQty * item.BudgetRate, 2);
+                    item.BudgetJCTax = Math.Round(item.BudgetPretax * item.BudgetJCTaxRate / 100, 2);
+                    item.BudgetNJCTax = Math.Round(item.BudgetPretax * item.BudgetNJCTaxRate / 100, 2);
+                    item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                    if (!rowPOed)
+                    {
+                        item.POQty = item.BudgetQty;
+                        item.POPretax = item.BudgetPretax;
+                        item.POJCTax = item.BudgetJCTax;
+                        item.PONJCTax = item.BudgetNJCTax;
+                        item.POTax = item.BudgetTax;
+                    }
+                }
+                break;
+
+            case "BudgetQty":
+                item.BudgetPretax = Math.Round(item.BudgetQty * item.BudgetRate, 2);
+                item.BudgetJCTax = Math.Round(item.BudgetPretax * item.BudgetJCTaxRate / 100, 2);
+                item.BudgetNJCTax = Math.Round(item.BudgetPretax * item.BudgetNJCTaxRate / 100, 2);
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                if (!rowPOed)
+                {
+                    item.POQty = item.BudgetQty;
+                    item.POPretax = item.BudgetPretax;
+                    item.POJCTax = item.BudgetJCTax;
+                    item.PONJCTax = item.BudgetNJCTax;
+                    item.POTax = item.BudgetTax;
+                }
+                break;
+
+            case "BudgetRate":
+                item.BudgetOverridden = "True";
+                item.BudgetPretax = Math.Round(item.BudgetQty * item.BudgetRate, 2);
+                item.BudgetJCTax = Math.Round(item.BudgetPretax * item.BudgetJCTaxRate / 100, 2);
+                item.BudgetNJCTax = Math.Round(item.BudgetPretax * item.BudgetNJCTaxRate / 100, 2);
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                if (!rowPOed)
+                {
+                    item.POOverridden = "True";
+                    item.PORate = item.BudgetRate;
+                    item.POPretax = item.BudgetPretax;
+                    item.POJCTax = item.BudgetJCTax;
+                    item.PONJCTax = item.BudgetNJCTax;
+                    item.POTax = item.BudgetTax;
+                }
+                break;
+
+            case "BudgetPretax":
+                if (item.BudgetQty == 0) item.BudgetQty = 1;
+                item.BudgetRate = Math.Round(item.BudgetPretax / item.BudgetQty, 4);
+                item.BudgetOverridden = "True";
+                item.BudgetJCTax = Math.Round(item.BudgetPretax * item.BudgetJCTaxRate / 100, 2);
+                item.BudgetNJCTax = Math.Round(item.BudgetPretax * item.BudgetNJCTaxRate / 100, 2);
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                if (!rowPOed)
+                {
+                    item.POOverridden = "True";
+                    item.POQty = item.BudgetQty;
+                    item.PORate = item.BudgetRate;
+                    item.POPretax = item.BudgetPretax;
+                    item.POJCTax = item.BudgetJCTax;
+                    item.PONJCTax = item.BudgetNJCTax;
+                    item.POTax = item.BudgetTax;
+                }
+                break;
+
+            case "POQty":
+                item.POPretax = Math.Round(item.POQty * item.PORate, 2);
+                item.POJCTax = Math.Round(item.POPretax * item.POJCTaxRate / 100, 2);
+                item.PONJCTax = Math.Round(item.POPretax * item.PONJCTaxRate / 100, 2);
+                item.POTax = item.POJCTax + item.PONJCTax;
+                if (!rowBudgeted)
+                {
+                    item.BudgetQty = item.POQty;
+                    item.BudgetPretax = item.POPretax;
+                    item.BudgetJCTax = item.POJCTax;
+                    item.BudgetNJCTax = item.PONJCTax;
+                    item.BudgetTax = item.POTax;
+                }
+                break;
+
+            case "PORate":
+                item.POOverridden = "True";
+                item.POPretax = Math.Round(item.POQty * item.PORate, 2);
+                item.POJCTax = Math.Round(item.POPretax * item.POJCTaxRate / 100, 2);
+                item.PONJCTax = Math.Round(item.POPretax * item.PONJCTaxRate / 100, 2);
+                item.POTax = item.POJCTax + item.PONJCTax;
+                if (!rowBudgeted)
+                {
+                    item.BudgetOverridden = "True";
+                    item.BudgetRate = item.PORate;
+                    item.BudgetPretax = item.POPretax;
+                    item.BudgetJCTax = item.POJCTax;
+                    item.BudgetNJCTax = item.PONJCTax;
+                    item.BudgetTax = item.POTax;
+                }
+                break;
+
+            case "POPretax":
+                if (item.POQty == 0) item.POQty = 1;
+                item.POOverridden = "True";
+                item.PORate = Math.Round(item.POPretax / item.POQty, 4);
+                item.POJCTax = Math.Round(item.POPretax * item.POJCTaxRate / 100, 2);
+                item.PONJCTax = Math.Round(item.POPretax * item.PONJCTaxRate / 100, 2);
+                item.POTax = item.POJCTax + item.PONJCTax;
+                if (!rowBudgeted)
+                {
+                    item.BudgetOverridden = "True";
+                    item.BudgetQty = item.POQty;
+                    item.BudgetRate = item.PORate;
+                    item.BudgetPretax = item.POPretax;
+                    item.BudgetJCTax = item.POJCTax;
+                    item.BudgetNJCTax = item.PONJCTax;
+                    item.BudgetTax = item.POTax;
+                }
+                break;
+
+            case "BudgetVendor":
+            case "BudgetVendorName":
+                if (!rowPOed)
+                {
+                    item.POVendor = item.BudgetVendor;
+                    item.POVendorName = item.BudgetVendorName;
+                }
+                break;
+
+            case "POVendor":
+            case "POVendorName":
+                if (!rowBudgeted)
+                {
+                    item.BudgetVendor = item.POVendor;
+                    item.BudgetVendorName = item.POVendorName;
+                }
+                break;
+
+            case "BudgetJCTax":
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                if (!rowPOed)
+                {
+                    item.POJCTax = item.BudgetJCTax;
+                    item.POTax = item.BudgetTax;
+                }
+                break;
+
+            case "BudgetNJCTax":
+                item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                if (!rowPOed)
+                {
+                    item.PONJCTax = item.BudgetNJCTax;
+                    item.POTax = item.BudgetTax;
+                }
+                break;
+
+            case "POJCTax":
+                item.POTax = item.POJCTax + item.PONJCTax;
+                if (!rowBudgeted)
+                {
+                    item.BudgetJCTax = item.POJCTax;
+                    item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                }
+                break;
+
+            case "PONJCTax":
+                item.POTax = item.POJCTax + item.PONJCTax;
+                if (!rowBudgeted)
+                {
+                    item.BudgetNJCTax = item.PONJCTax;
+                    item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    private static double ToDouble(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        if (value is double d) return d;
+        if (value is float f) return f;
+        if (value is decimal dec) return (double)dec;
+        return double.TryParse(value.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var result)
+            ? result
+            : 0;
+    }
+
+    private static int ToInt(object? value, int defaultValue = 0)
+    {
+        if (value == null || value == DBNull.Value) return defaultValue;
+        if (value is int i) return i;
+        if (int.TryParse(value.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var result)) return result;
+        if (double.TryParse(value.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var asDouble))
+        {
+            return (int)asDouble;
+        }
+        return defaultValue;
+    }
+
+    private static double RoundToValue(double value, double roundTo, int roundDir)
+    {
+        if (roundTo <= 0) return value;
+        var quotient = value / roundTo;
+        if (Math.Abs(quotient - Math.Round(quotient)) < 1e-12) return value;
+
+        if (roundDir > 0) return Math.Ceiling(quotient) * roundTo;
+        if (roundDir < 0) return Math.Floor(quotient) * roundTo;
+        return Math.Round(quotient) * roundTo;
+    }
+
+    // ── Event Handlers for form fields ──────────────────────────────────
+    private void OnJobChanged() { mDirty = true; }
+    private void OnDescriptionChanged() { mDirty = true; }
+    private void OnGLPrefixChanged() { mDirty = true; }
+    private void OnGLPrefixTextChanged() { mDirty = true; }
+    private void OnNotesChanged() { mDirty = true; }
+}

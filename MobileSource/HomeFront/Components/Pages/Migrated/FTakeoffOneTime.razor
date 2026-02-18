@@ -1,0 +1,529 @@
+```razor
+@namespace HomeFront.Components.Pages
+@rendermode InteractiveServer
+
+@using System.Data
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+
+<style>
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 500px; max-width: 600px;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .dialog-body .form-group { margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .dialog-body .form-group label {
+        min-width: 100px; text-align: right; font-weight: 600; font-size: 13px; color: #495057;
+    }
+    .dialog-body .form-group input,
+    .dialog-body .form-group select {
+        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
+        box-sizing: border-box;
+    }
+    .dialog-body .form-group input:focus,
+    .dialog-body .form-group select:focus {
+        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .dialog-body .form-group input[readonly] {
+        background-color: #e9ecef;
+    }
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+    .browse-btn {
+        padding: 2px 8px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 13px;
+    }
+    .browse-btn:hover { background: #e9ecef; }
+    .dialog-image {
+        width: 48px; height: 48px; margin-right: 12px;
+    }
+</style>
+
+@if (IsVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>One Time Takeoff - @AssemblyDescription</span>
+                <button @onclick="OnCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" @bind="txtDescription" maxlength="200" @onfocus="() => SelectAll(nameof(txtDescription))" />
+                </div>
+                <div class="form-group">
+                    <label>Qty/Unit</label>
+                    <input type="text" @bind="txtQty" style="width: 80px; flex: none;"
+                           @onfocus="() => SelectAll(nameof(txtQty))"
+                           @onblur="OnQtyBlur" />
+                    <select @bind="cboUOM" style="width: 100px; flex: none;">
+                        <option value="">-- UOM --</option>
+                        @foreach (var uom in UOMItems)
+                        {
+                            <option value="@uom">@uom</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Price</label>
+                    <input type="text" @bind="txtPrice" style="width: 120px; flex: none;"
+                           @onfocus="() => SelectAll(nameof(txtPrice))"
+                           @onblur="OnPriceBlur" />
+                </div>
+                <div class="form-group">
+                    <label>PO Index</label>
+                    <select @bind="cboPOIndex" @bind:after="OnPOIndexChanged">
+                        <option value="">-- Select --</option>
+                        @foreach (var po in POIndexItems)
+                        {
+                            <option value="@po.Key">@po.Display</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cost Code</label>
+                    <input type="text" readonly value="@txtCostCodeText" style="flex: 1;" />
+                    <button class="browse-btn" @onclick="OnBrowseCostCode" title="Browse Cost Codes">🔍</button>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select @bind="cboCategory">
+                        <option value="">-- Select --</option>
+                        @foreach (var cat in CategoryItems)
+                        {
+                            <option value="@cat.Key">@cat.Display</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnOK">&amp;OK</button>
+                <button class="btn" @onclick="OnCancel">&amp;Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Cost Code Pick List Dialog *@
+@if (IsCostCodePickerVisible)
+{
+    <div class="dialog-overlay">
+        <div class="dialog-panel" style="min-width: 450px; max-height: 70vh;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Cost Codes</span>
+                <button @onclick="() => IsCostCodePickerVisible = false">×</button>
+            </div>
+            <div class="dialog-body" style="overflow-y: auto; max-height: 50vh;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #f0f0f0; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 6px 8px; text-align: left;">Cost Code</th>
+                            <th style="padding: 6px 8px; text-align: left;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var cc in CostCodePickerItems)
+                        {
+                            <tr style="cursor: pointer; border-bottom: 1px solid #eee;"
+                                @onclick="() => OnCostCodePicked(cc)"
+                                class="@(cc.CostCode == txtCostCodeTag ? "table-active" : "")">
+                                <td style="padding: 4px 8px;">@cc.CostCode</td>
+                                <td style="padding: 4px 8px;">@cc.Description</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn" @onclick="() => IsCostCodePickerVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Parameters ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public EventCallback<OneTimeTakeoffResult> OnItemAdded { get; set; }
+
+    // === Takeoff context (set by parent before showing) ===
+    [Parameter] public string AssemblyDescription { get; set; } = "";
+    [Parameter] public string Community { get; set; } = "";
+    [Parameter] public string CommunityPhase { get; set; } = "";
+    [Parameter] public string Model { get; set; } = "";
+    [Parameter] public string Assembly { get; set; } = "";
+    [Parameter] public string Job { get; set; } = "";
+    [Parameter] public int DivisionID { get; set; } = 1;
+    [Parameter] public string AccountingSystem { get; set; } = "";
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === Form fields ===
+    private string txtDescription = "";
+    private string txtQty = "0";
+    private string txtPrice = "0.00";
+    private string cboUOM = "";
+    private string cboPOIndex = "";
+    private string cboCategory = "";
+    private string txtCostCodeTag = "";
+    private string txtCostCodeText = "";
+
+    // === Combo data ===
+    private List<string> UOMItems = new();
+    private List<ComboItem> POIndexItems = new();
+    private List<ComboItem> CategoryItems = new();
+    private List<CostCodePickerItem> CostCodePickerItems = new();
+    private bool IsCostCodePickerVisible = false;
+
+    // === Lifecycle ===
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible)
+        {
+            await LoadFormData();
+        }
+    }
+
+    private async Task LoadFormData()
+    {
+        try
+        {
+            // Load UOM
+            var uomRows = await db.QueryAsync(
+                "SELECT DISTINCT OrderUOM AS Unit FROM tblPhaseItem WHERE DivisionID = @DivisionID ORDER BY 1",
+                new { DivisionID });
+            UOMItems = uomRows
+                .Select(r => r["Unit"]?.ToString() ?? "")
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            // Load PO Index
+            var poRows = await db.QueryAsync(
+                @"SELECT CASE WHEN poindex = description THEN poindex
+                         ELSE POIndex + ISNULL(' ' + description, '') END AS Display,
+                         poindex AS KeyVal
+                  FROM tblPOIndex WHERE DivisionID = @DivisionID ORDER BY 1",
+                new { DivisionID });
+            POIndexItems = poRows.Select(r => new ComboItem
+            {
+                Display = r["Display"]?.ToString() ?? "",
+                Key = r["KeyVal"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load Category
+            string catSql;
+            if (AccountingSystem == "QuickBooks")
+            {
+                catSql = "SELECT Description AS Display, Category AS KeyVal FROM standardcategories WHERE DivisionID = @DivisionID ORDER BY 1";
+            }
+            else
+            {
+                catSql = "SELECT Category + ISNULL(' - ' + Description, '') AS Display, Category AS KeyVal FROM standardcategories WHERE DivisionID = @DivisionID ORDER BY 1";
+            }
+            var catRows = await db.QueryAsync(catSql, new { DivisionID });
+            CategoryItems = catRows.Select(r => new ComboItem
+            {
+                Display = r["Display"]?.ToString() ?? "",
+                Key = r["KeyVal"]?.ToString() ?? ""
+            }).ToList();
+
+            // Reset fields
+            txtDescription = "";
+            txtQty = "0";
+            txtPrice = "0.00";
+            cboUOM = "";
+            cboPOIndex = "";
+            cboCategory = "";
+            txtCostCodeTag = "";
+            txtCostCodeText = "";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FTakeoffOneTime.LoadFormData error: {ex.Message}");
+        }
+    }
+
+    // === PO Index Changed ===
+    private async Task OnPOIndexChanged()
+    {
+        if (string.IsNullOrEmpty(cboPOIndex)) return;
+        try
+        {
+            var sql = @"SELECT p.jccostcode, c.description, p.jccategory
+                        FROM tblpoindex p
+                        LEFT OUTER JOIN standardcostcodes c ON p.jccostcode = c.costcode AND p.divisionid = c.divisionid
+                        WHERE p.divisionid = @DivisionID AND p.poindex = @POIndex";
+            var rows = await db.QueryAsync(sql, new { DivisionID, POIndex = cboPOIndex });
+            if (rows.Any())
+            {
+                var row = rows.First();
+                txtCostCodeTag = row["jccostcode"]?.ToString() ?? "";
+                txtCostCodeText = row["description"]?.ToString() ?? "";
+                var jcCategory = row["jccategory"]?.ToString() ?? "";
+                if (CategoryItems.Any(c => c.Key == jcCategory))
+                    cboCategory = jcCategory;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OnPOIndexChanged error: {ex.Message}");
+        }
+    }
+
+    // === Browse Cost Code ===
+    private async Task OnBrowseCostCode()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT CostCode, Description FROM standardcostcodes WHERE divisionid = @DivisionID ORDER BY CostCode",
+                new { DivisionID });
+            CostCodePickerItems = rows.Select(r => new CostCodePickerItem
+            {
+                CostCode = r["CostCode"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+            IsCostCodePickerVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"OnBrowseCostCode error: {ex.Message}");
+        }
+    }
+
+    private void OnCostCodePicked(CostCodePickerItem item)
+    {
+        txtCostCodeTag = item.CostCode;
+        txtCostCodeText = item.Description;
+        IsCostCodePickerVisible = false;
+    }
+
+    // === Validation Blur Handlers ===
+    private void OnQtyBlur()
+    {
+        if (double.TryParse(txtQty, out var val))
+            txtQty = val.ToString();
+        else
+            txtQty = "0";
+    }
+
+    private void OnPriceBlur()
+    {
+        if (double.TryParse(txtPrice, out var val))
+            txtPrice = val.ToString("0.00###############");
+        else
+            txtPrice = "0.00";
+    }
+
+    private void SelectAll(string fieldName)
+    {
+        // In Blazor, text selection on focus requires JS interop; this is a placeholder
+    }
+
+    // === OK / Cancel ===
+    private async Task OnOK()
+    {
+        await SaveData();
+    }
+
+    private async Task OnCancel()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    // === SaveData ===
+    private async Task SaveData()
+    {
+        // Validate
+        if (string.IsNullOrWhiteSpace(txtDescription))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Description is required.");
+            return;
+        }
+
+        var description = txtDescription;
+        var orderQty = double.TryParse(txtQty, out var q) ? q : 0;
+        var orderUOM = cboUOM;
+        var takeoffQty = orderQty;
+        var takeoffUOM = orderUOM;
+        double conversionFactor = 1;
+        var jcCostCode = txtCostCodeTag;
+        var jcCategory = cboCategory;
+        var poIndex = cboPOIndex;
+        var price = double.TryParse(txtPrice, out var p) ? p : 0;
+
+        // Get cost code description
+        string jcCostCodeDesc = "";
+        try
+        {
+            var ccRows = await db.QueryAsync(
+                "SELECT Description FROM StandardCostCodes WHERE DivisionID = @DivisionID AND CostCode = @CostCode",
+                new { DivisionID, CostCode = jcCostCode });
+            if (ccRows.Any())
+                jcCostCodeDesc = ccRows.First()["Description"]?.ToString() ?? "";
+        }
+        catch { }
+
+        // Get category description
+        string jcCategoryDesc = "";
+        try
+        {
+            var catRows = await db.QueryAsync(
+                "SELECT Description FROM StandardCategories WHERE DivisionID = @DivisionID AND Category = @Category",
+                new { DivisionID, Category = jcCategory });
+            if (catRows.Any())
+                jcCategoryDesc = catRows.First()["Description"]?.ToString() ?? "";
+        }
+        catch { }
+
+        // Get vendor
+        string vendor = "";
+        string vendorName = "";
+        try
+        {
+            var vendorSql = @"SELECT Vendor_ID, Vendor_Name FROM tblVendors
+                              WHERE DivisionID = @DivisionID
+                                AND Vendor_id = dbo.Purch_GetCommunityVendor(@Community, @POIndex, @DivisionID)";
+            var vendorRows = await db.QueryAsync(vendorSql, new { DivisionID, Community, POIndex = poIndex });
+            if (vendorRows.Any())
+            {
+                vendor = vendorRows.First()["Vendor_ID"]?.ToString() ?? "";
+                vendorName = vendorRows.First()["Vendor_Name"]?.ToString() ?? "";
+            }
+        }
+        catch { }
+
+        // Get tax rates
+        string taxGroup = "";
+        string taxGroupName = "";
+        double jcTaxRate = 0;
+        double njcTaxRate = 0;
+        try
+        {
+            var taxSql = @"SELECT * FROM TaxGroups
+                           WHERE DivisionID = @DivisionID
+                             AND TaxGroup = dbo.Purch_GetDefaultTaxGroup(
+                                 @Job, @Community, @CommunityPhase, @Model, @Assembly,
+                                 '', '', @Vendor, @JCCategory, @DivisionID)";
+            var taxRows = await db.QueryAsync(taxSql, new
+            {
+                DivisionID,
+                Job,
+                Community,
+                CommunityPhase,
+                Model,
+                Assembly,
+                Vendor = vendor,
+                JCCategory = jcCategory
+            });
+            if (taxRows.Any())
+            {
+                var taxRow = taxRows.First();
+                taxGroup = taxRow["TaxGroup"]?.ToString() ?? "";
+                taxGroupName = taxRow["Description"]?.ToString() ?? "";
+                jcTaxRate = Convert.ToDouble(taxRow["JCRate"] ?? 0);
+                njcTaxRate = Convert.ToDouble(taxRow["NJCRate"] ?? 0);
+            }
+        }
+        catch { }
+
+        // Build result and invoke callback
+        var result = new OneTimeTakeoffResult
+        {
+            Description = description,
+            OrderQty = orderQty,
+            OrderUOM = orderUOM,
+            TakeoffQty = takeoffQty,
+            TakeoffUOM = takeoffUOM,
+            ConversionFactor = conversionFactor,
+            JCCostCode = jcCostCode,
+            JCCostCodeDesc = jcCostCodeDesc,
+            JCCategory = jcCategory,
+            JCCategoryDesc = jcCategoryDesc,
+            Vendor = vendor,
+            VendorName = vendorName,
+            Price = price,
+            TaxGroup = taxGroup,
+            TaxGroupName = taxGroupName,
+            JCTaxRate = jcTaxRate,
+            NJCTaxRate = njcTaxRate,
+            POIndex = poIndex,
+            Comments = ""
+        };
+
+        await OnItemAdded.InvokeAsync(result);
+
+        // Reset description field for next entry
+        txtDescription = "";
+    }
+
+    // === Models ===
+    public class ComboItem
+    {
+        public string Display { get; set; } = "";
+        public string Key { get; set; } = "";
+    }
+
+    public class CostCodePickerItem
+    {
+        public string CostCode { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class OneTimeTakeoffResult
+    {
+        public string Description { get; set; } = "";
+        public double OrderQty { get; set; }
+        public string OrderUOM { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public double ConversionFactor { get; set; } = 1;
+        public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string VendorName { get; set; } = "";
+        public double Price { get; set; }
+        public string TaxGroup { get; set; } = "";
+        public string TaxGroupName { get; set; } = "";
+        public double JCTaxRate { get; set; }
+        public double NJCTaxRate { get; set; }
+        public string POIndex { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public string[] WBS { get; set; } = new string[41];
+    }
+}
+```

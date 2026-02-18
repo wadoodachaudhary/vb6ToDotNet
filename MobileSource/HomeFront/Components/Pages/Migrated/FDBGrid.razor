@@ -1,0 +1,765 @@
+```razor
+@page "/db-grid"
+@page "/db-grid/{FormCaption}"
+@rendermode InteractiveServer
+
+@using HomeFront.Components.Grid
+@using HomeFront.Data
+@using System.Data
+@using System.Text
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>@Caption - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+    .dirty-row { background-color: #fff3cd !important; }
+    .insert-row { background-color: #d4edda !important; }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Data...</div>
+    </div>
+}
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnExportClick">
+        <img src="images/32/PricebookExport.ico" alt="Export" onerror="this.style.display='none'" />
+        <span class="tool-label">Export</span>
+    </button>
+    @if (mAllowAddDelete && !mReadOnly)
+    {
+        <button class="tbar-btn" @onclick="OnNewClick">
+            <img src="images/32/new.ico" alt="New" onerror="this.style.display='none'" />
+            <span class="tool-label">New</span>
+        </button>
+    }
+</div>
+
+<h4 style="margin-bottom: 12px;">@Caption</h4>
+
+@* ── DATA GRID ───────────────────────────────────────── *@
+<div class="grid-container">
+    <HfGrid @ref="DataGrid"
+            TValue="GridRow"
+            DataSource="@GridData"
+            AllowPaging="true"
+            AllowSorting="true"
+            AllowFiltering="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            EnableHover="true"
+            Height="600px"
+            FilterSettingsRef="@filterSettings"
+            PageSettingsRef="@pageSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EditSettingsRef="@editSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            @foreach (var col in ColumnDefinitions)
+            {
+                <HfGridColumn Field="@col.FieldName"
+                              HeaderText="@col.HeaderText"
+                              Width="@col.Width"
+                              AllowEditing="@col.AllowEditing"
+                              IsPrimaryKey="@col.IsPrimaryKey"
+                              Visible="@col.Visible"
+                              Type="@col.ColumnType"
+                              TextAlign="@col.TextAlign"
+                              Format="@col.Format" />
+            }
+        </HfGridColumnsBase>
+    </HfGrid>
+</div>
+
+@code {
+    // === Parameters ===
+    [Parameter] public string? FormCaption { get; set; }
+
+    // === Database ===
+    private DbWrapperSqlServer db = new();
+
+    // === State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private string Caption = "";
+    private string mFormCaption = "";
+    private string mTableName = "";
+    private string mSQLStatement = "";
+    private bool mReadOnly = false;
+    private string mLockedColumns = "";
+    private string mKeyColumns = "";
+    private bool mAllowAddDelete = true;
+    private string mHiddenColumns = "";
+    private int DivisionID = 1;
+
+    // === Grid ===
+    private HfGrid<GridRow>? DataGrid;
+    private List<GridRow> GridData = new();
+    private List<ColumnDef> ColumnDefinitions = new();
+
+    // === Grid Settings ===
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = new int[] { 25, 50, 100, 200 } };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Single,
+        Mode = SelectionMode.Row
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<GridRow> gridEvents = new();
+
+    // === Original Key Values (for update WHERE clause) ===
+    // Maps row index -> dictionary of key column name -> original value
+    private Dictionary<int, Dictionary<string, string>> OriginalKeyValues = new();
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<GridRow>>(this, OnCellSaved);
+    }
+
+    /// <summary>
+    /// Public entry point to show the form with data. Call from parent component.
+    /// </summary>
+    public async Task ShowForm(
+        string formCaption,
+        string sqlStatement,
+        string tableName,
+        string keyColumns,
+        bool readOnly = false,
+        string hiddenColumns = "",
+        string lockedColumns = "",
+        bool allowAddDelete = true)
+    {
+        mFormCaption = formCaption;
+        mSQLStatement = sqlStatement;
+        mReadOnly = readOnly;
+        mLockedColumns = "," + lockedColumns + ",";
+        mTableName = tableName;
+        mKeyColumns = keyColumns;
+        mAllowAddDelete = allowAddDelete;
+        mHiddenColumns = hiddenColumns;
+        Caption = formCaption;
+
+        editSettings = new HfEditSettings
+        {
+            AllowAdding = !mReadOnly && mAllowAddDelete,
+            AllowEditing = !mReadOnly,
+            AllowDeleting = false,
+            AllowEditOnDblClick = !mReadOnly,
+            ShowConfirmDialog = false
+        };
+
+        await LoadDataAsync();
+        mDirty = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // === Load Data ===
+    private async Task LoadDataAsync()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var dt = db.SqlExec(mSQLStatement);
+            if (dt == null || dt.Columns.Count == 0) return;
+
+            BuildColumnDefinitions(dt);
+            BuildGridData(dt);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[FDBGrid.LoadDataAsync] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildColumnDefinitions(DataTable dt)
+    {
+        ColumnDefinitions.Clear();
+        var hiddenSet = ParseCsvSet(mHiddenColumns);
+        var lockedSet = ParseCsvSet(mLockedColumns.Trim(','));
+        var keySet = ParseCsvSet(mKeyColumns);
+
+        // Add a hidden RowIndex column as primary key
+        ColumnDefinitions.Add(new ColumnDef
+        {
+            FieldName = "_RowIndex",
+            HeaderText = "",
+            Width = "1px",
+            Visible = false,
+            IsPrimaryKey = true,
+            AllowEditing = false,
+            DataType = "int",
+            ColumnType = ColumnType.Number
+        });
+
+        // Add a hidden RowState column
+        ColumnDefinitions.Add(new ColumnDef
+        {
+            FieldName = "_RowState",
+            HeaderText = "",
+            Width = "1px",
+            Visible = false,
+            AllowEditing = false,
+            DataType = "string"
+        });
+
+        foreach (DataColumn col in dt.Columns)
+        {
+            var colName = col.ColumnName;
+            var isHidden = hiddenSet.Contains(colName.ToLower());
+            var isLocked = lockedSet.Contains(colName.ToLower()) || mReadOnly;
+            var isKey = keySet.Contains(colName.ToLower());
+
+            var colDef = new ColumnDef
+            {
+                FieldName = colName,
+                HeaderText = colName,
+                Width = "150px",
+                Visible = !isHidden,
+                AllowEditing = !isLocked,
+                IsPrimaryKey = false,
+                DataType = MapDataType(col.DataType)
+            };
+
+            // Set column type and format based on data type
+            switch (colDef.DataType)
+            {
+                case "boolean":
+                    colDef.ColumnType = ColumnType.Boolean;
+                    break;
+                case "date":
+                    colDef.Format = "d";
+                    break;
+                case "number":
+                    colDef.ColumnType = ColumnType.Number;
+                    colDef.TextAlign = TextAlign.Right;
+                    colDef.Format = "N2";
+                    break;
+                default:
+                    colDef.ColumnType = ColumnType.Text;
+                    break;
+            }
+
+            // CostType combo
+            if (string.Equals(colName, "CostType", StringComparison.OrdinalIgnoreCase))
+            {
+                colDef.HasComboList = true;
+                colDef.ComboItems = new List<ComboItem>
+                {
+                    new() { Value = "1", Text = "labour" },
+                    new() { Value = "2", Text = "material" },
+                    new() { Value = "3", Text = "subcontract" },
+                    new() { Value = "4", Text = "equipment" },
+                    new() { Value = "5", Text = "overhead" },
+                    new() { Value = "6", Text = "other" }
+                };
+            }
+
+            // DebitAccount button
+            if (string.Equals(colName, "DebitAccount", StringComparison.OrdinalIgnoreCase))
+            {
+                colDef.HasButtonColumn = true;
+            }
+
+            ColumnDefinitions.Add(colDef);
+        }
+    }
+
+    private void BuildGridData(DataTable dt)
+    {
+        GridData.Clear();
+        OriginalKeyValues.Clear();
+        var keyColumns = ParseCsvList(mKeyColumns);
+
+        for (int r = 0; r < dt.Rows.Count; r++)
+        {
+            var row = new GridRow();
+            row.SetValue("_RowIndex", r);
+            row.SetValue("_RowState", "");
+
+            foreach (DataColumn col in dt.Columns)
+            {
+                var val = dt.Rows[r][col];
+                if (val == DBNull.Value)
+                    row.SetValue(col.ColumnName, GetDefaultForType(col.DataType));
+                else
+                    row.SetValue(col.ColumnName, val);
+            }
+
+            // Preserve original key values
+            var origKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kc in keyColumns)
+            {
+                var trimmed = kc.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    var colIdx = dt.Columns.IndexOf(trimmed);
+                    if (colIdx >= 0)
+                    {
+                        origKeys[trimmed] = dt.Rows[r][colIdx]?.ToString() ?? "";
+                    }
+                }
+            }
+            OriginalKeyValues[r] = origKeys;
+
+            GridData.Add(row);
+        }
+    }
+
+    // === Event Handlers ===
+    private void OnCellSaved(CellSaveArgs<GridRow> args)
+    {
+        if (args.Data != null)
+        {
+            var currentState = args.Data.GetValue("_RowState")?.ToString() ?? "";
+            if (currentState != "Insert")
+            {
+                args.Data.SetValue("_RowState", "Update");
+            }
+            mDirty = true;
+        }
+    }
+
+    private void OnComboChanged(GridRow row, string fieldName, ChangeEventArgs e)
+    {
+        row.SetValue(fieldName, e.Value?.ToString() ?? "");
+        var currentState = row.GetValue("_RowState")?.ToString() ?? "";
+        if (currentState != "Insert")
+            row.SetValue("_RowState", "Update");
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    private async Task OnCellButtonClick(GridRow row, string fieldName)
+    {
+        if (string.Equals(fieldName, "DebitAccount", StringComparison.OrdinalIgnoreCase))
+        {
+            // In VB6 this opened FPickList for GL Accounts
+            await JSRuntime.InvokeVoidAsync("alert", "Account picker not yet implemented. Would open GL Accounts lookup.");
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task OnExportClick()
+    {
+        if (mDirty)
+        {
+            var saved = await SaveData(false);
+            if (!saved) return;
+        }
+        await JSRuntime.InvokeVoidAsync("alert", "Export to Excel not yet implemented.");
+    }
+
+    private void OnNewClick()
+    {
+        var newRow = new GridRow();
+        var newIndex = GridData.Count;
+        newRow.SetValue("_RowIndex", newIndex);
+        newRow.SetValue("_RowState", "Insert");
+
+        // Initialize columns with defaults
+        foreach (var col in ColumnDefinitions)
+        {
+            if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
+            switch (col.DataType)
+            {
+                case "boolean":
+                    newRow.SetValue(col.FieldName, false);
+                    break;
+                case "number":
+                    newRow.SetValue(col.FieldName, 0.0);
+                    break;
+                case "date":
+                    newRow.SetValue(col.FieldName, (DateTime?)null);
+                    break;
+                default:
+                    newRow.SetValue(col.FieldName, "");
+                    break;
+            }
+
+            // Set DivisionID automatically
+            if (string.Equals(col.FieldName, "DivisionID", StringComparison.OrdinalIgnoreCase))
+            {
+                newRow.SetValue(col.FieldName, DivisionID);
+            }
+        }
+
+        OriginalKeyValues[newIndex] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        GridData.Add(newRow);
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var answer = await JSRuntime.InvokeAsync<string>("eval",
+                "confirm('This data has changed.\\n\\nDo you want to save these changes?') ? 'yes' : 'no'");
+            if (answer == "no") return true;
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        var keyColumns = ParseCsvList(mKeyColumns);
+        var newkey = "";
+
+        try
+        {
+            foreach (var row in GridData)
+            {
+                var rowState = row.GetValue("_RowState")?.ToString() ?? "";
+                var rowIndex = Convert.ToInt32(row.GetValue("_RowIndex"));
+
+                if (rowState == "Insert")
+                {
+                    // Validate key columns are not blank
+                    foreach (var kc in keyColumns)
+                    {
+                        var trimmed = kc.Trim();
+                        if (string.IsNullOrEmpty(trimmed)) continue;
+                        if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase)) continue;
+                        var val = row.GetValue(trimmed)?.ToString() ?? "";
+                        if (string.IsNullOrWhiteSpace(val))
+                        {
+                            await JSRuntime.InvokeVoidAsync("alert", $"{trimmed} cannot be blank.");
+                            IsLoading = false;
+                            StateHasChanged();
+                            return false;
+                        }
+                    }
+
+                    // Build INSERT
+                    var ic = new StringBuilder();
+                    var iv = new StringBuilder();
+                    foreach (var col in ColumnDefinitions)
+                    {
+                        if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
+                        if (ic.Length > 0) { ic.Append(","); iv.Append(","); }
+                        ic.Append($"[{col.FieldName}]");
+                        iv.Append(FormatDbValue(row, col));
+                    }
+
+                    newkey = BuildNewKeyDisplay(row, keyColumns);
+                    var sql = $"INSERT INTO {mTableName} ({ic}) VALUES ({iv})";
+                    await db.ExecuteAsync(sql);
+                    row.SetValue("_RowState", "");
+
+                    // Store original keys for future updates
+                    var origKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var kc in keyColumns)
+                    {
+                        var trimmed = kc.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                            origKeys[trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
+                    }
+                    OriginalKeyValues[rowIndex] = origKeys;
+                }
+                else if (rowState == "Update")
+                {
+                    // Build WHERE clause using original key values
+                    var whereClause = new StringBuilder();
+                    var origKeys = OriginalKeyValues.ContainsKey(rowIndex)
+                        ? OriginalKeyValues[rowIndex]
+                        : new Dictionary<string, string>();
+
+                    foreach (var kc in keyColumns)
+                    {
+                        var trimmed = kc.Trim();
+                        if (string.IsNullOrEmpty(trimmed)) continue;
+
+                        if (whereClause.Length > 0) whereClause.Append(" AND ");
+
+                        if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            whereClause.Append($"[{trimmed}]={DivisionID}");
+                        }
+                        else
+                        {
+                            var origVal = origKeys.ContainsKey(trimmed) ? origKeys[trimmed] : "";
+                            var colDef = ColumnDefinitions.FirstOrDefault(c =>
+                                string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
+                            whereClause.Append($"[{trimmed}]={QuoteValue(origVal, colDef?.DataType ?? "string")}");
+                        }
+                    }
+
+                    // Build SET clause
+                    var setClause = new StringBuilder();
+                    foreach (var col in ColumnDefinitions)
+                    {
+                        if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
+                        if (setClause.Length > 0) setClause.Append(",");
+                        setClause.Append($"[{col.FieldName}]={FormatDbValue(row, col)}");
+                    }
+
+                    newkey = BuildNewKeyDisplay(row, keyColumns);
+                    var sql = $"UPDATE {mTableName} SET {setClause}";
+                    if (whereClause.Length > 0)
+                        sql += $" WHERE {whereClause}";
+
+                    await db.ExecuteAsync(sql);
+                    row.SetValue("_RowState", "");
+
+                    // Update original keys to current values
+                    foreach (var kc in keyColumns)
+                    {
+                        var trimmed = kc.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                        {
+                            if (!OriginalKeyValues.ContainsKey(rowIndex))
+                                OriginalKeyValues[rowIndex] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                            OriginalKeyValues[rowIndex][trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
+                        }
+                    }
+                }
+            }
+
+            mDirty = false;
+            IsLoading = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            IsLoading = false;
+            StateHasChanged();
+
+            if (ex.Message.IndexOf("duplicate", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert",
+                    $"Unable to save duplicate record with key\n\n{newkey}");
+            }
+            else
+            {
+                Console.WriteLine($"[FDBGrid.SaveData] Error: {ex.Message}");
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    // === Helpers ===
+    private string FormatDbValue(GridRow row, ColumnDef col)
+    {
+        var val = row.GetValue(col.FieldName);
+
+        if (string.Equals(col.FieldName, "DivisionID", StringComparison.OrdinalIgnoreCase))
+            return DivisionID.ToString();
+
+        switch (col.DataType)
+        {
+            case "boolean":
+                var boolVal = val is bool b ? b : (val?.ToString() == "True" || val?.ToString() == "1");
+                return boolVal ? "1" : "0";
+            case "date":
+                if (val is DateTime dt && dt != DateTime.MinValue)
+                    return $"'{dt:yyyy-MM-dd HH:mm:ss}'";
+                var dateStr = val?.ToString() ?? "";
+                if (DateTime.TryParse(dateStr, out var parsed))
+                    return $"'{parsed:yyyy-MM-dd HH:mm:ss}'";
+                return "NULL";
+            case "number":
+                var numStr = val?.ToString() ?? "";
+                if (string.IsNullOrWhiteSpace(numStr)) return "0";
+                if (double.TryParse(numStr, out var num)) return num.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return "0";
+            default:
+                return $"'{(val?.ToString() ?? "").Replace("'", "''")}'";
+        }
+    }
+
+    private string QuoteValue(string val, string dataType)
+    {
+        switch (dataType)
+        {
+            case "boolean":
+                return (val == "True" || val == "1") ? "1" : "0";
+            case "date":
+                if (DateTime.TryParse(val, out var dt))
+                    return $"'{dt:yyyy-MM-dd HH:mm:ss}'";
+                return "NULL";
+            case "number":
+                if (double.TryParse(val, out var num))
+                    return num.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return "0";
+            default:
+                return $"'{val.Replace("'", "''")}'";
+        }
+    }
+
+    private string BuildNewKeyDisplay(GridRow row, List<string> keyColumns)
+    {
+        var parts = new List<string>();
+        foreach (var kc in keyColumns)
+        {
+            var trimmed = kc.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+            var val = row.GetValue(trimmed)?.ToString() ?? "";
+            parts.Add($"[{trimmed}]={val}");
+        }
+        return string.Join(" AND ", parts);
+    }
+
+    private string MapDataType(Type type)
+    {
+        if (type == typeof(bool)) return "boolean";
+        if (type == typeof(DateTime) || type == typeof(DateTimeOffset)) return "date";
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short) ||
+            type == typeof(byte) || type == typeof(decimal) || type == typeof(double) ||
+            type == typeof(float) || type == typeof(uint) || type == typeof(ulong) ||
+            type == typeof(ushort)) return "number";
+        return "string";
+    }
+
+    private object GetDefaultForType(Type type)
+    {
+        if (type == typeof(bool)) return false;
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short) ||
+            type == typeof(byte) || type == typeof(decimal) || type == typeof(double) ||
+            type == typeof(float)) return 0;
+        if (type == typeof(DateTime)) return (object)DBNull.Value;
+        return "";
+    }
+
+    private HashSet<string> ParseCsvSet(string csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                   .Select(s => s.Trim())
+                   .Where(s => !string.IsNullOrEmpty(s))
+                   .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private List<string> ParseCsvList(string csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv)) return new List<string>();
+        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                   .Select(s => s.Trim())
+                   .Where(s => !string.IsNullOrEmpty(s))
+                   .ToList();
+    }
+
+    // === Models ===
+    public class GridRow
+    {
+        private Dictionary<string, object?> _values = new(StringComparer.OrdinalIgnoreCase);
+
+        public object? GetValue(string fieldName)
+        {
+            return _values.ContainsKey(fieldName) ? _values[fieldName] : null;
+        }
+
+        public void SetValue(string fieldName, object? value)
+        {
+            _values[fieldName] = value;
+        }
+
+        // Indexer for grid binding
+        public object? this[string fieldName]
+        {
+            get => GetValue(fieldName);
+            set => SetValue(fieldName, value);
+        }
+    }
+
+    public class ColumnDef
+    {
+        public string FieldName { get; set; } = "";
+        public string HeaderText { get; set; } = "";
+        public string Width { get; set; } = "150px";
+        public bool Visible { get; set; } = true;
+        public bool AllowEditing { get; set; } = true;
+        public bool IsPrimaryKey { get; set; } = false;
+        public string DataType { get; set; } = "string"; // string, number, boolean, date
+        public ColumnType ColumnType { get; set; } = ColumnType.Text;
+        public TextAlign TextAlign { get; set; } = TextAlign.Left;
+        public string? Format { get; set; }
+        public bool HasComboList { get; set; } = false;
+        public List<ComboItem> ComboItems { get; set; } = new();
+        public bool HasButtonColumn { get; set; } = false;
+    }
+
+    public class ComboItem
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+}
+```
