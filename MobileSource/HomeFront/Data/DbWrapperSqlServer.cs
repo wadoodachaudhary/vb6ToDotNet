@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System.Data;
+using System.Data.SqlTypes;
 using System.Dynamic;
 
 namespace HomeFront.Data;
@@ -8,10 +9,13 @@ namespace HomeFront.Data;
 public class DbWrapperSqlServer
 {
     private readonly string _connectionString;
+    private bool debug_mode=false;
 
     public DbWrapperSqlServer()
     {
         _connectionString = "Server=localhost,1433;Database=HomeFrontDB;User Id=sa;Password=Nusr@t7860;TrustServerCertificate=true;";
+        //_connectionString = "Server=172.31.73.64,1433;Database=HomeFrontDB;User Id=sa;Password=Nusr@t7860;TrustServerCertificate=true;";
+        
     }
 
     public DbWrapperSqlServer(string connectionString)
@@ -27,9 +31,11 @@ public class DbWrapperSqlServer
 
     private SqlConnection GetConnection() => new(_connectionString);
 
+    public string GetConnectionString() => _connectionString;
+
     public DataTable SqlExec(string sql, object? parameters = null)
     {
-        Console.WriteLine($"SQL (Grid) = {sql}");
+        if (debug_mode) Console.WriteLine($"SQL (Grid) = {sql}");
         using var connection = GetConnection();
         connection.Open();
         using var command = new SqlCommand(sql, connection);
@@ -37,13 +43,13 @@ public class DbWrapperSqlServer
         var dt = new DataTable();
         using var adapter = new SqlDataAdapter(command);
         adapter.Fill(dt);
-        Console.WriteLine($"Row Count = {dt.Rows.Count}");
+        if (debug_mode) Console.WriteLine($"Row Count = {dt.Rows.Count}");
         return dt;
     }
 
     public async Task<List<Dictionary<string, object>>> QueryAsync(string sql, object? parameters = null)
     {
-        Console.WriteLine($"QueryAsSync = {sql}");
+        if (debug_mode) Console.WriteLine($"QueryAsSync = {sql}");
         var results = new List<Dictionary<string, object>>();
         await using var connection = GetConnection();
         await connection.OpenAsync();
@@ -62,12 +68,13 @@ public class DbWrapperSqlServer
             results.Add(row);
         }
 
-        Console.WriteLine($"Row Count = {results.Count}");
+        if (debug_mode) Console.WriteLine($"Row Count = {results.Count}");
         return results;
     }
 
     public async Task<List<ExpandoObject>> QueryDynamicAsync(string sql, object? parameters = null)
     {
+        if (debug_mode) Console.WriteLine($"QueryDynamicAsync SQL = {sql}");
         var results = new List<ExpandoObject>();
         await using var connection = GetConnection();
         await connection.OpenAsync();
@@ -86,6 +93,7 @@ public class DbWrapperSqlServer
             }
             results.Add(row);
         }
+        if (debug_mode) Console.WriteLine($"Row Count = {results.Count}");
         return results;
     }
 
@@ -112,7 +120,7 @@ public class DbWrapperSqlServer
         await using var connection = GetConnection();
         await connection.OpenAsync();
         await using var command = new SqlCommand(sql, connection);
-        Console.WriteLine($"QueryAsSync = {sql}");
+        if (debug_mode) Console.WriteLine($"QueryAsSync = {sql}");
         AddParameters(command, parameters);
         var result = await command.ExecuteScalarAsync();
         if (result == null || result == DBNull.Value)
@@ -149,7 +157,7 @@ public class DbWrapperSqlServer
         {
             var value = prop.GetValue(parameters) ?? DBNull.Value;
             var paramName = prop.Name.StartsWith("@", StringComparison.Ordinal) ? prop.Name : "@" + prop.Name;
-            Console.WriteLine($"{paramName} = {value}");
+            if (debug_mode) Console.WriteLine($"{paramName} = {value}");
             command.Parameters.AddWithValue(paramName, value);
         }
     }

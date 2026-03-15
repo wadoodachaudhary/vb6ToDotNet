@@ -1,4 +1,4 @@
-@page "/vendor-opus"
+@page "/vendor"
 
 @rendermode InteractiveServer
 
@@ -9,9 +9,10 @@
 @using System.Dynamic
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Grid
+@using System.Reflection
 @using HomeFront.Components.Hf
 @using HomeFront.Data
+@using HomeFront.Components.Pages.Migrated
 
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
@@ -61,45 +62,68 @@
         font-size: 12px;
     }
 
-    .vendor-form label {
-        font-weight: 600;
-        display: block;
-        margin-top: 8px;
-        margin-bottom: 2px;
+    /* Label-left layout matching VB6 */
+    .form-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 3px;
+    }
+    .form-row label {
+        min-width: 100px;
+        font-size: 13px;
+        color: #333;
+        text-align: right;
+        padding-right: 6px;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .form-row input[type="text"],
+    .form-row textarea,
+    .form-row select,
+    .form-row input[type="number"] {
+        flex: 1;
+        padding: 2px 4px;
+        border: 1px solid #999;
         font-size: 13px;
     }
-
-    .vendor-form input[type="text"],
-    .vendor-form textarea,
-    .vendor-form select,
-    .vendor-form input[type="number"] {
-        width: 100%;
-        padding: 4px 6px;
-        border: 1px solid #ccc;
-        border-radius: 3px;
-        font-size: 14px;
-        margin-bottom: 4px;
+    .form-row .field-short {
+        max-width: 120px;
+    }
+    .form-row .field-med {
+        max-width: 200px;
     }
 
-    .vendor-form .w-50per {
-        width: 50%;
+    .chk-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 4px 0 4px 106px;
     }
-
-    .vendor-form .w-30per {
-        width: 30%;
+    .chk-row label {
+        font-size: 13px;
+        cursor: pointer;
     }
 
     .vendor-header {
-        font-size: 24px;
+        font-size: 14px;
         font-weight: bold;
         color: #333;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
+    }
+
+    .section-title {
+        font-size: 14px;
+        font-weight: bold;
+        margin-top: 12px;
+        margin-bottom: 6px;
+        color: #0080c0;
     }
 
     .nav-buttons {
         margin-top: 12px;
         display: flex;
         gap: 8px;
+        justify-content: flex-end;
     }
 
     .nav-buttons button {
@@ -114,12 +138,33 @@
         background: #e8e8e8;
     }
 
-    .section-title {
-        font-size: 18px;
-        font-weight: 600;
-        margin-top: 16px;
-        margin-bottom: 8px;
-        color: #333;
+    .contacts-grid input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        border: 1px solid #000;
+        background: #fff;
+        appearance: none;
+        -webkit-appearance: none;
+        display: inline-block;
+        position: relative;
+        vertical-align: middle;
+        margin: 0;
+    }
+
+    .contacts-grid input[type="checkbox"]:checked::after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid #000;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+    .contacts-grid input[type="checkbox"]:disabled {
+        opacity: 0.7;
     }
 </style>
 
@@ -129,7 +174,7 @@
         <img src="images/32/open.ico" class="tbar-icon" />
         <span class="tool-label">Open</span>
     </button>
-    <button class="tbar-btn">
+    <button class="tbar-btn" @onclick="OnSaveClick">
         <img src="images/32/save.ico" class="tbar-icon" />
         <span class="tool-label">Save</span>
     </button>
@@ -143,103 +188,187 @@
     </button>
 </div>
 
-<div class="row m-0 vendor-form">
+<div class="row m-0">
     <!-- Left Panel: Vendor Details -->
     <div class="col-md-3">
-        <div class="vendor-header">@VendorDesc</div>
+        <div class="form-row">
+            <label>Vendor</label>
+            <input type="text" @bind="VendorId" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Company Name</label>
+            <input type="text" @bind="Description" disabled="@IsReadOnly" />
+        </div>
 
-        <HfTextBox @bind-Value="VendorId" Placeholder="Vendor" Enabled="true" />
-        <HfTextBox @bind-Value="TaxID" Placeholder="Tax ID" Enabled="true" />
-        <HfTextBox @bind-Value="WalletPayeeID" Placeholder="Wallet Payee ID" Enabled="false" />
-
-        <HfCheckBox @bind-Checked="IsBuildPro" Label="BuildPro Vendor" />
-        <HfCheckBox @bind-Checked="IsTBD" Label="TBD - budget planning only" />
-        <br />
+        <div class="chk-row">
+            <label><input type="checkbox" @bind="IsTBD" /> TBD - budget planning only</label>
+            <label><input type="checkbox" @bind="IsBuildPro" /> BuildPro Vendor</label>
+        </div>
 
         <h4 class="section-title">Address</h4>
-        <HfTextBox @bind-Value="VendorId" Placeholder="Vendor ID" Enabled="@(!IsReadOnly)" />
-        <HfTextBox @bind-Value="Description" Placeholder="Description" Enabled="@(!IsReadOnly)" />
-        <HfTextBox @bind-Value="Address" Placeholder="Address" Multiline="true" Enabled="@(!IsReadOnly)" />
-        <HfTextBox @bind-Value="City" Placeholder="City" Enabled="@(!IsReadOnly)" />
-        <HfTextBox @bind-Value="Province" Placeholder="Province/State" Enabled="@(!IsReadOnly)" />
-        <div class="w-50per">
-            <HfTextBox @bind-Value="Postal" Placeholder="Postal/Zip" Enabled="@(!IsReadOnly)" />
-            <HfTextBox @bind-Value="Phone" Placeholder="Phone" Enabled="@(!IsReadOnly)" />
-            <HfTextBox @bind-Value="Fax" Placeholder="Fax" Enabled="@(!IsReadOnly)" />
+        <div class="form-row">
+            <label></label>
+            <input type="text" @bind="Address" disabled="@IsReadOnly" />
         </div>
-        <br />
-
-        <HfTextBox @bind-Value="WalletPayeeID" Placeholder="Wallet Payee ID" Enabled="false" />
-        <HfTextBox @bind-Value="TaxID" Placeholder="Tax ID" Enabled="@(!IsReadOnly)" />
-
-        <div class="w-50per">
-            <HfDropDownList TValue="int"
-                            TItem="SelectItem"
-                            @bind-Value="@StatusIndex"
-                            DataSource="@StatusOptions"
-                            Placeholder="Status"
-                            TextFieldName="Text"
-                            ValueFieldName="Value" />
+        <div class="form-row">
+            <label></label>
+            <textarea rows="2" @bind="Address2" disabled="@IsReadOnly"></textarea>
         </div>
-
-        <HfDropDownList TValue="string"
-                        TItem="string"
-                        @bind-Value="@TradeType"
-                        DataSource="@TradeTypes"
-                        Placeholder="Trade Type"
-                        Enabled="@(!IsReadOnly)" />
-
-        <HfDropDownList TValue="string"
-                        TItem="string"
-                        @bind-Value="@POFormat"
-                        DataSource="@POFormats"
-                        Placeholder="PO Format"
-                        Enabled="@(!IsReadOnly)" />
-
-        <div class="w-30per">
-            <HfNumericTextBox TValue="double"
-                              @bind-Value="HoldbackPercent"
-                              Placeholder="Holdback %"
-                              Format="N2"
-                              Enabled="@(!IsReadOnly)" />
+        <div class="form-row">
+            <label>City</label>
+            <input type="text" @bind="City" disabled="@IsReadOnly" />
         </div>
-        <br />
+        <div class="form-row">
+            <label>State/Province</label>
+            <input type="text" @bind="Province" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Postal</label>
+            <input type="text" class="field-short" @bind="Postal" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Phone</label>
+            <input type="text" class="field-short" @bind="Phone" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Fax</label>
+            <input type="text" class="field-short" @bind="Fax" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Status</label>
+            <select @bind="StatusIndex" class="field-med">
+                @foreach (var opt in StatusOptions)
+                {
+                    <option value="@opt.Value">@opt.Text</option>
+                }
+            </select>
+        </div>
+        <div class="form-row">
+            <label>Retainage %</label>
+            <input type="number" class="field-short" step="0.01" @bind="HoldbackPercent" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Payee ID</label>
+            <input type="text" @bind="WalletPayeeID" disabled />
+        </div>
+        <div class="form-row">
+            <label>Tax ID</label>
+            <input type="text" @bind="TaxID" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Trade Type</label>
+            <select @bind="TradeType" disabled="@IsReadOnly">
+                <option value=""></option>
+                @foreach (var t in TradeTypes)
+                {
+                    <option value="@t">@t</option>
+                }
+            </select>
+        </div>
+        <div class="form-row">
+            <label>PO Format</label>
+            <select @bind="POFormat" disabled="@IsReadOnly">
+                <option value=""></option>
+                @foreach (var f in POFormats)
+                {
+                    <option value="@f">@f</option>
+                }
+            </select>
+        </div>
 
         <h4 class="section-title">Web Portal</h4>
-        <HfTextBox @bind-Value="WebUID" Placeholder="Web User ID" Enabled="@(!IsReadOnly)" />
-        <HfTextBox @bind-Value="WebPWD" Placeholder="Web Password" Enabled="@(!IsReadOnly)" />
+        <div class="form-row">
+            <label>Login ID</label>
+            <input type="text" @bind="WebUID" disabled="@IsReadOnly" />
+        </div>
+        <div class="form-row">
+            <label>Password</label>
+            <input type="text" @bind="WebPWD" disabled="@IsReadOnly" />
+        </div>
     </div>
 
     <!-- Right Panel: Grids -->
     <div class="col-md-9">
         <h4 class="section-title">Contacts</h4>
-        <HfGrid @ref="ContactsGrid" TValue="VendorContact" DataSource="@Contacts" AllowSorting="true" Height="200px">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(VendorContact.ContactID)" HeaderText="Contact ID" Width="100px" />
-                <HfGridColumn Field="@nameof(VendorContact.Role)" HeaderText="Role" Width="100px" />
-                <HfGridColumn Field="@nameof(VendorContact.Name)" HeaderText="Name" Width="140px" />
-                <HfGridColumn Field="@nameof(VendorContact.Phone)" HeaderText="Phone" Width="120px" />
-                <HfGridColumn Field="@nameof(VendorContact.Cell)" HeaderText="Cell" Width="120px" />
-                <HfGridColumn Field="@nameof(VendorContact.Fax)" HeaderText="Fax" Width="120px" />
-                <HfGridColumn Field="@nameof(VendorContact.Email)" HeaderText="Email" Width="180px" />
-                <HfGridColumn Field="@nameof(VendorContact.SendVia)" HeaderText="Send Via" Width="80px" />
-                <HfGridColumn Field="@nameof(VendorContact.SmsAddress)" HeaderText="SMS Address" Width="140px" />
-                <HfGridColumn Field="@nameof(VendorContact.PONotice)" HeaderText="PO Notice" Width="90px" />
-                <HfGridColumn Field="@nameof(VendorContact.FPONotice)" HeaderText="FPO Notice" Width="90px" />
-                <HfGridColumn Field="@nameof(VendorContact.SchedNotice)" HeaderText="Sched Notice" Width="100px" />
-                <HfGridColumn Field="@nameof(VendorContact.ServiceNotice)" HeaderText="Service Notice" Width="100px" />
-            </HfGridColumnsBase>
-        </HfGrid>
+        <div class="contacts-grid">
+            <HfGrid @ref="gContacts" TValue="VendorContact" DataSource="@Contacts" AllowSorting="true" Height="200px">
+                <HfGridColumnsBase @key="gContactsLayoutVersion" DebugTag="FVendor-gContacts">
+                @if (HasContactsLayout)
+                {
+                    foreach (var col in GetOrderedLayout(gContactsLayout))
+                    {
+                        var headerText = string.IsNullOrWhiteSpace(col.Caption) ? col.Field : col.Caption;
+                        var width = col.Width.HasValue && col.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(col.Width.Value)}px" : "120px";
+                        var resolvedField = ResolveContactField(col.Field);
+                        var isCheckbox = IsContactCheckboxField(resolvedField);
+                        if (isCheckbox)
+                        {
+                            <HfGridColumn Field="@resolvedField" HeaderText="@headerText" Width="@width"
+                                          Type="ColumnType.CheckBox" AllowEditing="@(!IsReadOnly)">
+                                <Template>
+                                    @{
+                                       var row = (VendorContact)context;
+                                       var isChecked = GetContactBool(row, resolvedField);
+                                   }
+                                    <input type="checkbox"
+                                           checked="@isChecked"
+                                           disabled="@IsReadOnly"
+                                           @onchange="(ChangeEventArgs e) => OnContactCheckboxChanged(row, resolvedField, e)"
+                                           @onclick:stopPropagation="true" />
+                                </Template>
+                            </HfGridColumn>
+                        }
+                        else
+                        {
+                            <HfGridColumn Field="@resolvedField" HeaderText="@headerText" Width="@width" />
+                        }
+                    }
+                }
+                else
+                {
+                    <HfGridColumn Field="@nameof(VendorContact.ContactID)" HeaderText="Contact ID" Width="100px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Role)" HeaderText="Role" Width="100px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Name)" HeaderText="Name" Width="140px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Phone)" HeaderText="Phone" Width="120px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Cell)" HeaderText="Cell" Width="120px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Fax)" HeaderText="Fax" Width="120px" />
+                    <HfGridColumn Field="@nameof(VendorContact.Email)" HeaderText="Email" Width="180px" />
+                    <HfGridColumn Field="@nameof(VendorContact.SendVia)" HeaderText="Send Via" Width="80px" />
+                    <HfGridColumn Field="@nameof(VendorContact.SmsAddress)" HeaderText="SMS Address" Width="140px" />
+                    <HfGridColumn Field="@nameof(VendorContact.PONotice)" HeaderText="PO Notice" Width="90px" Type="ColumnType.CheckBox" />
+                    <HfGridColumn Field="@nameof(VendorContact.FPONotice)" HeaderText="FPO Notice" Width="90px" Type="ColumnType.CheckBox" />
+                    <HfGridColumn Field="@nameof(VendorContact.SchedNotice)" HeaderText="Sched Notice" Width="100px" Type="ColumnType.CheckBox" />
+                    <HfGridColumn Field="@nameof(VendorContact.ServiceNotice)" HeaderText="Service Notice" Width="100px" Type="ColumnType.CheckBox" />
+                }
+                </HfGridColumnsBase>
+            </HfGrid>
+        </div>
 
-        <h4 class="section-title">Pay Points</h4>
-        <HfGrid @ref="PayPointsGrid" TValue="VendorPayPoint" DataSource="@PayPoints" AllowSorting="true" Height="200px">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(VendorPayPoint.POIndex)" HeaderText="PO Index" Width="120px" />
-                <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint1Percent)" HeaderText="PayPoint1 %" Width="110px" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint2Percent)" HeaderText="PayPoint2 %" Width="110px" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint3Percent)" HeaderText="PayPoint3 %" Width="110px" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint4Percent)" HeaderText="PayPoint4 %" Width="110px" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint5Percent)" HeaderText="PayPoint5 %" Width="110px" TextAlign="TextAlign.Right" />
+        <h4 class="section-title">Contract Payment Points</h4>
+        <HfGrid @ref="gPayPoints" TValue="VendorPayPoint" DataSource="@PayPoints" AllowSorting="true" Height="200px">
+            <HfGridColumnsBase @key="gPayPointsLayoutVersion" DebugTag="FVendor-gPayPoints">
+                @if (HasPayPointsLayout)
+                {
+                    foreach (var col in GetOrderedLayout(gPayPointsLayout))
+                    {
+                        var headerText = string.IsNullOrWhiteSpace(col.Caption) ? col.Field : col.Caption;
+                        var width = col.Width.HasValue && col.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(col.Width.Value)}px" : "110px";
+                        var isNumeric = !col.Field.Equals("POIndex", StringComparison.OrdinalIgnoreCase);
+                        <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                      TextAlign="@(isNumeric ? TextAlign.Right : TextAlign.Left)" />
+                    }
+                }
+                else
+                {
+                    <HfGridColumn Field="@nameof(VendorPayPoint.POIndex)" HeaderText="PO Index" Width="120px" />
+                    <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint1Percent)" HeaderText="PayPoint1 %" Width="110px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint2Percent)" HeaderText="PayPoint2 %" Width="110px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint3Percent)" HeaderText="PayPoint3 %" Width="110px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint4Percent)" HeaderText="PayPoint4 %" Width="110px" TextAlign="TextAlign.Right" />
+                    <HfGridColumn Field="@nameof(VendorPayPoint.PayPoint5Percent)" HeaderText="PayPoint5 %" Width="110px" TextAlign="TextAlign.Right" />
+                }
             </HfGridColumnsBase>
         </HfGrid>
 
@@ -257,14 +386,33 @@
             </HfGridColumnsBase>
         </HfGrid>
 
-        <h4 class="section-title">Insurance Requirements</h4>
-        <HfGrid @ref="InsuranceGrid" TValue="InsuranceRequirement" DataSource="@InsuranceData" Height="220px">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="Type" HeaderText="Type" Width="140px" />
-                <HfGridColumn Field="Required" HeaderText="Required" Width="100px" Type="ColumnType.CheckBox" />
-                <HfGridColumn Field="ExpiryDate" HeaderText="Expiry Date" Format="d" Width="140px" />
-                <HfGridColumn Field="Company" HeaderText="Company" Width="180px" />
-                <HfGridColumn Field="PolicyNumber" HeaderText="Policy #" Width="160px" />
+        <h4 class="section-title">Insurance</h4>
+        <HfGrid @ref="gInsurance" TValue="InsuranceRequirement" DataSource="@InsuranceData" Height="220px">
+            <HfGridColumnsBase @key="gInsuranceLayoutVersion" DebugTag="FVendor-gInsurance">
+                @if (HasInsuranceLayout)
+                {
+                    foreach (var col in GetOrderedLayout(gInsuranceLayout))
+                    {
+                        var headerText = string.IsNullOrWhiteSpace(col.Caption) ? col.Field : col.Caption;
+                        var width = col.Width.HasValue && col.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(col.Width.Value)}px" : "140px";
+                        var isCheckbox = col.Field.Equals("Req", StringComparison.OrdinalIgnoreCase)
+                                        || col.Field.Equals("Required", StringComparison.OrdinalIgnoreCase);
+                        var isDate = col.Field.Equals("ExpiryDate", StringComparison.OrdinalIgnoreCase)
+                                     || col.Field.Equals("Expiry Date", StringComparison.OrdinalIgnoreCase);
+                        <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                      Type="@(isCheckbox ? ColumnType.CheckBox : ColumnType.Text)"
+                                      Format="@(isDate ? "d" : null)" />
+                    }
+                }
+                else
+                {
+                    <HfGridColumn Field="Name" HeaderText="Name" Width="140px" />
+                    <HfGridColumn Field="Req" HeaderText="Req" Width="100px" Type="ColumnType.CheckBox" />
+                    <HfGridColumn Field="ExpiryDate" HeaderText="Expiry Date" Format="d" Width="140px" />
+                    <HfGridColumn Field="Company" HeaderText="Company" Width="180px" />
+                    <HfGridColumn Field="PolicyNumber" HeaderText="Policy #" Width="160px" />
+                }
             </HfGridColumnsBase>
         </HfGrid>
     </div>
@@ -281,9 +429,25 @@
     private string mVendor = "";
     private bool IsReadOnly = false;
 
+    // === IniGetGrid constants and layout state ===
+    private const string FormName = "FVendor";
+
+    private Dictionary<string, MMain.GridLayoutColumn> gContactsLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int gContactsLayoutVersion = 0;
+    private bool HasContactsLayout => gContactsLayout.Count > 0;
+
+    private Dictionary<string, MMain.GridLayoutColumn> gInsuranceLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int gInsuranceLayoutVersion = 0;
+    private bool HasInsuranceLayout => gInsuranceLayout.Count > 0;
+
+    private Dictionary<string, MMain.GridLayoutColumn> gPayPointsLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int gPayPointsLayoutVersion = 0;
+    private bool HasPayPointsLayout => gPayPointsLayout.Count > 0;
+
     private string VendorId = "";
     private string Description = "";
     private string Address = "";
+    private string Address2 = "";
     private string City = "";
     private string Province = "";
     private string Postal = "";
@@ -301,10 +465,10 @@
 
     private List<VendorPayPoint> PayPoints = new();
     private List<VendorContact> Contacts = new();
-    private HfGrid<VendorPayPoint>? PayPointsGrid;
-    private HfGrid<VendorContact>? ContactsGrid;
+    private HfGrid<VendorPayPoint>? gPayPoints;
+    private HfGrid<VendorContact>? gContacts;
     private HfGrid<TaxGroupRow>? TaxGroupsGrid;
-    private HfGrid<InsuranceRequirement>? InsuranceGrid;
+    private HfGrid<InsuranceRequirement>? gInsurance;
     private int DivisionID = 1;
 
     private int StatusIndex = 0;
@@ -327,6 +491,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadGridLayouts();
         VendorId = "41";
         var vendorData = await db.QueryAsync("SELECT * FROM tblVendors WHERE DivisionID = @DivisionID",
             new { DivisionID });
@@ -343,6 +508,301 @@
             mVendor = VendorId;
         }
         await LoadDataAsync();
+    }
+
+    // VB6: Call IniGetGrid(Me, gContacts, , , , True)  — staticNames=True
+    //      Call IniGetGrid(Me, gInsurance)
+    //      Call IniGetGrid(Me, gPayPoints)
+    private async Task LoadGridLayouts()
+    {
+        gContactsLayout = await MMain.IniGetGridAsync(FormName, "gContacts", 0, grouped: true);
+        gContactsLayoutVersion++;
+
+        gInsuranceLayout = await MMain.IniGetGridAsync(FormName, "gInsurance", 0);
+        gInsuranceLayoutVersion++;
+
+        gPayPointsLayout = await MMain.IniGetGridAsync(FormName, "gPayPoints", 0);
+        gPayPointsLayoutVersion++;
+    }
+
+    private IEnumerable<MMain.GridLayoutColumn> GetOrderedLayout(Dictionary<string, MMain.GridLayoutColumn> layoutDict)
+    {
+        return layoutDict.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0) return 0;
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
+    private async Task OnSaveClick()
+    {
+        try
+        {
+            await SaveContactsAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Save failed: {ex.Message}");
+        }
+    }
+
+    private static bool GetContactBool(VendorContact row, string field)
+    {
+        return field switch
+        {
+            nameof(VendorContact.PONotice) => row.PONotice,
+            nameof(VendorContact.FPONotice) => row.FPONotice,
+            nameof(VendorContact.SchedNotice) => row.SchedNotice,
+            nameof(VendorContact.ServiceNotice) => row.ServiceNotice,
+            _ => false
+        };
+    }
+
+    private void SetContactBool(VendorContact row, string field, bool value)
+    {
+        switch (field)
+        {
+            case nameof(VendorContact.PONotice):
+                row.PONotice = value;
+                break;
+            case nameof(VendorContact.FPONotice):
+                row.FPONotice = value;
+                break;
+            case nameof(VendorContact.SchedNotice):
+                row.SchedNotice = value;
+                break;
+            case nameof(VendorContact.ServiceNotice):
+                row.ServiceNotice = value;
+                break;
+        }
+    }
+
+    private void OnContactCheckboxChanged(VendorContact row, string field, ChangeEventArgs e)
+    {
+        if (IsReadOnly) return;
+        var isChecked = ToBool(e.Value);
+        SetContactBool(row, field, isChecked);
+        Dirty = true;
+    }
+
+    private static bool IsContactEmpty(VendorContact contact)
+    {
+        if (contact == null) return true;
+        return string.IsNullOrWhiteSpace(contact.ContactID)
+            && string.IsNullOrWhiteSpace(contact.Role)
+            && string.IsNullOrWhiteSpace(contact.Name)
+            && string.IsNullOrWhiteSpace(contact.Phone)
+            && string.IsNullOrWhiteSpace(contact.Cell)
+            && string.IsNullOrWhiteSpace(contact.Fax)
+            && string.IsNullOrWhiteSpace(contact.Email)
+            && string.IsNullOrWhiteSpace(contact.SmsAddress)
+            && contact.SendVia == 0
+            && !contact.PONotice && !contact.FPONotice && !contact.SchedNotice && !contact.ServiceNotice;
+    }
+
+    private async Task SaveContactsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(mVendor))
+            return;
+
+        foreach (var contact in Contacts.ToList())
+        {
+            if (IsContactEmpty(contact))
+                continue;
+
+            var parameters = new
+            {
+                DivisionID,
+                ContactTypeID = 99,
+                UserID = Guid.NewGuid().ToString(),
+                Vendor = mVendor,
+                Role = contact.Role ?? "",
+                Name = contact.Name ?? "",
+                Phone = contact.Phone ?? "",
+                Cell = contact.Cell ?? "",
+                Fax = contact.Fax ?? "",
+                Email = contact.Email ?? "",
+                SendVia = contact.SendVia,
+                SmsAddress = contact.SmsAddress ?? "",
+                PONotice = contact.PONotice,
+                FPONotice = contact.FPONotice,
+                SchedNotice = contact.SchedNotice,
+                ServiceNotice = contact.ServiceNotice,
+                CompanyName = Description ?? "",
+                CompanyAddr1 = Address ?? "",
+                CompanyAddr2 = Address2 ?? "",
+                CompanyCity = City ?? "",
+                CompanyProv = Province ?? "",
+                CompanyPostal = Postal ?? ""
+            };
+
+            if (string.IsNullOrWhiteSpace(contact.ContactID))
+            {
+                var insertSql = @"
+INSERT INTO Contacts(
+    DivisionID, ContactTypeID, UserID, VendorCode,
+    Role, FirstName, DisplayName, WorkPhone, CellPhone, Fax, Email, CommModeID, SmsAddress,
+    PONotice, FPONotice, SchedNotice, ServiceNotice,
+    CompanyName, CompanyAddr1, CompanyAddr2, CompanyCity, CompanyProv, CompanyPostal
+)
+OUTPUT INSERTED.ContactID
+VALUES(
+    @DivisionID, @ContactTypeID, @UserID, @Vendor,
+    @Role, @Name, @Name, @Phone, @Cell, @Fax, @Email, @SendVia, @SmsAddress,
+    @PONotice, @FPONotice, @SchedNotice, @ServiceNotice,
+    @CompanyName, @CompanyAddr1, @CompanyAddr2, @CompanyCity, @CompanyProv, @CompanyPostal
+)";
+                var newId = await db.ExecuteScalarAsync<long>(insertSql, parameters);
+                if (newId != 0)
+                    contact.ContactID = newId.ToString();
+            }
+            else
+            {
+                var updateSql = @"
+UPDATE Contacts
+SET Role = @Role,
+    FirstName = @Name,
+    DisplayName = @Name,
+    WorkPhone = @Phone,
+    CellPhone = @Cell,
+    Fax = @Fax,
+    Email = @Email,
+    CommModeID = @SendVia,
+    SmsAddress = @SmsAddress,
+    PONotice = @PONotice,
+    FPONotice = @FPONotice,
+    SchedNotice = @SchedNotice,
+    ServiceNotice = @ServiceNotice,
+    CompanyName = @CompanyName,
+    CompanyAddr1 = @CompanyAddr1,
+    CompanyAddr2 = @CompanyAddr2,
+    CompanyCity = @CompanyCity,
+    CompanyProv = @CompanyProv,
+    CompanyPostal = @CompanyPostal
+WHERE ContactID = @ContactID";
+                var contactIdParam = long.TryParse(contact.ContactID, out var idVal)
+                    ? (object)idVal
+                    : (object)(contact.ContactID ?? "");
+                var updateParams = new
+                {
+                    parameters.Role,
+                    parameters.Name,
+                    parameters.Phone,
+                    parameters.Cell,
+                    parameters.Fax,
+                    parameters.Email,
+                    parameters.SendVia,
+                    parameters.SmsAddress,
+                    parameters.PONotice,
+                    parameters.FPONotice,
+                    parameters.SchedNotice,
+                    parameters.ServiceNotice,
+                    parameters.CompanyName,
+                    parameters.CompanyAddr1,
+                    parameters.CompanyAddr2,
+                    parameters.CompanyCity,
+                    parameters.CompanyProv,
+                    parameters.CompanyPostal,
+                    ContactID = contactIdParam
+                };
+                await db.ExecuteAsync(updateSql, updateParams);
+            }
+        }
+
+        var updatePoSql = @"
+UPDATE p
+SET DeliveryMethod    = v.PurchDelMethod,
+    DeliveryRecipient = v.PurchContact,
+    DeliveryAddress   = CASE v.PurchDelMethod WHEN 1 THEN v.PurchEmail ELSE '' END
+FROM tblvendors v
+JOIN pomaster p
+  ON v.vendor_id = p.vendor
+ AND p.divisionid = v.divisionid
+ AND p.deliverydate IS NULL
+WHERE v.vendor_id = @VendorId";
+        await db.ExecuteAsync(updatePoSql, new { VendorId = mVendor });
+
+        if (Contacts.Count == 0 || !IsContactEmpty(Contacts.Last()))
+            Contacts.Add(new VendorContact());
+    }
+
+    private static string NormalizeContactKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return "";
+        var chars = key.Where(char.IsLetterOrDigit).ToArray();
+        return new string(chars).ToLowerInvariant();
+    }
+
+    private static readonly Dictionary<string, PropertyInfo> _contactPropMap =
+        typeof(VendorContact)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeContactKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, string> _contactFieldAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["purchasing"] = nameof(VendorContact.PONotice),
+        ["fieldpo"] = nameof(VendorContact.FPONotice),
+        ["fieldponotice"] = nameof(VendorContact.FPONotice),
+        ["scheduling"] = nameof(VendorContact.SchedNotice),
+        ["service"] = nameof(VendorContact.ServiceNotice)
+    };
+
+    private static string ResolveContactField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return "";
+
+        var trimmed = field.Trim();
+        var exact = typeof(VendorContact).GetProperty(trimmed, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (exact != null)
+            return exact.Name;
+
+        var normalized = NormalizeContactKey(trimmed);
+        if (_contactPropMap.TryGetValue(normalized, out var prop))
+            return prop.Name;
+
+        if (_contactFieldAliases.TryGetValue(normalized, out var alias))
+            return alias;
+
+        return trimmed;
+    }
+
+    private static bool IsContactCheckboxField(string field)
+    {
+        return field.Equals(nameof(VendorContact.PONotice), StringComparison.OrdinalIgnoreCase)
+            || field.Equals(nameof(VendorContact.FPONotice), StringComparison.OrdinalIgnoreCase)
+            || field.Equals(nameof(VendorContact.SchedNotice), StringComparison.OrdinalIgnoreCase)
+            || field.Equals(nameof(VendorContact.ServiceNotice), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ToBool(object? value)
+    {
+        if (value == null || value == DBNull.Value)
+            return false;
+        if (value is bool b)
+            return b;
+        var s = value.ToString()?.Trim();
+        if (string.IsNullOrEmpty(s))
+            return false;
+        if (s.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("y", StringComparison.OrdinalIgnoreCase) ||
+            s == "1" || s == "-1")
+            return true;
+        if (int.TryParse(s, out var i))
+            return i != 0;
+        return false;
     }
 
     private async Task LoadDataAsync()
@@ -394,19 +854,19 @@
 
         InsuranceData = new List<InsuranceRequirement>
         {
-            new() { Type = "General", Required = (bool)(row["glinsrequired"] ?? false),
+            new() { Name = "General Liability", Req = Convert.ToBoolean(row["glinsrequired"] ?? false),
                 ExpiryDate = row["glinsexpdate"] as DateTime?,
                 Company = row["GLInsCompany"]?.ToString(),
                 PolicyNumber = row["GLInsPolicyNumber"]?.ToString() },
-            new() { Type = "Workers", Required = (bool)(row["wcinsrequired"] ?? false),
+            new() { Name = "Workers Comp", Req = Convert.ToBoolean(row["wcinsrequired"] ?? false),
                 ExpiryDate = row["wcinsexpdate"] as DateTime?,
                 Company = row["WCInsCompany"]?.ToString(),
                 PolicyNumber = row["WCInsPolicyNumber"]?.ToString() },
-            new() { Type = "Umbrella", Required = (bool)(row["umbinsrequired"] ?? false),
+            new() { Name = "Umbrella", Req = Convert.ToBoolean(row["umbinsrequired"] ?? false),
                 ExpiryDate = row["umbinsexpdate"] as DateTime?,
                 Company = row["UmbInsCompany"]?.ToString(),
                 PolicyNumber = row["UmbInsPolicyNumber"]?.ToString() },
-            new() { Type = "Automobile", Required = (bool)(row["autoinsrequired"] ?? false),
+            new() { Name = "Automobile", Req = Convert.ToBoolean(row["autoinsrequired"] ?? false),
                 ExpiryDate = row["autoinsexpdate"] as DateTime?,
                 Company = row["AutoInsCompany"]?.ToString(),
                 PolicyNumber = row["AutoInsPolicyNumber"]?.ToString() }
@@ -498,10 +958,10 @@
                 Email = row["Email"]?.ToString() ?? "",
                 SendVia = Convert.ToInt32(row["CommModeID"] ?? 0),
                 SmsAddress = row["SmsAddress"]?.ToString() ?? "",
-                PONotice = row["PONotice"]?.ToString() ?? "",
-                FPONotice = row["FPONotice"]?.ToString() ?? "",
-                SchedNotice = row["SchedNotice"]?.ToString() ?? "",
-                ServiceNotice = row["ServiceNotice"]?.ToString() ?? ""
+                PONotice = ToBool(row["PONotice"]),
+                FPONotice = ToBool(row["FPONotice"]),
+                SchedNotice = ToBool(row["SchedNotice"]),
+                ServiceNotice = ToBool(row["ServiceNotice"])
             });
         }
         Contacts.Add(new VendorContact());
@@ -558,8 +1018,10 @@
 
     public class InsuranceRequirement
     {
-        public string Type { get; set; } = "";
-        public bool Required { get; set; }
+        public string Name { get; set; } = "";       // VB6 column key: "Name"
+        public string Type { get => Name; set => Name = value; } // Alias
+        public bool Req { get; set; }                 // VB6 column key: "Req"
+        public bool Required { get => Req; set => Req = value; } // Alias
         public DateTime? ExpiryDate { get; set; }
         public string? Company { get; set; }
         public string? PolicyNumber { get; set; }
@@ -604,9 +1066,9 @@
         public string? Email { get; set; }
         public int SendVia { get; set; }
         public string? SmsAddress { get; set; }
-        public string? PONotice { get; set; }
-        public string? FPONotice { get; set; }
-        public string? SchedNotice { get; set; }
-        public string? ServiceNotice { get; set; }
+        public bool PONotice { get; set; }
+        public bool FPONotice { get; set; }
+        public bool SchedNotice { get; set; }
+        public bool ServiceNotice { get; set; }
     }
 }

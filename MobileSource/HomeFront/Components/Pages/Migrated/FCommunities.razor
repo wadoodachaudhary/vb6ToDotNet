@@ -1,10 +1,10 @@
 @page "/communities"
 @rendermode InteractiveServer
 @using HomeFront.Data
-@using HomeFront.Components.Grid
 @using HomeFront.Components.Hf
 @using Microsoft.JSInterop
 @using System.Data
+@using System.Reflection
 
 <PageTitle>Communities</PageTitle>
 
@@ -40,7 +40,7 @@
                             <div class="loading-card">Loading...</div>
                         </div>
                     }
-                    <HfGrid @ref="CommunitiesGrid"
+                    <HfGrid @ref="gData"
                             TValue="CommunityRow"
                             DataSource="@CommunitiesData"
                             AllowSelection="true"
@@ -54,199 +54,73 @@
                             FilterSettingsRef="@filterSettings"
                             SelectionSettingsRef="@selectionSettings"
                             EventsRef="@communitiesEvents">
-                        <HfGridColumnsBase>
+                        <HfGridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunities-gData">
                             <HfGridColumn Field="@nameof(CommunityRow.OriginalArea)" HeaderText="OriginalArea" Visible="false" AllowEditing="false" IsPrimaryKey="true" />
 
-                            <HfGridColumn Field="@nameof(CommunityRow.Area)" HeaderText="@CommunityTerm" Width="120px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <HfTextBox CssClass="grid-input" @bind-Value="row.Area" @bind-Value:after="() => MarkDirty(row)" Enabled="@(string.IsNullOrEmpty(row.OriginalArea))" />
-                                </Template>
-                            </HfGridColumn>
+                            @if (HasGridLayout)
+                            {
+                                @* Dynamic columns from IniGetGrid *@
+                                foreach (var entry in GetOrderedGridLayout())
+                                {
+                                    var layout = entry.Layout;
+                                    var fieldName = entry.Field;
+                                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                        : GetDefaultWidth(fieldName);
 
-                            <HfGridColumn Field="@nameof(CommunityRow.Description)" HeaderText="Description" Width="200px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <HfTextBox CssClass="grid-input" @bind-Value="row.Description" @bind-Value:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Comments)" HeaderText="Comments" Width="160px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@TruncateText(row.Comments, 30)</span>
-                                        <button class="mini-btn" @onclick="() => EditComments(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Company)" HeaderText="Company" Width="150px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.Company</span>
-                                        <button class="mini-btn" @onclick="() => EditCompany(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.LotInventoryDebit)" HeaderText="Accounting" Width="140px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.LotInventoryDebit</span>
-                                        <button class="mini-btn" @onclick="() => EditAccounting(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Divisions)" HeaderText="Divisions" Width="140px" AllowEditing="false">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.Divisions</span>
-                                        <button class="mini-btn" @onclick="() => EditDivisions(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Project_Manager)" HeaderText="Project Manager" Width="160px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.Project_Manager</span>
-                                        <button class="mini-btn" @onclick="() => SelectProjectManager(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.CustServiceID)" HeaderText="Service Rep" Width="140px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.CustServiceID</span>
-                                        <button class="mini-btn" @onclick="() => SelectCustService(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.WarrantyJob)" HeaderText="Warranty Job" Width="140px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.WarrantyJob</span>
-                                        <button class="mini-btn" @onclick="() => SelectWarrantyJob(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.DC_Sales_Person)" HeaderText="DC Sales Person" Width="160px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.DC_Sales_Person</span>
-                                        <button class="mini-btn" @onclick="() => SelectDCSalesPerson(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Inactive)" HeaderText="Inactive" Width="90px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <input type="checkbox" @bind="row.Inactive" @bind:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.BuildPro)" HeaderText="BuildPro" Width="90px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <input type="checkbox" @bind="row.BuildPro" @bind:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.WrapInsuranceExempt)" HeaderText="Wrap Ins Exempt" Width="140px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <input type="checkbox" @bind="row.WrapInsuranceExempt" @bind:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.GSTRate)" HeaderText="GST Rate" Width="100px" Visible="@ShowGSTRate">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <input class="grid-input" type="number" step="0.01" @bind="row.GSTRate" @bind:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Contract_Document)" HeaderText="Contract Doc" Width="160px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@TruncateTextRight(row.Contract_Document, 20)</span>
-                                        <button class="mini-btn" @onclick="() => BrowseContractDocument(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Abr)" HeaderText="Abr" Width="80px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <HfTextBox CssClass="grid-input" @bind-Value="row.Abr" @bind-Value:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Purchaser)" HeaderText="Purchaser" Width="140px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <div class="inline-edit">
-                                        <span>@row.Purchaser</span>
-                                        <button class="mini-btn" @onclick="() => SelectPurchaser(row)">...</button>
-                                    </div>
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.SalesManagerEmail)" HeaderText="Sales Mgr Email" Width="200px">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <HfTextBox CssClass="grid-input" @bind-Value="row.SalesManagerEmail" @bind-Value:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.Email)" HeaderText="Email" Visible="false" Width="180px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Address1)" HeaderText="Address 1" Visible="false" Width="150px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Address2)" HeaderText="Address 2" Visible="false" Width="150px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.City)" HeaderText="City" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Province)" HeaderText="Province" Visible="false" Width="100px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Postal)" HeaderText="Postal" Visible="false" Width="100px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Country)" HeaderText="Country" Visible="false" Width="100px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.County)" HeaderText="County" Visible="false" Width="100px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Phone)" HeaderText="Phone" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Fax)" HeaderText="Fax" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.TaxNumber)" HeaderText="Tax Number" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.IncomePrefix)" HeaderText="Income Prefix" Visible="false" Width="100px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.BalanceSheet)" HeaderText="Balance Sheet" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.Mortgage_Credit)" HeaderText="Mortgage Credit" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.BankAccount)" HeaderText="Bank Account" Visible="false" Width="120px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.TarionBuilderNumber)" HeaderText="Tarion Builder #" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.LotInventoryCredit)" HeaderText="Lot Inv Credit" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.LabourTaxGroup)" HeaderText="Labour Tax Grp" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.MaterialTaxGroup)" HeaderText="Material Tax Grp" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.SubContractTaxGroup)" HeaderText="SubContract Tax Grp" Visible="false" Width="160px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.EquipmentTaxGroup)" HeaderText="Equipment Tax Grp" Visible="false" Width="160px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.OverheadTaxGroup)" HeaderText="Overhead Tax Grp" Visible="false" Width="150px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.OtherTaxGroup)" HeaderText="Other Tax Grp" Visible="false" Width="140px" />
-
-                            <HfGridColumn Field="@nameof(CommunityRow.PSTRate)" HeaderText="PST Rate" Width="100px" Visible="@ShowPSTRate">
-                                <Template>
-                                    @{ var row = (CommunityRow)context; }
-                                    <input class="grid-input" type="number" step="0.01" @bind="row.PSTRate" @bind:after="() => MarkDirty(row)" />
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(CommunityRow.IntacctEntity)" HeaderText="Intacct Entity" Visible="false" Width="140px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.IntacctParentJob)" HeaderText="Intacct Parent Job" Visible="false" Width="160px" />
-                            <HfGridColumn Field="@nameof(CommunityRow.IntacctDepartment)" HeaderText="Intacct Dept" Visible="false" Width="140px" />
+                                    @RenderColumn(fieldName, headerText, width)
+                                }
+                            }
+                            else
+                            {
+                                @* Default columns (fallback when no DB layout exists) *@
+                                @RenderColumn("Area", CommunityTerm, "120px")
+                                @RenderColumn("Description", "Description", "200px")
+                                @RenderColumn("Comments", "Comments", "160px")
+                                @RenderColumn("Company", "Company", "150px")
+                                @RenderColumn("LotInventoryDebit", "Accounting", "140px")
+                                @RenderColumn("Divisions", "Divisions", "140px")
+                                @RenderColumn("Project_Manager", "Project Manager", "160px")
+                                @RenderColumn("CustServiceID", "Service Rep", "140px")
+                                @RenderColumn("WarrantyJob", "Warranty Job", "140px")
+                                @RenderColumn("DC_Sales_Person", "DC Sales Person", "160px")
+                                @RenderColumn("Inactive", "Inactive", "90px")
+                                @RenderColumn("BuildPro", "BuildPro", "90px")
+                                @RenderColumn("WrapInsuranceExempt", "Wrap Ins Exempt", "140px")
+                                @RenderColumn("GSTRate", "GST Rate", "100px")
+                                @RenderColumn("Contract_Document", "Contract Doc", "160px")
+                                @RenderColumn("Abr", "Abr", "80px")
+                                @RenderColumn("Purchaser", "Purchaser", "140px")
+                                @RenderColumn("SalesManagerEmail", "Sales Mgr Email", "200px")
+                                @RenderColumn("Email", "Email", "180px")
+                                @RenderColumn("Address1", "Address 1", "150px")
+                                @RenderColumn("Address2", "Address 2", "150px")
+                                @RenderColumn("City", "City", "120px")
+                                @RenderColumn("Province", "Province", "100px")
+                                @RenderColumn("Postal", "Postal", "100px")
+                                @RenderColumn("Country", "Country", "100px")
+                                @RenderColumn("County", "County", "100px")
+                                @RenderColumn("Phone", "Phone", "120px")
+                                @RenderColumn("Fax", "Fax", "120px")
+                                @RenderColumn("TaxNumber", "Tax Number", "120px")
+                                @RenderColumn("IncomePrefix", "Income Prefix", "100px")
+                                @RenderColumn("BalanceSheet", "Balance Sheet", "120px")
+                                @RenderColumn("Mortgage_Credit", "Mortgage Credit", "140px")
+                                @RenderColumn("BankAccount", "Bank Account", "120px")
+                                @RenderColumn("TarionBuilderNumber", "Tarion Builder #", "140px")
+                                @RenderColumn("LotInventoryCredit", "Lot Inv Credit", "140px")
+                                @RenderColumn("LabourTaxGroup", "Labour Tax Grp", "140px")
+                                @RenderColumn("MaterialTaxGroup", "Material Tax Grp", "140px")
+                                @RenderColumn("SubContractTaxGroup", "SubContract Tax Grp", "160px")
+                                @RenderColumn("EquipmentTaxGroup", "Equipment Tax Grp", "160px")
+                                @RenderColumn("OverheadTaxGroup", "Overhead Tax Grp", "150px")
+                                @RenderColumn("OtherTaxGroup", "Other Tax Grp", "140px")
+                                @RenderColumn("PSTRate", "PST Rate", "100px")
+                                @RenderColumn("IntacctEntity", "Intacct Entity", "140px")
+                                @RenderColumn("IntacctParentJob", "Intacct Parent Job", "160px")
+                                @RenderColumn("IntacctDepartment", "Intacct Dept", "140px")
+                            }
                         </HfGridColumnsBase>
                     </HfGrid>
                 </div>
@@ -642,17 +516,21 @@
     .mini-btn {
         padding: 2px 6px;
         font-size: 12px;
-        border: 1px solid #c9c9c9;
-        background: #fff;
-        border-radius: 4px;
+        border: none;
+        background: transparent;
         cursor: pointer;
+        color: #666;
+    }
+    .mini-btn:hover {
+        color: #007bff;
     }
 
     .grid-input {
         width: 100%;
         padding: 2px 4px;
-        border: 1px solid #c9c9c9;
-        border-radius: 3px;
+        border: none;
+        background: transparent;
+        outline: none;
     }
 
     .comments-textarea {
@@ -816,10 +694,12 @@
 
     private const string SRCFILE = "Communities::";
     private const string PRODUCT_NAME = "HomeFront";
+    private const string FormName = "FCommunities";
+    private const string GridName = "gData";
 
     private readonly DbWrapperSqlServer db = new();
 
-    private HfGrid<CommunityRow>? CommunitiesGrid;
+    private HfGrid<CommunityRow>? gData;
 
     private bool mDirty = false;
     private bool IsLoading = false;
@@ -828,6 +708,11 @@
 
     private bool ShowGSTRate = true;
     private bool ShowPSTRate = false;
+
+    // === Grid Layout (from IniGetGrid) ===
+    private Dictionary<string, MMain.GridLayoutColumn> GridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int GridLayoutVersion = 0;
+    private bool HasGridLayout => GridLayout.Count > 0;
 
     private List<CommunityRow> CommunitiesData = new();
     private CommunityRow? SelectedCommunity;
@@ -904,9 +789,346 @@
         communitiesEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityRow>>(this, OnRowSelected);
         pickerEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPickerRowSelected);
         picklistEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPicklistRowSelected);
+        await LoadGridLayoutAsync();
         await LoadCustomDescriptions();
         await LoadData();
         await LoadDivisions();
+    }
+
+    private async Task LoadGridLayoutAsync()
+    {
+        GridLayout = await MMain.IniGetGridAsync(FormName, GridName, 0, grouped: false);
+        GridLayoutVersion++;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
+    {
+        if (!HasGridLayout)
+            yield break;
+
+        var ordered = GridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveGridField(layout.Field);
+            yield return (layout, resolvedField);
+        }
+    }
+
+    private static readonly Dictionary<string, System.Reflection.PropertyInfo> _communityRowPropMap =
+        typeof(CommunityRow)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .GroupBy(p => p.Name.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static string ResolveGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+
+        // Direct match
+        if (_communityRowPropMap.TryGetValue(trimmed.ToLowerInvariant(), out var prop))
+            return prop.Name;
+
+        return trimmed;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0) return 0;
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
+    // Columns that have custom templates (button pickers, checkboxes, etc.)
+    private static readonly HashSet<string> _buttonPickerFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Comments", "Company", "LotInventoryDebit", "Divisions",
+        "Project_Manager", "CustServiceID", "WarrantyJob",
+        "DC_Sales_Person", "Contract_Document", "Purchaser"
+    };
+
+    private static readonly HashSet<string> _checkboxFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Inactive", "BuildPro", "WrapInsuranceExempt"
+    };
+
+    private static readonly HashSet<string> _numericFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GSTRate", "PSTRate"
+    };
+
+    private static readonly HashSet<string> _textBoxFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Area", "Description", "Abr", "SalesManagerEmail"
+    };
+
+    // Default columns that are hidden unless IniGetGrid reveals them
+    private static readonly HashSet<string> _defaultHiddenFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Email", "Address1", "Address2", "City", "Province", "Postal", "Country", "County",
+        "Phone", "Fax", "TaxNumber", "IncomePrefix", "BalanceSheet", "Mortgage_Credit",
+        "BankAccount", "TarionBuilderNumber", "LotInventoryCredit",
+        "LabourTaxGroup", "MaterialTaxGroup", "SubContractTaxGroup",
+        "EquipmentTaxGroup", "OverheadTaxGroup", "OtherTaxGroup",
+        "IntacctEntity", "IntacctParentJob", "IntacctDepartment"
+    };
+
+    private static readonly Dictionary<string, string> _defaultWidths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Area"] = "120px", ["Description"] = "200px", ["Comments"] = "160px",
+        ["Company"] = "150px", ["LotInventoryDebit"] = "140px", ["Divisions"] = "140px",
+        ["Project_Manager"] = "160px", ["CustServiceID"] = "140px", ["WarrantyJob"] = "140px",
+        ["DC_Sales_Person"] = "160px", ["Inactive"] = "90px", ["BuildPro"] = "90px",
+        ["WrapInsuranceExempt"] = "140px", ["GSTRate"] = "100px", ["PSTRate"] = "100px",
+        ["Contract_Document"] = "160px", ["Abr"] = "80px", ["Purchaser"] = "140px",
+        ["SalesManagerEmail"] = "200px", ["Email"] = "180px",
+        ["Address1"] = "150px", ["Address2"] = "150px", ["City"] = "120px",
+        ["Province"] = "100px", ["Postal"] = "100px", ["Country"] = "100px", ["County"] = "100px",
+        ["Phone"] = "120px", ["Fax"] = "120px", ["TaxNumber"] = "120px",
+        ["IncomePrefix"] = "100px", ["BalanceSheet"] = "120px", ["Mortgage_Credit"] = "140px",
+        ["BankAccount"] = "120px", ["TarionBuilderNumber"] = "140px", ["LotInventoryCredit"] = "140px",
+        ["LabourTaxGroup"] = "140px", ["MaterialTaxGroup"] = "140px", ["SubContractTaxGroup"] = "160px",
+        ["EquipmentTaxGroup"] = "160px", ["OverheadTaxGroup"] = "150px", ["OtherTaxGroup"] = "140px",
+        ["IntacctEntity"] = "140px", ["IntacctParentJob"] = "160px", ["IntacctDepartment"] = "140px"
+    };
+
+    private string GetDefaultWidth(string fieldName)
+    {
+        return _defaultWidths.TryGetValue(fieldName, out var w) ? w : "120px";
+    }
+
+    private bool IsColumnVisible(string fieldName)
+    {
+        // When using IniGetGrid layout, all returned columns are visible (hidden ones are filtered out)
+        if (HasGridLayout) return true;
+        // For default layout, check hidden fields and special visibility
+        if (_defaultHiddenFields.Contains(fieldName)) return false;
+        if (fieldName.Equals("GSTRate", StringComparison.OrdinalIgnoreCase)) return ShowGSTRate;
+        if (fieldName.Equals("PSTRate", StringComparison.OrdinalIgnoreCase)) return ShowPSTRate;
+        return true;
+    }
+
+    private RenderFragment RenderColumn(string fieldName, string headerText, string width) => builder =>
+    {
+        var visible = IsColumnVisible(fieldName);
+
+        if (_checkboxFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "type", "checkbox");
+                b2.AddAttribute(2, "checked", GetCheckboxValue(row, fieldName));
+                b2.AddAttribute(3, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetCheckboxValue(row, fieldName, (bool)(e.Value ?? false));
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_numericFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "class", "grid-input");
+                b2.AddAttribute(2, "type", "number");
+                b2.AddAttribute(3, "step", "0.01");
+                b2.AddAttribute(4, "value", GetNumericValue(row, fieldName));
+                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetNumericValue(row, fieldName, e.Value?.ToString() ?? "0");
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_buttonPickerFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "AllowEditing", false);
+            builder.AddAttribute(6, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "div");
+                b2.AddAttribute(1, "class", "inline-edit");
+                b2.OpenElement(2, "span");
+                b2.AddContent(3, GetPickerDisplayValue(row, fieldName));
+                b2.CloseElement();
+                b2.OpenElement(4, "button");
+                b2.AddAttribute(5, "class", "mini-btn");
+                b2.AddAttribute(6, "onclick", EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, () => OnPickerButtonClick(row, fieldName)));
+                b2.AddContent(7, "...");
+                b2.CloseElement();
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_textBoxFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase) ? CommunityTerm : headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                var isArea = fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase);
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "class", "grid-input");
+                b2.AddAttribute(2, "type", "text");
+                b2.AddAttribute(3, "value", GetStringValue(row, fieldName));
+                if (isArea && !string.IsNullOrEmpty(row.OriginalArea))
+                    b2.AddAttribute(4, "disabled", true);
+                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetStringValue(row, fieldName, e.Value?.ToString() ?? "");
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else
+        {
+            // Plain text column (no template)
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.CloseComponent();
+        }
+    };
+
+    private string GetPickerDisplayValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Comments" => TruncateText(row.Comments, 30),
+            "Company" => row.Company,
+            "LotInventoryDebit" => row.LotInventoryDebit,
+            "Divisions" => row.Divisions,
+            "Project_Manager" => row.Project_Manager,
+            "CustServiceID" => row.CustServiceID,
+            "WarrantyJob" => row.WarrantyJob,
+            "DC_Sales_Person" => row.DC_Sales_Person,
+            "Contract_Document" => TruncateTextRight(row.Contract_Document, 20),
+            "Purchaser" => row.Purchaser,
+            _ => ""
+        };
+    }
+
+    private async Task OnPickerButtonClick(CommunityRow row, string field)
+    {
+        EditingRow = row;
+        switch (field)
+        {
+            case "Comments": EditComments(row); break;
+            case "Company": EditCompany(row); break;
+            case "LotInventoryDebit": EditAccounting(row); break;
+            case "Divisions": EditDivisions(row); break;
+            case "Project_Manager": await SelectProjectManager(row); break;
+            case "CustServiceID": await SelectCustService(row); break;
+            case "WarrantyJob": await SelectWarrantyJob(row); break;
+            case "DC_Sales_Person": await SelectDCSalesPerson(row); break;
+            case "Contract_Document": await BrowseContractDocument(row); break;
+            case "Purchaser": await SelectPurchaser(row); break;
+        }
+    }
+
+    private string GetStringValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Area" => row.Area,
+            "Description" => row.Description,
+            "Abr" => row.Abr,
+            "SalesManagerEmail" => row.SalesManagerEmail,
+            _ => ""
+        };
+    }
+
+    private void SetStringValue(CommunityRow row, string field, string value)
+    {
+        switch (field)
+        {
+            case "Area": row.Area = value; break;
+            case "Description": row.Description = value; break;
+            case "Abr": row.Abr = value; break;
+            case "SalesManagerEmail": row.SalesManagerEmail = value; break;
+        }
+    }
+
+    private bool GetCheckboxValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Inactive" => row.Inactive,
+            "BuildPro" => row.BuildPro,
+            "WrapInsuranceExempt" => row.WrapInsuranceExempt,
+            _ => false
+        };
+    }
+
+    private void SetCheckboxValue(CommunityRow row, string field, bool value)
+    {
+        switch (field)
+        {
+            case "Inactive": row.Inactive = value; break;
+            case "BuildPro": row.BuildPro = value; break;
+            case "WrapInsuranceExempt": row.WrapInsuranceExempt = value; break;
+        }
+    }
+
+    private decimal GetNumericValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "GSTRate" => row.GSTRate,
+            "PSTRate" => row.PSTRate,
+            _ => 0m
+        };
+    }
+
+    private void SetNumericValue(CommunityRow row, string field, string value)
+    {
+        if (!decimal.TryParse(value, out var d)) d = 0;
+        switch (field)
+        {
+            case "GSTRate": row.GSTRate = d; break;
+            case "PSTRate": row.PSTRate = d; break;
+        }
     }
 
     private void MarkDirty(CommunityRow row)
@@ -1273,10 +1495,10 @@
         mDirty = true;
         StateHasChanged();
 
-        if (CommunitiesGrid != null)
+        if (gData != null)
         {
-            var targetPage = Math.Max(1, CommunitiesGrid.TotalPages);
-            await CommunitiesGrid.GoToPageAsync(targetPage);
+            var targetPage = Math.Max(1, gData.TotalPages);
+            await gData.GoToPageAsync(targetPage);
         }
     }
 

@@ -1,0 +1,658 @@
+@page "/"
+@page "/login"
+@using System.Reflection
+@using System.Text
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@layout HFComponent
+<PageTitle>Login</PageTitle>
+
+<div class="f-login" tabindex="0" @onkeydown="HandleKeyDown">
+    @* Top row: Logo + App info *@
+    <div class="f-login-header">
+        <div class="logo-area">
+            <img src="images/HF_Logo.png" alt="HomeFront Software" class="hf-logo" />
+        </div>
+        <div class="app-info">
+            <div class="app-title">Precision Builder</div>
+            <div class="app-version">@AppVersion</div>
+            <div class="app-copyright">@Copyright</div>
+            <button class="link-button" @onclick="ShowAbout">About Homefront</button>
+        </div>
+    </div>
+
+    @* Middle row: License info (left) + Login fields (right) *@
+    <div class="f-login-body">
+        <div class="license-panel">
+            <div class="license-caption">This software is licensed to:</div>
+            <div class="license-company">@LicensedTo</div>
+            <div class="license-info">@LicenseInfo</div>
+        </div>
+
+        <div class="login-panel">
+            @if (ShowConnections)
+            {
+                <div class="panel-title">Select Connection</div>
+                <HfListBox TItem="ConnectionItem"
+                           DataSource="@Connections"
+                           TextField="Name"
+                           ValueField="Name"
+                           SelectionMode="HfListBoxSelectionMode.Single"
+                           ShowCheckbox="false"
+                           @bind-Value="SelectedConnections" />
+            }
+
+            @if (ShowUserPanel)
+            {
+                <div class="form-row">
+                    <label>User ID</label>
+                    <HfTextBox @bind-Value="UserId" Placeholder="User ID" CssClass="login-input" />
+                </div>
+                <div class="form-row">
+                    <label>Password</label>
+                    <HfTextBox @bind-Value="Password" Placeholder="Password" InputType="password" CssClass="login-input" />
+                </div>
+
+                <div class="change-password-row">
+                    <button class="link-button" @onclick="ToggleChangePassword">Change Password</button>
+                </div>
+
+                @if (ShowChangePassword)
+                {
+                    <div class="form-row">
+                        <label>New Password</label>
+                        <HfTextBox @bind-Value="NewPassword" Placeholder="New Password" InputType="password" CssClass="login-input" />
+                    </div>
+                    <div class="form-row">
+                        <label>Confirm Password</label>
+                        <HfTextBox @bind-Value="ConfirmPassword" Placeholder="Confirm Password" InputType="password" CssClass="login-input" />
+                    </div>
+                }
+            }
+
+            @if (ShowDivisions)
+            {
+                <div class="panel-title">Select Division</div>
+                <HfListBox TItem="DivisionItem"
+                           DataSource="@Divisions"
+                           TextField="Display"
+                           ValueField="DivisionID"
+                           SelectionMode="HfListBoxSelectionMode.Single"
+                           ShowCheckbox="false"
+                           @bind-Value="SelectedDivisions" />
+            }
+
+            @if (ShowCheat)
+            {
+                <div class="form-row">
+                    <label>Cheat</label>
+                    <HfTextBox @bind-Value="CheatCode" Placeholder="CHEAT" CssClass="login-input" />
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Footer: Status + OK/Cancel *@
+    <div class="f-login-footer">
+        <div class="status-message">@StatusMessage</div>
+        <div class="button-row">
+            <HfButton CssClass="btn-ok" Disabled="@(!CanOk)" OnClick="HandleOk">OK</HfButton>
+            <HfButton CssClass="btn-cancel" OnClick="HandleCancel">Cancel</HfButton>
+        </div>
+    </div>
+</div>
+
+@code {
+    private static string DefaultConnectionString => DbWrapperSqlServer.DefaultConnectionString;
+
+    private bool mLicensed = true;
+    private bool mCancel;
+    private int Step;
+    private bool mChangePswd;
+    private bool debug_mode = false;
+
+    private readonly List<ConnectionItem> Connections = new();
+    private readonly List<DivisionItem> Divisions = new();
+    private List<string> SelectedConnections = new();
+    private List<string> SelectedDivisions = new();
+
+    private DbWrapperSqlServer? _db;
+
+    private string UserId = "";
+    private string Password = "";
+    private string NewPassword = "";
+    private string ConfirmPassword = "";
+
+    private bool ShowCheat;
+    private string CheatCode = "";
+    private string StatusMessage = "";
+
+    private string LicensedTo = "Company Name";
+    private string LicenseInfo = "License information.";
+    private string AppName = "HomeFront";
+    private string AppVersion = $"Version {Assembly.GetEntryAssembly()?.GetName().Version}";
+    private string Copyright = $"{DateTime.Now.Year} \u00A9 Copyright Hyphen Solutions";
+
+    [Parameter] public EventCallback<LoginResult> OnLoggedIn { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+
+    private bool ShowConnections => Step == 0;
+    private bool ShowUserPanel => Step == 1;
+    private bool ShowDivisions => Step == 2;
+    private bool ShowChangePassword => mChangePswd;
+
+    private bool CanOk =>
+        mLicensed && ((Step == 0 && SelectedConnections.Any()) || (Step == 1) || (Step == 2 && SelectedDivisions.Any()));
+
+    private string SelectedConnectionName => SelectedConnections.FirstOrDefault() ?? "";
+    private string SelectedDivisionId => SelectedDivisions.FirstOrDefault() ?? "";
+    private bool IsCheat => ShowCheat && string.Equals(CheatCode, "CHEAT", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        LoadLicense();
+        await SetStepAsync(0);
+    }
+
+    private void LoadLicense()
+    {
+        mLicensed = true;
+    }
+
+    private async Task SetStepAsync(int value)
+    {
+        switch (value)
+        {
+            case -1:
+                mCancel = true;
+                StatusMessage = "";
+                if (OnCancelled.HasDelegate)
+                    await OnCancelled.InvokeAsync();
+                break;
+            case 0:
+                if (Connections.Count == 0)
+                    await LoadConnectionsAsync();
+                Step = 0;
+                EnsureConnectionSelection();
+                break;
+            case 1:
+                if (await DoOpenDbAsync())
+                {
+                    Step = 1;
+                }
+                break;
+            case 2:
+                mChangePswd = ShowChangePassword;
+                await LoadDivisionsAsync();
+                if (Divisions.Count == 0)
+                {
+                    StatusMessage = "No divisions available.";
+                    break;
+                }
+
+                if (Divisions.Count == 1)
+                {
+                    SelectedDivisions = new List<string> { Divisions[0].DivisionID };
+                    await SetStepAsync(3);
+                    return;
+                }
+
+                Step = 2;
+                EnsureDivisionSelection();
+                break;
+            case 3:
+                await DoLoginAsync();
+                break;
+            default:
+                Step = value;
+                break;
+        }
+
+        StateHasChanged();
+    }
+
+    private void EnsureConnectionSelection()
+    {
+        if (SelectedConnections.Count == 0 && Connections.Count > 0)
+            SelectedConnections = new List<string> { Connections[0].Name };
+    }
+
+    private void EnsureDivisionSelection()
+    {
+        if (SelectedDivisions.Count == 0 && Divisions.Count > 0)
+            SelectedDivisions = new List<string> { Divisions[0].DivisionID };
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        Connections.Clear();
+        Connections.Add(new ConnectionItem
+        {
+            Name = "Default",
+            ConnectionString = DefaultConnectionString
+        });
+
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadDivisionsAsync()
+    {
+        Divisions.Clear();
+        if (_db == null) return;
+
+        try
+        {
+            var rows = await _db.QueryAsync("SELECT DivisionID, DivisionCode, DivisionName FROM Divisions");
+            foreach (var row in rows)
+            {
+                Divisions.Add(new DivisionItem
+                {
+                    DivisionID = row["DivisionID"]?.ToString() ?? "",
+                    DivisionCode = row["DivisionCode"]?.ToString() ?? "",
+                    DivisionName = row["DivisionName"]?.ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading divisions: {ex.Message}";
+        }
+    }
+
+    private async Task<bool> DoOpenDbAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedConnectionName))
+        {
+            StatusMessage = "Select a connection.";
+            return false;
+        }
+
+        var connection = Connections.FirstOrDefault(c => c.Name == SelectedConnectionName);
+        if (connection == null)
+        {
+            StatusMessage = "Invalid connection selection.";
+            return false;
+        }
+
+        try
+        {
+            _db = new DbWrapperSqlServer(connection.ConnectionString);
+            await _db.ExecuteScalarAsync<int>("SELECT 1");
+            StatusMessage = "";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Unable to open the database: {ex.Message}";
+            return false;
+        }
+    }
+
+    private async Task DoLoginAsync()
+    {
+        if (_db == null) return;
+
+        if (string.IsNullOrWhiteSpace(UserId))
+        {
+            StatusMessage = "Enter a user ID.";
+            return;
+        }
+
+        // TODO: Password validation bypassed for development — restore before release
+        // if (string.IsNullOrWhiteSpace(Password) && !IsCheat)
+        // {
+        //     StatusMessage = "Enter a password.";
+        //     return;
+        // }
+
+        StatusMessage = "Validating user...";
+        StateHasChanged();
+
+        try
+        {
+            // VB6: sPswd = hff.MyCrypt(sPswd, "Fazlul")
+            var encryptedPswd = MyCrypt(Password, "Fazlul");
+            var decryptedPswd = MyDeCrypt(encryptedPswd, "Fazlul");
+
+            if (debug_mode){
+                Console.WriteLine($"[FLogin] OK clicked — Keyed-in password: \"{Password}\"");
+                Console.WriteLine($"[FLogin] Encrypted password : \"{encryptedPswd}\"");
+                Console.WriteLine($"[FLogin] Decrypted password : \"{decryptedPswd}\"");
+            }
+
+            // TODO: Password check bypassed for development — restore before release
+            // VB6: SELECT * FROM User_Manager u
+            //      join Divisionusers d on u.User_ID = d.UserID and DivisionID = {div}
+            //      WHERE u.User_Id='{user}'
+            //      AND ISNULL(u.User_Password,'')='{encPswd}' COLLATE Latin1_General_CS_AS
+            var sql = new StringBuilder();
+            sql.AppendLine("SELECT user_access FROM User_Manager u");
+            sql.AppendLine("JOIN DivisionUsers d ON u.User_ID = d.UserID AND d.DivisionID = @DivisionId");
+            sql.AppendLine("WHERE u.User_ID = @UserId");
+            // Password check bypassed:
+            // if (!IsCheat)
+            //     sql.AppendLine("AND ISNULL(u.User_Password,'') = @Password COLLATE Latin1_General_CS_AS");
+
+            var rows = await _db.QueryAsync(sql.ToString(),
+                new { UserId, Password = encryptedPswd, DivisionId = SelectedDivisionId });
+            if (!rows.Any())
+            {
+                await AlertAsync(IsCheat
+                    ? $"Login \"{UserId}\" does not exist."
+                    : "Access denied.\nInvalid login or password.");
+                StatusMessage = "";
+                return;
+            }
+
+            // VB6: update password if needed
+            if (mChangePswd)
+            {
+                if (NewPassword != ConfirmPassword)
+                {
+                    await AlertAsync("Unable to change password.\n\nYour new passwords don't match.");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(NewPassword))
+                {
+                    var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
+                        "Are you sure you want to set your password to nothing?");
+                    if (!confirmed) return;
+                }
+
+                // VB6: sPswd = hff.MyCrypt(txtNewPWD.Text, "Fazlul")
+                var encryptedNewPswd = MyCrypt(NewPassword, "Fazlul");
+
+                // VB6: UPDATE User_Manager SET User_Password='{enc}' WHERE User_Id='{user}'
+                //      UPDATE tblProjectManager set password='{plain}' WHERE PM='{user}'
+                await _db.ExecuteAsync(
+                    "UPDATE User_Manager SET User_Password=@NewPswd WHERE User_ID=@UserId",
+                    new { NewPswd = encryptedNewPswd, UserId });
+                await _db.ExecuteAsync(
+                    "UPDATE tblProjectManager SET password=@PlainPswd WHERE PM=@UserId",
+                    new { PlainPswd = NewPassword, UserId });
+
+                await AlertAsync("Your password has been changed.");
+                Password = NewPassword;
+                NewPassword = "";
+                ConfirmPassword = "";
+                mChangePswd = false;
+            }
+
+            StatusMessage = "Login successful.";
+
+            if (OnLoggedIn.HasDelegate)
+                await OnLoggedIn.InvokeAsync(new LoginResult(UserId, SelectedDivisionId, SelectedConnectionName));
+
+            // Navigate to Workflow Estimating after successful login (replace history so Back doesn't return to login)
+            NavigationManager.NavigateTo("/workflow-estimating", replace: true);
+        }
+        catch (Exception ex)
+        {
+            await AlertAsync($"Error during login: {ex.Message}");
+            StatusMessage = "";
+        }
+    }
+
+    private async Task HandleOk()
+    {
+        await SetStepAsync(Step + 1);
+    }
+
+    private async Task HandleCancel()
+    {
+        await SetStepAsync(Step - 1);
+    }
+
+    private void ToggleChangePassword()
+    {
+        mChangePswd = !mChangePswd;
+    }
+
+    private async Task ShowAbout()
+    {
+        await AlertAsync($"{AppName}\n{AppVersion}\n{Copyright}");
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key?.Equals("z", StringComparison.OrdinalIgnoreCase) == true && e.CtrlKey && e.ShiftKey)
+        {
+            ShowCheat = true;
+            CheatCode = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task AlertAsync(string message)
+    {
+        await JSRuntime.InvokeVoidAsync("alert", message);
+    }
+
+    // ── VB6 ZYBFunctions.HomeFrontFunctions.MyCrypt / MyDeCrypt ──────────
+    // XOR cipher with hex encoding — key="Fazlul"
+    // VB6: Set hff = CreateObject("ZYBFunctions.HomeFrontFunctions")
+    //      encrypted = hff.MyCrypt(plaintext, "Fazlul")
+    //      plaintext = hff.MyDeCrypt(encrypted, "Fazlul")
+    //
+    // Algorithm: each character is XOR'd with the corresponding key character
+    // (cycling), then output as 2-digit uppercase hex.
+    // Decrypt reverses: parse hex pairs, XOR with key.
+    internal static string MyCrypt(string text, string key)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(key))
+            return "";
+
+        var sb = new StringBuilder(text.Length * 2);
+        for (int i = 0; i < text.Length; i++)
+        {
+            int c = (int)text[i] ^ (int)key[i % key.Length];
+            sb.Append(c.ToString("X2"));
+        }
+        return sb.ToString();
+    }
+
+    internal static string MyDeCrypt(string text, string key)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(key))
+            return "";
+
+        var sb = new StringBuilder(text.Length / 2);
+        for (int i = 0; i < text.Length - 1; i += 2)
+        {
+            int c = Convert.ToInt32(text.Substring(i, 2), 16) ^ (int)key[(i / 2) % key.Length];
+            sb.Append((char)c);
+        }
+        return sb.ToString();
+    }
+
+    public record LoginResult(string UserId, string DivisionId, string ConnectionName);
+
+    private sealed class ConnectionItem
+    {
+        public string Name { get; set; } = "";
+        public string ConnectionString { get; set; } = "";
+    }
+
+    private sealed class DivisionItem
+    {
+        public string DivisionID { get; set; } = "";
+        public string DivisionCode { get; set; } = "";
+        public string DivisionName { get; set; } = "";
+        public string Display => string.IsNullOrWhiteSpace(DivisionCode)
+            ? DivisionName
+            : $"{DivisionCode} - {DivisionName}";
+    }
+}
+
+<style>
+    .f-login {
+        max-width: 520px;
+        margin: 60px auto;
+        background: #f0f0f0;
+        border: 1px solid #a0a0a0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 13px;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.15);
+    }
+
+    /* Top header: logo + app info */
+    .f-login-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 16px 20px 12px 20px;
+        border-bottom: 1px solid #c0c0c0;
+        background: #fff;
+    }
+
+    .logo-area {
+        flex-shrink: 0;
+    }
+
+    .hf-logo {
+        height: 60px;
+        width: auto;
+    }
+
+    .app-info {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+
+    .app-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #333;
+    }
+
+    .app-version {
+        font-size: 12px;
+        color: #555;
+    }
+
+    .app-copyright {
+        font-size: 12px;
+        color: #555;
+    }
+
+    /* Body: license (left) + login fields (right) */
+    .f-login-body {
+        display: flex;
+        gap: 20px;
+        padding: 16px 20px;
+    }
+
+    .license-panel {
+        flex: 0 0 auto;
+        min-width: 160px;
+    }
+
+    .license-caption {
+        font-size: 12px;
+        color: #333;
+        margin-bottom: 4px;
+        margin-top: 8px;
+    }
+
+    .license-company {
+        font-weight: 700;
+        color: #333;
+        font-size: 13px;
+        margin-bottom: 4px;
+    }
+
+    .license-info {
+        color: #555;
+        font-size: 11px;
+        word-break: break-all;
+    }
+
+    .login-panel {
+        flex: 1;
+    }
+
+    .panel-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: #333;
+        font-size: 13px;
+    }
+
+    .form-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .form-row label {
+        width: 72px;
+        text-align: right;
+        font-size: 13px;
+        color: #333;
+        flex-shrink: 0;
+    }
+
+    .login-input {
+        width: 160px;
+    }
+
+    .change-password-row {
+        text-align: right;
+        margin-top: 4px;
+        padding-right: 0;
+    }
+
+    .link-button {
+        background: none;
+        border: none;
+        color: #0066cc;
+        text-decoration: underline;
+        cursor: pointer;
+        padding: 0;
+        font-size: 12px;
+    }
+
+    .link-button:hover {
+        color: #004499;
+    }
+
+    /* Footer: status + buttons */
+    .f-login-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 8px 20px 12px 20px;
+        border-top: 1px solid #c0c0c0;
+        gap: 12px;
+    }
+
+    .status-message {
+        flex: 1;
+        font-size: 12px;
+        color: #800000;
+    }
+
+    .button-row {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .f-login .btn-ok,
+    .f-login .btn-cancel {
+        background: #e1e1e1;
+        border-color: #a0a0a0;
+    }
+
+    .f-login .btn-ok:hover,
+    .f-login .btn-cancel:hover {
+        background: #d0d0d0;
+    }
+</style>

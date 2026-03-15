@@ -1,8 +1,8 @@
 @page "/items-db"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Grid
 @using HomeFront.Models
+@using System.Reflection
 @using System.Data
 @inject IJSRuntime JSRuntime
 
@@ -25,15 +25,25 @@
     .panel { text-align: center; }
     .panel img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 
+    /* VB6 banner */
+    .vb6-banner {
+        background: #f6c7c7;
+        border: 1px solid #c97b7b;
+        color: #5b1d1d;
+        font-size: 12px;
+        padding: 6px 10px;
+        margin-bottom: 6px;
+    }
+
     /* Toolbar */
     .toolbar-cntr {
-        padding: 10px 12px; display: flex; align-items: center; gap: 6px;
+        padding: 6px 8px; display: flex; align-items: center; gap: 6px;
         border-top: 1px solid #c9c9c9; border-bottom: 1px solid #c9c9c9;
-        margin-bottom: 10px; background: #f8f9fa; flex-wrap: wrap;
+        margin-bottom: 10px; background: #f3f3f3; flex-wrap: wrap;
     }
     .tbar-btn {
-        padding: 6px 14px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; font-size: 13px; cursor: pointer; display: flex;
+        padding: 4px 10px; border: 1px solid transparent; border-radius: 3px;
+        background: transparent; font-size: 12px; cursor: pointer; display: flex;
         flex-direction: column; align-items: center; gap: 2px;
         transition: background 0.15s, border-color 0.15s;
     }
@@ -43,9 +53,11 @@
     .tbar-btn.danger:hover { background: #f8d7da; }
     .tbar-separator { width: 1px; height: 32px; background: #c9c9c9; margin: 0 4px; }
     .tool-label { font-size: 12px; }
+    .tbar-icon { width: 20px; height: 20px; }
+    .tbar-select { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 
     /* Split container */
-    .split-container { display: flex; height: calc(100vh - 280px); min-height: 500px; }
+    .split-container { display: flex; height: calc(100vh - 260px); min-height: 500px; }
     .phases-panel {
         width: 380px; min-width: 200px; max-width: 600px;
         border-right: 3px solid #c9c9c9; overflow: auto; resize: horizontal;
@@ -53,7 +65,7 @@
     .items-panel { flex: 1; overflow: auto; padding-left: 10px; }
 
     /* Page title */
-    .page-title { font-size: 24px; font-weight: 600; margin-bottom: 15px; color: #333; }
+    .page-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #333; }
 
     /* Loading overlay */
     .loading-overlay {
@@ -140,6 +152,28 @@
         background: #fff; cursor: pointer; font-size: 14px;
     }
     .phases-header button:hover { background: #e9ecef; }
+
+    /* Match VB6 tree look */
+    .phases-panel .hf-treegrid-header { display: none; }
+    .phases-panel .hf-treegrid { border-radius: 0; }
+
+    /* Grid column borders */
+    .items-panel .hf-grid-table { border-collapse: collapse; }
+    .items-panel .hf-grid-table .hf-header-cell,
+    .items-panel .hf-grid-table .hf-cell {
+        border-right: 1px solid #c9c9c9;
+    }
+    .items-panel .hf-grid-table .hf-header-cell {
+        background: #f0f0f0;
+        border-bottom: 1px solid #c9c9c9;
+    }
+    .items-panel .hf-grid-table .hf-cell {
+        border-bottom: 1px solid #e2e2e2;
+    }
+    .items-panel .hf-grid-table th:last-child,
+    .items-panel .hf-grid-table td:last-child {
+        border-right: none;
+    }
 </style>
 
 @if (IsLoading)
@@ -158,40 +192,54 @@
     <div class="tab-content">
         @if (activeTab == 1)
         {
+            <div class="vb6-banner">
+                This is not your live database. It should be used for testing and training only. If this is incorrect please contact Hyphen support to change the status of this database.
+            </div>
             @* ── Toolbar ──────────────────────────────────────────── *@
             <div class="toolbar-cntr">
                 <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
-                    <span>💾</span><span class="tool-label">Save</span>
+                    <img class="tbar-icon" src="images/32/save.ico" alt="Save" />
+                    <span class="tool-label">Save</span>
                 </button>
 
-                <select class="view-select" value="@CurrentViewIndex" @onchange="OnViewChanged">
-                    <option value="0">Group and Phase</option>
-                    <option value="1">Purchase Order</option>
-                    <option value="2">Cost Code</option>
-                </select>
+                <div class="tbar-select">
+                    <img class="tbar-icon" src="images/32/ChangeView.ico" alt="View" />
+                    <select class="view-select" value="@CurrentViewIndex" @onchange="OnViewChanged">
+                        <option value="0">Group and Phase</option>
+                        <option value="1">Purchase Order</option>
+                        <option value="2">Cost Code</option>
+                    </select>
+                    <span class="tool-label">View</span>
+                </div>
 
                 <span class="tbar-separator"></span>
 
                 <button class="tbar-btn" @onclick="OnNewItemClick">
-                    <span>➕</span><span class="tool-label">New Item</span>
+                    <img class="tbar-icon" src="images/32/Add.ico" alt="New" />
+                    <span class="tool-label">New Item</span>
                 </button>
                 <button class="tbar-btn" disabled="@(SelectedItem == null)" @onclick="OnDuplicateClick">
-                    <span>📋</span><span class="tool-label">Duplicate</span>
+                    <img class="tbar-icon" src="images/32/copy.ico" alt="Duplicate" />
+                    <span class="tool-label">Duplicate</span>
                 </button>
                 <button class="tbar-btn danger" disabled="@(SelectedItem == null)" @onclick="OnDeleteClick">
-                    <span>🗑️</span><span class="tool-label">Delete</span>
+                    <img class="tbar-icon" src="images/32/delete.ico" alt="Delete" />
+                    <span class="tool-label">Delete</span>
                 </button>
 
                 <span class="tbar-separator"></span>
 
                 <button class="tbar-btn" @onclick="OnExcelExport">
-                    <span>📊</span><span class="tool-label">Export</span>
+                    <img class="tbar-icon" src="images/32/export.ico" alt="Export" />
+                    <span class="tool-label">Export Items</span>
                 </button>
                 <button class="tbar-btn" @onclick="OnExcelImport">
-                    <span>📥</span><span class="tool-label">Import</span>
+                    <img class="tbar-icon" src="images/32/import.ico" alt="Import" />
+                    <span class="tool-label">Import Items</span>
                 </button>
                 <button class="tbar-btn" @onclick="OnRefreshClick">
-                    <span>🔄</span><span class="tool-label">Refresh</span>
+                    <img class="tbar-icon" src="images/32/refresh.ico" alt="Refresh" />
+                    <span class="tool-label">Refresh</span>
                 </button>
             </div>
 
@@ -202,24 +250,18 @@
                 <div class="phases-panel">
                     <div class="phases-header">
                         <span>@CurrentViewName</span>
-                        <button class="tbar-btn" @onclick="OnExpandAll" title="Expand All">
-                            <span>⊞</span><span class="tool-label">Expand All</span>
-                        </button>
-                        <button class="tbar-btn" @onclick="OnCollapseAll" title="Collapse All">
-                            <span>⊟</span><span class="tool-label">Collapse All</span>
-                        </button>
                     </div>
 
-                    <HfTreeGrid @ref="PhasesTreeGrid"
-                                TValue="PhaseTreeData"
-                                DataSource="@TreePhaseData"
+                    <HfTreeGrid @ref="gPhases"
+                                TValue="ItemsTreeNode"
+                                DataSource="@TreeNodes"
                                 IdMapping="NodeID"
                                 ParentIdMapping="ParentID"
                                 TreeColumnIndex="0"
                                 EnableCollapseAll="true"
                                 AllowSelection="true"
                                 Height="100%"
-                                RowSelected="OnPhaseSelected"
+                                RowSelected="OnTreeNodeSelected"
                                 Collapsed="OnNodeCollapsed"
                                 Expanded="OnNodeExpanded">
                         <HfTreeGridColumn Field="NodeID" HeaderText="" Width="20px" Visible="false" />
@@ -229,7 +271,7 @@
 
                 @* ── Right Panel: Items Grid ──────────────────────── *@
                 <div class="items-panel">
-                    <HfGrid @ref="ItemsGrid"
+                    <HfGrid @ref="gItems"
                             TValue="ItemRow"
                             DataSource="@ItemsData"
                             AllowPaging="true"
@@ -245,156 +287,138 @@
                             SelectionSettingsRef="@selectionSettings"
                             EditSettingsRef="@editSettings"
                             EventsRef="@gridEvents">
-                        <HfGridColumnsBase>
-                            <HfGridColumn Field="@nameof(ItemRow.Phase)" HeaderText="Phase" Width="100px"
-                                          IsPrimaryKey="true" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.Item)" HeaderText="Item" Width="100px"
-                                          AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.CostCategory)" HeaderText="Type" Width="60px"
-                                          AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.ItemDesc)" HeaderText="Description" Width="250px">
-                                <Template>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <span title="@data.ItemDesc">@TruncateText(data.ItemDesc, 35)</span>
-                                        <button class="cell-edit-btn" @onclick="() => OnEditDescription(data)" @onclick:stopPropagation="true">✏️</button>
-                                    }
-                                </Template>
-                            </HfGridColumn>
+                        <HfGridColumnsBase @key="ItemsGridLayoutVersion" DebugTag="FItems-gItems">
+                            @foreach (var entry in GetOrderedItemsGridLayout())
+                            {
+                                var layout = entry.Layout;
+                                var fieldName = entry.Field;
+                                var columnType = entry.ColumnType;
+                                var textAlign = entry.TextAlign;
+                                var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                var width = layout.Width.HasValue && layout.Width.Value > 0
+                                    ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                    : null;
+                                var allowEdit = IsEditableField(fieldName, layout);
 
-                            <HfGridColumn Field="@nameof(ItemRow.POIndex)" HeaderText="PO Index" Width="100px">
-                                <EditTemplate>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <select @bind="data.POIndex" @bind:after="() => OnPOIndexChanged(data)">
-                                            <option value="">-- Select --</option>
-                                            @foreach (var po in POIndexList)
-                                            {
-                                                <option value="@po.POIndex">@po.POIndex - @po.Description</option>
-                                            }
-                                        </select>
-                                    }
-                                </EditTemplate>
-                            </HfGridColumn>
-                            <HfGridColumn Field="@nameof(ItemRow.POIndexDescription)" HeaderText="PO Description"
-                                          Width="150px" AllowEditing="false" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.JCCostCode)" HeaderText="Cost Code" Width="100px">
-                                <EditTemplate>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <select @bind="data.JCCostCode" @bind:after="() => OnCostCodeChanged(data)">
-                                            <option value="">-- Select --</option>
-                                            @foreach (var cc in CostCodeList)
-                                            {
-                                                <option value="@cc.CostCode">@cc.CostCode - @cc.Description</option>
-                                            }
-                                        </select>
-                                    }
-                                </EditTemplate>
-                            </HfGridColumn>
-                            <HfGridColumn Field="@nameof(ItemRow.JCCostCodeDesc)" HeaderText="Cost Code Desc"
-                                          Width="150px" AllowEditing="false" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.JCCategory)" HeaderText="Category" Width="100px">
-                                <EditTemplate>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <select @bind="data.JCCategory" @bind:after="() => OnCategoryChanged(data)">
-                                            <option value="">-- Select --</option>
-                                            @foreach (var cat in CategoryList)
-                                            {
-                                                <option value="@cat.Category">@cat.Category - @cat.Description</option>
-                                            }
-                                        </select>
-                                    }
-                                </EditTemplate>
-                            </HfGridColumn>
-                            <HfGridColumn Field="@nameof(ItemRow.JCCategoryDesc)" HeaderText="Category Desc"
-                                          Width="150px" AllowEditing="false" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.TaxGroup)" HeaderText="Tax Group" Width="100px">
-                                <EditTemplate>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <select @bind="data.TaxGroup">
-                                            <option value="">-- Select --</option>
-                                            @foreach (var tg in TaxGroupList)
-                                            {
-                                                <option value="@tg.TaxGroup">@tg.TaxGroup - @tg.Description</option>
-                                            }
-                                        </select>
-                                    }
-                                </EditTemplate>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(ItemRow.TakeoffUOM)" HeaderText="Takeoff UOM" Width="100px" />
-                            <HfGridColumn Field="@nameof(ItemRow.OrderUOM)" HeaderText="Order UOM" Width="100px" />
-                            <HfGridColumn Field="@nameof(ItemRow.ConversionFactor)" HeaderText="Conversion" Width="100px"
-                                          Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.Price)" HeaderText="Price" Width="100px"
-                                          Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.WastePercent)" HeaderText="Waste %" Width="80px"
-                                          Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.RoundDir)" HeaderText="Round Dir" Width="80px"
-                                          Type="ColumnType.Number" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.RoundTo)" HeaderText="Round To" Width="80px"
-                                          Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.PartNumber)" HeaderText="Part Number" Width="120px" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.Formula)" HeaderText="Formula" Width="150px">
-                                <Template>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <span title="@data.Formula">@TruncateText(data.Formula, 20)</span>
-                                        <button class="cell-edit-btn" @onclick="() => OnEditFormula(data)" @onclick:stopPropagation="true">✏️</button>
-                                    }
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(ItemRow.Notes)" HeaderText="Notes" Width="150px">
-                                <Template>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <span title="@data.Notes">@TruncateText(data.Notes, 20)</span>
-                                        <button class="cell-edit-btn" @onclick="() => OnEditNotes(data)" @onclick:stopPropagation="true">✏️</button>
-                                    }
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(ItemRow.OptionID)" HeaderText="Option ID" Width="100px" />
-                            <HfGridColumn Field="@nameof(ItemRow.OptionCategory)" HeaderText="Option Category" Width="120px" />
-                            <HfGridColumn Field="@nameof(ItemRow.Color)" HeaderText="Color" Width="100px" />
-                            <HfGridColumn Field="@nameof(ItemRow.Location)" HeaderText="Location" Width="100px" />
-                            <HfGridColumn Field="@nameof(ItemRow.RetailPretax)" HeaderText="Retail Pretax" Width="100px"
-                                          Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(ItemRow.IsQuote)" HeaderText="Quote" Width="70px"
-                                          Type="ColumnType.CheckBox" />
-                            <HfGridColumn Field="@nameof(ItemRow.UseInFieldPO)" HeaderText="Field PO" Width="80px"
-                                          Type="ColumnType.CheckBox" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.AltJCCostCode)" HeaderText="Alt Cost Code"
-                                          Width="100px" Visible="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.AltJCCostCodeDesc)" HeaderText="Alt Cost Code Desc"
-                                          Width="150px" Visible="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.AltJCCategory)" HeaderText="Alt Category"
-                                          Width="100px" Visible="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.AltJCCategoryDesc)" HeaderText="Alt Category Desc"
-                                          Width="150px" Visible="false" />
-
-                            <HfGridColumn Field="@nameof(ItemRow.InverseItemDesc)" HeaderText="Inverse Item"
-                                          Width="150px" AllowEditing="false">
-                                <Template>
-                                    @{
-                                        var data = (ItemRow)context;
-                                        <span>@data.InverseItemDesc</span>
-                                        <button class="cell-edit-btn" @onclick="() => OnSelectInverseItem(data)" @onclick:stopPropagation="true">🔍</button>
-                                    }
-                                </Template>
-                            </HfGridColumn>
-
-                            <HfGridColumn Field="@nameof(ItemRow.PriceLink)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(ItemRow.RowState)" HeaderText="" Width="1px" Visible="false" />
+                                if (fieldName.Equals("ItemDesc", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.ItemDesc">@TruncateText(data.ItemDesc, 35)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditDescription(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("Notes", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.Notes">@TruncateText(data.Notes, 20)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditNotes(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("Formula", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.Formula">@TruncateText(data.Formula, 20)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditFormula(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("POIndex", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.POIndex" @bind:after="() => OnPOIndexChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var po in POIndexList)
+                                                {
+                                                    <option value="@po.POIndex">@po.POIndex - @po.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("JCCostCode", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.JCCostCode" @bind:after="() => OnCostCodeChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var cc in CostCodeList)
+                                                {
+                                                    <option value="@cc.CostCode">@cc.CostCode - @cc.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("JCCategory", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.JCCategory" @bind:after="() => OnCategoryChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var cat in CategoryList)
+                                                {
+                                                    <option value="@cat.Category">@cat.Category - @cat.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("TaxGroup", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.TaxGroup">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var tg in TaxGroupList)
+                                                {
+                                                    <option value="@tg.TaxGroup">@tg.TaxGroup - @tg.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("InverseItemDesc", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span>@data.InverseItemDesc</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnSelectInverseItem(data)" @onclick:stopPropagation="true">🔍</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("PriceLink", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.PriceGroupDesc">@(!string.IsNullOrWhiteSpace(data.PriceGroupDesc) ? data.PriceGroupDesc : data.PriceLink.ToString())</span>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else
+                                {
+                                    <HfGridColumn Field="@fieldName"
+                                                  HeaderText="@headerText"
+                                                  Width="@width"
+                                                  Type="@columnType"
+                                                  TextAlign="@textAlign"
+                                                  AllowEditing="@allowEdit" />
+                                }
+                            }
                         </HfGridColumnsBase>
                     </HfGrid>
                 </div>
@@ -507,10 +531,12 @@
     private int activeTab = 1;
 
     // === UI State ===
+    private const string FormName = "FItems";
+    private const string ItemsGridName = "gItems";
     private bool IsLoading = false;
     private bool mDirty = false;
-    private HfGrid<ItemRow>? ItemsGrid;
-    private HfTreeGrid<PhaseTreeData>? PhasesTreeGrid;
+    private HfGrid<ItemRow>? gItems;
+    private HfTreeGrid<ItemsTreeNode>? gPhases;
 
     // === Grid Settings ===
     private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
@@ -535,9 +561,12 @@
     private int CurrentViewIndex = 0;
     private string CurrentViewName => ViewDefinitions[CurrentViewIndex].Name;
     private List<ViewDefinition> ViewDefinitions = new();
+    private Dictionary<string, MMain.GridLayoutColumn> ItemsGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int ItemsGridLayoutVersion = 0;
+    private bool HasItemsGridLayout => ItemsGridLayout.Count > 0;
 
     // === Data Sources ===
-    private List<PhaseNode> PhasesData = new();
+    private List<ItemsTreeNode> TreeNodes = new();
     private List<ItemRow> ItemsData = new();
     private List<POIndexItem> POIndexList = new();
     private List<CostCodeItem> CostCodeList = new();
@@ -548,7 +577,7 @@
 
     // === Selected Items ===
     private ItemRow? SelectedItem;
-    private PhaseTreeData? SelectedPhase;
+    private ItemsTreeNode? SelectedNode;
 
     // === Dialog State ===
     private bool IsTextDialogVisible = false;
@@ -567,20 +596,13 @@
 
     // === App State ===
     private int DivisionID = 1;
-    public List<PhaseTreeData> TreePhaseData { get; set; } = new();
-
-    protected void OnInitializedTree()
-    {
-        TreePhaseData = PhaseTreeData.GetTree().ToList();
-    }
-
     // === Lifecycle ===
     protected override async Task OnInitializedAsync()
     {
         InitializeViewDefinitions();
         await LoadLookupData();
-        await LoadPhasesAsync();
-        OnInitializedTree();
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
     }
 
     private void InitializeViewDefinitions()
@@ -592,21 +614,27 @@
                 Name = "Group and Phase",
                 KeyFields = "GrpPhase, Phase",
                 DisplayFields = "GrpPhase + ' - ' + GrpDesc, Phase + ' - ' + PhaseDesc",
-                SortFields = "GrpSortOrder, PhaseSortOrder, ItemSortOrder"
+                SortFields = "GrpSortOrder, PhaseSortOrder, ItemSortOrder",
+                FromWhere = "FROM EstimatingItems i LEFT OUTER JOIN PriceGroups g ON(PriceLink=PriceGroup and i.DivisionID = g.divisionID)",
+                IconKeys = "groupphase,phase"
             },
             new ViewDefinition
             {
                 Name = "Purchase Order",
                 KeyFields = "POIndex",
                 DisplayFields = "POIndex + ' ' + POIndexDescription",
-                SortFields = "POIndex"
+                SortFields = "POIndex",
+                FromWhere = "FROM EstimatingItems i",
+                IconKeys = "purchaseorder"
             },
             new ViewDefinition
             {
                 Name = "Cost Code",
                 KeyFields = "JCCostCode",
                 DisplayFields = "LTRIM(JCCostCode) + ' - ' + JCCostCodeDesc",
-                SortFields = "LTRIM(JCCostCode)"
+                SortFields = "LTRIM(i.JCCostCode)",
+                FromWhere = "FROM EstimatingItems i",
+                IconKeys = "costcode"
             }
         };
     }
@@ -663,106 +691,91 @@
     }
 
     // === Load Phases Tree ===
-    private async Task LoadPhasesAsync()
+    private async Task LoadTreeAsync(bool clearTree)
     {
         IsLoading = true;
         StateHasChanged();
         try
         {
-            PhasesData.Clear();
-            int nodeId = 1;
+            var nodes = new List<ItemsTreeNode>();
+            if (clearTree)
+                SelectedNode = null;
 
-            if (CurrentViewIndex == 0) // Group and Phase view
+            var view = ViewDefinitions[CurrentViewIndex];
+            var keyFields = ParseViewList(view.KeyFields);
+            var displayFields = ParseViewList(view.DisplayFields);
+            var sortFields = ParseViewList(view.SortFields);
+
+            if (keyFields.Count == 0 || displayFields.Count == 0)
+                return;
+
+            var nodeId = 1;
+            if (CurrentViewIndex == 0 && keyFields.Count >= 2 && displayFields.Count >= 2)
             {
-                var groups = await db.QueryAsync($@"
-                    SELECT DISTINCT
-                        p.GroupPhaseValue AS GrpPhase,
-                        g.Description AS GrpDesc,
-                        g.SortOrder AS GrpSortOrder
-                    FROM tblEstPhases p
-                    LEFT JOIN tblEstPhases g ON p.GroupPhaseValue = g.Phase AND g.DivisionID = p.DivisionID
-                    WHERE p.DivisionID = {DivisionID} AND p.GroupPhase = 0 AND p.GroupPhaseValue <> p.Phase
-                    ORDER BY g.SortOrder, p.GroupPhaseValue");
-                foreach (var group in groups)
+                var groups = await QueryTreeLevel(view, keyFields[0], displayFields[0], sortFields.ElementAtOrDefault(0));
+                foreach (var g in groups)
                 {
-                    var grpPhase = group["GrpPhase"]?.ToString() ?? "";
-                    var grpDesc = group["GrpDesc"]?.ToString() ?? "";
-                    var groupNode = new PhaseNode
+                    var key = g.KeyValue;
+                    if (string.IsNullOrWhiteSpace(key))
+                        continue;
+                    var safeKey = SqlSafe(key);
+                    var groupNode = new GroupPhaseTreeNode
                     {
-                        Id = nodeId++, ParentId = null,
-                        DisplayText = $"{grpPhase} - {grpDesc}",
-                        KeyValue = grpPhase,
-                        WhereClause = $"GrpPhase = '{grpPhase}'"
+                        NodeID = nodeId++,
+                        ParentID = null,
+                        Node = g.DisplayValue,
+                        KeyValue = key,
+                        KeyField = keyFields[0],
+                        WhereClause = $"i.{keyFields[0]} = '{safeKey}'"
                     };
-                    PhasesData.Add(groupNode);
+                    nodes.Add(groupNode);
 
-                    var phases = await db.QueryAsync($@"
-                        SELECT Phase, Description, SortOrder
-                        FROM tblEstPhases
-                        WHERE DivisionID = {DivisionID}
-                          AND GroupPhase = 0
-                          AND GroupPhaseValue = '{grpPhase}'
-                        ORDER BY SortOrder, Phase");
-                    foreach (var phase in phases)
+                    var phases = await QueryTreeLevel(view, keyFields[1], displayFields[1], sortFields.ElementAtOrDefault(1),
+                        $"i.{keyFields[0]} = '{safeKey}'");
+                    foreach (var p in phases)
                     {
-                        var phaseCode = phase["Phase"]?.ToString() ?? "";
-                        var phaseDesc = phase["Description"]?.ToString() ?? "";
-                        PhasesData.Add(new PhaseNode
+                        var phaseKey = p.KeyValue;
+                        if (string.IsNullOrWhiteSpace(phaseKey))
+                            continue;
+                        var safePhase = SqlSafe(phaseKey);
+                        nodes.Add(new GroupPhaseTreeNode
                         {
-                            Id = nodeId++, ParentId = groupNode.Id,
-                            DisplayText = $"{phaseCode} - {phaseDesc}",
-                            KeyValue = phaseCode,
-                            WhereClause = $"Phase = '{phaseCode}'"
+                            NodeID = nodeId++,
+                            ParentID = groupNode.NodeID,
+                            Node = p.DisplayValue,
+                            KeyValue = phaseKey,
+                            KeyField = keyFields[1],
+                            WhereClause = $"i.{keyFields[1]} = '{safePhase}'"
                         });
                     }
                 }
             }
-            else if (CurrentViewIndex == 1) // PO Index view
+            else
             {
-                var poIndexes = await db.QueryAsync($@"
-                    SELECT DISTINCT POIndex,
-                           (SELECT TOP 1 Description FROM tblPOIndex WHERE POIndex = i.POIndex AND DivisionID = {DivisionID}) AS Description
-                    FROM tblPhaseItem i
-                    WHERE DivisionID = {DivisionID} AND POIndex IS NOT NULL AND POIndex <> ''
-                    ORDER BY POIndex");
-                foreach (var poi in poIndexes)
+                var results = await QueryTreeLevel(view, keyFields[0], displayFields[0], sortFields.ElementAtOrDefault(0));
+                foreach (var r in results)
                 {
-                    var poIndex = poi["POIndex"]?.ToString() ?? "";
-                    var desc = poi["Description"]?.ToString() ?? "";
-                    PhasesData.Add(new PhaseNode
-                    {
-                        Id = nodeId++, ParentId = null,
-                        DisplayText = $"{poIndex} - {desc}",
-                        KeyValue = poIndex,
-                        WhereClause = $"POIndex = '{poIndex}'"
-                    });
+                    var key = r.KeyValue;
+                    if (string.IsNullOrWhiteSpace(key))
+                        continue;
+                    var safeKey = SqlSafe(key);
+                    ItemsTreeNode node = CurrentViewIndex == 1
+                        ? new PurchaseOrderTreeNode()
+                        : new CostCodeTreeNode();
+                    node.NodeID = nodeId++;
+                    node.ParentID = null;
+                    node.Node = r.DisplayValue;
+                    node.KeyValue = key;
+                    node.KeyField = keyFields[0];
+                    node.WhereClause = $"i.{keyFields[0]} = '{safeKey}'";
+                    nodes.Add(node);
                 }
             }
-            else if (CurrentViewIndex == 2) // Cost Code view
-            {
-                var costCodes = await db.QueryAsync($@"
-                    SELECT DISTINCT i.JCCostCode,
-                           (SELECT TOP 1 Description FROM StandardCostCodes WHERE CostCode = i.JCCostCode AND DivisionID = {DivisionID}) AS Description
-                    FROM tblPhaseItem i
-                    WHERE i.DivisionID = {DivisionID} AND i.JCCostCode IS NOT NULL AND i.JCCostCode <> ''
-                    ORDER BY i.JCCostCode");
-                foreach (var cc in costCodes)
-                {
-                    var costCode = cc["JCCostCode"]?.ToString() ?? "";
-                    var desc = cc["Description"]?.ToString() ?? "";
-                    PhasesData.Add(new PhaseNode
-                    {
-                        Id = nodeId++, ParentId = null,
-                        DisplayText = $"{costCode} - {desc}",
-                        KeyValue = costCode,
-                        WhereClause = $"JCCostCode = '{costCode}'"
-                    });
-                }
-            }
+            TreeNodes = nodes;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadPhasesAsync error: {ex.Message}");
+            Console.WriteLine($"LoadTreeAsync error: {ex.Message}");
         }
         finally
         {
@@ -774,106 +787,109 @@
     // === Expand/Collapse ===
     private async Task OnExpandAll()
     {
-        if (PhasesTreeGrid != null)
-            await PhasesTreeGrid.ExpandAllAsync();
+        if (gPhases != null)
+            await gPhases.ExpandAllAsync();
     }
 
     private async Task OnCollapseAll()
     {
-        if (PhasesTreeGrid != null)
-            await PhasesTreeGrid.CollapseAllAsync();
+        if (gPhases != null)
+            await gPhases.CollapseAllAsync();
     }
 
-    private void OnNodeExpanded(TreeNodeEventArgs<PhaseTreeData> args)
+    private void OnNodeExpanded(TreeNodeEventArgs<ItemsTreeNode> args)
     {
         Console.WriteLine($"Expanded: {args.Data?.Node}");
     }
 
-    private void OnNodeCollapsed(TreeNodeEventArgs<PhaseTreeData> args)
+    private void OnNodeCollapsed(TreeNodeEventArgs<ItemsTreeNode> args)
     {
-        Console.WriteLine($"Collapsed: {args.Data?.Phase}");
+        Console.WriteLine($"Collapsed: {args.Data?.Node}");
     }
 
     // === Load Items for Selected Phase ===
     private async Task LoadItemsAsync()
     {
-        if (SelectedPhase == null) return;
+        if (SelectedNode == null) return;
         IsLoading = true;
         StateHasChanged();
         try
         {
-            var whereClause = $"i.Phase = '{SelectedPhase.Phase}'";
+            var whereClause = SelectedNode.WhereClause;
+            var viewDef = ViewDefinitions[CurrentViewIndex];
+            var includePriceGroups = viewDef.FromWhere.IndexOf("PriceGroups", StringComparison.OrdinalIgnoreCase) >= 0;
+            var groupSelect = includePriceGroups ? ", g.*" : "";
             var sql = $@"
                 SELECT
-                    i.Phase, i.Item, i.CostCategory,
-                    i.Description AS ItemDesc, i.Notes, i.Formula,
-                    i.POIndex, p.Description AS POIndexDescription,
-                    i.JCCostCode, cc.Description AS JCCostCodeDesc,
-                    i.JCCategory, cat.Description AS JCCategoryDesc,
-                    i.AltJCCostCode, acc.Description AS AltJCCostCodeDesc,
-                    i.AltJCCategory, acat.Description AS AltJCCategoryDesc,
-                    i.TaxGroup, i.TakeoffUOM, i.OrderUOM,
-                    i.ConversionFactor, i.Price, i.WastePercent,
-                    i.RoundDir, i.RoundTo, i.PartNumber,
-                    i.OptionID, i.OptionCategory, i.Color, i.Location,
-                    i.RetailPretax, i.IsQuote, i.UseInFieldPO,
-                    i.PriceLink,
-                    ISNULL(inv.Phase, '') + CASE WHEN inv.Phase IS NOT NULL THEN '/' + inv.Item + ' - ' + ISNULL(inv.Description, '') ELSE '' END AS InverseItemDesc
-                FROM tblPhaseItem i
-                LEFT JOIN tblPOIndex p ON i.POIndex = p.POIndex AND i.DivisionID = p.DivisionID
-                LEFT JOIN StandardCostCodes cc ON i.JCCostCode = cc.CostCode AND i.DivisionID = cc.DivisionID
-                LEFT JOIN StandardCategories cat ON i.JCCategory = cat.Category AND i.DivisionID = cat.DivisionID
-                LEFT JOIN StandardCostCodes acc ON i.AltJCCostCode = acc.CostCode AND i.DivisionID = acc.DivisionID
-                LEFT JOIN StandardCategories acat ON i.AltJCCategory = acat.Category AND i.DivisionID = acat.DivisionID
-                LEFT JOIN tblPhaseItem inv ON i.InversePhase = inv.Phase AND i.InverseItem = inv.Item AND i.DivisionID = inv.DivisionID
-                WHERE i.DivisionID = {DivisionID} AND {whereClause}
-                ORDER BY i.Phase, i.Item";
+                    x.JCCostCode AS ItemCostCode,
+                    y.Description AS ItemCostCodeDesc,
+                    v.Phase + '/' + v.Item + ' - ' + ISNULL(v.Description,'') AS InverseItemDesc,
+                    i.*{groupSelect}
+                {viewDef.FromWhere}
+                LEFT JOIN tblPhaseItem x ON i.DivisionID = x.DivisionID AND i.Phase = x.Phase AND i.Item = x.Item
+                LEFT JOIN tblPhaseItem v ON x.DivisionID = v.DivisionID AND x.InversePhase = v.Phase AND x.InverseItem = v.Item
+                LEFT JOIN StandardCostCodes y ON i.DivisionID = y.DivisionID AND x.JCCostCode = y.CostCode
+                WHERE i.DivisionID = {DivisionID} {(string.IsNullOrWhiteSpace(whereClause) ? "" : "AND " + whereClause)}
+                ORDER BY {viewDef.SortFields}";
 
             var rows = await db.QueryAsync(sql);
-            ItemsData = rows.Select(r => new ItemRow
+            ItemsData = rows.Select(r =>
             {
-                Phase = r["Phase"]?.ToString() ?? "",
-                Item = r["Item"]?.ToString() ?? "",
-                CostCategory = r["CostCategory"]?.ToString() ?? "",
-                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
-                Notes = r["Notes"]?.ToString() ?? "",
-                Formula = r["Formula"]?.ToString() ?? "",
-                POIndex = r["POIndex"]?.ToString() ?? "",
-                POIndexDescription = r["POIndexDescription"]?.ToString() ?? "",
-                JCCostCode = r["JCCostCode"]?.ToString() ?? "",
-                JCCostCodeDesc = r["JCCostCodeDesc"]?.ToString() ?? "",
-                JCCategory = r["JCCategory"]?.ToString() ?? "",
-                JCCategoryDesc = r["JCCategoryDesc"]?.ToString() ?? "",
-                AltJCCostCode = r["AltJCCostCode"]?.ToString() ?? "",
-                AltJCCostCodeDesc = r["AltJCCostCodeDesc"]?.ToString() ?? "",
-                AltJCCategory = r["AltJCCategory"]?.ToString() ?? "",
-                AltJCCategoryDesc = r["AltJCCategoryDesc"]?.ToString() ?? "",
-                TaxGroup = r["TaxGroup"]?.ToString() ?? "",
-                TakeoffUOM = r["TakeoffUOM"]?.ToString() ?? "",
-                OrderUOM = r["OrderUOM"]?.ToString() ?? "",
-                ConversionFactor = r["ConversionFactor"] != null && r["ConversionFactor"] != DBNull.Value
-                    ? Convert.ToDecimal(r["ConversionFactor"]) : 1,
-                Price = r["Price"] != null && r["Price"] != DBNull.Value
-                    ? Convert.ToDecimal(r["Price"]) : 0,
-                WastePercent = r["WastePercent"] != null && r["WastePercent"] != DBNull.Value
-                    ? Convert.ToInt32(r["WastePercent"]) : 0,
-                RoundDir = r["RoundDir"] != null && r["RoundDir"] != DBNull.Value
-                    ? Convert.ToInt32(r["RoundDir"]) : 0,
-                RoundTo = r["RoundTo"] != null && r["RoundTo"] != DBNull.Value
-                    ? Convert.ToDecimal(r["RoundTo"]) : 0,
-                PartNumber = r["PartNumber"]?.ToString() ?? "",
-                OptionID = r["OptionID"]?.ToString() ?? "",
-                OptionCategory = r["OptionCategory"]?.ToString() ?? "",
-                Color = r["Color"]?.ToString() ?? "",
-                Location = r["Location"]?.ToString() ?? "",
-                RetailPretax = r["RetailPretax"] != null && r["RetailPretax"] != DBNull.Value
-                    ? Convert.ToDecimal(r["RetailPretax"]) : 0,
-                IsQuote = r["IsQuote"]?.ToString() == "True" || r["IsQuote"]?.ToString() == "1",
-                UseInFieldPO = r["UseInFieldPO"]?.ToString() == "True" || r["UseInFieldPO"]?.ToString() == "1",
-                PriceLink = r["PriceLink"] != null && r["PriceLink"] != DBNull.Value
-                    ? Convert.ToInt32(r["PriceLink"]) : 0,
-                InverseItemDesc = r["InverseItemDesc"]?.ToString() ?? "",
-                RowState = "CLEAN"
+                var item = new ItemRow
+                {
+                    Phase = r["Phase"]?.ToString() ?? "",
+                    Item = r["Item"]?.ToString() ?? "",
+                    ItemNumber = r.ContainsKey("ItemNumber") ? r["ItemNumber"]?.ToString() ?? "" : "",
+                    CostCategory = r["CostCategory"]?.ToString() ?? "",
+                    ItemDesc = r.ContainsKey("ItemDesc") ? r["ItemDesc"]?.ToString() ?? "" : r["Description"]?.ToString() ?? "",
+                    PhaseDesc = r.ContainsKey("PhaseDesc") ? r["PhaseDesc"]?.ToString() ?? "" : r.ContainsKey("PhaseDescription") ? r["PhaseDescription"]?.ToString() ?? "" : "",
+                    Notes = r["Notes"]?.ToString() ?? "",
+                    Formula = r["Formula"]?.ToString() ?? "",
+                    POIndex = r["POIndex"]?.ToString() ?? "",
+                    POIndexDescription = r["POIndexDescription"]?.ToString() ?? "",
+                    JCCostCode = r.ContainsKey("ItemCostCode") ? r["ItemCostCode"]?.ToString() ?? "" : r["JCCostCode"]?.ToString() ?? "",
+                    JCCostCodeDesc = r.ContainsKey("ItemCostCodeDesc") ? r["ItemCostCodeDesc"]?.ToString() ?? "" : r["JCCostCodeDesc"]?.ToString() ?? "",
+                    JCCategory = r["JCCategory"]?.ToString() ?? "",
+                    JCCategoryDesc = r["JCCategoryDesc"]?.ToString() ?? "",
+                    AltJCCostCode = r["AltJCCostCode"]?.ToString() ?? "",
+                    AltJCCostCodeDesc = r["AltJCCostCodeDesc"]?.ToString() ?? "",
+                    AltJCCategory = r["AltJCCategory"]?.ToString() ?? "",
+                    AltJCCategoryDesc = r["AltJCCategoryDesc"]?.ToString() ?? "",
+                    TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+                    TakeoffUOM = r["TakeoffUOM"]?.ToString() ?? "",
+                    OrderUOM = r["OrderUOM"]?.ToString() ?? "",
+                    ConversionFactor = r["ConversionFactor"] != null && r["ConversionFactor"] != DBNull.Value
+                        ? Convert.ToDecimal(r["ConversionFactor"]) : 1,
+                    Price = r["Price"] != null && r["Price"] != DBNull.Value
+                        ? Convert.ToDecimal(r["Price"]) : 0,
+                    WastePercent = r["WastePercent"] != null && r["WastePercent"] != DBNull.Value
+                        ? Convert.ToInt32(r["WastePercent"]) : 0,
+                    RoundDir = r["RoundDir"] != null && r["RoundDir"] != DBNull.Value
+                        ? Convert.ToInt32(r["RoundDir"]) : 0,
+                    RoundTo = r["RoundTo"] != null && r["RoundTo"] != DBNull.Value
+                        ? Convert.ToDecimal(r["RoundTo"]) : 0,
+                    PartNumber = r["PartNumber"]?.ToString() ?? "",
+                    OptionID = r["OptionID"]?.ToString() ?? "",
+                    OptionCategory = r["OptionCategory"]?.ToString() ?? "",
+                    Color = r["Color"]?.ToString() ?? "",
+                    Location = r["Location"]?.ToString() ?? "",
+                    RetailPretax = r["RetailPretax"] != null && r["RetailPretax"] != DBNull.Value
+                        ? Convert.ToDecimal(r["RetailPretax"]) : 0,
+                    IsQuote = r["IsQuote"]?.ToString() == "True" || r["IsQuote"]?.ToString() == "1",
+                    UseInFieldPO = r["UseInFieldPO"]?.ToString() == "True" || r["UseInFieldPO"]?.ToString() == "1",
+                    PriceLink = r["PriceLink"] != null && r["PriceLink"] != DBNull.Value
+                        ? Convert.ToInt32(r["PriceLink"]) : 0,
+                    PriceGroupDesc = r.ContainsKey("PriceGroupDesc") ? r["PriceGroupDesc"]?.ToString() ?? "" : "",
+                    InverseItemDesc = r["InverseItemDesc"]?.ToString() ?? "",
+                    RowState = "CLEAN"
+                };
+                for (var i = 1; i <= 40; i++)
+                {
+                    var key = $"WBS{i:D2}";
+                    if (r.ContainsKey(key))
+                        item.SetWbs(i, r[key]?.ToString() ?? "");
+                }
+                return item;
             }).ToList();
             mDirty = false;
         }
@@ -973,12 +989,16 @@
             CurrentViewIndex = idx;
         ItemsData.Clear();
         mDirty = false;
-        await LoadPhasesAsync();
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
     }
 
     private void OnNewItemClick()
     {
-        NewItemPhase = SelectedPhase?.Phase ?? "";
+        if (CurrentViewIndex == 0 && SelectedNode?.KeyField?.Equals("Phase", StringComparison.OrdinalIgnoreCase) == true)
+            NewItemPhase = SelectedNode?.KeyValue ?? "";
+        else
+            NewItemPhase = "";
         NewItemCode = "";
         NewItemDescription = "";
         NewItemCostCategory = "M";
@@ -1060,14 +1080,14 @@
         await LoadItemsAsync();
     }
 
-    private async Task OnPhaseSelected(TreeRowSelectEventArgs<PhaseTreeData> args)
+    private async Task OnTreeNodeSelected(TreeRowSelectEventArgs<ItemsTreeNode> args)
     {
         if (mDirty)
         {
             if (!await SaveDataAsync(true)) return;
         }
-        SelectedPhase = args.Data;
-        Console.WriteLine($"Phase: {SelectedPhase?.Node}");
+        SelectedNode = args.Data;
+        Console.WriteLine($"Node: {SelectedNode?.Node}");
         await LoadItemsAsync();
     }
 
@@ -1169,6 +1189,164 @@
         return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
     }
 
+    private static string SqlSafe(string? value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+
+    private static List<string> ParseViewList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+        return raw.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+
+    private sealed class TreeQueryRow
+    {
+        public string KeyValue { get; set; } = "";
+        public string DisplayValue { get; set; } = "";
+    }
+
+    private async Task<List<TreeQueryRow>> QueryTreeLevel(ViewDefinition view, string keyField, string displayField, string? sortField, string? whereClause = null)
+    {
+        var sort = string.IsNullOrWhiteSpace(sortField) ? keyField : sortField;
+        var sql = new System.Text.StringBuilder();
+        sql.Append("SELECT DISTINCT ").Append(keyField).Append(" AS KeyValue, ").Append(displayField).Append(" AS DisplayValue");
+        if (!string.Equals(sort, keyField, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sort, displayField, StringComparison.OrdinalIgnoreCase))
+        {
+            sql.Append(", ").Append(sort).Append(" AS SortValue");
+        }
+        sql.AppendLine();
+        sql.Append(view.FromWhere);
+        sql.Append(" WHERE i.DivisionID = ").Append(DivisionID);
+        if (!string.IsNullOrWhiteSpace(whereClause))
+            sql.Append(" AND ").Append(whereClause);
+        if (CurrentViewIndex == 0)
+            sql.Append(" AND GrpPhase<>Phase");
+        sql.Append(" ORDER BY ").Append(sort);
+
+        var rows = await db.QueryAsync(sql.ToString());
+        return rows.Select(r => new TreeQueryRow
+        {
+            KeyValue = r["KeyValue"]?.ToString() ?? "",
+            DisplayValue = r["DisplayValue"]?.ToString() ?? r["KeyValue"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadItemsGridLayoutAsync()
+    {
+        ItemsGridLayout = await MMain.IniGetGridAsync(FormName, $"{ItemsGridName}.{CurrentViewIndex}", 0, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, CurrentViewIndex, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, 0, grouped: false);
+
+        ItemsGridLayoutVersion++;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedItemsGridLayout()
+    {
+        if (!HasItemsGridLayout)
+            yield break;
+
+        var ordered = ItemsGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveItemsGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private static readonly Dictionary<string, PropertyInfo> _itemRowPropMap =
+        typeof(ItemRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static string NormalizeGridKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return "";
+        var chars = key.Where(char.IsLetterOrDigit).ToArray();
+        return new string(chars).ToLowerInvariant();
+    }
+
+    private static string ResolveItemsGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+        var exact = typeof(ItemRow).GetProperty(trimmed, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (exact != null)
+            return exact.Name;
+
+        var normalized = NormalizeGridKey(trimmed);
+        if (_itemRowPropMap.TryGetValue(normalized, out var prop))
+            return prop.Name;
+
+        return trimmed;
+    }
+
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return ColumnType.Text;
+
+        if (_itemRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool))
+                return ColumnType.CheckBox;
+            if (type == typeof(DateTime))
+                return ColumnType.Date;
+            if (type == typeof(byte) || type == typeof(short) || type == typeof(int) || type == typeof(long) ||
+                type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+
+        return ColumnType.Text;
+    }
+
+    private static bool IsEditableField(string field, MMain.GridLayoutColumn layout)
+    {
+        if (layout.IsEditable)
+            return true;
+
+        return !_readOnlyFields.Contains(field);
+    }
+
+    private static readonly HashSet<string> _readOnlyFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Phase", "PhaseDesc", "Item", "ItemNumber",
+        "POIndexDescription", "JCCostCodeDesc", "JCCategoryDesc",
+        "AltJCCostCodeDesc", "AltJCCategoryDesc",
+        "InverseItemDesc", "PriceGroupDesc", "PriceLink", "RowState"
+    };
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0)
+            return 0;
+
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
     // === Model Classes ===
     public class ViewDefinition
     {
@@ -1176,21 +1354,28 @@
         public string KeyFields { get; set; } = "";
         public string DisplayFields { get; set; } = "";
         public string SortFields { get; set; } = "";
+        public string FromWhere { get; set; } = "";
+        public string IconKeys { get; set; } = "";
     }
-
-    public class PhaseNode
+    public class ItemsTreeNode
     {
-        public int Id { get; set; }
-        public int? ParentId { get; set; }
-        public string DisplayText { get; set; } = "";
+        public int? NodeID { get; set; }
+        public int? ParentID { get; set; }
+        public string Node { get; set; } = "";
         public string KeyValue { get; set; } = "";
+        public string KeyField { get; set; } = "";
         public string WhereClause { get; set; } = "";
     }
+    public class GroupPhaseTreeNode : ItemsTreeNode { }
+    public class PurchaseOrderTreeNode : ItemsTreeNode { }
+    public class CostCodeTreeNode : ItemsTreeNode { }
 
     public class ItemRow
     {
         public string Phase { get; set; } = "";
+        public string PhaseDesc { get; set; } = "";
         public string Item { get; set; } = "";
+        public string ItemNumber { get; set; } = "";
         public string CostCategory { get; set; } = "";
         public string ItemDesc { get; set; } = "";
         public string Notes { get; set; } = "";
@@ -1222,8 +1407,96 @@
         public bool IsQuote { get; set; }
         public bool UseInFieldPO { get; set; }
         public int PriceLink { get; set; }
+        public string PriceGroupDesc { get; set; } = "";
         public string InverseItemDesc { get; set; } = "";
+        public string WBS01 { get; set; } = "";
+        public string WBS02 { get; set; } = "";
+        public string WBS03 { get; set; } = "";
+        public string WBS04 { get; set; } = "";
+        public string WBS05 { get; set; } = "";
+        public string WBS06 { get; set; } = "";
+        public string WBS07 { get; set; } = "";
+        public string WBS08 { get; set; } = "";
+        public string WBS09 { get; set; } = "";
+        public string WBS10 { get; set; } = "";
+        public string WBS11 { get; set; } = "";
+        public string WBS12 { get; set; } = "";
+        public string WBS13 { get; set; } = "";
+        public string WBS14 { get; set; } = "";
+        public string WBS15 { get; set; } = "";
+        public string WBS16 { get; set; } = "";
+        public string WBS17 { get; set; } = "";
+        public string WBS18 { get; set; } = "";
+        public string WBS19 { get; set; } = "";
+        public string WBS20 { get; set; } = "";
+        public string WBS21 { get; set; } = "";
+        public string WBS22 { get; set; } = "";
+        public string WBS23 { get; set; } = "";
+        public string WBS24 { get; set; } = "";
+        public string WBS25 { get; set; } = "";
+        public string WBS26 { get; set; } = "";
+        public string WBS27 { get; set; } = "";
+        public string WBS28 { get; set; } = "";
+        public string WBS29 { get; set; } = "";
+        public string WBS30 { get; set; } = "";
+        public string WBS31 { get; set; } = "";
+        public string WBS32 { get; set; } = "";
+        public string WBS33 { get; set; } = "";
+        public string WBS34 { get; set; } = "";
+        public string WBS35 { get; set; } = "";
+        public string WBS36 { get; set; } = "";
+        public string WBS37 { get; set; } = "";
+        public string WBS38 { get; set; } = "";
+        public string WBS39 { get; set; } = "";
+        public string WBS40 { get; set; } = "";
         public string RowState { get; set; } = "CLEAN";
+
+        public void SetWbs(int index, string value)
+        {
+            switch (index)
+            {
+                case 1: WBS01 = value; break;
+                case 2: WBS02 = value; break;
+                case 3: WBS03 = value; break;
+                case 4: WBS04 = value; break;
+                case 5: WBS05 = value; break;
+                case 6: WBS06 = value; break;
+                case 7: WBS07 = value; break;
+                case 8: WBS08 = value; break;
+                case 9: WBS09 = value; break;
+                case 10: WBS10 = value; break;
+                case 11: WBS11 = value; break;
+                case 12: WBS12 = value; break;
+                case 13: WBS13 = value; break;
+                case 14: WBS14 = value; break;
+                case 15: WBS15 = value; break;
+                case 16: WBS16 = value; break;
+                case 17: WBS17 = value; break;
+                case 18: WBS18 = value; break;
+                case 19: WBS19 = value; break;
+                case 20: WBS20 = value; break;
+                case 21: WBS21 = value; break;
+                case 22: WBS22 = value; break;
+                case 23: WBS23 = value; break;
+                case 24: WBS24 = value; break;
+                case 25: WBS25 = value; break;
+                case 26: WBS26 = value; break;
+                case 27: WBS27 = value; break;
+                case 28: WBS28 = value; break;
+                case 29: WBS29 = value; break;
+                case 30: WBS30 = value; break;
+                case 31: WBS31 = value; break;
+                case 32: WBS32 = value; break;
+                case 33: WBS33 = value; break;
+                case 34: WBS34 = value; break;
+                case 35: WBS35 = value; break;
+                case 36: WBS36 = value; break;
+                case 37: WBS37 = value; break;
+                case 38: WBS38 = value; break;
+                case 39: WBS39 = value; break;
+                case 40: WBS40 = value; break;
+            }
+        }
     }
 
     public class POIndexItem

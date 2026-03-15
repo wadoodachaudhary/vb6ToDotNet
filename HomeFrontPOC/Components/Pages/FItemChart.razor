@@ -1,0 +1,1036 @@
+@page "/item-chart"
+@page "/item-chart/{ChartName}"
+
+@using HomeFront.Data
+@using System.Data
+@layout HFComponent
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+<PageTitle>Item Chart - HomeFront</PageTitle>
+
+<style>
+    .toolbar-cntr {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .tbar-btn {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background 0.15s;
+        min-width: 60px;
+    }
+    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
+    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
+    .tool-label { font-size: 11px; }
+
+    .form-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+    }
+    .form-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .form-field label {
+        min-width: 90px;
+        text-align: right;
+        font-weight: 600;
+        font-size: 13px;
+    }
+    .form-field input, .form-field select, .form-field textarea {
+        padding: 5px 10px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .form-field textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+    .var-edit-btn {
+        padding: 2px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    .var-edit-btn:hover:not(:disabled) { background: #e9ecef; }
+    .var-edit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .formula-edit-btn {
+        padding: 2px 8px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background: #fff;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    .formula-edit-btn:hover { background: #e9ecef; }
+
+    .left-panel { flex: 0 0 auto; }
+    .right-panel { flex: 0 0 auto; }
+
+    .grid-container {
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+
+    /* Pick list dialog */
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 500px; max-width: 800px; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    .pick-list-item {
+        padding: 6px 12px; cursor: pointer; border-bottom: 1px solid #eee;
+    }
+    .pick-list-item:hover { background: #e8f0fe; }
+    .pick-list-item.selected { background: #cce5ff; font-weight: 600; }
+</style>
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnNewClick">
+        <img src="images/32/new.ico" alt="New" onerror="this.style.display='none'" />
+        <span class="tool-label">New</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+        <span class="tool-label">Open</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" disabled="@(string.IsNullOrEmpty(mChart))" @onclick="OnDeleteClick">
+        <img src="images/32/delete.ico" alt="Delete" onerror="this.style.display='none'" />
+        <span class="tool-label">Delete</span>
+    </button>
+    @if (!string.IsNullOrWhiteSpace(returnUrl))
+    {
+        <div class="tbar-separator"></div>
+        <button class="tbar-btn" @onclick="OnCloseClick">
+            <span class="tool-label">Close</span>
+        </button>
+    }
+</div>
+
+<h3 style="margin-bottom: 16px;">Item Chart</h3>
+
+@* ── HEADER FIELDS ───────────────────────────────────── *@
+<div class="form-row">
+    <div class="left-panel">
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Chart Name</label>
+            <input type="text" @bind="txtName" @bind:event="oninput" @bind:after="OnNameChanged"
+                   maxlength="50" style="width: 280px;" />
+        </div>
+        <div class="form-field">
+            <label>Formula</label>
+            <textarea @bind="txtFormula" @bind:event="oninput" @bind:after="OnFormulaChanged"
+                      style="width: 280px; min-height: 50px;"></textarea>
+            <button class="formula-edit-btn" @onclick="OnFormulaEditClick" title="Edit Formula">✏️</button>
+        </div>
+    </div>
+
+    <div class="right-panel">
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Variable 1</label>
+            <select @bind="Variable1" @bind:after="() => OnVariableChanged(1)" style="width: 240px;">
+                <option value=""></option>
+                @foreach (var v in VariableList)
+                {
+                    <option value="@v">@v</option>
+                }
+            </select>
+            <button class="var-edit-btn" @onclick="() => OnEditVariable(1)" title="Edit Variable">✏️</button>
+        </div>
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Variable 2</label>
+            <select @bind="Variable2" @bind:after="() => OnVariableChanged(2)"
+                    disabled="@(!Variable2Enabled)" style="width: 240px;">
+                <option value=""></option>
+                @foreach (var v in VariableList)
+                {
+                    <option value="@v">@v</option>
+                }
+            </select>
+            <button class="var-edit-btn" disabled="@(!Variable2Enabled)"
+                    @onclick="() => OnEditVariable(2)" title="Edit Variable">✏️</button>
+        </div>
+        <div class="form-field">
+            <label>Variable 3</label>
+            <select @bind="Variable3" @bind:after="() => OnVariableChanged(3)"
+                    disabled="@(!Variable3Enabled)" style="width: 240px;">
+                <option value=""></option>
+                @foreach (var v in VariableList)
+                {
+                    <option value="@v">@v</option>
+                }
+            </select>
+            <button class="var-edit-btn" disabled="@(!Variable3Enabled)"
+                    @onclick="() => OnEditVariable(3)" title="Edit Variable">✏️</button>
+        </div>
+    </div>
+</div>
+
+@* ── DATA GRID ───────────────────────────────────────── *@
+<div class="grid-container">
+    <HfGrid @ref="gData"
+            TValue="ItemChartDetailRow"
+            DataSource="@GridData"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            EnableHover="true"
+            Height="400px"
+            EditSettingsRef="@editSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EventsRef="@gridEvents">
+        <HfGridColumnsBase>
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.RowIndex)" HeaderText="" Width="1px"
+                          Visible="false" IsPrimaryKey="true" />
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.D1)" HeaderText="@D1Header"
+                          Width="120px" Visible="@D1Visible" AllowEditing="true" />
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.D2)" HeaderText="@D2Header"
+                          Width="120px" Visible="@D2Visible" AllowEditing="true" />
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.D3)" HeaderText="@D3Header"
+                          Width="120px" Visible="@D3Visible" AllowEditing="true" />
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.Phase)" HeaderText="Phase"
+                          Width="100px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (ItemChartDetailRow)context;
+                        <span>@row.Phase</span>
+                        <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                    }
+                </Template>
+            </HfGridColumn>
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.Item)" HeaderText="Item"
+                          Width="100px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (ItemChartDetailRow)context;
+                        <span>@row.Item</span>
+                        <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                    }
+                </Template>
+            </HfGridColumn>
+            <HfGridColumn Field="@nameof(ItemChartDetailRow.Description)" HeaderText="Description"
+                          Width="250px" AllowEditing="false">
+                <Template>
+                    @{
+                        var row = (ItemChartDetailRow)context;
+                        <span>@row.Description</span>
+                        <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                    }
+                </Template>
+            </HfGridColumn>
+        </HfGridColumnsBase>
+    </HfGrid>
+</div>
+
+<div style="margin-top: 8px; display: flex; gap: 8px;">
+    <button class="tbar-btn" @onclick="OnAddRow">➕ Add Row</button>
+    <button class="tbar-btn" disabled="@(SelectedRowIndex < 0 || SelectedRowIndex >= GridData.Count - 1)"
+            @onclick="OnDeleteRow">🗑️ Delete Row</button>
+</div>
+
+@* ── OPEN CHART PICK LIST DIALOG ────────────────────── *@
+@if (IsOpenDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsOpenDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Item Chart</span>
+                <button @onclick="() => IsOpenDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                @foreach (var chart in ChartPickList)
+                {
+                    <div class="pick-list-item @(chart == SelectedPickChart ? "selected" : "")"
+                         @onclick="() => SelectedPickChart = chart">
+                        @chart
+                    </div>
+                }
+                @if (!ChartPickList.Any())
+                {
+                    <p style="color: #6c757d;">No item charts found.</p>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" disabled="@(string.IsNullOrEmpty(SelectedPickChart))"
+                        @onclick="OnOpenChartConfirm">OK</button>
+                <button class="btn" @onclick="() => IsOpenDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── ITEM PICK LIST DIALOG ──────────────────────────── *@
+@if (IsItemPickDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsItemPickDialogVisible = false">
+        <div class="dialog-panel" style="min-width: 600px;" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Select Item</span>
+                <button @onclick="() => IsItemPickDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #f0f0f0; border-bottom: 2px solid #dee2e6;">
+                            <th style="padding: 6px 8px; text-align: left;">Phase</th>
+                            <th style="padding: 6px 8px; text-align: left;">Item</th>
+                            <th style="padding: 6px 8px; text-align: left;">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pi in PhaseItemPickList)
+                        {
+                            <tr class="pick-list-item @(pi == SelectedPhaseItem ? "selected" : "")"
+                                style="cursor: pointer;"
+                                @onclick="() => SelectedPhaseItem = pi">
+                                <td style="padding: 4px 8px;">@pi.Phase</td>
+                                <td style="padding: 4px 8px;">@pi.Item</td>
+                                <td style="padding: 4px 8px;">@pi.Description</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (!PhaseItemPickList.Any())
+                {
+                    <p style="color: #6c757d; padding: 12px;">No items found.</p>
+                }
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" disabled="@(SelectedPhaseItem == null)"
+                        @onclick="OnItemPickConfirm">OK</button>
+                <button class="btn" @onclick="() => IsItemPickDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── FORMULA EDITOR DIALOG ──────────────────────────── *@
+@if (IsFormulaDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsFormulaDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Formula Editor</span>
+                <button @onclick="() => IsFormulaDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <textarea @bind="EditingFormula" rows="6" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;"
+                          placeholder="Enter formula..."></textarea>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnFormulaDialogOk">OK</button>
+                <button class="btn" @onclick="() => IsFormulaDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? ChartName { get; set; }
+    [SupplyParameterFromQuery] public string? returnUrl { get; set; }
+
+    // Database
+    private DbWrapperSqlServer db = new();
+    private int DivisionID = 1;
+
+    // State
+    private string mChart = "";
+    private bool mDirty = false;
+
+    // Form fields
+    private string txtName = "";
+    private string txtFormula = "";
+    private string Variable1 = "";
+    private string Variable2 = "";
+    private string Variable3 = "";
+
+    // Variable enable state
+    private bool Variable2Enabled => !string.IsNullOrEmpty(Variable1);
+    private bool Variable3Enabled => !string.IsNullOrEmpty(Variable2);
+
+    // Variable lists
+    private List<string> VariableList = new();
+
+    // Dimension min/max values
+    private double[] MinValue = new double[4];
+    private double[] MaxValue = new double[4];
+
+    // Dimension combo lists (for validation)
+    private string[] DimensionComboList = new string[4];
+
+    // Grid column headers and visibility
+    private string D1Header = "D1";
+    private string D2Header = "D2";
+    private string D3Header = "D3";
+    private bool D1Visible = false;
+    private bool D2Visible = false;
+    private bool D3Visible = false;
+
+    // Grid data
+    private List<ItemChartDetailRow> GridData = new();
+    private HfGrid<ItemChartDetailRow>? gData;
+    private int SelectedRowIndex = -1;
+
+    // Grid settings
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private HfGridEvents<ItemChartDetailRow> gridEvents = new();
+
+    // Dialog state - Open Chart
+    private bool IsOpenDialogVisible = false;
+    private List<string> ChartPickList = new();
+    private string SelectedPickChart = "";
+
+    // Dialog state - Item Pick
+    private bool IsItemPickDialogVisible = false;
+    private List<PhaseItemPickRow> PhaseItemPickList = new();
+    private PhaseItemPickRow? SelectedPhaseItem;
+    private ItemChartDetailRow? PickTargetRow;
+
+    // Dialog state - Formula Editor
+    private bool IsFormulaDialogVisible = false;
+    private string EditingFormula = "";
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ItemChartDetailRow>>(this, OnRowSelected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ItemChartDetailRow>>(this, OnCellSaved);
+
+        mChart = ChartName ?? "";
+        await LoadVariables();
+        ConfigDimensions();
+        EnsureEmptyRow();
+
+        if (!string.IsNullOrEmpty(mChart))
+            await LoadData();
+
+        mDirty = false;
+    }
+
+    // ── Load Variables ───────────────────────────────────────────────────
+    private async Task LoadVariables()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT name FROM variables ORDER BY 1",
+                new { });
+            VariableList = rows.Select(r => (r["name"]?.ToString() ?? "").Trim())
+                               .Where(s => !string.IsNullOrEmpty(s))
+                               .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadVariables error: {ex.Message}");
+            VariableList = new();
+        }
+    }
+
+    // ── Configure Dimensions ─────────────────────────────────────────────
+    private void ConfigDimensions()
+    {
+        for (int i = 1; i <= 3; i++)
+        {
+            var varName = GetVariable(i);
+            if (string.IsNullOrEmpty(varName))
+            {
+                SetDimensionVisible(i, false);
+            }
+            else
+            {
+                try
+                {
+                    var rows = db.SqlExec(
+                        "SELECT * FROM variables WHERE name=@Name",
+                        new { Name = varName });
+                    if (rows.Rows.Count > 0)
+                    {
+                        var row = rows.Rows[0];
+                        SetDimensionVisible(i, true);
+                        SetDimensionHeader(i, row["name"]?.ToString() ?? $"D{i}");
+                        MinValue[i] = ToDouble(row["minimumvalue"]);
+                        MaxValue[i] = ToDouble(row["maximumvalue"]);
+                        DimensionComboList[i] = row["listofvalues"]?.ToString() ?? "";
+                    }
+                    else
+                    {
+                        SetDimensionVisible(i, false);
+                    }
+                }
+                catch
+                {
+                    SetDimensionVisible(i, false);
+                }
+            }
+        }
+    }
+
+    private string GetVariable(int index) => index switch
+    {
+        1 => Variable1,
+        2 => Variable2,
+        3 => Variable3,
+        _ => ""
+    };
+
+    private void SetDimensionVisible(int index, bool visible)
+    {
+        switch (index)
+        {
+            case 1: D1Visible = visible; break;
+            case 2: D2Visible = visible; break;
+            case 3: D3Visible = visible; break;
+        }
+    }
+
+    private void SetDimensionHeader(int index, string header)
+    {
+        switch (index)
+        {
+            case 1: D1Header = header; break;
+            case 2: D2Header = header; break;
+            case 3: D3Header = header; break;
+        }
+    }
+
+    // ── Load Data ────────────────────────────────────────────────────────
+    private async Task LoadData()
+    {
+        try
+        {
+            // Load master
+            var masterRows = await db.QueryAsync(
+                "SELECT * FROM itemcharts WHERE name=@Name",
+                new { Name = mChart });
+
+            if (!masterRows.Any())
+            {
+                txtName = "";
+                txtFormula = "";
+                Variable1 = "";
+                Variable2 = "";
+                Variable3 = "";
+            }
+            else
+            {
+                var m = masterRows.First();
+                txtName = m["Name"]?.ToString() ?? "";
+                txtFormula = m["Formula"]?.ToString() ?? "";
+                Variable1 = m["Variable1"]?.ToString() ?? "";
+                Variable2 = m["Variable2"]?.ToString() ?? "";
+                Variable3 = m["Variable3"]?.ToString() ?? "";
+            }
+
+            ConfigDimensions();
+
+            // Load details
+            GridData.Clear();
+            var detailSql = @"
+                SELECT i.*, d.description
+                FROM itemchartdetails i
+                JOIN tblphaseitem d ON (d.DivisionID = @DivisionID AND i.phase = d.phase AND i.item = d.item)
+                WHERE name = @Name";
+            var detailRows = await db.QueryAsync(detailSql, new { DivisionID, Name = mChart });
+
+            int idx = 0;
+            foreach (var r in detailRows)
+            {
+                GridData.Add(new ItemChartDetailRow
+                {
+                    RowIndex = idx++,
+                    D1 = r["Dimension1"]?.ToString() ?? "",
+                    D2 = r["Dimension2"]?.ToString() ?? "",
+                    D3 = r["Dimension3"]?.ToString() ?? "",
+                    Phase = r["Phase"]?.ToString() ?? "",
+                    Item = r["Item"]?.ToString() ?? "",
+                    Description = r["Description"]?.ToString() ?? ""
+                });
+            }
+
+            EnsureEmptyRow();
+            mDirty = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData error: {ex.Message}");
+        }
+    }
+
+    // ── Save Data ────────────────────────────────────────────────────────
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            var answer = await JSRuntime.InvokeAsync<string>("eval",
+                "confirm('Item Chart has changed.\\n\\nDo you want to save these changes?') ? 'yes' : 'no'");
+            if (answer == "no") return true;
+            // If user closes the confirm (unlikely with this approach), treat as cancel
+        }
+
+        // Validate
+        txtName = txtName.Trim();
+        if (string.IsNullOrWhiteSpace(txtName))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Chart name is required.");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(Variable1))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "At least one variable must be specified.");
+            return false;
+        }
+
+        // Validate rows (all except last empty row)
+        var dataRows = GridData.Where(r => !IsEmptyRow(r)).ToList();
+        foreach (var row in dataRows)
+        {
+            if (string.IsNullOrEmpty(row.Phase) || string.IsNullOrEmpty(row.Item))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "You must specify a phase/item on each line.");
+                return false;
+            }
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(mChart))
+            {
+                // Insert
+                await db.ExecuteAsync(
+                    @"INSERT INTO itemcharts(name, formula, variable1, variable2, variable3)
+                      VALUES(@Name, @Formula, @Variable1, @Variable2, @Variable3)",
+                    new
+                    {
+                        Name = txtName,
+                        Formula = txtFormula,
+                        Variable1,
+                        Variable2,
+                        Variable3
+                    });
+                mChart = txtName;
+            }
+            else
+            {
+                // Update
+                await db.ExecuteAsync(
+                    @"UPDATE itemcharts
+                      SET name=@NewName, formula=@Formula,
+                          variable1=@Variable1, variable2=@Variable2, variable3=@Variable3
+                      WHERE name=@OldName",
+                    new
+                    {
+                        NewName = txtName,
+                        Formula = txtFormula,
+                        Variable1,
+                        Variable2 = string.IsNullOrEmpty(Variable2) ? (string?)null : Variable2,
+                        Variable3 = string.IsNullOrEmpty(Variable3) ? (string?)null : Variable3,
+                        OldName = mChart
+                    });
+                mChart = txtName;
+            }
+
+            // Delete existing details
+            await db.ExecuteAsync(
+                "DELETE FROM itemchartdetails WHERE name=@Name",
+                new { Name = txtName });
+
+            // Insert details
+            foreach (var row in dataRows)
+            {
+                await db.ExecuteAsync(
+                    @"INSERT INTO itemchartdetails(name, dimension1, dimension2, dimension3, phase, item)
+                      VALUES(@Name, @D1, @D2, @D3, @Phase, @Item)",
+                    new
+                    {
+                        Name = mChart,
+                        D1 = D1Visible ? row.D1 : "",
+                        D2 = D2Visible ? row.D2 : "",
+                        D3 = D3Visible ? row.D3 : "",
+                        row.Phase,
+                        row.Item
+                    });
+            }
+
+            mDirty = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                await JSRuntime.InvokeVoidAsync("alert",
+                    $"Unable to save this chart. \"{txtName}\" has already been used.\n\nPlease enter a different name.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    // ── Delete Chart ─────────────────────────────────────────────────────
+    private async Task DeleteChart()
+    {
+        if (!string.IsNullOrEmpty(mChart))
+        {
+            await db.ExecuteAsync("DELETE FROM itemcharts WHERE name=@Name", new { Name = mChart });
+            await db.ExecuteAsync("DELETE FROM itemchartdetails WHERE name=@Name", new { Name = mChart });
+            await db.ExecuteAsync("DELETE FROM tbldbassemblydetails WHERE itemchart=@Name", new { Name = mChart });
+            mChart = "";
+        }
+        await LoadData();
+    }
+
+    // ── Toolbar Handlers ─────────────────────────────────────────────────
+    private async Task OnNewClick()
+    {
+        if (!await SaveData(true)) return;
+        mChart = "";
+        txtName = "";
+        txtFormula = "";
+        Variable1 = "";
+        Variable2 = "";
+        Variable3 = "";
+        GridData.Clear();
+        ConfigDimensions();
+        EnsureEmptyRow();
+        mDirty = false;
+        StateHasChanged();
+    }
+
+    private async Task OnOpenClick()
+    {
+        if (!await SaveData(true)) return;
+
+        try
+        {
+            var rows = await db.QueryAsync("SELECT Name FROM itemcharts ORDER BY Name", new { });
+            ChartPickList = rows.Select(r => r["Name"]?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList();
+            SelectedPickChart = mChart;
+            IsOpenDialogVisible = true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading charts: {ex.Message}");
+        }
+    }
+
+    private async Task OnOpenChartConfirm()
+    {
+        if (!string.IsNullOrEmpty(SelectedPickChart))
+        {
+            mChart = SelectedPickChart;
+            IsOpenDialogVisible = false;
+            await LoadData();
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (!string.IsNullOrEmpty(mChart) || !string.IsNullOrEmpty(txtName))
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "Are you sure you want to delete this chart?");
+            if (!confirm) return;
+            await DeleteChart();
+        }
+    }
+
+    private async Task OnCloseClick()
+    {
+        if (mDirty)
+        {
+            var discard = await JSRuntime.InvokeAsync<bool>("confirm", "Discard unsaved changes and return?");
+            if (!discard) return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+            NavigationManager.NavigateTo(returnUrl);
+    }
+
+    // ── Variable Change Handlers ─────────────────────────────────────────
+    private void OnVariableChanged(int index)
+    {
+        mDirty = true;
+
+        switch (index)
+        {
+            case 1:
+                if (string.IsNullOrEmpty(Variable1))
+                {
+                    Variable2 = "";
+                    Variable3 = "";
+                }
+                break;
+            case 2:
+                if (string.IsNullOrEmpty(Variable2))
+                {
+                    Variable3 = "";
+                }
+                break;
+        }
+
+        ConfigDimensions();
+        StateHasChanged();
+    }
+
+    private async Task OnEditVariable(int index)
+    {
+        var varName = GetVariable(index);
+        await JSRuntime.InvokeVoidAsync("alert", $"Edit Variable: {varName}\n(Variable editor not yet implemented)");
+        await LoadVariables();
+        StateHasChanged();
+    }
+
+    // ── Formula Handlers ─────────────────────────────────────────────────
+    private void OnFormulaEditClick()
+    {
+        EditingFormula = txtFormula;
+        IsFormulaDialogVisible = true;
+    }
+
+    private void OnFormulaDialogOk()
+    {
+        txtFormula = EditingFormula;
+        mDirty = true;
+        IsFormulaDialogVisible = false;
+    }
+
+    // ── Name/Formula Change ──────────────────────────────────────────────
+    private void OnNameChanged() => mDirty = true;
+    private void OnFormulaChanged() => mDirty = true;
+
+    // ── Grid Event Handlers ──────────────────────────────────────────────
+    private void OnRowSelected(RowSelectEventArgs<ItemChartDetailRow> args)
+    {
+        if (args.Data != null)
+            SelectedRowIndex = GridData.IndexOf(args.Data);
+    }
+
+    private void OnCellSaved(CellSaveArgs<ItemChartDetailRow> args)
+    {
+        if (args.Data != null)
+        {
+            // Validate dimension values
+            var colName = args.ColumnName;
+            if (colName == "D1" || colName == "D2" || colName == "D3")
+            {
+                int dimIndex = colName == "D1" ? 1 : colName == "D2" ? 2 : 3;
+                var comboList = DimensionComboList[dimIndex];
+                if (string.IsNullOrEmpty(comboList))
+                {
+                    // Numeric validation
+                    var text = args.Value?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        if (double.TryParse(text, out var val))
+                        {
+                            if (val < MinValue[dimIndex] || val > MaxValue[dimIndex])
+                            {
+                                // Value out of range - would ideally cancel but we mark dirty
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Ensure there's always an empty row at the end
+            EnsureEmptyRow();
+            mDirty = true;
+        }
+    }
+
+    // ── Item Pick List ───────────────────────────────────────────────────
+    private async Task OnPickItem(ItemChartDetailRow row)
+    {
+        try
+        {
+            var sql = $"SELECT Phase, Item, Description, POIndex FROM tblphaseitem WHERE DivisionID = @DivisionID ORDER BY Phase, Item";
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+            PhaseItemPickList = rows.Select(r => new PhaseItemPickRow
+            {
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+            SelectedPhaseItem = null;
+            PickTargetRow = row;
+            IsItemPickDialogVisible = true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading items: {ex.Message}");
+        }
+    }
+
+    private void OnItemPickConfirm()
+    {
+        if (SelectedPhaseItem != null && PickTargetRow != null)
+        {
+            PickTargetRow.Phase = SelectedPhaseItem.Phase;
+            PickTargetRow.Item = SelectedPhaseItem.Item;
+            PickTargetRow.Description = SelectedPhaseItem.Description;
+            mDirty = true;
+            EnsureEmptyRow();
+        }
+        IsItemPickDialogVisible = false;
+        StateHasChanged();
+    }
+
+    // ── Add/Delete Row ───────────────────────────────────────────────────
+    private void OnAddRow()
+    {
+        EnsureEmptyRow();
+        StateHasChanged();
+    }
+
+    private async Task OnDeleteRow()
+    {
+        if (SelectedRowIndex >= 0 && SelectedRowIndex < GridData.Count - 1)
+        {
+            GridData.RemoveAt(SelectedRowIndex);
+            ReindexRows();
+            SelectedRowIndex = Math.Min(SelectedRowIndex, GridData.Count - 1);
+            mDirty = true;
+            StateHasChanged();
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    private void EnsureEmptyRow()
+    {
+        if (!GridData.Any() || !IsEmptyRow(GridData.Last()))
+        {
+            GridData.Add(new ItemChartDetailRow { RowIndex = GridData.Count });
+        }
+    }
+
+    private bool IsEmptyRow(ItemChartDetailRow row)
+    {
+        return string.IsNullOrEmpty(row.Phase)
+            && string.IsNullOrEmpty(row.Item)
+            && string.IsNullOrEmpty(row.D1)
+            && string.IsNullOrEmpty(row.D2)
+            && string.IsNullOrEmpty(row.D3);
+    }
+
+    private void ReindexRows()
+    {
+        for (int i = 0; i < GridData.Count; i++)
+            GridData[i].RowIndex = i;
+    }
+
+    private double ToDouble(object? val)
+    {
+        if (val == null || val == DBNull.Value) return 0;
+        return double.TryParse(val.ToString(), out var result) ? result : 0;
+    }
+
+    // ── Models ───────────────────────────────────────────────────────────
+    public class ItemChartDetailRow
+    {
+        public int RowIndex { get; set; }
+        public string D1 { get; set; } = "";
+        public string D2 { get; set; } = "";
+        public string D3 { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class PhaseItemPickRow
+    {
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+}

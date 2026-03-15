@@ -1,4 +1,4 @@
-@page "/migrator/vendor-pricelist-opus"
+@page "/vendor-pricelist"
 
 @rendermode InteractiveServer
 
@@ -9,8 +9,9 @@
 @using System.Dynamic
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Grid
+@using System.Reflection
 @using HomeFront.Components.Hf
+@using HomeFront.Components.Pages.Migrated
 @using HomeFront.Data
 
 @inject IJSRuntime JSRuntime
@@ -171,10 +172,10 @@
         <div class="toolbar-sep"></div>
 
         <label style="font-size:13px; margin-right:4px;">View:</label>
-        <select class="view-select" @onchange="OnViewChanged">
-            @foreach (var view in Views)
+        <select class="view-select" value="@CurrentViewIndex" @onchange="OnViewChanged">
+            @for (var i = 0; i < Views.Count; i++)
             {
-                <option value="@view.Index" selected="@(view.Index == CurrentViewIndex)">@view.Name</option>
+                <option value="@i">@Views[i].Name</option>
             }
         </select>
 
@@ -202,67 +203,61 @@
 
         <!-- Left: Tree Panel -->
         <div class="tree-panel">
-            <div class="hf-tree">
-                <ul>
-                    @foreach (var node in TreeNodes)
-                    {
-                        @RenderTreeNode(node)
-                    }
-                </ul>
-            </div>
+            <HfTreeGrid @ref="gAssemblies"
+                        TValue="PriceTreeNode"
+                        DataSource="@TreeNodes"
+                        IdMapping="NodeID"
+                        ParentIdMapping="ParentID"
+                        TreeColumnIndex="0"
+                        EnableCollapseAll="true"
+                        AllowSelection="true"
+                        Height="100%"
+                        RowSelected="OnTreeNodeSelected">
+                <HfTreeGridColumn Field="NodeID" HeaderText="" Width="20px" Visible="false" />
+                <HfTreeGridColumn Field="Node" HeaderText="Task Name" Width="420px" />
+            </HfTreeGrid>
         </div>
 
         <!-- Right: Price Grid -->
         <div class="grid-panel">
-            <HfGrid @ref="PriceGrid"
+            <HfGrid @ref="gItems"
                     TValue="VendorPriceViewModel"
                     DataSource="@PriceData"
                     AllowSorting="true"
                     AllowResizing="true"
                     AllowSelection="true"
                     Height="calc(100vh - 220px)">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.PriceLink)" HeaderText="Price Group"
-                                  Width="100px" TextAlign="TextAlign.Center" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.VendorName)" HeaderText="Vendor"
-                                  Width="380px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Community)" HeaderText="@CommunityLabel"
-                                  Width="140px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.CommunityPhase)" HeaderText="@CommunityPhaseLabel"
-                                  Width="140px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Assembly)" HeaderText="Assembly"
-                                  Width="260px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.ItemDesc)" HeaderText="Description"
-                                  Width="320px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.SKU)" HeaderText="Part #"
-                                  Width="120px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last3)" HeaderText="Last3"
-                                  Format="@DecimalFormat" Visible="false"
-                                  Width="100px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry3)" HeaderText="Expiry3" Format="d"
-                                  Visible="false" Width="110px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last2)" HeaderText="Last2"
-                                  Format="@DecimalFormat" Visible="false"
-                                  Width="100px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry2)" HeaderText="Expiry2" Format="d"
-                                  Visible="false" Width="110px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Last1)" HeaderText="Last1"
-                                  Format="@DecimalFormat" Visible="false"
-                                  Width="100px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Expiry1)" HeaderText="Expiry1" Format="d"
-                                  Visible="false" Width="110px" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Current)" HeaderText="Current"
-                                  Format="@DecimalFormat"
-                                  Width="110px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Next1)" HeaderText="Next1"
-                                  Format="@DecimalFormat"
-                                  Width="100px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(VendorPriceViewModel.Effective1)" HeaderText="Eff.1" Format="d"
-                                  Width="110px" />
-                    <HfGridColumn Field="Forecast1" HeaderText="F1" Format="@DecimalFormat"
-                                  Width="90px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="Forecast2" HeaderText="F2" Format="@DecimalFormat"
-                                  Width="90px" TextAlign="TextAlign.Right" />
+                <HfGridColumnsBase @key="ItemsGridLayoutVersion" DebugTag="FPriceList-gItems">
+                    @foreach (var entry in GetOrderedItemsGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                            : null;
+
+                        if (fieldName.Equals("PriceLink", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                <Template>
+                                    @{ var data = (VendorPriceViewModel)context; }
+                                    <span title="@data.PriceGroupDesc">@(!string.IsNullOrWhiteSpace(data.PriceGroupDesc) ? data.PriceGroupDesc : data.PriceLink.ToString())</span>
+                                </Template>
+                            </HfGridColumn>
+                        }
+                        else
+                        {
+                            <HfGridColumn Field="@fieldName"
+                                          HeaderText="@headerText"
+                                          Width="@width"
+                                          Type="@columnType"
+                                          TextAlign="@textAlign"
+                                          AllowEditing="false" />
+                        }
+                    }
                 </HfGridColumnsBase>
             </HfGrid>
         </div>
@@ -275,60 +270,32 @@
 </div>
 
 @code {
+    private const string FormName = "FPriceList";
+    private const string ItemsGridName = "gItems";
     private DbWrapperSqlServer db = new();
-    private HfGrid<VendorPriceViewModel>? PriceGrid;
+    private HfGrid<VendorPriceViewModel>? gItems;
+    private HfTreeGrid<PriceTreeNode>? gAssemblies;
     private List<VendorPriceViewModel> PriceData = new();
-    private List<TreeNodeModel> TreeNodes = new();
-    private TreeNodeModel? SelectedNode;
+    private List<PriceTreeNode> TreeNodes = new();
+    private PriceTreeNode? SelectedNode;
     private int CurrentViewIndex = 0;
     private int Decimals = 2;
     private string StatusMessage = "Ready";
     private bool IsDirty;
+    private int DivisionID = 1;
+    private Dictionary<string, MMain.GridLayoutColumn> ItemsGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int ItemsGridLayoutVersion = 0;
+    private bool HasItemsGridLayout => ItemsGridLayout.Count > 0;
     private string CommunityLabel => "Community";
     private string CommunityPhaseLabel => "Phase";
     private string CD_Community = "Community";
     private string DecimalFormat => $"N{Decimals}";
 
-    // Render tree node recursively
-    private RenderFragment RenderTreeNode(TreeNodeModel node) => __builder =>
+    private async Task OnTreeNodeSelected(TreeRowSelectEventArgs<PriceTreeNode> args)
     {
-        <li>
-            <span class="tree-node @(SelectedNode == node ? "selected" : "")"
-                  @onclick="() => OnTreeNodeClicked(node)"
-                  @onclick:stopPropagation="true">
-                @if (node.Children?.Any() == true)
-                {
-                    <span class="tree-toggle" @onclick="() => ToggleNode(node)" @onclick:stopPropagation="true">
-                        @(node.Expanded ? "▼" : "▶")
-                    </span>
-                }
-                else
-                {
-                    <span class="tree-toggle">&nbsp;</span>
-                }
-                @node.Name
-            </span>
-            @if (node.Expanded && node.Children?.Any() == true)
-            {
-                <ul>
-                    @foreach (var child in node.Children)
-                    {
-                        @RenderTreeNode(child)
-                    }
-                </ul>
-            }
-        </li>
-    };
-
-    private void ToggleNode(TreeNodeModel node)
-    {
-        node.Expanded = !node.Expanded;
-    }
-
-    private async Task OnTreeNodeClicked(TreeNodeModel node)
-    {
-        SelectedNode = node;
-        await LoadItemsAsync(node);
+        SelectedNode = args.Data;
+        if (SelectedNode != null)
+            await LoadItemsAsync(SelectedNode);
     }
 
     private async Task OnViewChanged(ChangeEventArgs e)
@@ -336,31 +303,59 @@
         if (int.TryParse(e.Value?.ToString(), out var idx))
         {
             CurrentViewIndex = idx;
+            await LoadItemsGridLayoutAsync();
             await LoadTreeAsync(true);
         }
     }
 
     // View definitions
-    private readonly List<ViewDefinition> Views = new()
-    {
-        new ViewDefinition(0, "Assembly", "Community,CommunityPhase,Assembly,CostCode",
-            "(Community + ' - ' + CommunityDesc) as CommunityDisplay,(CommunityPhase + ' - ' + CommunityPhaseDesc) as CommunityPhaseDisplay,(Assembly + ' - ' + AssemblyDesc) as AssemblyDisplay,(CostCode + ' - ' + CostCodeDesc) as CostCodeDisplay",
-            "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc"),
-        new ViewDefinition(1, "Vendor", "Vendor,CommunityDesc,CommunityPhase,Assembly",
-            "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
-            "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc"),
-        new ViewDefinition(2, "Purchase Order", "POIndex,CommunityDesc,CommunityPhase,Assembly",
-            "POIndex + ' -' + POIndexDescription,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
-            "POIndex + ' -' + POIndexDescription,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc"),
-        new ViewDefinition(3, "Cost Code", "CostCode,CommunityDesc,CommunityPhase,Assembly",
-            "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
-            "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc")
-    };
+    private List<ViewDefinition> Views = new();
 
     protected override async Task OnInitializedAsync()
     {
+        InitializeViewDefinitions();
         await LoadSettings();
+        await LoadItemsGridLayoutAsync();
         await LoadTreeAsync(true);
+    }
+
+    private void InitializeViewDefinitions()
+    {
+        Views = new List<ViewDefinition>
+        {
+            new ViewDefinition
+            {
+                Name = "Assembly",
+                KeyFields = "CommunityDesc,CommunityPhase,Assembly,CostCode",
+                DisplayFields = "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc",
+                SortFields = "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Vendor",
+                KeyFields = "Vendor,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Purchase Order",
+                KeyFields = "POIndex,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "POIndex + ' ' + case when poindex=POIndexDescription then '' else POIndexDescription end,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "POIndex + ' ' + case when poindex=POIndexDescription then '' else POIndexDescription end,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Cost Code",
+                KeyFields = "CostCode,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            }
+        };
     }
 
     private async Task LoadSettings()
@@ -371,159 +366,73 @@
 
     private async Task LoadTreeAsync(bool clear = true)
     {
-        if (clear) TreeNodes.Clear();
-        var currentView = Views[CurrentViewIndex];
-        var keyFields = currentView.KeyFields;
-        var displayFields = currentView.DisplayFields;
-        var orderFields = currentView.OrderByFields;
-
-        var sql = $@"
-        SELECT DISTINCT
-            {keyFields},
-            {displayFields}
-        FROM VendorPrices
-        WHERE DivisionID IN (0, @DivisionID)
-        Order by {orderFields}";
-
-        var parameters = new { DivisionID = 1 };
-        var rootItems = await db.QueryAsync(sql, parameters);
-
-        var Init = "XX";
-        var level0ID = currentView.KeyFields.Split(',')[0].Trim();
-        var prevLevel0 = Init;
-        var nodeLevel0 = new TreeNodeModel();
-        var level0Children = new List<TreeNodeModel>();
-
-        var level1ID = currentView.KeyFields.Split(',').Length > 1 ? currentView.KeyFields.Split(',')[1].Trim() : "";
-        var prevLevel1 = Init;
-        var nodeLevel1 = new TreeNodeModel();
-        var level1Children = new List<TreeNodeModel>();
-
-        var level2ID = currentView.KeyFields.Split(',').Length > 2 ? currentView.KeyFields.Split(',')[2].Trim() : "";
-        var prevLevel2 = Init;
-        var nodeLevel2 = new TreeNodeModel();
-        var level2Children = new List<TreeNodeModel>();
-
-        var level3ID = currentView.KeyFields.Split(',').Length > 3 ? currentView.KeyFields.Split(',')[3].Trim() : "";
-        var prevLevel3 = Init;
-
-        var displayParts = currentView.DisplayFields.Split(',');
-
-        foreach (var item in rootItems)
+        try
         {
-            var level0 = item[level0ID]?.ToString() ?? "";
-            if (level0 != prevLevel0)
+            if (clear)
+                SelectedNode = null;
+
+            var view = Views[CurrentViewIndex];
+            var keyFields = ParseViewList(view.KeyFields);
+            var displayFields = ParseViewList(view.DisplayFields);
+            var sortFields = ParseViewList(view.SortFields);
+            if (keyFields.Count == 0 || displayFields.Count == 0)
             {
-                if (prevLevel0 != Init)
-                {
-                    nodeLevel0.Children = level0Children;
-                    level0Children = new List<TreeNodeModel>();
-                }
-                var displayValue = GetDisplayValue(item, displayParts, 0);
-                if (displayValue == "- global -")
-                    displayValue = $"Global (any {CD_Community})";
-                nodeLevel0 = new TreeNodeModel
-                {
-                    Name = displayValue,
-                    WhereClause = $"{level0ID}='{level0}'",
-                    HasChildren = true
-                };
-                TreeNodes.Add(nodeLevel0);
-                prevLevel0 = level0;
-                prevLevel1 = Init;
-                prevLevel2 = Init;
-                prevLevel3 = Init;
+                TreeNodes = new List<PriceTreeNode>();
+                return;
             }
 
-            if (!string.IsNullOrEmpty(level1ID))
+            var nodes = new List<PriceTreeNode>();
+            var nodeId = 1;
+
+            async Task BuildLevel(int level, int? parentId, string? whereClause)
             {
-                var level1 = item[level1ID]?.ToString() ?? "";
-                if (level1 != prevLevel1)
+                if (level >= keyFields.Count)
+                    return;
+
+                var keyField = keyFields[level];
+                var displayField = displayFields[Math.Min(level, displayFields.Count - 1)];
+                var sortField = sortFields.ElementAtOrDefault(level);
+                var rows = await QueryTreeLevel(view, keyField, displayField, sortField, whereClause);
+                foreach (var row in rows)
                 {
-                    if (prevLevel1 != Init)
+                    if (string.IsNullOrWhiteSpace(row.KeyValue))
+                        continue;
+                    var display = NormalizeDisplayValue(row.DisplayValue);
+                    var safeKey = SqlSafe(row.KeyValue);
+                    var nextWhere = string.IsNullOrWhiteSpace(whereClause)
+                        ? $"{keyField} = '{safeKey}'"
+                        : $"{whereClause} AND {keyField} = '{safeKey}'";
+
+                    var node = new PriceTreeNode
                     {
-                        nodeLevel1.Children = level1Children;
-                        level1Children = new List<TreeNodeModel>();
-                    }
-                    nodeLevel1 = new TreeNodeModel
-                    {
-                        Name = GetDisplayValue(item, displayParts, 1),
-                        WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{level1}'",
-                        HasChildren = !string.IsNullOrEmpty(level2ID)
+                        NodeID = nodeId++,
+                        ParentID = parentId,
+                        Node = display,
+                        KeyField = keyField,
+                        KeyValue = row.KeyValue,
+                        WhereClause = nextWhere
                     };
-                    prevLevel1 = level1;
-                    prevLevel2 = Init;
-                    prevLevel3 = Init;
-                    level0Children.Add(nodeLevel1);
-                }
+                    nodes.Add(node);
 
-                if (!string.IsNullOrEmpty(level2ID))
-                {
-                    var level2 = item[level2ID]?.ToString() ?? "";
-                    if (level2 != prevLevel2)
-                    {
-                        if (prevLevel2 != Init)
-                        {
-                            nodeLevel2.Children = level2Children;
-                            level2Children = new List<TreeNodeModel>();
-                        }
-                        nodeLevel2 = new TreeNodeModel
-                        {
-                            Name = GetDisplayValue(item, displayParts, 2),
-                            WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{prevLevel1}' AND {level2ID}='{level2}'",
-                            HasChildren = !string.IsNullOrEmpty(level3ID)
-                        };
-                        prevLevel2 = level2;
-                        prevLevel3 = Init;
-                        level1Children.Add(nodeLevel2);
-                    }
-
-                    if (!string.IsNullOrEmpty(level3ID))
-                    {
-                        var level3 = item[level3ID]?.ToString() ?? "";
-                        if (level3 != prevLevel3)
-                        {
-                            var nodeLevel3 = new TreeNodeModel
-                            {
-                                Name = GetDisplayValue(item, displayParts, 3),
-                                WhereClause = $"{level0ID}='{prevLevel0}' AND {level1ID}='{prevLevel1}' AND {level2ID}='{prevLevel2}' AND {level3ID}='{level3}'"
-                            };
-                            prevLevel3 = level3;
-                            level2Children.Add(nodeLevel3);
-                        }
-                    }
+                    await BuildLevel(level + 1, node.NodeID, nextWhere);
                 }
             }
+
+            await BuildLevel(0, null, null);
+            TreeNodes = nodes;
         }
-
-        // Close remaining open nodes
-        if (!string.IsNullOrEmpty(level2ID))
-            nodeLevel2.Children = level2Children;
-        if (!string.IsNullOrEmpty(level1ID))
-            nodeLevel1.Children = level1Children;
-        nodeLevel0.Children = level0Children;
-
-        StateHasChanged();
-    }
-
-    private string GetDisplayValue(dynamic item, string[] displayParts, int level)
-    {
-        if (level >= displayParts.Length) return "";
-        var expr = displayParts[level].Trim();
-        // Extract the alias (after " as ") if it exists
-        var asIdx = expr.IndexOf(" as ", StringComparison.OrdinalIgnoreCase);
-        if (asIdx >= 0)
+        catch (Exception ex)
         {
-            var alias = expr.Substring(asIdx + 4).Trim();
-            var dict = item as IDictionary<string, object>;
-            return dict?[alias]?.ToString()?.Trim() ?? "";
+            Console.WriteLine($"LoadTreeAsync error: {ex.Message}");
+            TreeNodes = new List<PriceTreeNode>();
         }
-        // Otherwise use as column name directly
-        var dictFallback = item as IDictionary<string, object>;
-        return dictFallback?[expr]?.ToString()?.Trim() ?? "";
+        finally
+        {
+            StateHasChanged();
+        }
     }
 
-    private async Task LoadItemsAsync(TreeNodeModel currentSelectedNode)
+    private async Task LoadItemsAsync(PriceTreeNode currentSelectedNode)
     {
         StatusMessage = "Loading vendor prices...";
         StateHasChanged();
@@ -538,14 +447,7 @@
                 ON v.PriceLink = g.PriceGroup
                AND g.DivisionID = @DivisionID";
 
-            string? whereClause = null;
-            try
-            {
-                whereClause = currentSelectedNode?.WhereClause;
-            }
-            catch
-            {
-            }
+            var whereClause = currentSelectedNode?.WhereClause;
 
             if (!string.IsNullOrWhiteSpace(whereClause))
             {
@@ -563,7 +465,12 @@
                 WHERE v.DivisionID IN (0, @DivisionID)";
             }
 
-            var parameters = new { DivisionID = 1 };
+            var orderBy = Views.Count > CurrentViewIndex ? Views[CurrentViewIndex].DisplayFields : "";
+            if (!string.IsNullOrWhiteSpace(orderBy))
+                sql += $@"
+                ORDER BY {orderBy}";
+
+            var parameters = new { DivisionID };
             var result = await db.QueryAsync(sql, parameters);
 
             foreach (var row in result)
@@ -645,33 +552,21 @@
     // Models
     public class ViewDefinition
     {
-        public int Index { get; }
-        public string Name { get; }
-        public string KeyFields { get; }
-        public string DisplayFields { get; }
-        public string OrderByFields { get; }
-
-        public ViewDefinition(int index, string name, string keys, string displays, string order)
-        {
-            Index = index;
-            Name = name;
-            KeyFields = keys;
-            DisplayFields = displays;
-            OrderByFields = order;
-        }
+        public string Name { get; set; } = "";
+        public string KeyFields { get; set; } = "";
+        public string DisplayFields { get; set; } = "";
+        public string SortFields { get; set; } = "";
+        public string FromWhere { get; set; } = "";
     }
 
-    public class TreeNodeModel
+    public class PriceTreeNode
     {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public string Name { get; set; } = string.Empty;
-        public bool HasChildren { get; set; }
-        public bool Expanded { get; set; }
+        public int? NodeID { get; set; }
+        public int? ParentID { get; set; }
+        public string Node { get; set; } = string.Empty;
+        public string KeyField { get; set; } = string.Empty;
+        public string KeyValue { get; set; } = string.Empty;
         public string? WhereClause { get; set; }
-        public string? KeyFieldName { get; set; }
-        public string? DisplayFieldName { get; set; }
-        public bool IsGlobalOrSpecial { get; set; }
-        public List<TreeNodeModel>? Children { get; set; }
     }
 
     public class VendorPriceViewModel
@@ -723,5 +618,169 @@
         public decimal? Forecast10 { get; set; }
         public decimal? Forecast11 { get; set; }
         public decimal? Forecast12 { get; set; }
+    }
+
+    private sealed class TreeQueryRow
+    {
+        public string KeyValue { get; set; } = "";
+        public string DisplayValue { get; set; } = "";
+    }
+
+    private static string SqlSafe(string? value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+
+    private static List<string> ParseViewList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+        return raw.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+
+    private string NormalizeDisplayValue(string? value)
+    {
+        var display = (value ?? "").Trim();
+        if (display.Equals("- global -", StringComparison.OrdinalIgnoreCase))
+            display = $"Global (any {CD_Community})";
+        if (display.Equals("- corporate -", StringComparison.OrdinalIgnoreCase))
+            display = "Corporate (any Division)";
+        return display;
+    }
+
+    private async Task<List<TreeQueryRow>> QueryTreeLevel(ViewDefinition view, string keyField, string displayField, string? sortField, string? whereClause = null)
+    {
+        var sort = string.IsNullOrWhiteSpace(sortField) ? displayField : sortField;
+        var sql = new System.Text.StringBuilder();
+        sql.Append("SELECT DISTINCT ").Append(keyField).Append(" AS KeyValue, ").Append(displayField).Append(" AS DisplayValue");
+        if (!string.Equals(sort, keyField, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sort, displayField, StringComparison.OrdinalIgnoreCase))
+        {
+            sql.Append(", ").Append(sort).Append(" AS SortValue");
+        }
+        sql.AppendLine();
+        sql.Append(view.FromWhere);
+        sql.Append(" WHERE v.DivisionID IN (0, ").Append(DivisionID).Append(")");
+        if (!string.IsNullOrWhiteSpace(whereClause))
+            sql.Append(" AND ").Append(whereClause);
+        sql.Append(" ORDER BY ").Append(sort);
+
+        var rows = await db.QueryAsync(sql.ToString());
+        return rows.Select(r => new TreeQueryRow
+        {
+            KeyValue = r["KeyValue"]?.ToString() ?? "",
+            DisplayValue = r["DisplayValue"]?.ToString() ?? r["KeyValue"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadItemsGridLayoutAsync()
+    {
+        ItemsGridLayout = await MMain.IniGetGridAsync(FormName, $"{ItemsGridName}.{CurrentViewIndex}", 0, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, CurrentViewIndex, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, 0, grouped: false);
+
+        ItemsGridLayoutVersion++;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedItemsGridLayout()
+    {
+        if (!HasItemsGridLayout)
+            yield break;
+
+        var ordered = ItemsGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveItemsGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private static readonly Dictionary<string, PropertyInfo> _priceRowPropMap =
+        typeof(VendorPriceViewModel)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, string> _priceFieldAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["currentcost"] = nameof(VendorPriceViewModel.Current),
+        ["partnumber"] = nameof(VendorPriceViewModel.SKU),
+        ["description"] = nameof(VendorPriceViewModel.ItemDesc),
+        ["pricegroup"] = nameof(VendorPriceViewModel.PriceLink)
+    };
+
+    private static string NormalizeGridKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return "";
+        var chars = key.Where(char.IsLetterOrDigit).ToArray();
+        return new string(chars).ToLowerInvariant();
+    }
+
+    private static string ResolveItemsGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+        var exact = typeof(VendorPriceViewModel).GetProperty(trimmed, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (exact != null)
+            return exact.Name;
+
+        var normalized = NormalizeGridKey(trimmed);
+        if (_priceRowPropMap.TryGetValue(normalized, out var prop))
+            return prop.Name;
+
+        if (_priceFieldAliases.TryGetValue(normalized, out var alias))
+        {
+            var aliasedProp = typeof(VendorPriceViewModel).GetProperty(alias, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            return aliasedProp?.Name ?? alias;
+        }
+
+        return trimmed;
+    }
+
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return ColumnType.Text;
+
+        if (_priceRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool))
+                return ColumnType.CheckBox;
+            if (type == typeof(DateTime))
+                return ColumnType.Date;
+            if (type == typeof(byte) || type == typeof(short) || type == typeof(int) || type == typeof(long) ||
+                type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+
+        return ColumnType.Text;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0)
+            return 0;
+
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
     }
 }

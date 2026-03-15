@@ -1,25 +1,42 @@
-```razor
-@page "/model-dimensions"
-@page "/model-dimensions/{InitialModel}"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Grid
 @using HomeFront.Data
 @using System.Data
 
 @inject IJSRuntime JSRuntime
-@inject NavigationManager NavigationManager
-
-<PageTitle>Model Dimensions - HomeFront</PageTitle>
 
 <style>
+    .modeldim-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .modeldim-dialog {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        width: 85vw; height: 75vh;
+        display: flex; flex-direction: column;
+        overflow: hidden; padding: 8px;
+    }
+    .modeldim-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 6px 12px; border-bottom: 1px solid #dee2e6;
+        font-weight: 600; font-size: 14px;
+    }
+    .modeldim-header button {
+        background: none; border: none; font-size: 20px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .modeldim-header button:hover { color: #212529; }
+
     .model-dimensions-container {
         display: flex;
         flex-direction: column;
-        height: calc(100vh - 120px);
+        flex: 1;
         padding: 8px;
         font-family: 'MS Sans Serif', Arial, sans-serif;
         font-size: 13px;
+        overflow: hidden;
     }
 
     .grids-container {
@@ -79,15 +96,15 @@
     }
 
     /* Context menu */
-    .context-menu-overlay {
+    .modeldim-context-menu-overlay {
         position: fixed;
         inset: 0;
-        z-index: 999;
+        z-index: 1099;
     }
 
-    .context-menu {
+    .modeldim-context-menu {
         position: fixed;
-        z-index: 1000;
+        z-index: 1100;
         background: #fff;
         border: 1px solid #ccc;
         border-radius: 4px;
@@ -96,7 +113,7 @@
         padding: 4px 0;
     }
 
-    .context-menu button {
+    .modeldim-context-menu button {
         display: block;
         width: 100%;
         padding: 6px 16px;
@@ -107,22 +124,22 @@
         font-size: 13px;
     }
 
-    .context-menu button:hover:not(:disabled) {
+    .modeldim-context-menu button:hover:not(:disabled) {
         background: #e8f0fe;
     }
 
-    .context-menu button:disabled {
+    .modeldim-context-menu button:disabled {
         color: #aaa;
         cursor: default;
     }
 
-    .context-menu hr {
+    .modeldim-context-menu hr {
         margin: 4px 0;
         border: none;
         border-top: 1px solid #ddd;
     }
 
-    .loading-overlay {
+    .modeldim-loading-overlay {
         position: absolute;
         height: 100%;
         width: 100%;
@@ -133,7 +150,7 @@
         justify-content: center;
     }
 
-    .loading-spinner {
+    .modeldim-loading-spinner {
         padding: 20px 40px;
         background: #fff;
         border-radius: 8px;
@@ -144,17 +161,17 @@
     }
 
     /* Pick list dialog */
-    .dialog-overlay {
+    .modeldim-dialog-overlay {
         position: fixed;
         inset: 0;
-        z-index: 1000;
+        z-index: 1200;
         background: rgba(0, 0, 0, 0.3);
         display: flex;
         align-items: center;
         justify-content: center;
     }
 
-    .dialog-panel {
+    .modeldim-dialog-panel {
         background: #fff;
         border-radius: 8px;
         box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
@@ -166,7 +183,7 @@
         overflow: hidden;
     }
 
-    .dialog-header {
+    .modeldim-dialog-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -176,7 +193,7 @@
         border-bottom: 1px solid #dee2e6;
     }
 
-    .dialog-header button {
+    .modeldim-dialog-header button {
         background: none;
         border: none;
         font-size: 22px;
@@ -185,17 +202,17 @@
         padding: 0 4px;
     }
 
-    .dialog-header button:hover {
+    .modeldim-dialog-header button:hover {
         color: #212529;
     }
 
-    .dialog-body {
+    .modeldim-dialog-body {
         padding: 20px;
         overflow-y: auto;
         flex: 1;
     }
 
-    .dialog-footer {
+    .modeldim-dialog-footer {
         display: flex;
         justify-content: flex-end;
         gap: 8px;
@@ -204,7 +221,7 @@
         background: #f8f9fa;
     }
 
-    .dialog-footer .btn {
+    .modeldim-dialog-footer .btn {
         padding: 6px 20px;
         border: 1px solid #ced4da;
         border-radius: 4px;
@@ -213,196 +230,245 @@
         font-size: 14px;
     }
 
-    .dialog-footer .btn:hover {
+    .modeldim-dialog-footer .btn:hover {
         background: #e9ecef;
     }
 
-    .dialog-footer .btn-primary {
+    .modeldim-dialog-footer .btn-primary {
         background: #0d6efd;
         color: #fff;
         border-color: #0d6efd;
     }
 
-    .dialog-footer .btn-primary:hover {
+    .modeldim-dialog-footer .btn-primary:hover {
         background: #0b5ed7;
     }
 
-    .pick-list-item {
+    .modeldim-pick-list-item {
         padding: 6px 12px;
         cursor: pointer;
         border-bottom: 1px solid #eee;
     }
 
-    .pick-list-item:hover {
+    .modeldim-pick-list-item:hover {
         background: #e8f0fe;
     }
 
-    .pick-list-item.selected {
+    .modeldim-pick-list-item.selected {
         background: #cce5ff;
         font-weight: 600;
     }
 </style>
 
-@if (IsLoading)
+@if (_isVisible)
 {
-    <div class="loading-overlay">
-        <div class="loading-spinner">⏳ Loading...</div>
-    </div>
-}
-
-<div class="model-dimensions-container">
-    <div class="grids-container">
-        @* ── Left Panel: Models Grid ──────────────────────── *@
-        <div class="models-panel" @oncontextmenu="OnModelsContextMenu" @oncontextmenu:preventDefault="true">
-            <HfGrid @ref="ModelsGrid"
-                    TValue="ModelRow"
-                    DataSource="@ModelsData"
-                    AllowSelection="true"
-                    AllowSorting="true"
-                    AllowResizing="true"
-                    EnableHover="true"
-                    Height="100%"
-                    SelectionSettingsRef="@modelsSelectionSettings"
-                    EventsRef="@modelsGridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(ModelRow.Model)" HeaderText="Model" Width="120px"
-                                  IsPrimaryKey="true" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(ModelRow.Description)" HeaderText="Description" Width="250px"
-                                  AllowEditing="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
-        </div>
-
-        @* ── Right Panel: Categories Grid ─────────────────── *@
-        <div class="categories-panel" @oncontextmenu="OnCategoriesContextMenu" @oncontextmenu:preventDefault="true">
-            <HfGrid @ref="CategoriesGrid"
-                    TValue="CategoryRow"
-                    DataSource="@CategoriesData"
-                    AllowSelection="true"
-                    AllowSorting="true"
-                    AllowResizing="true"
-                    AllowFiltering="false"
-                    EnableHover="true"
-                    Height="100%"
-                    SelectionSettingsRef="@categoriesSelectionSettings"
-                    EditSettingsRef="@categoriesEditSettings"
-                    EventsRef="@categoriesGridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(CategoryRow.RoomId)" HeaderText="RoomID" Width="80px"
-                                  Visible="false" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(CategoryRow.Room)" HeaderText="Room" Width="120px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(CategoryRow.SubCategory)" HeaderText="SubCategory" Width="120px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(CategoryRow.CatDesc)" HeaderText="Category Desc" Width="180px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(CategoryRow.Qty)" HeaderText="Qty" Width="80px"
-                                  Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right"
-                                  AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(CategoryRow.UOM)" HeaderText="UOM" Width="80px"
-                                  AllowEditing="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
-        </div>
-    </div>
-
-    @* ── Button Bar ───────────────────────────────────────── *@
-    <div class="button-bar">
-        <button class="btn-primary" disabled="@(!mDirty)" @onclick="OnSaveClick">
-            &amp;Save
-        </button>
-        <button @onclick="OnCloseClick">
-            &amp;Close
-        </button>
-    </div>
-</div>
-
-@* ── Models Context Menu ──────────────────────────────────── *@
-@if (showModelsContextMenu)
-{
-    <div class="context-menu-overlay" @onclick="CloseContextMenus"></div>
-    <div class="context-menu" style="left: @(contextMenuX)px; top: @(contextMenuY)px;">
-        @if (string.IsNullOrEmpty(mOrigModel))
-        {
-            <button @onclick="OnAddModelClick">Add Model...</button>
-        }
-        <button disabled="@(SelectedModel == null)" @onclick="OnAddRoomFromModelsClick">Add Room...</button>
-        @if (string.IsNullOrEmpty(mOrigModel))
-        {
-            <hr />
-            <button disabled="@(SelectedModel == null)" @onclick="OnDeleteModelClick">Delete</button>
-        }
-    </div>
-}
-
-@* ── Categories Context Menu ──────────────────────────────── *@
-@if (showCategoriesContextMenu)
-{
-    <div class="context-menu-overlay" @onclick="CloseContextMenus"></div>
-    <div class="context-menu" style="left: @(contextMenuX)px; top: @(contextMenuY)px;">
-        <button disabled="@(string.IsNullOrEmpty(mModel))" @onclick="OnAddRoomFromCategoriesClick">Add Room...</button>
-        <button disabled="@(SelectedCategory == null)" @onclick="OnRemoveRoomClick">Remove Room</button>
-    </div>
-}
-
-@* ── Pick Model Dialog ────────────────────────────────────── *@
-@if (showPickModelDialog)
-{
-    <div class="dialog-overlay" @onclick="() => showPickModelDialog = false">
-        <div class="dialog-panel" style="min-width: 500px;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Select Model</span>
-                <button @onclick="() => showPickModelDialog = false">×</button>
+    <div class="modeldim-overlay">
+        <div class="modeldim-dialog">
+            <div class="modeldim-header">
+                <span>Model Dimensions</span>
+                <button @onclick="Close">&times;</button>
             </div>
-            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
-                @foreach (var item in PickModelList)
-                {
-                    <div class="pick-list-item @(item == SelectedPickModel ? "selected" : "")"
-                         @onclick="() => SelectedPickModel = item">
-                        @item.Model - @item.Description
+
+            @if (IsLoading)
+            {
+                <div class="modeldim-loading-overlay">
+                    <div class="modeldim-loading-spinner">Loading...</div>
+                </div>
+            }
+
+            <div class="model-dimensions-container">
+                <div class="grids-container">
+                    @* ── Left Panel: Models Grid ──────────────────────── *@
+                    <div class="models-panel" @oncontextmenu="OnModelsContextMenu" @oncontextmenu:preventDefault="true">
+                        <HfGrid @ref="gModels"
+                                TValue="ModelRow"
+                                DataSource="@ModelsData"
+                                AllowSelection="true"
+                                AllowSorting="true"
+                                AllowResizing="true"
+                                EnableHover="true"
+                                Height="100%"
+                                SelectionSettingsRef="@modelsSelectionSettings"
+                                EventsRef="@modelsGridEvents">
+                            <HfGridColumnsBase @key="ModelsGridLayoutVersion" DebugTag="FModelDimensions-gModels">
+                                @if (ModelsGridLayout.Count > 0)
+                                {
+                                    @foreach (var col in GetOrderedGridLayout(ModelsGridLayout))
+                                    {
+                                        var headerText = string.IsNullOrWhiteSpace(col.Caption) ? col.Field : col.Caption;
+                                        var width = col.Width.HasValue && col.Width.Value > 0
+                                            ? $"{ConvertLayoutWidthToPx(col.Width.Value)}px" : null;
+                                        var isPK = col.Field.Equals("Model", StringComparison.OrdinalIgnoreCase);
+                                        <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                                      IsPrimaryKey="@isPK" AllowEditing="false" Visible="true" />
+                                    }
+                                }
+                                else
+                                {
+                                    @* Fallback hardcoded columns if no layout in DB *@
+                                    <HfGridColumn Field="Model" HeaderText="Model" Width="120px"
+                                                  IsPrimaryKey="true" AllowEditing="false" />
+                                    <HfGridColumn Field="Description" HeaderText="Description" Width="250px"
+                                                  AllowEditing="false" />
+                                }
+                            </HfGridColumnsBase>
+                        </HfGrid>
                     </div>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" disabled="@(SelectedPickModel == null)" @onclick="OnPickModelConfirm">OK</button>
-                <button class="btn" @onclick="() => showPickModelDialog = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
 
-@* ── Pick Room Dialog ─────────────────────────────────────── *@
-@if (showPickRoomDialog)
-{
-    <div class="dialog-overlay" @onclick="() => showPickRoomDialog = false">
-        <div class="dialog-panel" style="min-width: 500px;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Select Room(s)</span>
-                <button @onclick="() => showPickRoomDialog = false">×</button>
-            </div>
-            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
-                @foreach (var item in PickRoomList)
-                {
-                    <div class="pick-list-item @(SelectedPickRooms.Contains(item) ? "selected" : "")"
-                         @onclick="() => TogglePickRoom(item)">
-                        @item.RoomId - @item.Room
+                    @* ── Right Panel: Categories Grid ─────────────────── *@
+                    <div class="categories-panel" @oncontextmenu="OnCategoriesContextMenu" @oncontextmenu:preventDefault="true">
+                        <HfGrid @ref="gCategories"
+                                TValue="CategoryRow"
+                                DataSource="@CategoriesData"
+                                AllowSelection="true"
+                                AllowSorting="true"
+                                AllowResizing="true"
+                                AllowFiltering="false"
+                                EnableHover="true"
+                                Height="100%"
+                                SelectionSettingsRef="@categoriesSelectionSettings"
+                                EditSettingsRef="@categoriesEditSettings"
+                                EventsRef="@categoriesGridEvents">
+                            <HfGridColumnsBase @key="CategoriesGridLayoutVersion" DebugTag="FModelDimensions-gCategories">
+                                @if (CategoriesGridLayout.Count > 0)
+                                {
+                                    @foreach (var col in GetOrderedGridLayout(CategoriesGridLayout))
+                                    {
+                                        var headerText = string.IsNullOrWhiteSpace(col.Caption) ? col.Field : col.Caption;
+                                        var width = col.Width.HasValue && col.Width.Value > 0
+                                            ? $"{ConvertLayoutWidthToPx(col.Width.Value)}px" : null;
+                                        var isQty = col.Field.Equals("Qty", StringComparison.OrdinalIgnoreCase);
+                                        var isHidden = col.Field.Equals("RoomId", StringComparison.OrdinalIgnoreCase);
+                                        <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                                      Type="@(isQty ? ColumnType.Number : ColumnType.Text)"
+                                                      Format="@(isQty ? "N2" : null)"
+                                                      TextAlign="@(isQty ? TextAlign.Right : TextAlign.Left)"
+                                                      AllowEditing="@isQty" Visible="@(!isHidden)" />
+                                    }
+                                }
+                                else
+                                {
+                                    @* Fallback hardcoded columns *@
+                                    <HfGridColumn Field="RoomId" HeaderText="RoomID" Width="80px"
+                                                  Visible="false" AllowEditing="false" />
+                                    <HfGridColumn Field="Room" HeaderText="Room" Width="120px"
+                                                  AllowEditing="false" />
+                                    <HfGridColumn Field="SubCategory" HeaderText="SubCategory" Width="120px"
+                                                  AllowEditing="false" />
+                                    <HfGridColumn Field="CatDesc" HeaderText="Category Desc" Width="180px"
+                                                  AllowEditing="false" />
+                                    <HfGridColumn Field="Qty" HeaderText="Qty" Width="80px"
+                                                  Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right"
+                                                  AllowEditing="true" />
+                                    <HfGridColumn Field="UOM" HeaderText="UOM" Width="80px"
+                                                  AllowEditing="false" />
+                                }
+                            </HfGridColumnsBase>
+                        </HfGrid>
                     </div>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" disabled="@(SelectedPickRooms.Count == 0)" @onclick="OnPickRoomConfirm">OK</button>
-                <button class="btn" @onclick="() => showPickRoomDialog = false">Cancel</button>
+                </div>
+
+                @* ── Button Bar ───────────────────────────────────────── *@
+                <div class="button-bar">
+                    <button class="btn-primary" disabled="@(!mDirty)" @onclick="OnSaveClick">
+                        &amp;Save
+                    </button>
+                    <button @onclick="OnCloseClick">
+                        &amp;Close
+                    </button>
+                </div>
             </div>
         </div>
     </div>
+
+    @* ── Models Context Menu ──────────────────────────────────── *@
+    @if (showModelsContextMenu)
+    {
+        <div class="modeldim-context-menu-overlay" @onclick="CloseContextMenus"></div>
+        <div class="modeldim-context-menu" style="left: @(contextMenuX)px; top: @(contextMenuY)px;">
+            @if (string.IsNullOrEmpty(mOrigModel))
+            {
+                <button @onclick="OnAddModelClick">Add Model...</button>
+            }
+            <button disabled="@(SelectedModel == null)" @onclick="OnAddRoomFromModelsClick">Add Room...</button>
+            @if (string.IsNullOrEmpty(mOrigModel))
+            {
+                <hr />
+                <button disabled="@(SelectedModel == null)" @onclick="OnDeleteModelClick">Delete</button>
+            }
+        </div>
+    }
+
+    @* ── Categories Context Menu ──────────────────────────────── *@
+    @if (showCategoriesContextMenu)
+    {
+        <div class="modeldim-context-menu-overlay" @onclick="CloseContextMenus"></div>
+        <div class="modeldim-context-menu" style="left: @(contextMenuX)px; top: @(contextMenuY)px;">
+            <button disabled="@(string.IsNullOrEmpty(mModel))" @onclick="OnAddRoomFromCategoriesClick">Add Room...</button>
+            <button disabled="@(SelectedCategory == null)" @onclick="OnRemoveRoomClick">Remove Room</button>
+        </div>
+    }
+
+    @* ── Pick Model Dialog ────────────────────────────────────── *@
+    @if (showPickModelDialog)
+    {
+        <div class="modeldim-dialog-overlay" @onclick="() => showPickModelDialog = false">
+            <div class="modeldim-dialog-panel" style="min-width: 500px;" @onclick:stopPropagation="true">
+                <div class="modeldim-dialog-header">
+                    <span>Select Model</span>
+                    <button @onclick="() => showPickModelDialog = false">&times;</button>
+                </div>
+                <div class="modeldim-dialog-body" style="max-height: 400px; overflow-y: auto;">
+                    @foreach (var item in PickModelList)
+                    {
+                        <div class="modeldim-pick-list-item @(item == SelectedPickModel ? "selected" : "")"
+                             @onclick="() => SelectedPickModel = item">
+                            @item.Model - @item.Description
+                        </div>
+                    }
+                </div>
+                <div class="modeldim-dialog-footer">
+                    <button class="btn btn-primary" disabled="@(SelectedPickModel == null)" @onclick="OnPickModelConfirm">OK</button>
+                    <button class="btn" @onclick="() => showPickModelDialog = false">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── Pick Room Dialog ─────────────────────────────────────── *@
+    @if (showPickRoomDialog)
+    {
+        <div class="modeldim-dialog-overlay" @onclick="() => showPickRoomDialog = false">
+            <div class="modeldim-dialog-panel" style="min-width: 500px;" @onclick:stopPropagation="true">
+                <div class="modeldim-dialog-header">
+                    <span>Select Room(s)</span>
+                    <button @onclick="() => showPickRoomDialog = false">&times;</button>
+                </div>
+                <div class="modeldim-dialog-body" style="max-height: 400px; overflow-y: auto;">
+                    @foreach (var item in PickRoomList)
+                    {
+                        <div class="modeldim-pick-list-item @(SelectedPickRooms.Contains(item) ? "selected" : "")"
+                             @onclick="() => TogglePickRoom(item)">
+                            @item.RoomId - @item.Room
+                        </div>
+                    }
+                </div>
+                <div class="modeldim-dialog-footer">
+                    <button class="btn btn-primary" disabled="@(SelectedPickRooms.Count == 0)" @onclick="OnPickRoomConfirm">OK</button>
+                    <button class="btn" @onclick="() => showPickRoomDialog = false">Cancel</button>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
-    [Parameter] public string? InitialModel { get; set; }
-
     // Database
     private DbWrapperSqlServer db = new();
     private int DivisionID = 1;
+
+    // Visibility
+    private bool _isVisible = false;
 
     // State
     private bool IsLoading = false;
@@ -410,9 +476,15 @@
     private string mOrigModel = "";
     private string mModel = "";
 
-    // Grid refs
-    private HfGrid<ModelRow>? ModelsGrid;
-    private HfGrid<CategoryRow>? CategoriesGrid;
+    // Grid refs (renamed to match VB6: gModels, gCategories)
+    private HfGrid<ModelRow>? gModels;
+    private HfGrid<CategoryRow>? gCategories;
+
+    // Grid layout (IniGetGrid — same pattern as FAssembly gItems)
+    private Dictionary<string, MMain.GridLayoutColumn> ModelsGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, MMain.GridLayoutColumn> CategoriesGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int ModelsGridLayoutVersion = 0;
+    private int CategoriesGridLayoutVersion = 0;
 
     // Data
     private List<ModelRow> ModelsData = new();
@@ -463,7 +535,7 @@
     private HfGridEvents<ModelRow> modelsGridEvents = new();
     private HfGridEvents<CategoryRow> categoriesGridEvents = new();
 
-    // ── Models ───────────────────────────────────────────────
+    // ── Data Classes ──────────────────────────────────────────
     public class ModelRow
     {
         public string Model { get; set; } = "";
@@ -494,16 +566,66 @@
     }
 
     // ── Lifecycle ────────────────────────────────────────────
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         modelsGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ModelRow>>(this, OnModelRowSelected);
         categoriesGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CategoryRow>>(this, OnCategoryRowSelected);
         categoriesGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CategoryRow>>(this, OnCategoryCellSaved);
+    }
 
-        mOrigModel = InitialModel ?? "";
-        mModel = mOrigModel;
+    // ── Public Open / Close (called from FAssembly) ─────────
+    public async Task Open(string model = "")
+    {
+        _isVisible = true;
+        mOrigModel = model;
+        mModel = model;
+        mDirty = false;
+        SelectedModel = null;
+        SelectedCategory = null;
+        ModelsData = new();
+        CategoriesData = new();
+        StateHasChanged();
 
+        await LoadGridLayouts();
         await LoadModels();
+        StateHasChanged();
+    }
+
+    private void Close()
+    {
+        _isVisible = false;
+        showModelsContextMenu = false;
+        showCategoriesContextMenu = false;
+        showPickModelDialog = false;
+        showPickRoomDialog = false;
+        StateHasChanged();
+    }
+
+    // ── Grid Layout Loading (VB6: IniGetGrid) ───────────────
+    private async Task LoadGridLayouts()
+    {
+        ModelsGridLayout = await MMain.IniGetGridAsync("FModelDimensions", "gModels", 0, staticNames: true);
+        ModelsGridLayoutVersion++;
+        CategoriesGridLayout = await MMain.IniGetGridAsync("FModelDimensions", "gCategories", 0, staticNames: true);
+        CategoriesGridLayoutVersion++;
+    }
+
+    private IEnumerable<MMain.GridLayoutColumn> GetOrderedGridLayout(Dictionary<string, MMain.GridLayoutColumn> layout)
+    {
+        return layout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0) return 0;
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
     }
 
     // ── Dirty Property ───────────────────────────────────────
@@ -676,7 +798,7 @@
         if (await SaveData(true))
         {
             SetDirty(false);
-            NavigationManager.NavigateTo("/");
+            Close();
         }
     }
 
@@ -687,10 +809,6 @@
 
         if (prompt)
         {
-            var answer = await JSRuntime.InvokeAsync<string>("eval",
-                "confirm('This data has changed.\\n\\nDo you want to save these changes?') ? 'yes' : (null == null ? 'no' : 'cancel')");
-
-            // Simple confirm only gives yes/no. For 3-way, use custom JS or simplify.
             var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
                 "This data has changed.\n\nDo you want to save these changes?");
             if (!confirmed) return true; // treat as "No" — discard and proceed
@@ -939,4 +1057,3 @@
         }
     }
 }
-```

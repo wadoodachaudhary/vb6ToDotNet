@@ -1,0 +1,1530 @@
+@page "/items-db"
+
+@using HomeFront.Models
+@using System.Reflection
+@using System.Data
+@inject IJSRuntime JSRuntime
+@layout HFComponent
+<PageTitle>Item Database - HomeFront</PageTitle>
+
+<style>
+    .tabs-container { margin: 20px auto; font-family: sans-serif; }
+    .task-icon-vb6 { width: 2000px; height: auto; display: block; }
+    .tab-buttons { display: flex; border-bottom: 2px solid #ddd; }
+    .tab-buttons button {
+        padding: 12px 24px; border: none; background: #f0f0f0;
+        cursor: pointer; font-size: 16px; transition: background 0.2s;
+    }
+    .tab-buttons button:hover { background: #e0e0e0; }
+    .tab-buttons button.active {
+        background: #fff; border-bottom: 2px solid #007bff;
+        margin-bottom: -2px; color: #007bff; font-weight: bold;
+    }
+    .tab-content { padding: 20px; border: 1px solid #ddd; border-top: none; background: #fff; }
+    .panel { text-align: center; }
+    .panel img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+    /* VB6 banner */
+    .vb6-banner {
+        background: #f6c7c7;
+        border: 1px solid #c97b7b;
+        color: #5b1d1d;
+        font-size: 12px;
+        padding: 6px 10px;
+        margin-bottom: 6px;
+    }
+
+    /* Toolbar */
+    .toolbar-cntr {
+        padding: 6px 8px; display: flex; align-items: center; gap: 6px;
+        border-top: 1px solid #c9c9c9; border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px; background: #f3f3f3; flex-wrap: wrap;
+    }
+    .tbar-btn {
+        padding: 4px 10px; border: 1px solid transparent; border-radius: 3px;
+        background: transparent; font-size: 12px; cursor: pointer; display: flex;
+        flex-direction: column; align-items: center; gap: 2px;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .tbar-btn:hover { background: #e9ecef; border-color: #adb5bd; }
+    .tbar-btn:disabled { opacity: 0.5; cursor: default; }
+    .tbar-btn.danger { color: #dc3545; border-color: #dc3545; }
+    .tbar-btn.danger:hover { background: #f8d7da; }
+    .tbar-separator { width: 1px; height: 32px; background: #c9c9c9; margin: 0 4px; }
+    .tool-label { font-size: 12px; }
+    .tbar-icon { width: 20px; height: 20px; }
+    .tbar-select { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+    /* Split container */
+    .split-container { display: flex; height: calc(100vh - 260px); min-height: 500px; }
+    .phases-panel {
+        width: 380px; min-width: 200px; max-width: 600px;
+        border-right: 3px solid #c9c9c9; overflow: auto; resize: horizontal;
+    }
+    .items-panel { flex: 1; overflow: auto; padding-left: 10px; }
+
+    /* Page title */
+    .page-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #333; }
+
+    /* Loading overlay */
+    .loading-overlay {
+        position: absolute; height: 92%; width: 100%;
+        background-color: rgba(1,1,1,0.2); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .loading-spinner {
+        padding: 20px 40px; background: #fff; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+        font-weight: 500; color: #333;
+    }
+
+    /* Row state styling */
+    .dirty-row { background-color: #fff3cd !important; }
+    .delete-row { background-color: #f8d7da !important; text-decoration: line-through; }
+
+    /* Dialog */
+    .dialog-overlay {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.3); display: flex;
+        align-items: center; justify-content: center;
+    }
+    .dialog-panel {
+        background: #fff; border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        min-width: 450px; max-width: 700px; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden;
+    }
+    .dialog-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 20px; font-weight: 600; font-size: 16px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .dialog-header button {
+        background: none; border: none; font-size: 22px;
+        cursor: pointer; color: #6c757d; padding: 0 4px;
+    }
+    .dialog-header button:hover { color: #212529; }
+    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .dialog-body textarea, .dialog-body input, .dialog-body select {
+        width: 100%; padding: 8px 10px; border: 1px solid #ced4da;
+        border-radius: 4px; font-size: 14px; box-sizing: border-box;
+    }
+    .dialog-body textarea:focus, .dialog-body input:focus, .dialog-body select:focus {
+        border-color: #86b7fe; outline: 0;
+        box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
+    }
+    .dialog-body label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 13px; color: #495057; }
+    .dialog-body .form-group { margin-bottom: 14px; }
+    .dialog-footer {
+        display: flex; justify-content: flex-end; gap: 8px;
+        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
+    }
+    .dialog-footer .btn {
+        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .dialog-footer .btn:hover { background: #e9ecef; }
+    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
+
+    /* Edit cell buttons */
+    .cell-edit-btn {
+        padding: 1px 6px; border: 1px solid #ced4da; border-radius: 3px;
+        background: #fff; font-size: 11px; cursor: pointer; margin-left: 4px;
+    }
+    .cell-edit-btn:hover { background: #e9ecef; }
+
+    /* View dropdown */
+    .view-select {
+        padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px;
+        font-size: 13px; background: #fff; cursor: pointer;
+    }
+
+    /* Phases header */
+    .phases-header {
+        padding: 10px; background-color: #f5f5f5;
+        border-bottom: 1px solid #ddd; font-weight: bold;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .phases-header button {
+        padding: 2px 8px; border: 1px solid #ced4da; border-radius: 3px;
+        background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .phases-header button:hover { background: #e9ecef; }
+
+    /* Match VB6 tree look */
+    .phases-panel .hf-treegrid-header { display: none; }
+    .phases-panel .hf-treegrid { border-radius: 0; }
+
+    /* Grid column borders */
+    .items-panel .hf-grid-table { border-collapse: collapse; }
+    .items-panel .hf-grid-table .hf-header-cell,
+    .items-panel .hf-grid-table .hf-cell {
+        border-right: 1px solid #c9c9c9;
+    }
+    .items-panel .hf-grid-table .hf-header-cell {
+        background: #f0f0f0;
+        border-bottom: 1px solid #c9c9c9;
+    }
+    .items-panel .hf-grid-table .hf-cell {
+        border-bottom: 1px solid #e2e2e2;
+    }
+    .items-panel .hf-grid-table th:last-child,
+    .items-panel .hf-grid-table td:last-child {
+        border-right: none;
+    }
+</style>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading Items...</div>
+    </div>
+}
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1)
+        {
+            <div class="vb6-banner">
+                This is not your live database. It should be used for testing and training only. If this is incorrect please contact Hyphen support to change the status of this database.
+            </div>
+            @* ── Toolbar ──────────────────────────────────────────── *@
+            <div class="toolbar-cntr">
+                <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+                    <img class="tbar-icon" src="images/32/save.ico" alt="Save" />
+                    <span class="tool-label">Save</span>
+                </button>
+
+                <div class="tbar-select">
+                    <img class="tbar-icon" src="images/32/ChangeView.ico" alt="View" />
+                    <select class="view-select" value="@CurrentViewIndex" @onchange="OnViewChanged">
+                        <option value="0">Group and Phase</option>
+                        <option value="1">Purchase Order</option>
+                        <option value="2">Cost Code</option>
+                    </select>
+                    <span class="tool-label">View</span>
+                </div>
+
+                <span class="tbar-separator"></span>
+
+                <button class="tbar-btn" @onclick="OnNewItemClick">
+                    <img class="tbar-icon" src="images/32/Add.ico" alt="New" />
+                    <span class="tool-label">New Item</span>
+                </button>
+                <button class="tbar-btn" disabled="@(SelectedItem == null)" @onclick="OnDuplicateClick">
+                    <img class="tbar-icon" src="images/32/copy.ico" alt="Duplicate" />
+                    <span class="tool-label">Duplicate</span>
+                </button>
+                <button class="tbar-btn danger" disabled="@(SelectedItem == null)" @onclick="OnDeleteClick">
+                    <img class="tbar-icon" src="images/32/delete.ico" alt="Delete" />
+                    <span class="tool-label">Delete</span>
+                </button>
+
+                <span class="tbar-separator"></span>
+
+                <button class="tbar-btn" @onclick="OnExcelExport">
+                    <img class="tbar-icon" src="images/32/export.ico" alt="Export" />
+                    <span class="tool-label">Export Items</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnExcelImport">
+                    <img class="tbar-icon" src="images/32/import.ico" alt="Import" />
+                    <span class="tool-label">Import Items</span>
+                </button>
+                <button class="tbar-btn" @onclick="OnRefreshClick">
+                    <img class="tbar-icon" src="images/32/refresh.ico" alt="Refresh" />
+                    <span class="tool-label">Refresh</span>
+                </button>
+            </div>
+
+            <h3 class="page-title">Item Database - @CurrentViewName</h3>
+
+            <div class="split-container">
+                @* ── Left Panel: Phases Tree ──────────────────────── *@
+                <div class="phases-panel">
+                    <div class="phases-header">
+                        <span>@CurrentViewName</span>
+                    </div>
+
+                    <HfTreeGrid @ref="gPhases"
+                                TValue="ItemsTreeNode"
+                                DataSource="@TreeNodes"
+                                IdMapping="NodeID"
+                                ParentIdMapping="ParentID"
+                                TreeColumnIndex="0"
+                                EnableCollapseAll="true"
+                                AllowSelection="true"
+                                Height="100%"
+                                RowSelected="OnTreeNodeSelected"
+                                Collapsed="OnNodeCollapsed"
+                                Expanded="OnNodeExpanded">
+                        <HfTreeGridColumn Field="NodeID" HeaderText="" Width="20px" Visible="false" />
+                        <HfTreeGridColumn Field="Node" HeaderText="Task Name" Width="300px" />
+                    </HfTreeGrid>
+                </div>
+
+                @* ── Right Panel: Items Grid ──────────────────────── *@
+                <div class="items-panel">
+                    <HfGrid @ref="gItems"
+                            TValue="ItemRow"
+                            DataSource="@ItemsData"
+                            AllowPaging="true"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            AllowResizing="true"
+                            AllowSelection="true"
+                            AllowGrouping="false"
+                            EnableHover="true"
+                            Height="100%"
+                            FilterSettingsRef="@filterSettings"
+                            PageSettingsRef="@pageSettings"
+                            SelectionSettingsRef="@selectionSettings"
+                            EditSettingsRef="@editSettings"
+                            EventsRef="@gridEvents">
+                        <HfGridColumnsBase @key="ItemsGridLayoutVersion" DebugTag="FItems-gItems">
+                            @foreach (var entry in GetOrderedItemsGridLayout())
+                            {
+                                var layout = entry.Layout;
+                                var fieldName = entry.Field;
+                                var columnType = entry.ColumnType;
+                                var textAlign = entry.TextAlign;
+                                var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                var width = layout.Width.HasValue && layout.Width.Value > 0
+                                    ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                    : null;
+                                var allowEdit = IsEditableField(fieldName, layout);
+
+                                if (fieldName.Equals("ItemDesc", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.ItemDesc">@TruncateText(data.ItemDesc, 35)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditDescription(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("Notes", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.Notes">@TruncateText(data.Notes, 20)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditNotes(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("Formula", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.Formula">@TruncateText(data.Formula, 20)</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnEditFormula(data)" @onclick:stopPropagation="true">✏️</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("POIndex", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.POIndex" @bind:after="() => OnPOIndexChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var po in POIndexList)
+                                                {
+                                                    <option value="@po.POIndex">@po.POIndex - @po.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("JCCostCode", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.JCCostCode" @bind:after="() => OnCostCodeChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var cc in CostCodeList)
+                                                {
+                                                    <option value="@cc.CostCode">@cc.CostCode - @cc.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("JCCategory", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.JCCategory" @bind:after="() => OnCategoryChanged(data)">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var cat in CategoryList)
+                                                {
+                                                    <option value="@cat.Category">@cat.Category - @cat.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("TaxGroup", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="true">
+                                        <EditTemplate>
+                                            @{ var data = (ItemRow)context; }
+                                            <select @bind="data.TaxGroup">
+                                                <option value="">-- Select --</option>
+                                                @foreach (var tg in TaxGroupList)
+                                                {
+                                                    <option value="@tg.TaxGroup">@tg.TaxGroup - @tg.Description</option>
+                                                }
+                                            </select>
+                                        </EditTemplate>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("InverseItemDesc", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span>@data.InverseItemDesc</span>
+                                            <button class="cell-edit-btn" @onclick="() => OnSelectInverseItem(data)" @onclick:stopPropagation="true">🔍</button>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else if (fieldName.Equals("PriceLink", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <HfGridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false">
+                                        <Template>
+                                            @{ var data = (ItemRow)context; }
+                                            <span title="@data.PriceGroupDesc">@(!string.IsNullOrWhiteSpace(data.PriceGroupDesc) ? data.PriceGroupDesc : data.PriceLink.ToString())</span>
+                                        </Template>
+                                    </HfGridColumn>
+                                }
+                                else
+                                {
+                                    <HfGridColumn Field="@fieldName"
+                                                  HeaderText="@headerText"
+                                                  Width="@width"
+                                                  Type="@columnType"
+                                                  TextAlign="@textAlign"
+                                                  AllowEditing="@allowEdit" />
+                                }
+                            }
+                        </HfGridColumnsBase>
+                    </HfGrid>
+                </div>
+            </div>
+        }
+        else if (activeTab == 2)
+        {
+            <div class="panel">
+                <img src="images/VB6/Screen_IndexItems.png" class="task-icon-vb6" />
+            </div>
+        }
+    </div>
+</div>
+
+@* ── Notes / Description Dialog ─────────────────────────────────── *@
+@if (IsTextDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="OnTextDialogCancel">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>@TextDialogTitle</span>
+                <button @onclick="OnTextDialogCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <textarea @bind="EditingText" rows="10" placeholder="Enter text..."></textarea>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnTextDialogOk">OK</button>
+                <button class="btn" @onclick="OnTextDialogCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Formula Editor Dialog ──────────────────────────────────────── *@
+@if (IsFormulaDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="OnFormulaDialogCancel">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>Formula Editor</span>
+                <button @onclick="OnFormulaDialogCancel">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-group">
+                    <label>Formula:</label>
+                    <textarea @bind="EditingFormula" rows="5" placeholder="Enter formula..."></textarea>
+                </div>
+                <div style="color: #6c757d; font-size: 12px;">
+                    Available functions: AREA, LENGTH, WIDTH, QTY, PITCH, etc.
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnFormulaDialogOk">OK</button>
+                <button class="btn" @onclick="OnFormulaDialogCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── New Item Dialog ────────────────────────────────────────────── *@
+@if (IsNewItemDialogVisible)
+{
+    <div class="dialog-overlay" @onclick="() => IsNewItemDialogVisible = false">
+        <div class="dialog-panel" @onclick:stopPropagation="true">
+            <div class="dialog-header">
+                <span>New Item</span>
+                <button @onclick="() => IsNewItemDialogVisible = false">×</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-group">
+                    <label>Phase:</label>
+                    <select @bind="NewItemPhase">
+                        <option value="">-- Select Phase --</option>
+                        @foreach (var p in PhaseDropdownList)
+                        {
+                            <option value="@p.Phase">@p.DisplayText</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Item Code:</label>
+                    <input @bind="NewItemCode" placeholder="Enter item code" />
+                </div>
+                <div class="form-group">
+                    <label>Description:</label>
+                    <input @bind="NewItemDescription" placeholder="Enter description" />
+                </div>
+                <div class="form-group">
+                    <label>Cost Type:</label>
+                    <select @bind="NewItemCostCategory">
+                        @foreach (var ct in CostCategoryTypes)
+                        {
+                            <option value="@ct">@ct</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-primary" @onclick="OnCreateNewItem">Create</button>
+                <button class="btn" @onclick="() => IsNewItemDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // === Database Connection ===
+    private HomeFront.Data.DbWrapperSqlServer db = new();
+    private int activeTab = 1;
+
+    // === UI State ===
+    private const string FormName = "FItems";
+    private const string ItemsGridName = "gItems";
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private HfGrid<ItemRow>? gItems;
+    private HfTreeGrid<ItemsTreeNode>? gPhases;
+
+    // === Grid Settings ===
+    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = [25, 50, 100, 200] };
+    private HfSelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+    private HfEditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = true
+    };
+    private HfGridEvents<ItemRow> gridEvents = new();
+
+    // === View Management ===
+    private int CurrentViewIndex = 0;
+    private string CurrentViewName => ViewDefinitions[CurrentViewIndex].Name;
+    private List<ViewDefinition> ViewDefinitions = new();
+    private Dictionary<string, MMain.GridLayoutColumn> ItemsGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int ItemsGridLayoutVersion = 0;
+    private bool HasItemsGridLayout => ItemsGridLayout.Count > 0;
+
+    // === Data Sources ===
+    private List<ItemsTreeNode> TreeNodes = new();
+    private List<ItemRow> ItemsData = new();
+    private List<POIndexItem> POIndexList = new();
+    private List<CostCodeItem> CostCodeList = new();
+    private List<CategoryItem> CategoryList = new();
+    private List<TaxGroupItem> TaxGroupList = new();
+    private List<PhaseDropdownItem> PhaseDropdownList = new();
+    private List<string> CostCategoryTypes = new() { "M", "L", "S", "E", "O" };
+
+    // === Selected Items ===
+    private ItemRow? SelectedItem;
+    private ItemsTreeNode? SelectedNode;
+
+    // === Dialog State ===
+    private bool IsTextDialogVisible = false;
+    private string TextDialogTitle = "";
+    private string EditingText = "";
+    private ItemRow? EditingTextRow;
+    private string EditingTextColumn = "";
+    private bool IsFormulaDialogVisible = false;
+    private string EditingFormula = "";
+    private ItemRow? EditingFormulaRow;
+    private bool IsNewItemDialogVisible = false;
+    private string NewItemPhase = "";
+    private string NewItemCode = "";
+    private string NewItemDescription = "";
+    private string NewItemCostCategory = "M";
+
+    // === App State ===
+    private int DivisionID = 1;
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        InitializeViewDefinitions();
+        await LoadLookupData();
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
+    }
+
+    private void InitializeViewDefinitions()
+    {
+        ViewDefinitions = new List<ViewDefinition>
+        {
+            new ViewDefinition
+            {
+                Name = "Group and Phase",
+                KeyFields = "GrpPhase, Phase",
+                DisplayFields = "GrpPhase + ' - ' + GrpDesc, Phase + ' - ' + PhaseDesc",
+                SortFields = "GrpSortOrder, PhaseSortOrder, ItemSortOrder",
+                FromWhere = "FROM EstimatingItems i LEFT OUTER JOIN PriceGroups g ON(PriceLink=PriceGroup and i.DivisionID = g.divisionID)",
+                IconKeys = "groupphase,phase"
+            },
+            new ViewDefinition
+            {
+                Name = "Purchase Order",
+                KeyFields = "POIndex",
+                DisplayFields = "POIndex + ' ' + POIndexDescription",
+                SortFields = "POIndex",
+                FromWhere = "FROM EstimatingItems i",
+                IconKeys = "purchaseorder"
+            },
+            new ViewDefinition
+            {
+                Name = "Cost Code",
+                KeyFields = "JCCostCode",
+                DisplayFields = "LTRIM(JCCostCode) + ' - ' + JCCostCodeDesc",
+                SortFields = "LTRIM(i.JCCostCode)",
+                FromWhere = "FROM EstimatingItems i",
+                IconKeys = "costcode"
+            }
+        };
+    }
+
+    // === Load Lookup Data ===
+    private async Task LoadLookupData()
+    {
+        try
+        {
+            var poIndexes = await db.QueryAsync(
+                $"SELECT POIndex, Description FROM tblPOIndex WHERE DivisionID = {DivisionID} ORDER BY POIndex");
+            POIndexList = poIndexes.Select(r => new POIndexItem
+            {
+                POIndex = r["POIndex"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            var costCodes = await db.QueryAsync(
+                $"SELECT CostCode, Description FROM StandardCostCodes WHERE DivisionID = {DivisionID} ORDER BY CostCode");
+            CostCodeList = costCodes.Select(r => new CostCodeItem
+            {
+                CostCode = r["CostCode"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            var categories = await db.QueryAsync(
+                $"SELECT Category, Description FROM StandardCategories WHERE DivisionID = {DivisionID} ORDER BY Category");
+            CategoryList = categories.Select(r => new CategoryItem
+            {
+                Category = r["Category"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            var taxGroups = await db.QueryAsync(
+                $"SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID = {DivisionID} ORDER BY TaxGroup");
+            TaxGroupList = taxGroups.Select(r => new TaxGroupItem
+            {
+                TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            var phases = await db.QueryAsync(
+                $"SELECT Phase, Description FROM tblEstPhases WHERE DivisionID = {DivisionID} AND GroupPhase = 0 ORDER BY Phase");
+            PhaseDropdownList = phases.Select(r => new PhaseDropdownItem
+            {
+                Phase = r["Phase"]?.ToString() ?? "",
+                DisplayText = $"{r["Phase"]} - {r["Description"]}"
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadLookupData error: {ex.Message}");
+        }
+    }
+
+    // === Load Phases Tree ===
+    private async Task LoadTreeAsync(bool clearTree)
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var nodes = new List<ItemsTreeNode>();
+            if (clearTree)
+                SelectedNode = null;
+
+            var view = ViewDefinitions[CurrentViewIndex];
+            var keyFields = ParseViewList(view.KeyFields);
+            var displayFields = ParseViewList(view.DisplayFields);
+            var sortFields = ParseViewList(view.SortFields);
+
+            if (keyFields.Count == 0 || displayFields.Count == 0)
+                return;
+
+            var nodeId = 1;
+            if (CurrentViewIndex == 0 && keyFields.Count >= 2 && displayFields.Count >= 2)
+            {
+                var groups = await QueryTreeLevel(view, keyFields[0], displayFields[0], sortFields.ElementAtOrDefault(0));
+                foreach (var g in groups)
+                {
+                    var key = g.KeyValue;
+                    if (string.IsNullOrWhiteSpace(key))
+                        continue;
+                    var safeKey = SqlSafe(key);
+                    var groupNode = new GroupPhaseTreeNode
+                    {
+                        NodeID = nodeId++,
+                        ParentID = null,
+                        Node = g.DisplayValue,
+                        KeyValue = key,
+                        KeyField = keyFields[0],
+                        WhereClause = $"i.{keyFields[0]} = '{safeKey}'"
+                    };
+                    nodes.Add(groupNode);
+
+                    var phases = await QueryTreeLevel(view, keyFields[1], displayFields[1], sortFields.ElementAtOrDefault(1),
+                        $"i.{keyFields[0]} = '{safeKey}'");
+                    foreach (var p in phases)
+                    {
+                        var phaseKey = p.KeyValue;
+                        if (string.IsNullOrWhiteSpace(phaseKey))
+                            continue;
+                        var safePhase = SqlSafe(phaseKey);
+                        nodes.Add(new GroupPhaseTreeNode
+                        {
+                            NodeID = nodeId++,
+                            ParentID = groupNode.NodeID,
+                            Node = p.DisplayValue,
+                            KeyValue = phaseKey,
+                            KeyField = keyFields[1],
+                            WhereClause = $"i.{keyFields[1]} = '{safePhase}'"
+                        });
+                    }
+                }
+            }
+            else
+            {
+                var results = await QueryTreeLevel(view, keyFields[0], displayFields[0], sortFields.ElementAtOrDefault(0));
+                foreach (var r in results)
+                {
+                    var key = r.KeyValue;
+                    if (string.IsNullOrWhiteSpace(key))
+                        continue;
+                    var safeKey = SqlSafe(key);
+                    ItemsTreeNode node = CurrentViewIndex == 1
+                        ? new PurchaseOrderTreeNode()
+                        : new CostCodeTreeNode();
+                    node.NodeID = nodeId++;
+                    node.ParentID = null;
+                    node.Node = r.DisplayValue;
+                    node.KeyValue = key;
+                    node.KeyField = keyFields[0];
+                    node.WhereClause = $"i.{keyFields[0]} = '{safeKey}'";
+                    nodes.Add(node);
+                }
+            }
+            TreeNodes = nodes;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadTreeAsync error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Expand/Collapse ===
+    private async Task OnExpandAll()
+    {
+        if (gPhases != null)
+            await gPhases.ExpandAllAsync();
+    }
+
+    private async Task OnCollapseAll()
+    {
+        if (gPhases != null)
+            await gPhases.CollapseAllAsync();
+    }
+
+    private void OnNodeExpanded(TreeNodeEventArgs<ItemsTreeNode> args)
+    {
+        Console.WriteLine($"Expanded: {args.Data?.Node}");
+    }
+
+    private void OnNodeCollapsed(TreeNodeEventArgs<ItemsTreeNode> args)
+    {
+        Console.WriteLine($"Collapsed: {args.Data?.Node}");
+    }
+
+    // === Load Items for Selected Phase ===
+    private async Task LoadItemsAsync()
+    {
+        if (SelectedNode == null) return;
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var whereClause = SelectedNode.WhereClause;
+            var viewDef = ViewDefinitions[CurrentViewIndex];
+            var includePriceGroups = viewDef.FromWhere.IndexOf("PriceGroups", StringComparison.OrdinalIgnoreCase) >= 0;
+            var groupSelect = includePriceGroups ? ", g.*" : "";
+            var sql = $@"
+                SELECT
+                    x.JCCostCode AS ItemCostCode,
+                    y.Description AS ItemCostCodeDesc,
+                    v.Phase + '/' + v.Item + ' - ' + ISNULL(v.Description,'') AS InverseItemDesc,
+                    i.*{groupSelect}
+                {viewDef.FromWhere}
+                LEFT JOIN tblPhaseItem x ON i.DivisionID = x.DivisionID AND i.Phase = x.Phase AND i.Item = x.Item
+                LEFT JOIN tblPhaseItem v ON x.DivisionID = v.DivisionID AND x.InversePhase = v.Phase AND x.InverseItem = v.Item
+                LEFT JOIN StandardCostCodes y ON i.DivisionID = y.DivisionID AND x.JCCostCode = y.CostCode
+                WHERE i.DivisionID = {DivisionID} {(string.IsNullOrWhiteSpace(whereClause) ? "" : "AND " + whereClause)}
+                ORDER BY {viewDef.SortFields}";
+
+            var rows = await db.QueryAsync(sql);
+            ItemsData = rows.Select(r =>
+            {
+                var item = new ItemRow
+                {
+                    Phase = r["Phase"]?.ToString() ?? "",
+                    Item = r["Item"]?.ToString() ?? "",
+                    ItemNumber = r.ContainsKey("ItemNumber") ? r["ItemNumber"]?.ToString() ?? "" : "",
+                    CostCategory = r["CostCategory"]?.ToString() ?? "",
+                    ItemDesc = r.ContainsKey("ItemDesc") ? r["ItemDesc"]?.ToString() ?? "" : r["Description"]?.ToString() ?? "",
+                    PhaseDesc = r.ContainsKey("PhaseDesc") ? r["PhaseDesc"]?.ToString() ?? "" : r.ContainsKey("PhaseDescription") ? r["PhaseDescription"]?.ToString() ?? "" : "",
+                    Notes = r["Notes"]?.ToString() ?? "",
+                    Formula = r["Formula"]?.ToString() ?? "",
+                    POIndex = r["POIndex"]?.ToString() ?? "",
+                    POIndexDescription = r["POIndexDescription"]?.ToString() ?? "",
+                    JCCostCode = r.ContainsKey("ItemCostCode") ? r["ItemCostCode"]?.ToString() ?? "" : r["JCCostCode"]?.ToString() ?? "",
+                    JCCostCodeDesc = r.ContainsKey("ItemCostCodeDesc") ? r["ItemCostCodeDesc"]?.ToString() ?? "" : r["JCCostCodeDesc"]?.ToString() ?? "",
+                    JCCategory = r["JCCategory"]?.ToString() ?? "",
+                    JCCategoryDesc = r["JCCategoryDesc"]?.ToString() ?? "",
+                    AltJCCostCode = r["AltJCCostCode"]?.ToString() ?? "",
+                    AltJCCostCodeDesc = r["AltJCCostCodeDesc"]?.ToString() ?? "",
+                    AltJCCategory = r["AltJCCategory"]?.ToString() ?? "",
+                    AltJCCategoryDesc = r["AltJCCategoryDesc"]?.ToString() ?? "",
+                    TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+                    TakeoffUOM = r["TakeoffUOM"]?.ToString() ?? "",
+                    OrderUOM = r["OrderUOM"]?.ToString() ?? "",
+                    ConversionFactor = r["ConversionFactor"] != null && r["ConversionFactor"] != DBNull.Value
+                        ? Convert.ToDecimal(r["ConversionFactor"]) : 1,
+                    Price = r["Price"] != null && r["Price"] != DBNull.Value
+                        ? Convert.ToDecimal(r["Price"]) : 0,
+                    WastePercent = r["WastePercent"] != null && r["WastePercent"] != DBNull.Value
+                        ? Convert.ToInt32(r["WastePercent"]) : 0,
+                    RoundDir = r["RoundDir"] != null && r["RoundDir"] != DBNull.Value
+                        ? Convert.ToInt32(r["RoundDir"]) : 0,
+                    RoundTo = r["RoundTo"] != null && r["RoundTo"] != DBNull.Value
+                        ? Convert.ToDecimal(r["RoundTo"]) : 0,
+                    PartNumber = r["PartNumber"]?.ToString() ?? "",
+                    OptionID = r["OptionID"]?.ToString() ?? "",
+                    OptionCategory = r["OptionCategory"]?.ToString() ?? "",
+                    Color = r["Color"]?.ToString() ?? "",
+                    Location = r["Location"]?.ToString() ?? "",
+                    RetailPretax = r["RetailPretax"] != null && r["RetailPretax"] != DBNull.Value
+                        ? Convert.ToDecimal(r["RetailPretax"]) : 0,
+                    IsQuote = r["IsQuote"]?.ToString() == "True" || r["IsQuote"]?.ToString() == "1",
+                    UseInFieldPO = r["UseInFieldPO"]?.ToString() == "True" || r["UseInFieldPO"]?.ToString() == "1",
+                    PriceLink = r["PriceLink"] != null && r["PriceLink"] != DBNull.Value
+                        ? Convert.ToInt32(r["PriceLink"]) : 0,
+                    PriceGroupDesc = r.ContainsKey("PriceGroupDesc") ? r["PriceGroupDesc"]?.ToString() ?? "" : "",
+                    InverseItemDesc = r["InverseItemDesc"]?.ToString() ?? "",
+                    RowState = "CLEAN"
+                };
+                for (var i = 1; i <= 40; i++)
+                {
+                    var key = $"WBS{i:D2}";
+                    if (r.ContainsKey(key))
+                        item.SetWbs(i, r[key]?.ToString() ?? "");
+                }
+                return item;
+            }).ToList();
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadItemsAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading items: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveDataAsync(bool prompt = false)
+    {
+        if (!mDirty) return true;
+        if (prompt)
+        {
+            var result = await JSRuntime.InvokeAsync<bool>("confirm",
+                "Item Database has changed. Do you want to save these changes?");
+            if (!result) return true;
+        }
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            foreach (var item in ItemsData.Where(i => i.RowState == "Deleted"))
+            {
+                await db.ExecuteAsync($@"
+                    DELETE FROM tblPhaseItem WHERE DivisionID = {DivisionID}
+                    AND Phase = @Phase AND Item = @Item",
+                    new { item.Phase, item.Item });
+                await db.ExecuteAsync($@"
+                    DELETE FROM tblDBAssemblyDetails WHERE DivisionID = {DivisionID}
+                    AND Phase = @Phase AND Item = @Item",
+                    new { item.Phase, item.Item });
+            }
+
+            foreach (var item in ItemsData.Where(i => i.RowState == "DIRTY" || i.RowState == "DDIRTY"))
+            {
+                var sql = $@"
+                    UPDATE tblPhaseItem SET
+                        Description = @ItemDesc, Formula = @Formula, Notes = @Notes,
+                        PartNumber = @PartNumber, POIndex = @POIndex,
+                        JCCostCode = @JCCostCode, JCCategory = @JCCategory,
+                        AltJCCostCode = @AltJCCostCode, AltJCCategory = @AltJCCategory,
+                        OrderUOM = @OrderUOM, TakeoffUOM = @TakeoffUOM,
+                        OptionID = @OptionID, OptionCategory = @OptionCategory,
+                        Color = @Color, Location = @Location,
+                        RetailPretax = @RetailPretax, ConversionFactor = @ConversionFactor,
+                        WastePercent = @WastePercent, RoundDir = @RoundDir, RoundTo = @RoundTo,
+                        Price = @Price, TaxGroup = @TaxGroup,
+                        IsQuote = @IsQuote, UseInFieldPO = @UseInFieldPO,
+                        TStmp = GETDATE()
+                    WHERE DivisionID = {DivisionID} AND Phase = @Phase AND Item = @Item";
+                await db.ExecuteAsync(sql, new
+                {
+                    item.Phase, item.Item, item.ItemDesc, item.Formula, item.Notes,
+                    item.PartNumber, item.POIndex, item.JCCostCode, item.JCCategory,
+                    item.AltJCCostCode, item.AltJCCategory, item.OrderUOM, item.TakeoffUOM,
+                    item.OptionID, item.OptionCategory, item.Color, item.Location,
+                    item.RetailPretax, item.ConversionFactor, item.WastePercent,
+                    item.RoundDir, item.RoundTo, item.Price, item.TaxGroup,
+                    item.IsQuote, item.UseInFieldPO
+                });
+                item.RowState = "CLEAN";
+            }
+
+            ItemsData.RemoveAll(i => i.RowState == "Deleted");
+            mDirty = false;
+            await JSRuntime.InvokeVoidAsync("alert", "Data saved successfully.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SaveDataAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Event Handlers ===
+    private async Task OnSaveClick() => await SaveDataAsync();
+
+    private async Task OnViewChanged(ChangeEventArgs e)
+    {
+        if (!await SaveDataAsync(true)) return;
+        if (int.TryParse(e.Value?.ToString(), out var idx))
+            CurrentViewIndex = idx;
+        ItemsData.Clear();
+        mDirty = false;
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
+    }
+
+    private void OnNewItemClick()
+    {
+        if (CurrentViewIndex == 0 && SelectedNode?.KeyField?.Equals("Phase", StringComparison.OrdinalIgnoreCase) == true)
+            NewItemPhase = SelectedNode?.KeyValue ?? "";
+        else
+            NewItemPhase = "";
+        NewItemCode = "";
+        NewItemDescription = "";
+        NewItemCostCategory = "M";
+        IsNewItemDialogVisible = true;
+    }
+
+    private async Task OnCreateNewItem()
+    {
+        if (string.IsNullOrWhiteSpace(NewItemPhase) || string.IsNullOrWhiteSpace(NewItemCode))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Phase and Item Code are required.");
+            return;
+        }
+        try
+        {
+            var exists = await db.ExecuteScalarAsync<int>($@"
+                SELECT COUNT(*) FROM tblPhaseItem
+                WHERE DivisionID = {DivisionID} AND Phase = @Phase AND Item = @Item",
+                new { Phase = NewItemPhase, Item = NewItemCode });
+            if (exists > 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "This item already exists.");
+                return;
+            }
+            await db.ExecuteAsync($@"
+                INSERT INTO tblPhaseItem (DivisionID, Phase, Item, CostCategory, Description, ConversionFactor)
+                VALUES ({DivisionID}, @Phase, @Item, @CostCategory, @Description, 1)",
+                new
+                {
+                    Phase = NewItemPhase, Item = NewItemCode,
+                    CostCategory = NewItemCostCategory, Description = NewItemDescription
+                });
+            IsNewItemDialogVisible = false;
+            await LoadItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating item: {ex.Message}");
+        }
+    }
+
+    private async Task OnDuplicateClick()
+    {
+        if (SelectedItem == null) return;
+        await JSRuntime.InvokeVoidAsync("alert", "Duplicate functionality - would open duplicate dialog");
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (SelectedItem == null) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Are you sure you want to delete item {SelectedItem.Phase}/{SelectedItem.Item}?");
+        if (confirm)
+        {
+            SelectedItem.RowState = "Deleted";
+            mDirty = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnExcelExport()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Export to Excel - not yet implemented");
+    }
+
+    private async Task OnExcelImport()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Import from Excel - not yet implemented");
+    }
+
+    private async Task OnRefreshClick()
+    {
+        if (mDirty)
+        {
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "You have unsaved changes. Discard and refresh?");
+            if (!confirm) return;
+        }
+        await LoadItemsAsync();
+    }
+
+    private async Task OnTreeNodeSelected(TreeRowSelectEventArgs<ItemsTreeNode> args)
+    {
+        if (mDirty)
+        {
+            if (!await SaveDataAsync(true)) return;
+        }
+        SelectedNode = args.Data;
+        Console.WriteLine($"Node: {SelectedNode?.Node}");
+        await LoadItemsAsync();
+    }
+
+    // === Dropdown Change Handlers ===
+    private void OnPOIndexChanged(ItemRow item)
+    {
+        var po = POIndexList.FirstOrDefault(p => p.POIndex == item.POIndex);
+        if (po != null) item.POIndexDescription = po.Description;
+        item.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    private void OnCostCodeChanged(ItemRow item)
+    {
+        var cc = CostCodeList.FirstOrDefault(c => c.CostCode == item.JCCostCode);
+        if (cc != null) item.JCCostCodeDesc = cc.Description;
+        item.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    private void OnCategoryChanged(ItemRow item)
+    {
+        var cat = CategoryList.FirstOrDefault(c => c.Category == item.JCCategory);
+        if (cat != null) item.JCCategoryDesc = cat.Description;
+        item.RowState = "DIRTY";
+        mDirty = true;
+    }
+
+    // === Dialog Handlers ===
+    private void OnEditDescription(ItemRow? item)
+    {
+        if (item == null) return;
+        EditingTextRow = item;
+        EditingTextColumn = "ItemDesc";
+        EditingText = item.ItemDesc;
+        TextDialogTitle = "Edit Description";
+        IsTextDialogVisible = true;
+    }
+
+    private void OnEditNotes(ItemRow? item)
+    {
+        if (item == null) return;
+        EditingTextRow = item;
+        EditingTextColumn = "Notes";
+        EditingText = item.Notes;
+        TextDialogTitle = "Edit Notes";
+        IsTextDialogVisible = true;
+    }
+
+    private void OnTextDialogOk()
+    {
+        if (EditingTextRow != null)
+        {
+            if (EditingTextColumn == "ItemDesc")
+                EditingTextRow.ItemDesc = EditingText;
+            else if (EditingTextColumn == "Notes")
+                EditingTextRow.Notes = EditingText;
+            EditingTextRow.RowState = "DIRTY";
+            mDirty = true;
+        }
+        IsTextDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnTextDialogCancel() => IsTextDialogVisible = false;
+
+    private void OnEditFormula(ItemRow? item)
+    {
+        if (item == null) return;
+        EditingFormulaRow = item;
+        EditingFormula = item.Formula;
+        IsFormulaDialogVisible = true;
+    }
+
+    private void OnFormulaDialogOk()
+    {
+        if (EditingFormulaRow != null)
+        {
+            EditingFormulaRow.Formula = EditingFormula;
+            EditingFormulaRow.RowState = "DIRTY";
+            mDirty = true;
+        }
+        IsFormulaDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnFormulaDialogCancel() => IsFormulaDialogVisible = false;
+
+    private async Task OnSelectInverseItem(ItemRow? item)
+    {
+        if (item == null) return;
+        await JSRuntime.InvokeVoidAsync("alert", "Select Inverse Item - would open pick list dialog");
+    }
+
+    // === Helper Methods ===
+    private string TruncateText(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
+    }
+
+    private static string SqlSafe(string? value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+
+    private static List<string> ParseViewList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+        return raw.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+
+    private sealed class TreeQueryRow
+    {
+        public string KeyValue { get; set; } = "";
+        public string DisplayValue { get; set; } = "";
+    }
+
+    private async Task<List<TreeQueryRow>> QueryTreeLevel(ViewDefinition view, string keyField, string displayField, string? sortField, string? whereClause = null)
+    {
+        var sort = string.IsNullOrWhiteSpace(sortField) ? keyField : sortField;
+        var sql = new System.Text.StringBuilder();
+        sql.Append("SELECT DISTINCT ").Append(keyField).Append(" AS KeyValue, ").Append(displayField).Append(" AS DisplayValue");
+        if (!string.Equals(sort, keyField, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sort, displayField, StringComparison.OrdinalIgnoreCase))
+        {
+            sql.Append(", ").Append(sort).Append(" AS SortValue");
+        }
+        sql.AppendLine();
+        sql.Append(view.FromWhere);
+        sql.Append(" WHERE i.DivisionID = ").Append(DivisionID);
+        if (!string.IsNullOrWhiteSpace(whereClause))
+            sql.Append(" AND ").Append(whereClause);
+        if (CurrentViewIndex == 0)
+            sql.Append(" AND GrpPhase<>Phase");
+        sql.Append(" ORDER BY ").Append(sort);
+
+        var rows = await db.QueryAsync(sql.ToString());
+        return rows.Select(r => new TreeQueryRow
+        {
+            KeyValue = r["KeyValue"]?.ToString() ?? "",
+            DisplayValue = r["DisplayValue"]?.ToString() ?? r["KeyValue"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadItemsGridLayoutAsync()
+    {
+        ItemsGridLayout = await MMain.IniGetGridAsync(FormName, $"{ItemsGridName}.{CurrentViewIndex}", 0, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, CurrentViewIndex, grouped: false);
+        if (ItemsGridLayout.Count == 0)
+            ItemsGridLayout = await MMain.IniGetGridAsync(FormName, ItemsGridName, 0, grouped: false);
+
+        ItemsGridLayoutVersion++;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedItemsGridLayout()
+    {
+        if (!HasItemsGridLayout)
+            yield break;
+
+        var ordered = ItemsGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveItemsGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private static readonly Dictionary<string, PropertyInfo> _itemRowPropMap =
+        typeof(ItemRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static string NormalizeGridKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return "";
+        var chars = key.Where(char.IsLetterOrDigit).ToArray();
+        return new string(chars).ToLowerInvariant();
+    }
+
+    private static string ResolveItemsGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+        var exact = typeof(ItemRow).GetProperty(trimmed, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (exact != null)
+            return exact.Name;
+
+        var normalized = NormalizeGridKey(trimmed);
+        if (_itemRowPropMap.TryGetValue(normalized, out var prop))
+            return prop.Name;
+
+        return trimmed;
+    }
+
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return ColumnType.Text;
+
+        if (_itemRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool))
+                return ColumnType.CheckBox;
+            if (type == typeof(DateTime))
+                return ColumnType.Date;
+            if (type == typeof(byte) || type == typeof(short) || type == typeof(int) || type == typeof(long) ||
+                type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+
+        return ColumnType.Text;
+    }
+
+    private static bool IsEditableField(string field, MMain.GridLayoutColumn layout)
+    {
+        if (layout.IsEditable)
+            return true;
+
+        return !_readOnlyFields.Contains(field);
+    }
+
+    private static readonly HashSet<string> _readOnlyFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Phase", "PhaseDesc", "Item", "ItemNumber",
+        "POIndexDescription", "JCCostCodeDesc", "JCCategoryDesc",
+        "AltJCCostCodeDesc", "AltJCCategoryDesc",
+        "InverseItemDesc", "PriceGroupDesc", "PriceLink", "RowState"
+    };
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0)
+            return 0;
+
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
+    // === Model Classes ===
+    public class ViewDefinition
+    {
+        public string Name { get; set; } = "";
+        public string KeyFields { get; set; } = "";
+        public string DisplayFields { get; set; } = "";
+        public string SortFields { get; set; } = "";
+        public string FromWhere { get; set; } = "";
+        public string IconKeys { get; set; } = "";
+    }
+    public class ItemsTreeNode
+    {
+        public int? NodeID { get; set; }
+        public int? ParentID { get; set; }
+        public string Node { get; set; } = "";
+        public string KeyValue { get; set; } = "";
+        public string KeyField { get; set; } = "";
+        public string WhereClause { get; set; } = "";
+    }
+    public class GroupPhaseTreeNode : ItemsTreeNode { }
+    public class PurchaseOrderTreeNode : ItemsTreeNode { }
+    public class CostCodeTreeNode : ItemsTreeNode { }
+
+    public class ItemRow
+    {
+        public string Phase { get; set; } = "";
+        public string PhaseDesc { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string ItemNumber { get; set; } = "";
+        public string CostCategory { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string Formula { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string POIndexDescription { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
+        public string AltJCCostCode { get; set; } = "";
+        public string AltJCCostCodeDesc { get; set; } = "";
+        public string AltJCCategory { get; set; } = "";
+        public string AltJCCategoryDesc { get; set; } = "";
+        public string TaxGroup { get; set; } = "";
+        public string TakeoffUOM { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public decimal ConversionFactor { get; set; } = 1;
+        public decimal Price { get; set; }
+        public int WastePercent { get; set; }
+        public int RoundDir { get; set; }
+        public decimal RoundTo { get; set; }
+        public string PartNumber { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public string OptionCategory { get; set; } = "";
+        public string Color { get; set; } = "";
+        public string Location { get; set; } = "";
+        public decimal RetailPretax { get; set; }
+        public bool IsQuote { get; set; }
+        public bool UseInFieldPO { get; set; }
+        public int PriceLink { get; set; }
+        public string PriceGroupDesc { get; set; } = "";
+        public string InverseItemDesc { get; set; } = "";
+        public string WBS01 { get; set; } = "";
+        public string WBS02 { get; set; } = "";
+        public string WBS03 { get; set; } = "";
+        public string WBS04 { get; set; } = "";
+        public string WBS05 { get; set; } = "";
+        public string WBS06 { get; set; } = "";
+        public string WBS07 { get; set; } = "";
+        public string WBS08 { get; set; } = "";
+        public string WBS09 { get; set; } = "";
+        public string WBS10 { get; set; } = "";
+        public string WBS11 { get; set; } = "";
+        public string WBS12 { get; set; } = "";
+        public string WBS13 { get; set; } = "";
+        public string WBS14 { get; set; } = "";
+        public string WBS15 { get; set; } = "";
+        public string WBS16 { get; set; } = "";
+        public string WBS17 { get; set; } = "";
+        public string WBS18 { get; set; } = "";
+        public string WBS19 { get; set; } = "";
+        public string WBS20 { get; set; } = "";
+        public string WBS21 { get; set; } = "";
+        public string WBS22 { get; set; } = "";
+        public string WBS23 { get; set; } = "";
+        public string WBS24 { get; set; } = "";
+        public string WBS25 { get; set; } = "";
+        public string WBS26 { get; set; } = "";
+        public string WBS27 { get; set; } = "";
+        public string WBS28 { get; set; } = "";
+        public string WBS29 { get; set; } = "";
+        public string WBS30 { get; set; } = "";
+        public string WBS31 { get; set; } = "";
+        public string WBS32 { get; set; } = "";
+        public string WBS33 { get; set; } = "";
+        public string WBS34 { get; set; } = "";
+        public string WBS35 { get; set; } = "";
+        public string WBS36 { get; set; } = "";
+        public string WBS37 { get; set; } = "";
+        public string WBS38 { get; set; } = "";
+        public string WBS39 { get; set; } = "";
+        public string WBS40 { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+
+        public void SetWbs(int index, string value)
+        {
+            switch (index)
+            {
+                case 1: WBS01 = value; break;
+                case 2: WBS02 = value; break;
+                case 3: WBS03 = value; break;
+                case 4: WBS04 = value; break;
+                case 5: WBS05 = value; break;
+                case 6: WBS06 = value; break;
+                case 7: WBS07 = value; break;
+                case 8: WBS08 = value; break;
+                case 9: WBS09 = value; break;
+                case 10: WBS10 = value; break;
+                case 11: WBS11 = value; break;
+                case 12: WBS12 = value; break;
+                case 13: WBS13 = value; break;
+                case 14: WBS14 = value; break;
+                case 15: WBS15 = value; break;
+                case 16: WBS16 = value; break;
+                case 17: WBS17 = value; break;
+                case 18: WBS18 = value; break;
+                case 19: WBS19 = value; break;
+                case 20: WBS20 = value; break;
+                case 21: WBS21 = value; break;
+                case 22: WBS22 = value; break;
+                case 23: WBS23 = value; break;
+                case 24: WBS24 = value; break;
+                case 25: WBS25 = value; break;
+                case 26: WBS26 = value; break;
+                case 27: WBS27 = value; break;
+                case 28: WBS28 = value; break;
+                case 29: WBS29 = value; break;
+                case 30: WBS30 = value; break;
+                case 31: WBS31 = value; break;
+                case 32: WBS32 = value; break;
+                case 33: WBS33 = value; break;
+                case 34: WBS34 = value; break;
+                case 35: WBS35 = value; break;
+                case 36: WBS36 = value; break;
+                case 37: WBS37 = value; break;
+                case 38: WBS38 = value; break;
+                case 39: WBS39 = value; break;
+                case 40: WBS40 = value; break;
+            }
+        }
+    }
+
+    public class POIndexItem
+    {
+        public string POIndex { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class CostCodeItem
+    {
+        public string CostCode { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class CategoryItem
+    {
+        public string Category { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class TaxGroupItem
+    {
+        public string TaxGroup { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class PhaseDropdownItem
+    {
+        public string Phase { get; set; } = "";
+        public string DisplayText { get; set; } = "";
+    }
+}

@@ -36,4 +36,17 @@ public class AssemblyItemRow
     public Dictionary<int, string> WBS { get; set; } = Enumerable.Range(1, 40).ToDictionary(i => i, i => "");
     public double AssemblyConversionFactor { get; set; }
     public double ItemConversionFactor { get; set; }
+    public double RoundTo { get; set; }
+    public int RoundDir { get; set; }
+    public string OldItemType { get; set; } = "";
+    public string JCCostCodeDesc { get; set; } = "";
+    public string JCCategoryDesc { get; set; } = "";
+    public int HasInverseItem { get; set; }
+
+    /// <summary>Row status: "" = unchanged, "new" = new row, "update" = modified, "delete" = marked for deletion</summary>
+    public string RowStatus { get; set; } = "";
+    /// <summary>Tracks if the price was user-edited (for vendor cost update on save)</summary>
+    public bool PriceDirty { get; set; }
+    /// <summary>Tracks if the item type was user-edited</summary>
+    public bool ItemTypeDirty { get; set; }
 }

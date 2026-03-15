@@ -1,0 +1,537 @@
+@page "/workflow-estimating"
+
+@using HomeFront.Components.Hf
+@using HomeFront.Data
+@using System.Globalization
+@using System.Reflection
+
+<PageTitle>HSMC - Estimating Workflow</PageTitle>
+
+<h3 style="margin: 16px 0 8px 16px; color: #2C5F8A;">Estimating Workflow</h3>
+
+<div class="workflow-estimating-layout">
+    <div class="workflow-diagram">
+        <HfDiagram Nodes="@_nodes"
+                   Connectors="@_connectors"
+                   Width="@DiagramWidthPx"
+                   Height="@DiagramHeightPx"
+                   NodeClicked="OnNodeClicked" />
+    </div>
+    <div class="financial-col">
+                        <div class="financial-card h-100">
+                            <div class="financial-card-header">@CurrentJobTitle</div>
+                            <div class="financial-card-content">
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <p>Budgeted Costs: <span>@Estimate.ToString("C")</span></p>
+                                    </div>
+                                    <div class="col-12">
+                                        <p>Approved Changes: <span>@ApprovedChanges.ToString("C")</span></p>
+                                        <p>Pending Changes: <span>@PendingChanges.ToString("C")</span></p>
+                                        <h3>--------------------------</h3>
+                                        <p>Total Costs: <span>@Estimate.ToString("C")</span></p>
+                                    </div>
+                                    <div class="col-12">
+                                        <p>Pending Changes: <span>@PendingChanges.ToString("C")</span></p>
+                                        <p>Job to Date Costs: <span>@JTDCost.ToString("C")</span></p>
+                                        <p>Job to Date %: <span>@JTDPercent</span></p>
+                                        <p>Cost to Complete: <span>@CostToComplete.ToString("C")</span></p>
+                                        <img src="images/contracts_documents.png" alt="Workflow Background" class="task-icon" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="jobs-grid">
+                            <HfGrid @ref="gJobs"
+                                    TValue="Job"
+                                    DataSource="@JobsData"
+                                    AllowSorting="true"
+                                    AllowPaging="true"
+                                    AllowResizing="true"
+                                    AllowSelection="true"
+                                    EnableHover="true"
+                                    Height="1400px"
+                                    SelectionSettingsRef="@jobsSelection"
+                                    EventsRef="@jobsEvents">
+                                <HfGridColumnsBase @key="JobsGridLayoutVersion" DebugTag="FHome2-gJobs">
+                                    @if (HasJobsGridLayout)
+                                    {
+                                        @foreach (var entry in GetOrderedJobsGridLayout())
+                                        {
+                                            var layout = entry.Layout;
+                                            var fieldName = entry.Field;
+                                            var columnType = entry.ColumnType;
+                                            var textAlign = entry.TextAlign;
+                                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                                : null;
+                                            <HfGridColumn Field="@fieldName"
+                                                          HeaderText="@headerText"
+                                                          Width="@width"
+                                                          Type="@columnType"
+                                                          TextAlign="@textAlign"
+                                                          ClipMode="ClipMode.Ellipsis"
+                                                          AllowEditing="false"
+                                                          Visible="true" />
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <HfGridColumn Field="@nameof(Job.JobNumber)" HeaderText="Job" Width="150px" />
+                                        <HfGridColumn Field="@nameof(Job.JobDescription)" HeaderText="Description" Width="150px" />
+                                        <HfGridColumn Field="@nameof(Job.JobAddress)" HeaderText="Address" Width="120px" Visible="true" />
+                                        <HfGridColumn Field="@nameof(Job.DivisionID)" HeaderText="Division ID" Width="120px" Visible="false" />
+                                    }
+                                </HfGridColumnsBase>
+                            </HfGrid>
+                        </div>
+                    </div>
+    </div>
+
+
+<style>
+    .workflow-estimating-layout {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+        margin: 0 16px 16px 16px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    .workflow-diagram {
+        flex: 0 0 auto;
+    }
+
+    .financial-col {
+        flex: 1 1 420px;
+        min-width: 360px;
+    }
+</style>
+
+@code {
+    // ── Icon path helper ────────────────────────────────────────────────
+    private const string IconBase = "images/workflow/estimating";
+    private readonly DbWrapperSqlServer db = new();
+    private const double DiagramScale = 1.04;
+    private const double DiagramBaseWidth = 820;
+    private const double DiagramBaseHeight = 640;
+    private static string DiagramWidthPx => (DiagramBaseWidth * DiagramScale).ToString("0.#", CultureInfo.InvariantCulture);
+    private static string DiagramHeightPx => (DiagramBaseHeight * DiagramScale).ToString("0.#", CultureInfo.InvariantCulture);
+    private HfGrid<Job>? gJobs;
+    private readonly List<Job> JobsData = new();
+    private int activeTab = 1;
+
+    // Grid layout (IniGetGrid pattern matching FHome2.frm gJobs)
+    private Dictionary<string, MMain.GridLayoutColumn> JobsGridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private bool HasJobsGridLayout => JobsGridLayout.Count > 0;
+    private int JobsGridLayoutVersion = 0;
+
+    private readonly HfSelectionSettings jobsSelection = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+
+    private readonly HfGridEvents<Job> jobsEvents = new();
+
+    private string CurrentJobTitle = "";
+    private decimal Contract = 0;
+    private decimal Estimate = 0;
+    private decimal ApprovedChanges = 0;
+    private decimal PendingChanges = 0;
+    private decimal JTDCost = 0;
+    private string JTDPercent = "";
+    private decimal CostToComplete = 0;
+    private string CurrentJob = "NR00101";
+    private string CurrentJobDesc = "LOT 101";
+    private string DivisionId = "1";
+
+    protected override void OnInitialized()
+    {
+        jobsEvents.OnRecordDoubleClick = EventCallback.Factory.Create<CellClickEventArgs<Job>>(this, RecordDoubleClickHandler);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentJobAsync();
+        await LoadJobDataAsync();
+    }
+
+    private async Task LoadCurrentJobAsync()
+    {
+        try
+        {
+            string currentJob = CurrentJob;
+
+            string sqlBilling = @"
+            SELECT SUM(price)
+            FROM billingitems
+            WHERE Job = @Job";
+
+            decimal contract = await db.ExecuteScalarAsync<decimal>(sqlBilling, new { Job = currentJob });
+
+            string sqlEstimate = @"
+            SELECT 
+                SUM(CASE WHEN IsChange=0 AND BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) AS Budgeted,
+                SUM(CASE WHEN IsChange=1 AND ischangerequest=0 AND BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) AS ApprovedChanges,
+                SUM(CASE WHEN IsChange=1 AND ischangerequest=1 AND BudgetDeleted<>1 THEN BudgetPretax + BudgetJCTax ELSE 0 END) AS PendingChanges
+            FROM Estimateditems
+            WHERE divisionid = @DivisionId
+            AND Job_no = @Job";
+            var estimateResults = await db.QueryAsync(sqlEstimate, new { DivisionId = DivisionId, Job = currentJob });
+            decimal estimate = 0;
+            decimal approvedChanges = 0;
+            decimal pendingChanges = 0;
+            if (estimateResults.Any())
+            {
+                var row = estimateResults[0];
+                estimate = Convert.ToDecimal(row["Budgeted"] ?? 0);
+                approvedChanges = Convert.ToDecimal(row["ApprovedChanges"] ?? 0);
+                pendingChanges = Convert.ToDecimal(row["PendingChanges"] ?? 0);
+            }
+
+            string sqlJTD = @"
+            SELECT SUM(pretax + jctax)
+            FROM JCTransactions
+            WHERE divisionid = @DivisionId
+            AND Job = @Job
+            AND TransactionType <> 'Estimate' AND TransactionType <> 'Purchaseorder'";
+            decimal jtdCost = await db.ExecuteScalarAsync<decimal>(sqlJTD, new { DivisionId = DivisionId, Job = currentJob });
+
+            Contract = contract;
+            Estimate = estimate;
+            ApprovedChanges = approvedChanges;
+            PendingChanges = pendingChanges;
+            JTDCost = jtdCost;
+
+            decimal totalBudget = Estimate + ApprovedChanges + PendingChanges;
+            JTDPercent = totalBudget != 0 ? $"{(JTDCost / totalBudget * 100):0.##}%" : "0%";
+            CostToComplete = totalBudget - JTDCost;
+            CurrentJobTitle = $"{FormatJob(CurrentJob)}   {CurrentJobDesc}";
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error loading job data: {ex.Message}");
+        }
+    }
+
+    private string FormatJob(string job)
+    {
+        return job;
+    }
+
+    private async Task LoadJobDataAsync()
+    {
+        await LoadJobsGridLayoutAsync();
+
+        string sql = @"
+            SELECT wj.*
+            FROM workflowjobs wj
+            JOIN tbljobs j ON (wj.DivisionID = j.DivisionID AND wj.job = j.job_no)
+            LEFT OUTER JOIN DivisionCommunities d ON (d.Community = j.Community)
+            WHERE (d.DivisionID IS NULL OR d.DivisionID = @DivisionID)
+            AND j.DivisionID = @DivisionID
+            ORDER BY wj.job";
+        var parameters = new { DivisionID = 1 };
+        var result = await db.QueryAsync(sql, parameters);
+
+        JobsData.Clear();
+        foreach (var row in result)
+        {
+            var item = new Job
+            {
+                JobNumber = row["Job"]?.ToString() ?? "",
+                JobDescription = row["Description"]?.ToString() ?? "",
+                JobAddress = row["Address"]?.ToString() ?? ""
+            };
+            JobsData.Add(item);
+        }
+
+        if (gJobs != null)
+        {
+            await gJobs.RefreshAsync();
+        }
+    }
+
+    public async Task RecordDoubleClickHandler(CellClickEventArgs<Job> args)
+    {
+        if (args.Data == null)
+        {
+            return;
+        }
+
+        CurrentJob = args.Data.JobNumber;
+        CurrentJobDesc = args.Data.JobDescription;
+        Console.WriteLine($"Double click on row with ID: {args.Data.JobNumber}");
+        await LoadCurrentJobAsync();
+    }
+
+    public class Job
+    {
+        public int DivisionID { get; set; }
+        public string JobNumber { get; set; } = string.Empty;
+
+        public string JobDescription { get; set; } = string.Empty;
+        public string JobAddress { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string Community { get; set; } = string.Empty;
+        public string Model { get; set; } = string.Empty;
+        public string OptionID { get; set; } = string.Empty;
+
+        public DateTime? StartDate { get; set; }
+        public DateTime? TargetCompletionDate { get; set; }
+        public DateTime? ActualCompletionDate { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public DateTime? LastUpdated { get; set; }
+
+        public decimal? ContractAmount { get; set; }
+        public decimal? OriginalEstimate { get; set; }
+        public decimal? ApprovedChanges { get; set; }
+        public decimal? PendingChanges { get; set; }
+        public decimal? JobToDateCost { get; set; }
+
+        public string Salesperson { get; set; } = string.Empty;
+        public string ProjectManager { get; set; } = string.Empty;
+        public string Estimator { get; set; } = string.Empty;
+
+        public string JobType { get; set; } = string.Empty;
+        public string Series { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public string Notes { get; set; } = string.Empty;
+
+        public string DisplayJob => $"{JobNumber} - {JobDescription}".TrimEnd(" - ".ToCharArray());
+        public string DateRangeDisplay
+        {
+            get
+            {
+                if (!StartDate.HasValue) return "No start date";
+                if (!TargetCompletionDate.HasValue) return StartDate.Value.ToString("MMM dd, yyyy");
+                return $"{StartDate.Value:MMM dd, yyyy} – {TargetCompletionDate.Value:MMM dd, yyyy}";
+            }
+        }
+
+        public string ContractDisplay => ContractAmount?.ToString("C0") ?? "-";
+        public string JTDCostDisplay => JobToDateCost?.ToString("C0") ?? "-";
+    }
+
+    // ── Grid layout helpers (IniGetGrid pattern) ──────────────────────────
+    private async Task LoadJobsGridLayoutAsync()
+    {
+        // VB6: Call IniGetGrid(Me, gJobs) in FHome2
+        JobsGridLayout = await MMain.IniGetGridAsync("FHome2", "gJobs", 0);
+        if (JobsGridLayout.Count == 0)
+            JobsGridLayout = await MMain.IniGetGridAsync("FHome2", "gJobs", 0, staticNames: true);
+        JobsGridLayoutVersion++;
+    }
+
+    private static readonly Dictionary<string, PropertyInfo> _jobRowPropMap =
+        typeof(Job)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => p.Name.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, string> _jobFieldAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Job"] = nameof(Job.JobNumber),
+        ["Description"] = nameof(Job.JobDescription),
+        ["Address"] = nameof(Job.JobAddress),
+    };
+
+    private static string ResolveJobsGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+
+        // Direct property match
+        if (_jobRowPropMap.ContainsKey(trimmed))
+            return _jobRowPropMap[trimmed].Name;
+
+        // Alias match (VB6 column keys → C# property names)
+        if (_jobFieldAliases.TryGetValue(trimmed, out var alias))
+            return alias;
+
+        return trimmed;
+    }
+
+    private static ColumnType GetJobColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+            return ColumnType.Text;
+
+        if (_jobRowPropMap.TryGetValue(field, out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool))
+                return ColumnType.Boolean;
+            if (type == typeof(DateTime))
+                return ColumnType.Date;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(decimal) || type == typeof(double) || type == typeof(float))
+                return ColumnType.Number;
+        }
+        return ColumnType.Text;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedJobsGridLayout()
+    {
+        if (!HasJobsGridLayout)
+            yield break;
+
+        var ordered = JobsGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveJobsGridField(layout.Field);
+            var columnType = GetJobColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0)
+            return 0;
+
+        // VB6 grid widths are commonly stored in twips (15 twips per pixel at 96 DPI).
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
+    // ── Shared style: transparent background, icon above label ──────────
+    private static double S(double value) => value * DiagramScale;
+
+    private static HfDiagramNode MakeNode(
+        string id, string label, double x, double y,
+        string icon, string? navigateUrl = null,
+        double w = 90, double h = 80) => new()
+    {
+        Id = id,
+        Label = label,
+        OffsetX = S(x),
+        OffsetY = S(y),
+        Width = S(w),
+        Height = S(h),
+        Shape = HfDiagramShape.Rectangle,
+        FillColor = "transparent",
+        StrokeColor = "transparent",
+        StrokeWidth = 0,
+        TextColor = "#2C5F8A",
+        CornerRadius = 0,
+        BackgroundImage = $"{IconBase}/{icon}",
+        BackgroundImageFit = HfImageFit.Contain,
+        BackgroundImageOpacity = 1.0,
+        BackgroundImagePadding = 0,
+        NavigateUrl = navigateUrl,
+        Tooltip = label
+    };
+
+    // ── Connector style ─────────────────────────────────────────────────
+    private const string ArrowColor = "#4A7FB5";
+
+    private static HfDiagramConnector MakeConn(
+        string id, string from, string to,
+        HfDiagramPort srcPort = HfDiagramPort.Auto,
+        HfDiagramPort tgtPort = HfDiagramPort.Auto,
+        HfConnectorType type = HfConnectorType.Straight) => new()
+    {
+        Id = id,
+        SourceId = from,
+        TargetId = to,
+        Type = type,
+        StrokeColor = ArrowColor,
+        StrokeWidth = 2,
+        ShowArrow = true,
+        SourcePort = srcPort,
+        TargetPort = tgtPort
+    };
+
+    // ── Nodes ───────────────────────────────────────────────────────────
+    //
+    //  Layout matching VB6 FestimatingWorkflow:
+    //
+    //  Row 1 (y=80):                                     Salespricing Worksheets
+    //  Row 2 (y=230):   Model & Option Library      Communities
+    //  Row 3 (y=400):   Item DB         Default Vendors        Vendor Pricelists
+    //  Row 4 (y=550):                   Vendor
+    //
+
+    private readonly List<HfDiagramNode> _nodes = new()
+    {
+        // ── Row 1 (top right) ──
+        MakeNode("salespricing",   "Salespricing\nWorksheets",   650, 80,  "SalespricingWorksheets.png",  "/pricing-worksheet"),
+
+        // ── Row 2 (middle) ──
+        MakeNode("model-library",  "Model & Option\nLibrary",   230, 230, "ModelOptionLibrary.png",      "/edit-model-assembly"),
+        MakeNode("communities",    "Communities",                430, 230, "Communities.png",             "/communities"),
+
+        // ── Row 3 (lower) ──
+        MakeNode("itemdb",         "Item DB",                     80, 400, "ItemDB.png",                  "/items-db"),
+        MakeNode("default-vendors","Default\nVendor",           430, 400, "DefaultVendors.png",          "/default-vendor"),
+        MakeNode("vendor-prices",  "Vendor\nPricelists",         650, 400, "VendorPricelists.png",        "/vendor-pricelist"),
+
+        // ── Row 4 (bottom) ──
+        MakeNode("vendor",         "Vendor",                     430, 590, "Vendor.png",                  "/vendor"),
+    };
+
+    // ── Connectors ──────────────────────────────────────────────────────
+    //
+    //  Matches VB6 arrows:
+    //  - Model & Option Library ↔ Communities (bidirectional horizontal) [removed]
+    //  - Communities → Default Vendors (down)
+    //  - Item DB → Default Vendors (right)
+    //  - Default Vendors → Vendor Pricelists (right)
+    //  - Vendor → Default Vendors (up)
+    //  - Vendor Pricelists → Salespricing Worksheets (up)
+    //  - Item DB → Salespricing Worksheets (removed)
+    //  - Model & Option Library → Salespricing Worksheets (orthogonal)
+    //  - Communities → Salespricing Worksheets (vertical join to model connector)
+    //
+
+    private readonly List<HfDiagramConnector> _connectors = new()
+    {
+        // Model & Option Library ↔ Communities (removed)
+
+        // Communities → Default Vendors (down)
+        MakeConn("c3", "communities",   "default-vendors", HfDiagramPort.Bottom, HfDiagramPort.Top),
+
+        // Item DB → Default Vendors (right)
+        MakeConn("c4", "itemdb",        "default-vendors", HfDiagramPort.Right,  HfDiagramPort.Left),
+
+        // Default Vendors → Vendor Pricelists (right)
+        MakeConn("c5", "default-vendors","vendor-prices",  HfDiagramPort.Right,  HfDiagramPort.Left),
+
+        // Vendor → Default Vendors (up)
+        MakeConn("c6", "vendor",        "default-vendors", HfDiagramPort.Top,    HfDiagramPort.Bottom),
+
+        // Vendor Pricelists → Salespricing Worksheets (up)
+        MakeConn("c7", "vendor-prices", "salespricing",    HfDiagramPort.Top,    HfDiagramPort.Bottom),
+
+        // Model & Option Library → Salespricing Worksheets (orthogonal: up/right)
+        MakeConn("c8", "model-library", "salespricing",    HfDiagramPort.Top,    HfDiagramPort.Left,   HfConnectorType.Orthogonal),
+
+        // Communities → Salespricing Worksheets (orthogonal: vertical join into model connector)
+        MakeConn("c9", "communities",   "salespricing",    HfDiagramPort.Top,    HfDiagramPort.Left,   HfConnectorType.Orthogonal),
+    };
+
+    // ── Click handler ───────────────────────────────────────────────────
+    private void OnNodeClicked(HfDiagramNodeClickEventArgs args)
+    {
+        // Navigation is handled automatically via NavigateUrl.
+        // This handler is available for custom logic if needed.
+    }
+}

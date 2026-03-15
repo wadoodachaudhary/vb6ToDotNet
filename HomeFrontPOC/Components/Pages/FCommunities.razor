@@ -1,0 +1,2201 @@
+@page "/communities"
+@using HomeFront.Data
+@using HomeFront.Components.Hf
+@using Microsoft.JSInterop
+@using System.Data
+@using System.Reflection
+@layout HFComponent
+<PageTitle>Communities</PageTitle>
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1)
+        {
+            <div class="panel">
+                <div class="toolbar-cntr">
+                    <button class="e-btn" @onclick="OnNewClick">
+                        <img src="images/32/new.ico" class="tbar-icon" alt="New" />
+                        <span class="tool-label">New</span>
+                    </button>
+                    <button class="e-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+                        <img src="images/32/save.ico" class="tbar-icon" alt="Save" />
+                        <span class="tool-label">Save</span>
+                    </button>
+                    <button class="e-btn" disabled="@(SelectedCommunity == null)" @onclick="OnDeleteClick">
+                        <img src="images/32/delete.ico" class="tbar-icon" alt="Delete" />
+                        <span class="tool-label">Delete</span>
+                    </button>
+                </div>
+
+                <div class="content-wrapper">
+                    @if (IsLoading)
+                    {
+                        <div class="loading-overlay">
+                            <div class="loading-card">Loading...</div>
+                        </div>
+                    }
+                    <HfGrid @ref="gData"
+                            TValue="CommunityRow"
+                            DataSource="@CommunitiesData"
+                            AllowSelection="true"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            AllowResizing="true"
+                            EnableHover="true"
+                            Height="600px"
+                            RowHeight="32"
+                            ShowSearchBar="true"
+                            FilterSettingsRef="@filterSettings"
+                            SelectionSettingsRef="@selectionSettings"
+                            EventsRef="@communitiesEvents">
+                        <HfGridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunities-gData">
+                            <HfGridColumn Field="@nameof(CommunityRow.OriginalArea)" HeaderText="OriginalArea" Visible="false" AllowEditing="false" IsPrimaryKey="true" />
+
+                            @if (HasGridLayout)
+                            {
+                                @* Dynamic columns from IniGetGrid *@
+                                foreach (var entry in GetOrderedGridLayout())
+                                {
+                                    var layout = entry.Layout;
+                                    var fieldName = entry.Field;
+                                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                        : GetDefaultWidth(fieldName);
+
+                                    @RenderColumn(fieldName, headerText, width)
+                                }
+                            }
+                            else
+                            {
+                                @* Default columns (fallback when no DB layout exists) *@
+                                @RenderColumn("Area", CommunityTerm, "120px")
+                                @RenderColumn("Description", "Description", "200px")
+                                @RenderColumn("Comments", "Comments", "160px")
+                                @RenderColumn("Company", "Company", "150px")
+                                @RenderColumn("LotInventoryDebit", "Accounting", "140px")
+                                @RenderColumn("Divisions", "Divisions", "140px")
+                                @RenderColumn("Project_Manager", "Project Manager", "160px")
+                                @RenderColumn("CustServiceID", "Service Rep", "140px")
+                                @RenderColumn("WarrantyJob", "Warranty Job", "140px")
+                                @RenderColumn("DC_Sales_Person", "DC Sales Person", "160px")
+                                @RenderColumn("Inactive", "Inactive", "90px")
+                                @RenderColumn("BuildPro", "BuildPro", "90px")
+                                @RenderColumn("WrapInsuranceExempt", "Wrap Ins Exempt", "140px")
+                                @RenderColumn("GSTRate", "GST Rate", "100px")
+                                @RenderColumn("Contract_Document", "Contract Doc", "160px")
+                                @RenderColumn("Abr", "Abr", "80px")
+                                @RenderColumn("Purchaser", "Purchaser", "140px")
+                                @RenderColumn("SalesManagerEmail", "Sales Mgr Email", "200px")
+                                @RenderColumn("Email", "Email", "180px")
+                                @RenderColumn("Address1", "Address 1", "150px")
+                                @RenderColumn("Address2", "Address 2", "150px")
+                                @RenderColumn("City", "City", "120px")
+                                @RenderColumn("Province", "Province", "100px")
+                                @RenderColumn("Postal", "Postal", "100px")
+                                @RenderColumn("Country", "Country", "100px")
+                                @RenderColumn("County", "County", "100px")
+                                @RenderColumn("Phone", "Phone", "120px")
+                                @RenderColumn("Fax", "Fax", "120px")
+                                @RenderColumn("TaxNumber", "Tax Number", "120px")
+                                @RenderColumn("IncomePrefix", "Income Prefix", "100px")
+                                @RenderColumn("BalanceSheet", "Balance Sheet", "120px")
+                                @RenderColumn("Mortgage_Credit", "Mortgage Credit", "140px")
+                                @RenderColumn("BankAccount", "Bank Account", "120px")
+                                @RenderColumn("TarionBuilderNumber", "Tarion Builder #", "140px")
+                                @RenderColumn("LotInventoryCredit", "Lot Inv Credit", "140px")
+                                @RenderColumn("LabourTaxGroup", "Labour Tax Grp", "140px")
+                                @RenderColumn("MaterialTaxGroup", "Material Tax Grp", "140px")
+                                @RenderColumn("SubContractTaxGroup", "SubContract Tax Grp", "160px")
+                                @RenderColumn("EquipmentTaxGroup", "Equipment Tax Grp", "160px")
+                                @RenderColumn("OverheadTaxGroup", "Overhead Tax Grp", "150px")
+                                @RenderColumn("OtherTaxGroup", "Other Tax Grp", "140px")
+                                @RenderColumn("PSTRate", "PST Rate", "100px")
+                                @RenderColumn("IntacctEntity", "Intacct Entity", "140px")
+                                @RenderColumn("IntacctParentJob", "Intacct Parent Job", "160px")
+                                @RenderColumn("IntacctDepartment", "Intacct Dept", "140px")
+                            }
+                        </HfGridColumnsBase>
+                    </HfGrid>
+                </div>
+            </div>
+        }
+        else if (activeTab == 2)
+        {
+            <div class="panel">
+                <img src="images/VB6/Screen_IndexCommunities.png" class="task-icon-vb6" />
+            </div>
+        }
+    </div>
+</div>
+
+<HfDialog Visible="@CommentsDialogVisible"
+          Header="Edit Comments"
+          Width="500px"
+          Height="400px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="CloseCommentsDialog">
+    <ChildContent>
+        <HfTextBox @bind-Value="EditingComments"
+                   Multiline="true"
+                   CssClass="comments-textarea"
+                   Placeholder="Enter comments..."
+                   Rows="10" />
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="SaveComments">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="CloseCommentsDialog">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<HfDialog Visible="@DivisionsDialogVisible"
+          Header="Select Divisions"
+          Width="400px"
+          Height="500px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="CloseDivisionsDialog">
+    <ChildContent>
+        <HfListBox TItem="DivisionItem"
+                   DataSource="@AvailableDivisions"
+                   TextField="DivisionName"
+                   ValueField="DivisionCode"
+                   SelectionMode="HfListBoxSelectionMode.Multiple"
+                   ShowCheckbox="true"
+                   @bind-Value="SelectedDivisionCodes" />
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="SaveDivisions">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="CloseDivisionsDialog">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<HfDialog Visible="@PickerDialogVisible"
+          Header="@PickerTitle"
+          Width="500px"
+          Height="400px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="ClosePickerDialog">
+    <ChildContent>
+        <HfGrid TValue="PickerItem" DataSource="@PickerItems" AllowSelection="true" Height="250px" SelectionSettingsRef="@pickerSelectionSettings" EventsRef="@pickerEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(PickerItem.Id)" HeaderText="ID" Width="100px" />
+                <HfGridColumn Field="@nameof(PickerItem.Name)" HeaderText="Name" Width="200px" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmPicker">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="ClosePickerDialog">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<HfDialog Visible="@ConfirmDialogVisible"
+          Header="Confirm"
+          Width="400px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="ConfirmCancel">
+    <ChildContent>
+        <p>@ConfirmMessage</p>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmYes">Yes</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmNo">No</HfButton>
+        @if (ShowCancelButton)
+        {
+            <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmCancel">Cancel</HfButton>
+        }
+    </FooterContent>
+</HfDialog>
+
+<HfDialog Visible="@AccountingDialogVisible"
+          Header="Accounting"
+          Width="650px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          CssClass="accounting-dialog"
+          CloseOnEscape="true"
+          OnClose="OnAcctCancelClick">
+    <ChildContent>
+        @if (!IsIntacctSystem)
+        {
+            <div class="form-section">
+                <div class="form-section-title">GL Accounts</div>
+                <div class="field-row">
+                    <label class="field-label">Income Stmt Prefix</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="IncomePrefix" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="() => BrowsePrefix(1)">...</HfButton>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Balance Sheet Prefix</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="BalanceSheetPrefix" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="() => BrowsePrefix(2)">...</HfButton>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Lot Inventory Debit</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="LotInventoryDebit" />
+                    </div>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Lot Inventory Credit</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="LotInventoryCredit" />
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="form-section">
+                <div class="form-section-title">Organization</div>
+                <div class="field-row">
+                    <label class="field-label">Entity</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="IntacctEntity" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctEntity">...</HfButton>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Location</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="IntacctLocation" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctLocation">...</HfButton>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Parent Job</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="IntacctParentJob" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctParentJob">...</HfButton>
+                </div>
+                <div class="field-row">
+                    <label class="field-label">Department</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="IntacctDepartment" />
+                    </div>
+                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctDepartment">...</HfButton>
+                </div>
+            </div>
+        }
+
+        <div class="form-section">
+            <div class="form-section-title">Tax Groups</div>
+            <div class="tax-group-row">
+                <div class="tax-group-col">
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Labour</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="LabourTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(5)">...</HfButton>
+                    </div>
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Material</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="MaterialTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(6)">...</HfButton>
+                    </div>
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Sub Contracts</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="SubContractTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(7)">...</HfButton>
+                    </div>
+                </div>
+                <div class="tax-group-col">
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Equipment</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="EquipmentTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(8)">...</HfButton>
+                    </div>
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Overhead</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="OverheadTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(9)">...</HfButton>
+                    </div>
+                    <div class="tax-field-row">
+                        <label class="tax-field-label">Other</label>
+                        <HfTextBox CssClass="tax-field-input" @bind-Value="OtherTaxGroup" />
+                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(10)">...</HfButton>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="field-row">
+                <label class="field-label">Loan Draw Liability Acct</label>
+                <div class="field-input">
+                    <HfTextBox @bind-Value="MortgageCredit" />
+                </div>
+                <HfButton CssClass="mini-btn" OnClick="BrowseGLAccount">...</HfButton>
+            </div>
+
+            <div class="field-row">
+                <label class="field-label">Bank Account</label>
+                <div class="field-input">
+                    <HfTextBox @bind-Value="BankAccount" />
+                </div>
+                <HfButton CssClass="mini-btn" OnClick="BrowseBankAccount">...</HfButton>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <div class="form-section-title">Warranty</div>
+            <div class="field-row">
+                <label class="field-label">Warranty Job</label>
+                <div class="field-input">
+                    <HfTextBox @bind-Value="WarrantyJob" />
+                </div>
+            </div>
+
+            @if (ShowTarionFields)
+            {
+                <div class="field-row">
+                    <label class="field-label">Tarion Builder No</label>
+                    <div class="field-input">
+                        <HfTextBox @bind-Value="TarionBuilderNumber" />
+                    </div>
+                </div>
+            }
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="OnAcctOkClick">OK</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="OnAcctCancelClick">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<HfDialog Visible="@AccountingPickListDialogVisible"
+          Header="@PicklistTitle"
+          Width="500px"
+          IsModal="true"
+          ShowCloseIcon="true"
+          OnClose="() => AccountingPickListDialogVisible = false">
+    <ChildContent>
+        <HfGrid TValue="PickerItem" DataSource="@PickerItems" AllowSelection="true" Height="300px" SelectionSettingsRef="@pickerSelectionSettings" EventsRef="@picklistEvents">
+            <HfGridColumnsBase>
+                <HfGridColumn Field="@nameof(PickerItem.Id)" HeaderText="ID" Width="100px" />
+                <HfGridColumn Field="@nameof(PickerItem.Name)" HeaderText="Name" Width="200px" />
+            </HfGridColumnsBase>
+        </HfGrid>
+    </ChildContent>
+    <FooterContent>
+        <HfButton CssClass="hf-dialog-btn" OnClick="OnPicklistSelect">Select</HfButton>
+        <HfButton CssClass="hf-dialog-btn" OnClick="() => AccountingPickListDialogVisible = false">Cancel</HfButton>
+    </FooterContent>
+</HfDialog>
+
+<style>
+    .tabs-container {
+        margin: 20px auto;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .tab-buttons {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+    }
+
+    .tab-buttons button {
+        padding: 12px 24px;
+        border: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background 0.2s;
+    }
+
+    .tab-buttons button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-buttons button.active {
+        background: #fff;
+        border-bottom: 2px solid #007bff;
+        margin-bottom: -2px;
+        color: #007bff;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-top: none;
+        background: #fff;
+    }
+
+    .panel {
+        text-align: center;
+    }
+
+    .panel img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px;
+        display: flex;
+        gap: 6px;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+        padding: 6px 10px;
+        border: 1px solid #ccc;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+
+    .task-icon-vb6 {
+        width: 2000px;
+        height: auto;
+        display: block;
+    }
+
+    .content-wrapper {
+        position: relative;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 5;
+    }
+
+    .loading-card {
+        padding: 12px 18px;
+        background: #fff;
+        border: 1px solid #c9c9c9;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .inline-edit {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        justify-content: space-between;
+    }
+
+    .mini-btn {
+        padding: 2px 6px;
+        font-size: 12px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        color: #666;
+    }
+    .mini-btn:hover {
+        color: #007bff;
+    }
+
+    .grid-input {
+        width: 100%;
+        padding: 2px 4px;
+        border: none;
+        background: transparent;
+        outline: none;
+    }
+
+    .comments-textarea {
+        width: 100%;
+        min-height: 200px;
+        padding: 8px;
+        border: 1px solid #c9c9c9;
+        border-radius: 4px;
+    }
+
+    .division-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 320px;
+        overflow: auto;
+    }
+
+    .division-item {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .form-section {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    .form-section-title {
+        font-weight: bold;
+        color: #0066cc;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        gap: 8px;
+    }
+
+    .field-label {
+        width: 160px;
+        text-align: right;
+        padding-right: 10px;
+        font-weight: 500;
+    }
+
+    .field-input {
+        flex: 1;
+        max-width: 300px;
+    }
+
+    .tax-group-row {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .tax-group-col {
+        flex: 1;
+        min-width: 240px;
+    }
+
+    .tax-field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        gap: 6px;
+    }
+
+    .tax-field-label {
+        width: 100px;
+        text-align: right;
+        padding-right: 10px;
+    }
+
+    .tax-field-input {
+        width: 120px;
+    }
+
+    .hf-dialog-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .hf-dialog {
+        background: #fff;
+        border-radius: 8px;
+        min-width: 320px;
+        max-width: 90vw;
+        max-height: 90vh;
+        overflow: auto;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .hf-dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid #e0e0e0;
+        font-weight: 600;
+    }
+
+    .hf-dialog-close {
+        border: none;
+        background: transparent;
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .hf-dialog-body {
+        padding: 16px;
+    }
+
+    .hf-dialog-footer {
+        padding: 12px 16px;
+        border-top: 1px solid #e0e0e0;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .hf-dialog-btn {
+        padding: 6px 12px;
+        border: 1px solid #c9c9c9;
+        background: #f7f7f7;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .accounting-dialog {
+        width: 650px;
+        max-width: 90vw;
+    }
+
+    .hf-filter-row {
+        background-color: #FFFFCC !important;
+    }
+
+    .hf-filter-row input {
+        background-color: #FFFFCC !important;
+        border: 1px solid #999;
+    }
+</style>
+
+@code {
+    [Inject] public IJSRuntime JSRuntime { get; set; } = default!;
+
+    private const string SRCFILE = "Communities::";
+    private const string PRODUCT_NAME = "HomeFront";
+    private const string FormName = "FCommunities";
+    private const string GridName = "gData";
+
+    private readonly DbWrapperSqlServer db = new();
+
+    private HfGrid<CommunityRow>? gData;
+
+    private bool mDirty = false;
+    private bool IsLoading = false;
+    private string CommunityTerm = "Community";
+    private int activeTab = 1;
+
+    private bool ShowGSTRate = true;
+    private bool ShowPSTRate = false;
+
+    // === Grid Layout (from IniGetGrid) ===
+    private Dictionary<string, MMain.GridLayoutColumn> GridLayout = new(StringComparer.OrdinalIgnoreCase);
+    private int GridLayoutVersion = 0;
+    private bool HasGridLayout => GridLayout.Count > 0;
+
+    private List<CommunityRow> CommunitiesData = new();
+    private CommunityRow? SelectedCommunity;
+
+    private bool CommentsDialogVisible = false;
+    private string EditingComments = "";
+    private CommunityRow? EditingRow;
+    private bool DivisionsDialogVisible = false;
+    private List<DivisionItem> AvailableDivisions = new();
+    private List<string> SelectedDivisionCodes = new();
+    private bool PickerDialogVisible = false;
+    private string PickerTitle = "";
+    private List<PickerItem> PickerItems = new();
+    private PickerItem? SelectedPickerItem;
+    private Action<string>? PickerCallback;
+    private bool ConfirmDialogVisible = false;
+    private string ConfirmMessage = "";
+    private bool ShowCancelButton = false;
+    private bool AccountingDialogVisible = false;
+    private bool AccountingPickListDialogVisible = false;
+
+    private TaskCompletionSource<bool?>? ConfirmTcs;
+
+    private int DivisionID { get; set; } = 1;
+    private bool IsIntacctSystem { get; set; } = true;
+    private bool ShowTarionFields { get; set; } = true;
+    private string IntacctCompanyID { get; set; } = "";
+    private string IntacctUID { get; set; } = "";
+    private string IntacctPWD { get; set; } = "";
+    private string DefaultIntacctEntity { get; set; } = "";
+
+    private string IncomePrefix = "";
+    private string BalanceSheetPrefix = "";
+    private string LotInventoryDebit = "";
+    private string LotInventoryCredit = "";
+
+    private string IntacctEntity = "";
+    private string IntacctLocation = "";
+    private string IntacctParentJob = "";
+    private string IntacctDepartment = "";
+
+    private string LabourTaxGroup = "";
+    private string MaterialTaxGroup = "";
+    private string SubContractTaxGroup = "";
+    private string EquipmentTaxGroup = "";
+    private string OverheadTaxGroup = "";
+    private string OtherTaxGroup = "";
+
+    private string MortgageCredit = "";
+    private string BankAccount = "";
+    private string WarrantyJob = "";
+    private string TarionBuilderNumber = "";
+
+    private string PicklistTitle = "";
+    private List<Dictionary<string, object>> PicklistData = new();
+    private List<string> PicklistColumns = new();
+    private PickerItem? SelectedPicklistItem;
+    private int CurrentPicklistFieldIndex = 0;
+    private string PicklistValueColumn = "";
+
+    private string? _intacctEntitySQL = null;
+    private string? _intacctJobsSQL = null;
+
+    private readonly HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private readonly HfSelectionSettings selectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+    private readonly HfGridEvents<CommunityRow> communitiesEvents = new();
+
+    private readonly HfSelectionSettings pickerSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+    private readonly HfGridEvents<PickerItem> pickerEvents = new();
+    private readonly HfGridEvents<PickerItem> picklistEvents = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        communitiesEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityRow>>(this, OnRowSelected);
+        pickerEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPickerRowSelected);
+        picklistEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPicklistRowSelected);
+        await LoadGridLayoutAsync();
+        await LoadCustomDescriptions();
+        await LoadData();
+        await LoadDivisions();
+    }
+
+    private async Task LoadGridLayoutAsync()
+    {
+        GridLayout = await MMain.IniGetGridAsync(FormName, GridName, 0, grouped: false);
+        GridLayoutVersion++;
+    }
+
+    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
+    {
+        if (!HasGridLayout)
+            yield break;
+
+        var ordered = GridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveGridField(layout.Field);
+            yield return (layout, resolvedField);
+        }
+    }
+
+    private static readonly Dictionary<string, System.Reflection.PropertyInfo> _communityRowPropMap =
+        typeof(CommunityRow)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .GroupBy(p => p.Name.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static string ResolveGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField))
+            return "";
+
+        var trimmed = layoutField.Trim();
+
+        // Direct match
+        if (_communityRowPropMap.TryGetValue(trimmed.ToLowerInvariant(), out var prop))
+            return prop.Name;
+
+        return trimmed;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+    {
+        if (layoutWidth <= 0) return 0;
+        var px = (int)Math.Round(layoutWidth / 15.0);
+        px += 16;
+        if (px < 32) px = 32;
+        if (px > 2000) px = 2000;
+        return px;
+    }
+
+    // Columns that have custom templates (button pickers, checkboxes, etc.)
+    private static readonly HashSet<string> _buttonPickerFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Comments", "Company", "LotInventoryDebit", "Divisions",
+        "Project_Manager", "CustServiceID", "WarrantyJob",
+        "DC_Sales_Person", "Contract_Document", "Purchaser"
+    };
+
+    private static readonly HashSet<string> _checkboxFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Inactive", "BuildPro", "WrapInsuranceExempt"
+    };
+
+    private static readonly HashSet<string> _numericFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GSTRate", "PSTRate"
+    };
+
+    private static readonly HashSet<string> _textBoxFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Area", "Description", "Abr", "SalesManagerEmail"
+    };
+
+    // Default columns that are hidden unless IniGetGrid reveals them
+    private static readonly HashSet<string> _defaultHiddenFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Email", "Address1", "Address2", "City", "Province", "Postal", "Country", "County",
+        "Phone", "Fax", "TaxNumber", "IncomePrefix", "BalanceSheet", "Mortgage_Credit",
+        "BankAccount", "TarionBuilderNumber", "LotInventoryCredit",
+        "LabourTaxGroup", "MaterialTaxGroup", "SubContractTaxGroup",
+        "EquipmentTaxGroup", "OverheadTaxGroup", "OtherTaxGroup",
+        "IntacctEntity", "IntacctParentJob", "IntacctDepartment"
+    };
+
+    private static readonly Dictionary<string, string> _defaultWidths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Area"] = "120px", ["Description"] = "200px", ["Comments"] = "160px",
+        ["Company"] = "150px", ["LotInventoryDebit"] = "140px", ["Divisions"] = "140px",
+        ["Project_Manager"] = "160px", ["CustServiceID"] = "140px", ["WarrantyJob"] = "140px",
+        ["DC_Sales_Person"] = "160px", ["Inactive"] = "90px", ["BuildPro"] = "90px",
+        ["WrapInsuranceExempt"] = "140px", ["GSTRate"] = "100px", ["PSTRate"] = "100px",
+        ["Contract_Document"] = "160px", ["Abr"] = "80px", ["Purchaser"] = "140px",
+        ["SalesManagerEmail"] = "200px", ["Email"] = "180px",
+        ["Address1"] = "150px", ["Address2"] = "150px", ["City"] = "120px",
+        ["Province"] = "100px", ["Postal"] = "100px", ["Country"] = "100px", ["County"] = "100px",
+        ["Phone"] = "120px", ["Fax"] = "120px", ["TaxNumber"] = "120px",
+        ["IncomePrefix"] = "100px", ["BalanceSheet"] = "120px", ["Mortgage_Credit"] = "140px",
+        ["BankAccount"] = "120px", ["TarionBuilderNumber"] = "140px", ["LotInventoryCredit"] = "140px",
+        ["LabourTaxGroup"] = "140px", ["MaterialTaxGroup"] = "140px", ["SubContractTaxGroup"] = "160px",
+        ["EquipmentTaxGroup"] = "160px", ["OverheadTaxGroup"] = "150px", ["OtherTaxGroup"] = "140px",
+        ["IntacctEntity"] = "140px", ["IntacctParentJob"] = "160px", ["IntacctDepartment"] = "140px"
+    };
+
+    private string GetDefaultWidth(string fieldName)
+    {
+        return _defaultWidths.TryGetValue(fieldName, out var w) ? w : "120px";
+    }
+
+    private bool IsColumnVisible(string fieldName)
+    {
+        // When using IniGetGrid layout, all returned columns are visible (hidden ones are filtered out)
+        if (HasGridLayout) return true;
+        // For default layout, check hidden fields and special visibility
+        if (_defaultHiddenFields.Contains(fieldName)) return false;
+        if (fieldName.Equals("GSTRate", StringComparison.OrdinalIgnoreCase)) return ShowGSTRate;
+        if (fieldName.Equals("PSTRate", StringComparison.OrdinalIgnoreCase)) return ShowPSTRate;
+        return true;
+    }
+
+    private RenderFragment RenderColumn(string fieldName, string headerText, string width) => builder =>
+    {
+        var visible = IsColumnVisible(fieldName);
+
+        if (_checkboxFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "type", "checkbox");
+                b2.AddAttribute(2, "checked", GetCheckboxValue(row, fieldName));
+                b2.AddAttribute(3, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetCheckboxValue(row, fieldName, (bool)(e.Value ?? false));
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_numericFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "class", "grid-input");
+                b2.AddAttribute(2, "type", "number");
+                b2.AddAttribute(3, "step", "0.01");
+                b2.AddAttribute(4, "value", GetNumericValue(row, fieldName));
+                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetNumericValue(row, fieldName, e.Value?.ToString() ?? "0");
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_buttonPickerFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "AllowEditing", false);
+            builder.AddAttribute(6, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                b2.OpenElement(0, "div");
+                b2.AddAttribute(1, "class", "inline-edit");
+                b2.OpenElement(2, "span");
+                b2.AddContent(3, GetPickerDisplayValue(row, fieldName));
+                b2.CloseElement();
+                b2.OpenElement(4, "button");
+                b2.AddAttribute(5, "class", "mini-btn");
+                b2.AddAttribute(6, "onclick", EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, () => OnPickerButtonClick(row, fieldName)));
+                b2.AddContent(7, "...");
+                b2.CloseElement();
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else if (_textBoxFields.Contains(fieldName))
+        {
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase) ? CommunityTerm : headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
+            {
+                var row = (CommunityRow)context;
+                var isArea = fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase);
+                b2.OpenElement(0, "input");
+                b2.AddAttribute(1, "class", "grid-input");
+                b2.AddAttribute(2, "type", "text");
+                b2.AddAttribute(3, "value", GetStringValue(row, fieldName));
+                if (isArea && !string.IsNullOrEmpty(row.OriginalArea))
+                    b2.AddAttribute(4, "disabled", true);
+                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+                {
+                    SetStringValue(row, fieldName, e.Value?.ToString() ?? "");
+                    MarkDirty(row);
+                }));
+                b2.CloseElement();
+            }));
+            builder.CloseComponent();
+        }
+        else
+        {
+            // Plain text column (no template)
+            builder.OpenComponent<HfGridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.CloseComponent();
+        }
+    };
+
+    private string GetPickerDisplayValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Comments" => TruncateText(row.Comments, 30),
+            "Company" => row.Company,
+            "LotInventoryDebit" => row.LotInventoryDebit,
+            "Divisions" => row.Divisions,
+            "Project_Manager" => row.Project_Manager,
+            "CustServiceID" => row.CustServiceID,
+            "WarrantyJob" => row.WarrantyJob,
+            "DC_Sales_Person" => row.DC_Sales_Person,
+            "Contract_Document" => TruncateTextRight(row.Contract_Document, 20),
+            "Purchaser" => row.Purchaser,
+            _ => ""
+        };
+    }
+
+    private async Task OnPickerButtonClick(CommunityRow row, string field)
+    {
+        EditingRow = row;
+        switch (field)
+        {
+            case "Comments": EditComments(row); break;
+            case "Company": EditCompany(row); break;
+            case "LotInventoryDebit": EditAccounting(row); break;
+            case "Divisions": EditDivisions(row); break;
+            case "Project_Manager": await SelectProjectManager(row); break;
+            case "CustServiceID": await SelectCustService(row); break;
+            case "WarrantyJob": await SelectWarrantyJob(row); break;
+            case "DC_Sales_Person": await SelectDCSalesPerson(row); break;
+            case "Contract_Document": await BrowseContractDocument(row); break;
+            case "Purchaser": await SelectPurchaser(row); break;
+        }
+    }
+
+    private string GetStringValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Area" => row.Area,
+            "Description" => row.Description,
+            "Abr" => row.Abr,
+            "SalesManagerEmail" => row.SalesManagerEmail,
+            _ => ""
+        };
+    }
+
+    private void SetStringValue(CommunityRow row, string field, string value)
+    {
+        switch (field)
+        {
+            case "Area": row.Area = value; break;
+            case "Description": row.Description = value; break;
+            case "Abr": row.Abr = value; break;
+            case "SalesManagerEmail": row.SalesManagerEmail = value; break;
+        }
+    }
+
+    private bool GetCheckboxValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "Inactive" => row.Inactive,
+            "BuildPro" => row.BuildPro,
+            "WrapInsuranceExempt" => row.WrapInsuranceExempt,
+            _ => false
+        };
+    }
+
+    private void SetCheckboxValue(CommunityRow row, string field, bool value)
+    {
+        switch (field)
+        {
+            case "Inactive": row.Inactive = value; break;
+            case "BuildPro": row.BuildPro = value; break;
+            case "WrapInsuranceExempt": row.WrapInsuranceExempt = value; break;
+        }
+    }
+
+    private decimal GetNumericValue(CommunityRow row, string field)
+    {
+        return field switch
+        {
+            "GSTRate" => row.GSTRate,
+            "PSTRate" => row.PSTRate,
+            _ => 0m
+        };
+    }
+
+    private void SetNumericValue(CommunityRow row, string field, string value)
+    {
+        if (!decimal.TryParse(value, out var d)) d = 0;
+        switch (field)
+        {
+            case "GSTRate": row.GSTRate = d; break;
+            case "PSTRate": row.PSTRate = d; break;
+        }
+    }
+
+    private void MarkDirty(CommunityRow row)
+    {
+        row.IsDirty = true;
+        mDirty = true;
+    }
+
+    private string TruncateText(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length > max ? text.Substring(0, max) + "..." : text;
+    }
+
+    private string TruncateTextRight(string? text, int max)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length > max ? "..." + text.Substring(text.Length - max) : text;
+    }
+
+    private async Task LoadCustomDescriptions()
+    {
+        try
+        {
+            var result = db.ExecuteScalar<string>(
+                "SELECT ISNULL(NULLIF(custom_description,''),item) FROM customdescriptions WHERE item='Community'");
+            if (!string.IsNullOrEmpty(result))
+            {
+                CommunityTerm = result;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}LoadCustomDescriptions] Error: {ex.Message}");
+        }
+    }
+
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var sql = @"
+                SELECT l.BankAccount, l.Area, l.Description, l.Abr, l.Last_Customer, l.Contract_Document, 
+                       l.Lot_Inv_Debit, l.Lot_Inv_Credit, l.Project_Manager, l.CustServiceID, l.DC_Sales_Person, 
+                       l.last_job_no, l.developer, l.Prefix1, l.Prefix2, l.CompanyName, l.CompanyLogo, 
+                       l.Address1, l.Address2, l.City, l.Province, l.Zip, l.GSTNumber, l.Phone, l.FAX, l.Email, 
+                       l.Est_DB_Path, l.WMS_DB_path, l.Sales_SystemID, l.EST_Phase_code, l.seq,
+                       l.Comments, l.Inactive, l.ProjectCost, l.DepositGL, l.UsesPhases, l.Country, l.County, 
+                       l.LabourTaxGroup, l.MaterialTaxGroup, l.SubContractTaxGroup, l.EquipmentTaxGroup, 
+                       l.OverheadTaxGroup, l.TarionBuilderNumber, l.OtherTaxGroup, l.WarrantyJob, l.GSTRate, 
+                       l.PSTRate, l.SalesManagerEmail, l.LastPOSeq, l.purchaser, dc.BuildProEnabled BuildPro, 
+                       l.WrapInsuranceExempt, l.IntacctEntity, l.IntacctParentJob, l.IntacctDepartment, l.Mortgage_Credit
+                FROM tbllocality l
+                LEFT OUTER JOIN DivisionCommunities dc ON dc.Community = l.Area AND dc.DivisionID = @DivisionID";
+            var results = await db.QueryAsync(sql, new { DivisionID });
+            CommunitiesData = results.Select(row => new CommunityRow
+            {
+                OriginalArea = row["Area"]?.ToString() ?? "",
+                Area = row["Area"]?.ToString() ?? "",
+                Description = row["Description"]?.ToString() ?? "",
+                Abr = row["Abr"]?.ToString() ?? "",
+                Comments = row["Comments"]?.ToString() ?? "",
+                Company = row["CompanyName"]?.ToString() ?? "",
+                Address1 = row["Address1"]?.ToString() ?? "",
+                Address2 = row["Address2"]?.ToString() ?? "",
+                City = row["City"]?.ToString() ?? "",
+                Province = row["Province"]?.ToString() ?? "",
+                Postal = row["Zip"]?.ToString() ?? "",
+                Country = row["Country"]?.ToString() ?? "",
+                County = row["County"]?.ToString() ?? "",
+                Phone = row["Phone"]?.ToString() ?? "",
+                Fax = row["FAX"]?.ToString() ?? "",
+                Email = row["Email"]?.ToString() ?? "",
+                TaxNumber = row["GSTNumber"]?.ToString() ?? "",
+                WarrantyJob = row["WarrantyJob"]?.ToString() ?? "",
+                IncomePrefix = row["Prefix2"]?.ToString() ?? "",
+                BalanceSheet = row["Prefix1"]?.ToString() ?? "",
+                Mortgage_Credit = row["Mortgage_Credit"]?.ToString() ?? "",
+                BankAccount = row["BankAccount"]?.ToString() ?? "",
+                TarionBuilderNumber = row["TarionBuilderNumber"]?.ToString() ?? "",
+                LotInventoryDebit = row["Lot_Inv_Debit"]?.ToString() ?? "",
+                LotInventoryCredit = row["Lot_Inv_Credit"]?.ToString() ?? "",
+                Project_Manager = row["Project_Manager"]?.ToString() ?? "",
+                CustServiceID = row["CustServiceID"]?.ToString() ?? "",
+                DC_Sales_Person = row["DC_Sales_Person"]?.ToString() ?? "",
+                Contract_Document = row["Contract_Document"]?.ToString() ?? "",
+                Purchaser = row["purchaser"]?.ToString() ?? "",
+                LabourTaxGroup = row["LabourTaxGroup"]?.ToString() ?? "",
+                MaterialTaxGroup = row["MaterialTaxGroup"]?.ToString() ?? "",
+                SubContractTaxGroup = row["SubContractTaxGroup"]?.ToString() ?? "",
+                EquipmentTaxGroup = row["EquipmentTaxGroup"]?.ToString() ?? "",
+                OverheadTaxGroup = row["OverheadTaxGroup"]?.ToString() ?? "",
+                OtherTaxGroup = row["OtherTaxGroup"]?.ToString() ?? "",
+                GSTRate = ToDecimal(row["GSTRate"]),
+                PSTRate = ToDecimal(row["PSTRate"]),
+                SalesManagerEmail = row["SalesManagerEmail"]?.ToString() ?? "",
+                IntacctEntity = row["IntacctEntity"]?.ToString() ?? "",
+                IntacctParentJob = row["IntacctParentJob"]?.ToString() ?? "",
+                IntacctDepartment = row["IntacctDepartment"]?.ToString() ?? "",
+                Inactive = ToBool(row["Inactive"]),
+                BuildPro = ToBool(row["BuildPro"]),
+                WrapInsuranceExempt = ToBool(row["WrapInsuranceExempt"]),
+                IsDirty = false,
+                IsDeleted = false
+            }).ToList();
+            Console.WriteLine($"Abbreviations: {CommunitiesData[0].Abr} Area: {CommunitiesData[0].Area} Desc: {CommunitiesData[0].Description}"); 
+            await LoadCommunityDivisions();
+            mDirty = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}LoadData] Error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCommunityDivisions()
+    {
+        var sql = @"
+            SELECT l.area, d.divisioncode
+            FROM tbllocality l
+            LEFT OUTER JOIN divisioncommunities dc ON l.area = dc.community
+            LEFT OUTER JOIN divisions d ON d.divisionid = dc.divisionid
+            ORDER BY 1, 2";
+        var results = await db.QueryAsync(sql);
+        var divisionsByArea = results
+            .GroupBy(r => r["area"]?.ToString() ?? "")
+            .ToDictionary(
+                g => g.Key,
+                g => string.Join(", ", g.Where(r => r["divisioncode"] != null)
+                    .Select(r => r["divisioncode"].ToString()))
+            );
+        foreach (var community in CommunitiesData)
+        {
+            if (divisionsByArea.TryGetValue(community.Area, out var divisions))
+            {
+                community.Divisions = divisions;
+            }
+        }
+    }
+
+    private async Task LoadDivisions()
+    {
+        var sql = "SELECT DivisionCode, DivisionName FROM Divisions ORDER BY DivisionCode";
+        var results = await db.QueryAsync(sql);
+        AvailableDivisions = results.Select(r => new DivisionItem
+        {
+            DivisionCode = r["DivisionCode"]?.ToString() ?? "",
+            DivisionName = r["DivisionName"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty)
+            return true;
+        if (prompt)
+        {
+            var result = await ShowConfirmDialog("This data has changed.\n\nDo you want to save the changes?", true);
+            if (result == null) return false;
+            if (result == false) return true;
+        }
+        IsLoading = true;
+        StateHasChanged();
+        try
+        {
+            var deletedRows = CommunitiesData.Where(r => r.IsDeleted).ToList();
+            foreach (var row in deletedRows)
+            {
+                if (!string.IsNullOrEmpty(row.OriginalArea))
+                {
+                    var deleteSql = $"EXEC sp_DeleteCommunity @Area";
+                    await db.ExecuteAsync(deleteSql, new { Area = row.OriginalArea });
+                }
+                CommunitiesData.Remove(row);
+            }
+
+            var dirtyRows = CommunitiesData.Where(r => r.IsDirty && !r.IsDeleted).ToList();
+            foreach (var row in dirtyRows)
+            {
+                if (string.IsNullOrWhiteSpace(row.Area))
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "The community field cannot be blank");
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(row.OriginalArea))
+                {
+                    var insertSql = "INSERT INTO tblLocality(Area) VALUES(@Area)";
+                    await db.ExecuteAsync(insertSql, new { row.Area });
+                    var insertDivSql = @"
+                        INSERT INTO DivisionCommunities(DivisionID, Community) 
+                        SELECT @DivisionID, area 
+                        FROM tbllocality a 
+                        LEFT OUTER JOIN DivisionCommunities dc ON dc.Community = a.Area AND dc.DivisionID = @DivisionID  
+                        WHERE a.area = @Area AND dc.community IS NULL";
+                    await db.ExecuteAsync(insertDivSql, new { DivisionID, row.Area });
+                    row.OriginalArea = row.Area;
+                }
+
+                var updateSql = @"
+                    UPDATE tblLocality SET
+                        Description = @Description,
+                        Comments = @Comments,
+                        CompanyName = @Company,
+                        Address1 = @Address1,
+                        Address2 = @Address2,
+                        Email = @Email,
+                        City = @City,
+                        Province = @Province,
+                        Zip = @Postal,
+                        Country = @Country,
+                        County = @County,
+                        Phone = @Phone,
+                        Fax = @Fax,
+                        GSTNumber = @TaxNumber,
+                        Prefix1 = @BalanceSheet,
+                        Prefix2 = @IncomePrefix,
+                        Mortgage_Credit = @Mortgage_Credit,
+                        BankAccount = @BankAccount,
+                        TarionBuilderNumber = @TarionBuilderNumber,
+                        Lot_Inv_Debit = @LotInventoryDebit,
+                        Lot_Inv_Credit = @LotInventoryCredit,
+                        Project_Manager = @Project_Manager,
+                        CustServiceID = @CustServiceID,
+                        DC_Sales_Person = @DC_Sales_Person,
+                        Contract_Document = @Contract_Document,
+                        WarrantyJob = @WarrantyJob,
+                        Purchaser = @Purchaser,
+                        WrapInsuranceExempt = @WrapInsuranceExempt,
+                        Inactive = @Inactive,
+                        LabourTaxGroup = @LabourTaxGroup,
+                        MaterialTaxGroup = @MaterialTaxGroup,
+                        SubContractTaxGroup = @SubContractTaxGroup,
+                        EquipmentTaxGroup = @EquipmentTaxGroup,
+                        OverheadTaxGroup = @OverheadTaxGroup,
+                        OtherTaxGroup = @OtherTaxGroup,
+                        GSTRate = @GSTRate,
+                        PSTRate = @PSTRate,
+                        Abr = @Abr,
+                        SalesManagerEmail = @SalesManagerEmail,
+                        IntacctEntity = @IntacctEntity,
+                        IntacctParentJob = @IntacctParentJob,
+                        IntacctDepartment = @IntacctDepartment
+                    WHERE Area = @Area";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    row.Description,
+                    row.Comments,
+                    row.Company,
+                    row.Address1,
+                    row.Address2,
+                    row.Email,
+                    row.City,
+                    row.Province,
+                    row.Postal,
+                    row.Country,
+                    row.County,
+                    row.Phone,
+                    row.Fax,
+                    row.TaxNumber,
+                    row.BalanceSheet,
+                    row.IncomePrefix,
+                    row.Mortgage_Credit,
+                    row.BankAccount,
+                    row.TarionBuilderNumber,
+                    row.LotInventoryDebit,
+                    row.LotInventoryCredit,
+                    row.Project_Manager,
+                    row.CustServiceID,
+                    row.DC_Sales_Person,
+                    row.Contract_Document,
+                    row.WarrantyJob,
+                    row.Purchaser,
+                    WrapInsuranceExempt = row.WrapInsuranceExempt ? 1 : 0,
+                    Inactive = row.Inactive ? 1 : 0,
+                    row.LabourTaxGroup,
+                    row.MaterialTaxGroup,
+                    row.SubContractTaxGroup,
+                    row.EquipmentTaxGroup,
+                    row.OverheadTaxGroup,
+                    row.OtherTaxGroup,
+                    row.GSTRate,
+                    row.PSTRate,
+                    row.Abr,
+                    row.SalesManagerEmail,
+                    row.IntacctEntity,
+                    row.IntacctParentJob,
+                    row.IntacctDepartment,
+                    row.Area
+                });
+
+                var deleteDivSql = "DELETE DivisionCommunities WHERE Community = @Area";
+                await db.ExecuteAsync(deleteDivSql, new { row.Area });
+                if (!string.IsNullOrEmpty(row.Divisions))
+                {
+                    var divisionCodes = row.Divisions.Split(',').Select(d => d.Trim()).Where(d => !string.IsNullOrEmpty(d));
+                    foreach (var divCode in divisionCodes)
+                    {
+                        var insertDivComSql = @"
+                            INSERT INTO DivisionCommunities(DivisionID, Community, BuildProEnabled)
+                            SELECT d.DivisionID, @Area, @BuildPro
+                            FROM Divisions d WHERE d.DivisionCode = @DivisionCode";
+                        await db.ExecuteAsync(insertDivComSql, new { row.Area, BuildPro = row.BuildPro ? 1 : 0, DivisionCode = divCode });
+                    }
+                }
+                row.IsDirty = false;
+            }
+            mDirty = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "This ID is taken. Please choose something else.");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            }
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task OnNewClick()
+    {
+        var newRow = new CommunityRow
+        {
+            OriginalArea = "",
+            Area = "",
+            IsDirty = true,
+            IsDeleted = false
+        };
+
+        var defaultDivision = db.ExecuteScalar<string>(
+            "SELECT DivisionCode FROM Divisions WHERE DivisionID = @DivisionID",
+            new { DivisionID });
+        if (!string.IsNullOrEmpty(defaultDivision))
+        {
+            newRow.Divisions = defaultDivision;
+        }
+        CommunitiesData.Add(newRow);
+        SelectedCommunity = newRow;
+        mDirty = true;
+        StateHasChanged();
+
+        if (gData != null)
+        {
+            var targetPage = Math.Max(1, gData.TotalPages);
+            await gData.GoToPageAsync(targetPage);
+        }
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (SelectedCommunity == null) return;
+
+        var canDelete = db.ExecuteScalar<string>(
+            "SELECT dbo.sp_CanDeleteCommunity(@Area)",
+            new { Area = SelectedCommunity.Area });
+        if (canDelete == "False")
+        {
+            await JSRuntime.InvokeVoidAsync("alert",
+                "You cannot delete a community that has customers, jobs or assemblies associated with it.");
+            return;
+        }
+        SelectedCommunity.IsDeleted = true;
+        SelectedCommunity.IsDirty = true;
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    private void OnRowSelected(RowSelectEventArgs<CommunityRow> args)
+    {
+        SelectedCommunity = args.Data;
+    }
+
+    private void EditComments(CommunityRow row)
+    {
+        EditingRow = row;
+        EditingComments = row.Comments ?? "";
+        CommentsDialogVisible = true;
+        StateHasChanged();
+    }
+
+    private void SaveComments()
+    {
+        if (EditingRow != null)
+        {
+            EditingRow.Comments = EditingComments;
+            MarkDirty(EditingRow);
+        }
+        CommentsDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void CloseCommentsDialog()
+    {
+        CommentsDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void EditDivisions(CommunityRow row)
+    {
+        EditingRow = row;
+        SelectedDivisionCodes = (row.Divisions ?? "")
+            .Split(',')
+            .Select(d => d.Trim())
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        DivisionsDialogVisible = true;
+        StateHasChanged();
+    }
+
+    private void SaveDivisions()
+    {
+        if (EditingRow != null)
+        {
+            EditingRow.Divisions = string.Join(", ", SelectedDivisionCodes);
+            MarkDirty(EditingRow);
+        }
+        DivisionsDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void CloseDivisionsDialog()
+    {
+        DivisionsDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectProjectManager(CommunityRow row)
+    {
+        await ShowPicker(
+            "Select Project Manager",
+            "SELECT pm Id, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(PrjMgr,0)=1",
+            value =>
+            {
+                row.Project_Manager = value;
+                MarkDirty(row);
+            });
+    }
+
+    private async Task SelectPurchaser(CommunityRow row)
+    {
+        await ShowPicker(
+            "Select Purchaser",
+            "SELECT pm Id, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(Purchaser,0)=1",
+            value =>
+            {
+                row.Purchaser = value;
+                MarkDirty(row);
+            });
+    }
+
+    private async Task SelectCustService(CommunityRow row)
+    {
+        await ShowPicker(
+            "Select Customer Service Person",
+            "SELECT custserviceid Id, custservicename Name FROM tblcustserviceperson",
+            value =>
+            {
+                row.CustServiceID = value;
+                MarkDirty(row);
+            });
+    }
+
+    private async Task SelectDCSalesPerson(CommunityRow row)
+    {
+        await ShowPicker(
+            "Select DC Sales Person",
+            "SELECT sales_person_id Id, sales_person_name Name FROM tblsales_persons WHERE ISNULL(inactive,0)=0 AND ISNULL(dcsales,0)=1",
+            value =>
+            {
+                row.DC_Sales_Person = value;
+                MarkDirty(row);
+            });
+    }
+
+    private async Task SelectWarrantyJob(CommunityRow row)
+    {
+        await ShowPicker(
+            "Select Warranty Job",
+            $"SELECT job_no Id, Description Name FROM tblJobs WHERE DivisionID = {DivisionID} AND ISNULL(inactive,0)=0",
+            value =>
+            {
+                row.WarrantyJob = value;
+                MarkDirty(row);
+            });
+    }
+
+    private async Task ShowPicker(string title, string sql, Action<string> callback)
+    {
+        PickerTitle = title;
+        PickerCallback = callback;
+        var results = await db.QueryAsync(sql);
+        PickerItems = results.Select(r => new PickerItem
+        {
+            Id = r["Id"]?.ToString() ?? "",
+            Name = r["Name"]?.ToString() ?? ""
+        }).ToList();
+        SelectedPickerItem = null;
+        PickerDialogVisible = true;
+        StateHasChanged();
+    }
+
+    private void OnPickerRowSelected(RowSelectEventArgs<PickerItem> args)
+    {
+        SelectedPickerItem = args.Data;
+    }
+
+    private void ConfirmPicker()
+    {
+        if (SelectedPickerItem != null && PickerCallback != null)
+        {
+            PickerCallback(SelectedPickerItem.Id);
+        }
+        PickerDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void ClosePickerDialog()
+    {
+        PickerDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void EditCompany(CommunityRow row)
+    {
+        EditingRow = row;
+    }
+
+    private void EditAccounting(CommunityRow row)
+    {
+        EditingRow = row;
+        var data = new CommunityAccountingData
+        {
+            WarrantyJob = row.WarrantyJob,
+            IncomePrefix = row.IncomePrefix,
+            BalanceSheet = row.BalanceSheet,
+            LotInventoryDebit = row.LotInventoryDebit,
+            LotInventoryCredit = row.LotInventoryCredit,
+            LabourTaxGroup = row.LabourTaxGroup,
+            MaterialTaxGroup = row.MaterialTaxGroup,
+            SubContractTaxGroup = row.SubContractTaxGroup,
+            EquipmentTaxGroup = row.EquipmentTaxGroup,
+            OverheadTaxGroup = row.OverheadTaxGroup,
+            OtherTaxGroup = row.OtherTaxGroup,
+            IntacctEntity = row.IntacctEntity,
+            IntacctLocation = row.IntacctDepartment,
+            IntacctParentJob = row.IntacctParentJob,
+            IntacctDepartment = row.IntacctDepartment,
+            MortgageCredit = row.Mortgage_Credit,
+            BankAccount = row.BankAccount,
+            TarionBuilderNumber = row.TarionBuilderNumber
+        };
+        ShowAccountingForm(data);
+    }
+
+    private async Task BrowseContractDocument(CommunityRow row)
+    {
+        EditingRow = row;
+        await JSRuntime.InvokeVoidAsync("alert", "File browsing would be implemented with an InputFile component or file picker service");
+    }
+
+    private async Task<bool?> ShowConfirmDialog(string message, bool showCancel = false)
+    {
+        ConfirmMessage = message;
+        ShowCancelButton = showCancel;
+        ConfirmTcs = new TaskCompletionSource<bool?>();
+        ConfirmDialogVisible = true;
+        StateHasChanged();
+        return await ConfirmTcs.Task;
+    }
+
+    private void ConfirmYes()
+    {
+        ConfirmDialogVisible = false;
+        ConfirmTcs?.SetResult(true);
+        StateHasChanged();
+    }
+
+    private void ConfirmNo()
+    {
+        ConfirmDialogVisible = false;
+        ConfirmTcs?.SetResult(false);
+        StateHasChanged();
+    }
+
+    private void ConfirmCancel()
+    {
+        ConfirmDialogVisible = false;
+        ConfirmTcs?.SetResult(null);
+        StateHasChanged();
+    }
+
+    private decimal ToDecimal(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        return Convert.ToDecimal(value);
+    }
+
+    private bool ToBool(object? value)
+    {
+        if (value == null || value == DBNull.Value) return false;
+        if (value is bool b) return b;
+        if (value is int i) return i != 0;
+        if (value is string s) return s.Equals("True", StringComparison.OrdinalIgnoreCase) || s == "1";
+        return Convert.ToBoolean(value);
+    }
+
+    private async Task<bool> ValidateTaxGroups()
+    {
+        var taxGroups = new[]
+        {
+            (LabourTaxGroup, "Labour"),
+            (MaterialTaxGroup, "Material"),
+            (SubContractTaxGroup, "Sub Contract"),
+            (EquipmentTaxGroup, "Equipment"),
+            (OverheadTaxGroup, "Overhead"),
+            (OtherTaxGroup, "Other")
+        };
+
+        foreach (var (value, name) in taxGroups)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                var isValid = await ValidateTaxGroup(value);
+                if (!isValid)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", $"Invalid Tax Group for {name}: {value}");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private async Task<bool> ValidateTaxGroup(string taxGroup)
+    {
+        var sql = "SELECT TaxGroup FROM TaxGroups WHERE DivisionID = @DivisionID AND TaxGroup = @TaxGroup";
+        var result = await db.QueryAsync(sql, new { DivisionID, TaxGroup = taxGroup });
+        return result.Any();
+    }
+
+    private async Task BrowsePrefix(int fieldIndex)
+    {
+        if (IsIntacctSystem)
+        {
+            var sql = @"SELECT Description, GL_Prefix AS Location, '' AS Extra 
+                        FROM GL_Prefix 
+                        WHERE DivisionID = @DivisionID 
+                        ORDER BY Description";
+            await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", fieldIndex);
+        }
+        else
+        {
+            var sql = @"SELECT Description, GL_Prefix AS Prefix 
+                        FROM GL_Prefix 
+                        WHERE DivisionID = @DivisionID 
+                        ORDER BY Description";
+            await ShowPicklistDialog("Prefix List", sql, new { DivisionID }, "Prefix", fieldIndex);
+        }
+    }
+
+    private async Task BrowseTaxGroup(int fieldIndex)
+    {
+        var sql = @"SELECT TaxGroup, Description 
+                    FROM TaxGroups 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY TaxGroup";
+        await ShowPicklistDialog("Tax Group", sql, new { DivisionID }, "TaxGroup", fieldIndex);
+    }
+
+    private async Task BrowseGLAccount()
+    {
+        var sql = @"SELECT Account, Description, AccountType 
+                    FROM GLAccounts 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY Account";
+        await ShowPicklistDialog("GL Account", sql, new { DivisionID }, "Account", 15);
+    }
+
+    private async Task BrowseBankAccount()
+    {
+        var sql = @"SELECT BankAccount, Description 
+                    FROM BankAccounts 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY BankAccount";
+        await ShowPicklistDialog("Bank Account", sql, new { DivisionID }, "BankAccount", 16);
+    }
+
+    private async Task BrowseIntacctEntity()
+    {
+        if (string.IsNullOrEmpty(_intacctEntitySQL))
+        {
+            _intacctEntitySQL = @"SELECT EntityID, Name AS Description 
+                                  FROM IntacctEntities 
+                                  WHERE DivisionID = @DivisionID 
+                                  ORDER BY Name";
+        }
+        await ShowPicklistDialog("Entity", _intacctEntitySQL, new { DivisionID }, "EntityID", 11);
+    }
+
+    private async Task BrowseIntacctLocation()
+    {
+        var sql = @"SELECT Description, GL_Prefix AS Location 
+                    FROM GL_Prefix 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY Description";
+        await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", 12);
+    }
+
+    private async Task BrowseIntacctParentJob()
+    {
+        if (string.IsNullOrEmpty(_intacctJobsSQL))
+        {
+            _intacctJobsSQL = @"SELECT JobID AS Job, Name AS Description 
+                                FROM IntacctJobs 
+                                WHERE DivisionID = @DivisionID 
+                                ORDER BY Name";
+        }
+        await ShowPicklistDialog("Parent Job", _intacctJobsSQL, new { DivisionID }, "Job", 13);
+    }
+
+    private async Task BrowseIntacctDepartment()
+    {
+        var sql = @"SELECT ID, Name 
+                    FROM IntacctDepartments 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY ID";
+        await ShowPicklistDialog("Department", sql, new { DivisionID }, "ID", 14);
+    }
+
+    private async Task ShowPicklistDialog(string title, string sql, object parameters, string valueColumn, int fieldIndex)
+    {
+        try
+        {
+            var data = await db.QueryAsync(sql, parameters);
+            if (!data.Any())
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "No items found.");
+                return;
+            }
+            PicklistTitle = title;
+            PicklistData = data.ToList();
+            PicklistColumns = data.First().Keys.ToList();
+            var idCol = PicklistColumns[0];
+            var idName = PicklistColumns[1];
+            PickerItems = data.Select(r => new PickerItem
+            {
+                Id = r[idCol]?.ToString() ?? "",
+                Name = r[idName]?.ToString() ?? ""
+            }).ToList();
+
+            PicklistValueColumn = valueColumn;
+            CurrentPicklistFieldIndex = fieldIndex;
+            SelectedPicklistItem = null;
+
+            AccountingPickListDialogVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading picklist: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading list: {ex.Message}");
+        }
+    }
+
+    private void OnPicklistRowSelected(RowSelectEventArgs<PickerItem> args)
+    {
+        SelectedPicklistItem = args.Data;
+    }
+
+    private void OnPicklistSelect()
+    {
+        if (SelectedPicklistItem == null) return;
+
+        var value = SelectedPicklistItem.Id;
+        SetFieldValue(CurrentPicklistFieldIndex, value);
+        AccountingPickListDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void SetFieldValue(int index, string value)
+    {
+        switch (index)
+        {
+            case 1: IncomePrefix = value; break;
+            case 2: BalanceSheetPrefix = value; break;
+            case 5: LabourTaxGroup = value; break;
+            case 6: MaterialTaxGroup = value; break;
+            case 7: SubContractTaxGroup = value; break;
+            case 8: EquipmentTaxGroup = value; break;
+            case 9: OverheadTaxGroup = value; break;
+            case 10: OtherTaxGroup = value; break;
+            case 11: IntacctEntity = value; break;
+            case 12: IntacctLocation = value; break;
+            case 13: IntacctParentJob = value; break;
+            case 14: IntacctDepartment = value; break;
+            case 15: MortgageCredit = value; break;
+            case 16: BankAccount = value; break;
+        }
+    }
+
+    private void ShowAccountingForm(CommunityAccountingData data)
+    {
+        LoadFromData(data);
+        AccountingDialogVisible = true;
+        StateHasChanged();
+    }
+
+    private void LoadFromData(CommunityAccountingData data)
+    {
+        WarrantyJob = data.WarrantyJob ?? "";
+        IncomePrefix = data.IncomePrefix ?? "";
+        BalanceSheetPrefix = data.BalanceSheet ?? "";
+        LotInventoryDebit = data.LotInventoryDebit ?? "";
+        LotInventoryCredit = data.LotInventoryCredit ?? "";
+        LabourTaxGroup = data.LabourTaxGroup ?? "";
+        MaterialTaxGroup = data.MaterialTaxGroup ?? "";
+        SubContractTaxGroup = data.SubContractTaxGroup ?? "";
+        EquipmentTaxGroup = data.EquipmentTaxGroup ?? "";
+        OverheadTaxGroup = data.OverheadTaxGroup ?? "";
+        OtherTaxGroup = data.OtherTaxGroup ?? "";
+        IntacctEntity = data.IntacctEntity ?? "";
+        IntacctLocation = data.IntacctLocation ?? "";
+        IntacctParentJob = data.IntacctParentJob ?? "";
+        IntacctDepartment = data.IntacctDepartment ?? "";
+        MortgageCredit = data.MortgageCredit ?? "";
+        BankAccount = data.BankAccount ?? "";
+        TarionBuilderNumber = data.TarionBuilderNumber ?? "";
+
+        if (string.IsNullOrEmpty(IntacctEntity))
+        {
+            IntacctEntity = DefaultIntacctEntity;
+        }
+    }
+
+    private CommunityAccountingData GetCurrentData()
+    {
+        var data = new CommunityAccountingData
+        {
+            WarrantyJob = WarrantyJob,
+            LotInventoryDebit = LotInventoryDebit,
+            LotInventoryCredit = LotInventoryCredit,
+            LabourTaxGroup = LabourTaxGroup,
+            MaterialTaxGroup = MaterialTaxGroup,
+            SubContractTaxGroup = SubContractTaxGroup,
+            EquipmentTaxGroup = EquipmentTaxGroup,
+            OverheadTaxGroup = OverheadTaxGroup,
+            OtherTaxGroup = OtherTaxGroup,
+            MortgageCredit = MortgageCredit,
+            BankAccount = BankAccount,
+            TarionBuilderNumber = TarionBuilderNumber
+        };
+
+        if (IsIntacctSystem)
+        {
+            data.IntacctEntity = IntacctEntity;
+            data.IntacctLocation = IntacctLocation;
+            data.IncomePrefix = IntacctLocation;
+            data.BalanceSheet = IntacctLocation;
+            data.IntacctParentJob = IntacctParentJob;
+            data.IntacctDepartment = IntacctDepartment;
+        }
+        else
+        {
+            data.IncomePrefix = IncomePrefix;
+            data.BalanceSheet = BalanceSheetPrefix;
+        }
+
+        return data;
+    }
+
+    private async Task OnAcctOkClick()
+    {
+        var data = GetCurrentData();
+        if (EditingRow != null)
+        {
+            ApplyAccountingDataToRow(EditingRow, data);
+            MarkDirty(EditingRow);
+        }
+        AccountingDialogVisible = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnAcctCancelClick()
+    {
+        AccountingDialogVisible = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyAccountingDataToRow(CommunityRow row, CommunityAccountingData data)
+    {
+        row.WarrantyJob = data.WarrantyJob;
+        row.IncomePrefix = data.IncomePrefix;
+        row.BalanceSheet = data.BalanceSheet;
+        row.LotInventoryDebit = data.LotInventoryDebit;
+        row.LotInventoryCredit = data.LotInventoryCredit;
+        row.LabourTaxGroup = data.LabourTaxGroup;
+        row.MaterialTaxGroup = data.MaterialTaxGroup;
+        row.SubContractTaxGroup = data.SubContractTaxGroup;
+        row.EquipmentTaxGroup = data.EquipmentTaxGroup;
+        row.OverheadTaxGroup = data.OverheadTaxGroup;
+        row.OtherTaxGroup = data.OtherTaxGroup;
+        row.IntacctEntity = data.IntacctEntity;
+        row.IntacctParentJob = data.IntacctParentJob;
+        row.IntacctDepartment = data.IntacctDepartment;
+        row.Mortgage_Credit = data.MortgageCredit;
+        row.BankAccount = data.BankAccount;
+        row.TarionBuilderNumber = data.TarionBuilderNumber;
+    }
+
+    public class CommunityAccountingData
+    {
+        public string WarrantyJob { get; set; } = "";
+        public string IncomePrefix { get; set; } = "";
+        public string BalanceSheet { get; set; } = "";
+        public string LotInventoryDebit { get; set; } = "";
+        public string LotInventoryCredit { get; set; } = "";
+        public string LabourTaxGroup { get; set; } = "";
+        public string MaterialTaxGroup { get; set; } = "";
+        public string SubContractTaxGroup { get; set; } = "";
+        public string EquipmentTaxGroup { get; set; } = "";
+        public string OverheadTaxGroup { get; set; } = "";
+        public string OtherTaxGroup { get; set; } = "";
+        public string IntacctEntity { get; set; } = "";
+        public string IntacctLocation { get; set; } = "";
+        public string IntacctParentJob { get; set; } = "";
+        public string IntacctDepartment { get; set; } = "";
+        public string MortgageCredit { get; set; } = "";
+        public string BankAccount { get; set; } = "";
+        public string TarionBuilderNumber { get; set; } = "";
+
+        public static CommunityAccountingData FromDictionary(Dictionary<string, object> row)
+        {
+            return new CommunityAccountingData
+            {
+                WarrantyJob = row.GetValueOrDefault("WarrantyJob")?.ToString() ?? "",
+                IncomePrefix = row.GetValueOrDefault("IncomePrefix")?.ToString() ?? "",
+                BalanceSheet = row.GetValueOrDefault("BalanceSheet")?.ToString() ?? "",
+                LotInventoryDebit = row.GetValueOrDefault("LotInventoryDebit")?.ToString() ?? "",
+                LotInventoryCredit = row.GetValueOrDefault("LotInventoryCredit")?.ToString() ?? "",
+                LabourTaxGroup = row.GetValueOrDefault("LabourTaxGroup")?.ToString() ?? "",
+                MaterialTaxGroup = row.GetValueOrDefault("MaterialTaxGroup")?.ToString() ?? "",
+                SubContractTaxGroup = row.GetValueOrDefault("SubContractTaxGroup")?.ToString() ?? "",
+                EquipmentTaxGroup = row.GetValueOrDefault("EquipmentTaxGroup")?.ToString() ?? "",
+                OverheadTaxGroup = row.GetValueOrDefault("OverheadTaxGroup")?.ToString() ?? "",
+                OtherTaxGroup = row.GetValueOrDefault("OtherTaxGroup")?.ToString() ?? "",
+                IntacctEntity = row.GetValueOrDefault("IntacctEntity")?.ToString() ?? "",
+                IntacctLocation = row.GetValueOrDefault("IntacctLocation")?.ToString() ?? "",
+                IntacctParentJob = row.GetValueOrDefault("IntacctParentJob")?.ToString() ?? "",
+                IntacctDepartment = row.GetValueOrDefault("IntacctDepartment")?.ToString() ?? "",
+                MortgageCredit = row.GetValueOrDefault("Mortgage_Credit")?.ToString() ?? "",
+                BankAccount = row.GetValueOrDefault("BankAccount")?.ToString() ?? "",
+                TarionBuilderNumber = row.GetValueOrDefault("TarionBuilderNumber")?.ToString() ?? ""
+            };
+        }
+
+        public Dictionary<string, object> ToDictionary()
+        {
+            return new Dictionary<string, object>
+            {
+                ["WarrantyJob"] = WarrantyJob,
+                ["IncomePrefix"] = IncomePrefix,
+                ["BalanceSheet"] = BalanceSheet,
+                ["LotInventoryDebit"] = LotInventoryDebit,
+                ["LotInventoryCredit"] = LotInventoryCredit,
+                ["LabourTaxGroup"] = LabourTaxGroup,
+                ["MaterialTaxGroup"] = MaterialTaxGroup,
+                ["SubContractTaxGroup"] = SubContractTaxGroup,
+                ["EquipmentTaxGroup"] = EquipmentTaxGroup,
+                ["OverheadTaxGroup"] = OverheadTaxGroup,
+                ["OtherTaxGroup"] = OtherTaxGroup,
+                ["IntacctEntity"] = IntacctEntity,
+                ["IntacctLocation"] = IntacctLocation,
+                ["IntacctParentJob"] = IntacctParentJob,
+                ["IntacctDepartment"] = IntacctDepartment,
+                ["Mortgage_Credit"] = MortgageCredit,
+                ["BankAccount"] = BankAccount,
+                ["TarionBuilderNumber"] = TarionBuilderNumber
+            };
+        }
+    }
+
+    public class CommunityRow
+    {
+        public string OriginalArea { get; set; } = "";
+        public string Area { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Abr { get; set; } = "";
+        public string Divisions { get; set; } = "";
+        public string Comments { get; set; } = "";
+        public string Company { get; set; } = "";
+        public string Address1 { get; set; } = "";
+        public string Address2 { get; set; } = "";
+        public string City { get; set; } = "";
+        public string Province { get; set; } = "";
+        public string Postal { get; set; } = "";
+        public string Country { get; set; } = "";
+        public string County { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string TaxNumber { get; set; } = "";
+        public string WarrantyJob { get; set; } = "";
+        public string IncomePrefix { get; set; } = "";
+        public string BalanceSheet { get; set; } = "";
+        public string Mortgage_Credit { get; set; } = "";
+        public string BankAccount { get; set; } = "";
+        public string TarionBuilderNumber { get; set; } = "";
+        public string LotInventoryDebit { get; set; } = "";
+        public string LotInventoryCredit { get; set; } = "";
+        public string Project_Manager { get; set; } = "";
+        public string Purchaser { get; set; } = "";
+        public string CustServiceID { get; set; } = "";
+        public string DC_Sales_Person { get; set; } = "";
+        public string Contract_Document { get; set; } = "";
+        public string LabourTaxGroup { get; set; } = "";
+        public string MaterialTaxGroup { get; set; } = "";
+        public string SubContractTaxGroup { get; set; } = "";
+        public string EquipmentTaxGroup { get; set; } = "";
+        public string OverheadTaxGroup { get; set; } = "";
+        public string OtherTaxGroup { get; set; } = "";
+        public decimal GSTRate { get; set; }
+        public decimal PSTRate { get; set; }
+        public string SalesManagerEmail { get; set; } = "";
+        public string IntacctEntity { get; set; } = "";
+        public string IntacctParentJob { get; set; } = "";
+        public string IntacctDepartment { get; set; } = "";
+        public bool Inactive { get; set; }
+        public bool BuildPro { get; set; }
+        public bool WrapInsuranceExempt { get; set; }
+        public bool IsDirty { get; set; }
+        public bool IsDeleted { get; set; }
+    }
+
+    public class DivisionItem
+    {
+        public string DivisionCode { get; set; } = "";
+        public string DivisionName { get; set; } = "";
+    }
+
+    public class PickerItem
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+}
