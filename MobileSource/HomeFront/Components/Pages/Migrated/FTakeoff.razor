@@ -1,6 +1,16 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Driven column visibility from AppGridLayout (FTakeoff.gItems); WBS extended to all slots
+     - Dynamic WBS columns replicated from VB6 LoadWBSDescriptions
+     - VB6-parity SaveData persistence so items land in FAssembly grid
+     - Modal mode with dynamic view-name header + VB6-parity right-click menu
+     - LoadQuote fix: drop changeorderno rename, use estassemblyid at level 3
+   ───────────────────────────────────────────────────────────────── *@
+@namespace HomeFront.Components.Pages
 @page "/takeoff"
-@rendermode InteractiveServer
 
 @using HomeFront.Models
 @using System.Data
@@ -8,229 +18,49 @@
 
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
-
+@inject IDialogService Dialogs
+@using Fx.ControlKit.Notifications
+@inject ILogger<FTakeoff> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IUserPreferencesService UserPrefs
+@inject IGridLayoutService GridLayoutSvc
+@using HomeFront.Data
+@inject DbWrapperSqlServer db
+@layout HFComponent
 <PageTitle>Takeoff - HomeFront</PageTitle>
 
-<style>
-    .takeoff-container {
-        display: flex;
-        flex-direction: column;
-        height: calc(100vh - 80px);
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
 
-    .onscreen-bar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 4px 8px;
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-    }
+@* When IsModal=true, an overlay div wraps the whole container so the host
+   page (FAssembly) stays mounted behind it. The overlay catches clicks on
+   the dim backdrop without dismissing — modal must be closed via OK / Close
+   / Cancel. The .takeoff-modal class is scoped CSS (added below). *@
+@if (IsModal)
+{
+    <div class="takeoff-modal-backdrop" @onclick:stopPropagation="true"></div>
+}
+<div class="takeoff-container @(IsModal ? "takeoff-modal" : "")" style="position: relative;">
 
-    .onscreen-bar label {
-        font-size: 12px;
-        text-align: right;
-        min-width: 110px;
+    @* VB6 parity: Me.Caption = mViews(mViewIndex).Name (FTakeoff.frm:2087).
+       Header reflects the current view's display name ("Items by Groups &
+       Phases", "Assemblies", "Quotes", "Custom Options", …). Re-renders
+       automatically because SetView → LoadListAsync → StateHasChanged. Only
+       drawn in modal mode — standalone /takeoff URLs use the browser title
+       (set elsewhere via SetPageTitle cascade). *@
+    @if (IsModal)
+    {
+        <div class="takeoff-header" style="display:flex; align-items:center; gap:6px; padding:4px 8px; background:#f0f0f0; color:#000; border-bottom:1px solid #c9c9c9; font-family:'MS Sans Serif', Tahoma, Arial, sans-serif; font-size:11px; font-weight:bold; user-select:none;">
+            <img src="/images/32/ItemTakeoff.ico" style="width:16px; height:16px; object-fit:contain; image-rendering:pixelated;" alt="Icon" />
+            <span class="takeoff-header-title" style="margin-left:2px; font-size:11px; font-weight:bold;">@CurrentViewName</span>
+            <span style="flex:1;"></span>
+            <button type="button"
+                    title="Close"
+                    aria-label="Close"
+                    style="background:transparent; border:none; color:#000; font-size:14px; line-height:1; cursor:pointer; padding:2px 6px; font-weight:bold;"
+                    @onclick="OnCloseClick">×</button>
+        </div>
     }
-
-    .onscreen-bar input {
-        flex: 1;
-        padding: 2px 6px;
-        border: none;
-        background: #f0f0f0;
-        font-size: 12px;
-    }
-
-    .onscreen-bar button {
-        padding: 2px 8px;
-        border: 1px solid #ced4da;
-        background: #fff;
-        cursor: pointer;
-        border-radius: 3px;
-    }
-
-    .top-section {
-        display: flex;
-        flex: 0 0 auto;
-        min-height: 200px;
-        max-height: 45%;
-        border-bottom: 3px solid #c9c9c9;
-        resize: vertical;
-        overflow: hidden;
-    }
-
-    .list-panel {
-        width: 280px;
-        min-width: 180px;
-        border-right: 3px solid #c9c9c9;
-        overflow: auto;
-        resize: horizontal;
-    }
-
-    .variables-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .variables-grid-area {
-        flex: 1;
-        overflow: auto;
-        border-bottom: 2px solid #c9c9c9;
-    }
-
-    .help-area {
-        display: flex;
-        gap: 4px;
-        padding: 4px;
-        min-height: 60px;
-        max-height: 120px;
-        overflow: auto;
-    }
-
-    .help-text {
-        flex: 1;
-        background: #f0f0f0;
-        border: none;
-        padding: 4px;
-        font-size: 12px;
-        resize: none;
-        overflow-y: auto;
-    }
-
-    .pass-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        justify-content: flex-end;
-    }
-
-    .pass-buttons button {
-        width: 28px;
-        height: 28px;
-        border: 1px solid #ced4da;
-        background: #f7f7f7;
-        cursor: pointer;
-        border-radius: 3px;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .pass-buttons button:hover:not(:disabled) {
-        background: #e0e0e0;
-    }
-
-    .pass-buttons button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .bottom-section {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .items-grid-area {
-        flex: 1;
-        overflow: auto;
-    }
-
-    .footer-bar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 6px 8px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .footer-bar label {
-        font-size: 12px;
-        text-align: right;
-    }
-
-    .footer-bar select,
-    .footer-bar input {
-        padding: 2px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-
-    .footer-bar .btn {
-        padding: 4px 16px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 12px;
-    }
-
-    .footer-bar .btn:hover {
-        background: #e0e0e0;
-    }
-
-    .footer-bar .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .tree-node {
-        padding: 2px 4px;
-        cursor: pointer;
-        user-select: none;
-        font-size: 12px;
-        white-space: nowrap;
-    }
-
-    .tree-node:hover {
-        background: #e8f0fe;
-    }
-
-    .tree-node.selected {
-        background: #cce5ff;
-        font-weight: 600;
-    }
-
-    .tree-node.bold {
-        font-weight: 700;
-    }
-
-    .tree-toggle {
-        display: inline-block;
-        width: 16px;
-        text-align: center;
-        font-size: 10px;
-        color: #666;
-        cursor: pointer;
-    }
-
-    .tree-children {
-        padding-left: 16px;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(255, 255, 255, 0.7);
-        z-index: 1000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        font-weight: 500;
-    }
-</style>
-
-<div class="takeoff-container" style="position: relative;">
 
     @if (IsLoading)
     {
@@ -242,76 +72,303 @@
     {
         <div class="onscreen-bar">
             <label>OnCenter Project</label>
-            <input type="text" readonly value="@OnScreenProjectName" />
-            <button @onclick="OnBrowseProject">📂</button>
+            <TextBoxControl Value="@OnScreenProjectName" CssClass="onscreen-project-input" readonly="readonly" />
+            <ButtonControl CssClass="onscreen-browse-btn" OnClick="OnBrowseProject" Title="Browse OnCenter Project">📂</ButtonControl>
         </div>
     }
 
     @* ── Top Section: List + Variables ─────────────────────── *@
     <div class="top-section">
-        @* Left: Assembly/Item List *@
-        <div class="list-panel">
-            @foreach (var node in ListNodes)
+        @* Left: Assembly/Item List — replaced with the file-picker panel
+           when mTakeoffMode == "Custom" (matches VB6 FTakeoff line 903
+           `If mTakeoffMode = "Custom" Then Exit Sub`). *@
+        @if (IsCustomMode)
+        {
+            <div class="list-panel custom-takeoff-panel">
+                <h4 class="custom-takeoff-title">Custom Takeoff</h4>
+                <div class="custom-takeoff-row">
+                    <label>File type:</label>
+                    <DropDownListControl TValue="int" TItem="CustomExtensionOption"
+                                         Value="@CustomTakeoffExtension"
+                                         ValueChanged="OnCustomExtensionDropdownChanged"
+                                         DataSource="@CustomTakeoffExtensionOptions"
+                                         TextFieldName="Label"
+                                         ValueFieldName="Index"
+                                         Width="100%" />
+                </div>
+                <div class="custom-takeoff-row">
+                    <label>Pick file:</label>
+                    <InputFile OnChange="OnCustomFileSelected" accept="@CustomTakeoffAcceptAttr" />
+                </div>
+                @if (!string.IsNullOrEmpty(CustomTakeoffSelectedFileName))
+                {
+                    <div class="custom-takeoff-row custom-takeoff-status">
+                        <span><strong>Selected:</strong> @CustomTakeoffSelectedFileName</span>
+                        @if (CustomTakeoffParsedRowCount > 0)
+                        {
+                            <span class="custom-takeoff-rowcount">@CustomTakeoffParsedRowCount row(s) imported</span>
+                        }
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(CustomTakeoffStatus))
+                {
+                    <div class="custom-takeoff-row custom-takeoff-msg @(CustomTakeoffStatusIsError ? "err" : "")">
+                        @CustomTakeoffStatus
+                    </div>
+                }
+                @if (_customTakeoffUnmappedHeaders.Count > 0)
+                {
+                    <div class="custom-takeoff-mapping">
+                        <div class="custom-takeoff-mapping-title">
+                            Map unrecognized columns:
+                        </div>
+                        @foreach (var raw in _customTakeoffUnmappedHeaders)
+                        {
+                            var capturedRaw = raw;
+                            <div class="custom-takeoff-mapping-row">
+                                <span class="custom-takeoff-mapping-raw" title="@capturedRaw">@capturedRaw</span>
+                                <span class="custom-takeoff-mapping-arrow">→</span>
+                                <DropDownListControl TValue="string" TItem="ComboItem"
+                                                     Value="@(_customTakeoffPendingMappings.TryGetValue(capturedRaw, out var sel) ? sel : "")"
+                                                     ValueChanged="@(v => _customTakeoffPendingMappings[capturedRaw] = v ?? "")"
+                                                     DataSource="@CustomTakeoffMappingOptions"
+                                                     TextFieldName="Text"
+                                                     ValueFieldName="Value"
+                                                     Width="140px" />
+                            </div>
+                        }
+                        <ButtonControl CssClass="custom-takeoff-mapping-apply"
+                                       BareStyle="true"
+                                       OnClick="ApplyCustomTakeoffMapping">
+                            Apply mapping &amp; re-import
+                        </ButtonControl>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            @* VB6: gList_MouseDown shows mnuTakeoff on right-click (FTakeoff.frm:3191).
+               The menu lets the user switch between Assemblies / Specific Extras /
+               Global Extras / Design Center / Quotes / Open Jobs views — exactly
+               the same set as our Views[] config. We surface it as a simple
+               context-menu div positioned at the cursor, hidden until a
+               right-click sets _showListContextMenu. *@
+            <div class="list-panel vb6-tree fx-treeview-vb6 fx-treeview-no-folder"
+                 tabindex="0"
+                 @ref="_listTreeRef"
+                 @onkeydown="OnListTreeKeyDown"
+                 @onkeydown:preventDefault="true"
+                 @oncontextmenu="OnListContextMenu"
+                 @oncontextmenu:preventDefault="true">
+                @foreach (var node in ListNodes)
+                {
+                    @RenderListNode(node, 0)
+                }
+            </div>
+            @if (_showListContextMenu)
             {
-                @RenderListNode(node, 0)
+                @* VB6 mnuTakeoff parity (FMain.frm; FTakeoff.frm:3193 calls
+                   `PopupMenu FMain.mnuTakeoff`). The user-visible captions
+                   for "View Assemblies → Models / Models Specific Options /
+                   Global Options / Design Center Options" come from VB6
+                   lines 1885-1888 which override the residential builder
+                   captions; we just hard-code them since this app only
+                   ships in residential mode. View indices map to the
+                   Views[] array in this file.
+
+                   Submenu visibility is driven by hovering a parent item
+                   (mouseenter sets _openSubmenu). Clicking outside or
+                   picking a leaf closes everything. *@
+                <div style="position:fixed;inset:0;z-index:999;background:transparent;"
+                     @onclick="CloseListContextMenu"
+                     @oncontextmenu="CloseListContextMenu"
+                     @oncontextmenu:preventDefault="true"></div>
+                <div class="context-menu fx-takeoff-menu"
+                     style="left:@(_listContextMenuX)px;top:@(_listContextMenuY)px;"
+                     @onclick:stopPropagation="true"
+                     @onmouseleave="() => _openSubmenu = MenuGroup.None">
+
+                    @* Find…  — opens FPickList with the current view's
+                       findQry, mirroring VB6 FTakeoff.frm:1223 path. *@
+                    <button class="fx-takeoff-menu-row"
+                            @onmouseenter="() => _openSubmenu = MenuGroup.None"
+                            @onclick="OnFindClick">
+                        <span>Find…</span>
+                        <span class="fx-takeoff-menu-shortcut">Ctrl+F</span>
+                    </button>
+                    <hr />
+
+                    @* View Assemblies → 4 sub-items *@
+                    <div class="fx-takeoff-menu-parent @(((int)_openSubmenu) == (int)MenuGroup.Assemblies ? "active" : "")"
+                         @onmouseenter="() => _openSubmenu = MenuGroup.Assemblies">
+                        <button class="fx-takeoff-menu-row">
+                            <span>View Assemblies</span>
+                            <span class="fx-takeoff-menu-arrow">▸</span>
+                        </button>
+                        @if (_openSubmenu == MenuGroup.Assemblies)
+                        {
+                            <div class="fx-takeoff-submenu">
+                                <button @onclick="() => OnListContextSetView(0)">Models</button>
+                                <button @onclick="() => OnListContextSetView(1)">Models Specific Options</button>
+                                <button @onclick="() => OnListContextSetView(2)">Global Options</button>
+                                <button @onclick="() => OnListContextSetView(3)">Design Center Options</button>
+                            </div>
+                        }
+                    </div>
+
+                    @* View Quotes & Jobs → 3 sub-items *@
+                    <div class="fx-takeoff-menu-parent @(((int)_openSubmenu) == (int)MenuGroup.QuotesJobs ? "active" : "")"
+                         @onmouseenter="() => _openSubmenu = MenuGroup.QuotesJobs">
+                        <button class="fx-takeoff-menu-row">
+                            <span>View Quotes &amp; Jobs</span>
+                            <span class="fx-takeoff-menu-arrow">▸</span>
+                        </button>
+                        @if (_openSubmenu == MenuGroup.QuotesJobs)
+                        {
+                            <div class="fx-takeoff-submenu">
+                                <button @onclick="() => OnListContextSetView(4)">Quotes</button>
+                                <button @onclick="() => OnListContextSetView(5)">Open Jobs</button>
+                                <button @onclick="() => OnListContextSetView(6)">Custom Options</button>
+                            </div>
+                        }
+                    </div>
+
+                    @* View Items → 4 sort variants (views 8..11) *@
+                    <div class="fx-takeoff-menu-parent @(((int)_openSubmenu) == (int)MenuGroup.Items ? "active" : "")"
+                         @onmouseenter="() => _openSubmenu = MenuGroup.Items">
+                        <button class="fx-takeoff-menu-row">
+                            <span>View Items</span>
+                            <span class="fx-takeoff-menu-arrow">▸</span>
+                        </button>
+                        @if (_openSubmenu == MenuGroup.Items)
+                        {
+                            <div class="fx-takeoff-submenu">
+                                <button @onclick="() => OnListContextSetView(8)">Sort by Group and Phase</button>
+                                <button @onclick="() => OnListContextSetView(9)">Sort by Purchase Order</button>
+                                <button @onclick="() => OnListContextSetView(10)">Sort by Cost Code</button>
+                                <button @onclick="() => OnListContextSetView(11)">Sort by Description</button>
+                            </div>
+                        }
+                    </div>
+
+                    @* View Estimates — disabled. VB6 enabled this only when
+                       Sage100 / Timberline DB was connected (FTakeoff.frm:1892
+                       `FMain.mnuTakeOffEstimateView(12).Enabled = ...`). We
+                       have no such connection wired today, so it stays
+                       disabled — the grey label preserves the menu shape so
+                       admins know it exists. *@
+                    <button class="fx-takeoff-menu-row" disabled
+                            @onmouseenter="() => _openSubmenu = MenuGroup.None"
+                            title="Requires Sage100 / Timberline Estimating connection">
+                        <span style="color:#aaa;">View Estimates</span>
+                        <span class="fx-takeoff-menu-arrow" style="color:#aaa;">▸</span>
+                    </button>
+                </div>
             }
-        </div>
+        }
 
         @* Right: Variables + Help *@
         <div class="variables-panel">
             <div class="variables-grid-area">
-                @if (ShowHFVariables)
+                @if (ShowHFVariables && IsHFQuantityOnly)
                 {
-                    <HfGrid @ref="HFVariablesGrid"
+                    @* VB6 parity: legacy "Items by Groups & Phases" shows
+                       Quantity as a single label + textbox at the TOP-RIGHT
+                       of the dialog (frame top, far right). The outer
+                       flex container right-aligns the widget; the inner
+                       .quantity-single-field stays inline-flex so label /
+                       input / UOM sit on one row. Value formatted as
+                       "0.000" on commit to match legacy txtQuantity.
+
+                       Passive — typing here does NOT mutate the items
+                       grid. Only the "+" (Add Pass) button reads Quantity
+                       and multiplies it into TakeoffQty (VB6 cmdAddPass_Click). *@
+                    <div class="quantity-row">
+                        <div class="quantity-single-field">
+                            <label>Quantity</label>
+                            @* HHM-232: numeric-only input. The browser's number input blocks
+                               alphabetic/special characters at the keystroke level; junk/empty
+                               parses to 0 on commit, matching VB6 txtQty_Validate's
+                               `txtQty.Text = Val(txtQty.Text)` (FTakeoff.frm:3290-3291).
+                               Out-of-range values are NOT silently clamped any more (QA bounce):
+                               OnHFQuantityChanged range-checks against the Quantity variable's
+                               Min/Max (variables table, ±1e18 fallback — MFormulas.LoadVariables)
+                               and rejects with the legacy too-large/too-small warning, exactly
+                               like VB6 gHFVariables_ValidateEdit (FTakeoff.frm:2976-2990).
+                               @key remounts the input after a rejected edit so the kept value
+                               is restored in the DOM (the bound Value itself didn't change). *@
+                            <NumericTextBoxControl TValue="double"
+                                                   @key="_qtyInputEpoch"
+                                                   Value="@HFQuantityNumericValue"
+                                                   ValueChanged="@((double v) => OnHFQuantityChanged(v))"
+                                                   Format="F3"
+                                                   CssClass="quantity-input" />
+                            <span class="quantity-uom">@HFQuantityUOM</span>
+                        </div>
+                    </div>
+                }
+                else if (ShowHFVariables && HFVariablesData.Count > 0)
+                {
+                    <GridControl @ref="HFVariablesGrid"
                             TValue="HFVariableRow"
                             DataSource="@HFVariablesData"
                             AllowSelection="true"
                             AllowResizing="true"
                             Height="100%"
-                            EditSettingsRef="@variableEditSettings">
-                        <HfGridColumnsBase>
-                            <HfGridColumn Field="@nameof(HFVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="true" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionName)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionType)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(HFVariableRow.ConditionUOM)" HeaderText="" Width="1px" Visible="false" />
-                        </HfGridColumnsBase>
-                    </HfGrid>
+                            EditSettingsRef="@variableEditSettings"
+                            EventsRef="@hfVariablesEvents">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(HFVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
+                            <GridColumn Field="@nameof(HFVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="true" />
+                            <GridColumn Field="@nameof(HFVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.ConditionName)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.ConditionType)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(HFVariableRow.ConditionUOM)" HeaderText="" Width="1px" Visible="false" />
+                        </GridColumnsBase>
+                    </GridControl>
                 }
-                else if (ShowTLVariables)
+                else if (ShowTLVariables && TLVariablesData.Count > 0)
                 {
-                    <HfGrid @ref="TLVariablesGrid"
+                    <GridControl @ref="TLVariablesGrid"
                             TValue="TLVariableRow"
                             DataSource="@TLVariablesData"
                             AllowSelection="true"
                             AllowResizing="true"
                             Height="100%"
                             EditSettingsRef="@variableEditSettings">
-                        <HfGridColumnsBase>
-                            <HfGridColumn Field="@nameof(TLVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(TLVariableRow.IsYesNo)" HeaderText="" Width="1px" Visible="false" />
-                        </HfGridColumnsBase>
-                    </HfGrid>
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(TLVariableRow.Name)" HeaderText="Variable" Width="140px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.Value)" HeaderText="Value" Width="100px" AllowEditing="true" TextAlign="TextAlign.Right" />
+                            <GridColumn Field="@nameof(TLVariableRow.UOM)" HeaderText="UOM" Width="60px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.DisplayOrder)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.Min)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.Max)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.Help)" HeaderText="" Width="1px" Visible="false" />
+                            <GridColumn Field="@nameof(TLVariableRow.IsYesNo)" HeaderText="" Width="1px" Visible="false" />
+                        </GridColumnsBase>
+                    </GridControl>
                 }
             </div>
 
             <div class="help-area">
-                <textarea class="help-text" readonly rows="3">@HelpText</textarea>
+                <TextAreaControl Value="@HelpText" Rows="3" Enabled="false" CssClass="help-text" />
                 <div class="pass-buttons">
-                    <button disabled="@(!AddPassEnabled)" title="Undo Pass" @onclick="OnUndoPass">↩</button>
-                    <button disabled="@(!AddPassEnabled)" title="Add Pass" @onclick="OnAddPass">➕</button>
+                    @* HHM-212: legacy cmdUndoPass shows a BLUE curved undo arrow
+                       (FTakeoff.frx picture); the old "↩" text glyph rendered
+                       black/grey. Inline SVG (no JS, no external asset) so the
+                       shape and the blue tone are identical on every platform. *@
+                    <ButtonControl BareStyle="true" Disabled="@(!AddPassEnabled)" Title="Undo Pass" OnClick="OnUndoPass">
+                        <svg width="14" height="14" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="display:block;">
+                            <path fill="#2050B3" d="M6.6 1.6 1.4 6.2l5.2 4.6V7.6c3.5 0 6 1.3 7.6 4.1-.4-4.7-3.4-7.5-7.6-7.9V1.6z" />
+                        </svg>
+                    </ButtonControl>
+                    <ButtonControl BareStyle="true" Disabled="@(!AddPassEnabled)" Title="Add Pass" OnClick="OnAddPass">➕</ButtonControl>
                 </div>
             </div>
         </div>
@@ -319,94 +376,308 @@
 
     @* ── Bottom Section: Items Grid ───────────────────────── *@
     <div class="bottom-section">
-        <div class="items-grid-area">
-            <HfGrid @ref="ItemsGrid"
+        @* VB6 gItems_BeforeMouseDown (FTakeoff.frm:2733): right-click on a data row pops
+           FMain.mnuAssemblyItems. FTakeoff's own handler implements Make a Copy /
+           Substitute Item… / Remove (frm:2777-2842). Edit Item Chart… and Attachments…
+           are now offered too (HHM-547) — wired to the same FItemChart / FAttachments
+           host pattern FAssembly uses, so the menu matches VB6's six-entry shared
+           mnuAssemblyItems (FMain.frm:1588-1614). *@
+        <div class="items-grid-area" @oncontextmenu="OnItemsGridContextMenu" @oncontextmenu:preventDefault="true">
+            @* Trimmed-chrome grid (per user spec — no toolbar, no
+                       drag-drop, no advanced options). Mirrors FAssembly's
+                       multi-select + batch-edit wiring so type-ahead
+                       fan-out on TakeoffQty / OrderQty works, but every
+                       Show* opt-in is deliberately omitted: the
+                       SelectionInfoBar, AdvancedViewToggle, ExpressionFilter,
+                       GridOptionsRail, ColumnOptions, Pivot, ThemeToggle,
+                       BackButton chrome stays off. AllowFiltering /
+                       Grouping / ColumnReorder also left off — this is
+                       a transient staging grid, not a persistent view. *@
+            <GridControl @ref="ItemsGrid"
                     TValue="TakeoffItemRow"
                     DataSource="@ItemsData"
                     AllowSelection="true"
+                    ShowSelectionInfoBar="false"
                     AllowSorting="true"
                     AllowResizing="true"
                     AllowFiltering="false"
                     EnableHover="true"
                     Height="100%"
                     EditSettingsRef="@itemEditSettings"
-                    SelectionSettingsRef="@itemSelectionSettings">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Assembly)" HeaderText="Assembly" Width="100px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.AssemblyDescription)" HeaderText="Asm Desc" Width="140px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Model)" HeaderText="Model" Width="80px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Phase)" HeaderText="Phase" Width="70px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Item)" HeaderText="Item" Width="70px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Description)" HeaderText="Description" Width="200px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.TakeoffQty)" HeaderText="Takeoff Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.OrderQty)" HeaderText="Order Qty" Width="90px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.OrderUOM)" HeaderText="Order UOM" Width="80px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.ConversionFactor)" HeaderText="Conv Factor" Width="90px" Format="N4" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.WastePercent)" HeaderText="Waste %" Width="70px" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.JCCostCode)" HeaderText="Cost Code" Width="90px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.JCCategory)" HeaderText="Category" Width="80px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Price)" HeaderText="Price" Width="80px" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="PO Index" Width="80px" AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Location)" HeaderText="Location" Width="100px" AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Notes)" HeaderText="Notes" Width="120px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.RawFormula)" HeaderText="Formula" Width="120px" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.ResolvedFormula)" HeaderText="Resolved" Width="120px" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.Job)" HeaderText="Job" Width="80px" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.RoundTo)" HeaderText="Round To" Width="70px" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.RoundDir)" HeaderText="Round Dir" Width="70px" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.PassTakeoffQty)" HeaderText="Pass TkOff" Width="90px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(TakeoffItemRow.PassOrderQty)" HeaderText="Pass Order" Width="90px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" Visible="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                    SelectionSettingsRef="@itemSelectionSettings"
+                    BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                    AllowSingleCellColumnMassEdit="true"
+                    TypeAheadTargetField="@ItemsTypeAheadTargetField"
+                    AvailableColumns="@GetTakeoffChooseColumnsSchema()"
+                    OnColumnsChosen="@OnTakeoffColumnsChosenAsync"
+                    EventsRef="@itemsGridEvents">
+                <GridColumnsBase>
+                    @* Every GridColumn's Visible attribute now defers to
+                       AppGridLayout via IsColVisible(field, default). The
+                       "default" mirrors the VB6 seed in MDBUpgrade3.bas:3133-
+                       — 9 columns visible by default (Phase, Item, Description,
+                       TakeoffQty, OrderQty, JCCostCode, JCCategory, POIndex,
+                       WBS01), everything else hidden. A user with a customized
+                       layout (per-uid row in AppGridLayout) overrides the
+                       defaults; otherwise the GridLayoutService fallback to
+                       the shared uid='' row returns the seed values. *@
+                    <GridColumn Field="@nameof(TakeoffItemRow.Assembly)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Assembly), "Assembly")" Width="@ColWidth(nameof(TakeoffItemRow.Assembly), "100px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Assembly), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.AssemblyDescription)" HeaderText="@ColCaption(nameof(TakeoffItemRow.AssemblyDescription), "Asm Desc")" Width="@ColWidth(nameof(TakeoffItemRow.AssemblyDescription), "140px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.AssemblyDescription), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Model)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Model), "Model")" Width="@ColWidth(nameof(TakeoffItemRow.Model), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Model), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Phase)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Phase), "Phase")" Width="@ColWidth(nameof(TakeoffItemRow.Phase), "70px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Phase), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Item)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Item), "Item")" Width="@ColWidth(nameof(TakeoffItemRow.Item), "70px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Item), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Description)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Description), "Description")" Width="@ColWidth(nameof(TakeoffItemRow.Description), "200px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Description), true)" />
+                    @* VB6 parity: VSFlexGrid displays Takeoff/Order Qty as
+                       whole numbers (no trailing decimals). N0 strips the
+                       ".00" so "0" / "1" matches the legacy on-screen
+                       look. Underlying value stays a double — fractional
+                       takeoffs still round-trip correctly through SaveData. *@
+                    <GridColumn Field="@nameof(TakeoffItemRow.TakeoffQty)" HeaderText="@ColCaption(nameof(TakeoffItemRow.TakeoffQty), "Takeoff Qty")" Width="@ColWidth(nameof(TakeoffItemRow.TakeoffQty), "90px")" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.TakeoffQty), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.TakeoffUOM)" HeaderText="@ColCaption(nameof(TakeoffItemRow.TakeoffUOM), "Takeoff UOM")" Width="@ColWidth(nameof(TakeoffItemRow.TakeoffUOM), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.TakeoffUOM), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.OrderQty)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OrderQty), "Order Qty")" Width="@ColWidth(nameof(TakeoffItemRow.OrderQty), "90px")" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.OrderQty), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.OrderUOM)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OrderUOM), "Order UOM")" Width="@ColWidth(nameof(TakeoffItemRow.OrderUOM), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.OrderUOM), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.ConversionFactor)" HeaderText="@ColCaption(nameof(TakeoffItemRow.ConversionFactor), "Conversion Factor")" Width="@ColWidth(nameof(TakeoffItemRow.ConversionFactor), "90px")" Format="N4" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.ConversionFactor), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.WastePercent)" HeaderText="@ColCaption(nameof(TakeoffItemRow.WastePercent), "Waste Percent")" Width="@ColWidth(nameof(TakeoffItemRow.WastePercent), "70px")" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.WastePercent), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.JCCostCode)" HeaderText="@ColCaption(nameof(TakeoffItemRow.JCCostCode), "Cost Code")" Width="@ColWidth(nameof(TakeoffItemRow.JCCostCode), "90px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.JCCostCode), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.JCCategory)" HeaderText="@ColCaption(nameof(TakeoffItemRow.JCCategory), "Category")" Width="@ColWidth(nameof(TakeoffItemRow.JCCategory), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.JCCategory), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Price)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Price), "Price")" Width="@ColWidth(nameof(TakeoffItemRow.Price), "80px")" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Price), false)" />
+                    @* OverridePrice keeps its IsEstimatesView gate AND
+                       respects AppGridLayout — both must agree to show. *@
+                    <GridColumn Field="@nameof(TakeoffItemRow.OverridePrice)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OverridePrice), "Override Price")" Width="@ColWidth(nameof(TakeoffItemRow.OverridePrice), "100px")" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
+                                Visible="@(IsEstimatesView && IsColVisible(nameof(TakeoffItemRow.OverridePrice), false))" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="@ColCaption(nameof(TakeoffItemRow.POIndex), "POIndex")" Width="@ColWidth(nameof(TakeoffItemRow.POIndex), "80px")" TextAlign="TextAlign.Right" AllowEditing="true"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.POIndex), true)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Location)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Location), "Location")" Width="@ColWidth(nameof(TakeoffItemRow.Location), "100px")" AllowEditing="true"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Location), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Notes)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Notes), "Comments")" Width="@ColWidth(nameof(TakeoffItemRow.Notes), "120px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Notes), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.RawFormula)" HeaderText="@ColCaption(nameof(TakeoffItemRow.RawFormula), "Formula")" Width="@ColWidth(nameof(TakeoffItemRow.RawFormula), "120px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.RawFormula), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.ResolvedFormula)" HeaderText="Resolved" Width="@ColWidth(nameof(TakeoffItemRow.ResolvedFormula), "120px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.ResolvedFormula), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.Job)" HeaderText="Job" Width="@ColWidth(nameof(TakeoffItemRow.Job), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.Job), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.RoundTo)" HeaderText="@ColCaption(nameof(TakeoffItemRow.RoundTo), "Round To")" Width="@ColWidth(nameof(TakeoffItemRow.RoundTo), "70px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.RoundTo), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.RoundDir)" HeaderText="@ColCaption(nameof(TakeoffItemRow.RoundDir), "Round Dir")" Width="@ColWidth(nameof(TakeoffItemRow.RoundDir), "70px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.RoundDir), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.PassTakeoffQty)" HeaderText="Pass TkOff" Width="@ColWidth(nameof(TakeoffItemRow.PassTakeoffQty), "90px")" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.PassTakeoffQty), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.PassOrderQty)" HeaderText="Pass Order" Width="@ColWidth(nameof(TakeoffItemRow.PassOrderQty), "90px")" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.PassOrderQty), false)" />
+
+                    @* ── Static columns VB6 has that the migration was missing ──
+                       Sequence / ItemChart / JCExtra are referenced throughout
+                       VB6's gItems (FTakeoff.frm SaveData, AddItem). Per-row
+                       data lives on TakeoffItemRow; visibility tracks the
+                       AppGridLayout seed (hidden by default). *@
+                    <GridColumn Field="@nameof(TakeoffItemRow.ItemChart)" HeaderText="@ColCaption(nameof(TakeoffItemRow.ItemChart), "Item Chart")" Width="@ColWidth(nameof(TakeoffItemRow.ItemChart), "100px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.ItemChart), false)" />
+                    <GridColumn Field="@nameof(TakeoffItemRow.JCExtra)" HeaderText="@ColCaption(nameof(TakeoffItemRow.JCExtra), "JCExtra")" Width="@ColWidth(nameof(TakeoffItemRow.JCExtra), "80px")" AllowEditing="false"
+                                Visible="@IsColVisible(nameof(TakeoffItemRow.JCExtra), false)" />
+
+                    @* ── WBS columns (VB6 FTakeoff.frm:3259 LoadWBSDescriptions
+                       + AppGridLayout combined) ──
+                       VB6 renders ALL 40 slots; visibility is the OR of:
+                         (a) AppGridLayout's Hidden flag (seed has WBS01 visible,
+                             WBS02..40 hidden), AND
+                         (b) LoadWBSDescriptions un-hides any slot with a non-
+                             empty custom_description AND replaces its header
+                             with the description.
+                       So _wbsLabels (sourced from customdescriptions) drives
+                       BOTH the visible-by-customdesc rule AND the caption.
+                       Slots without a custom description fall through to
+                       IsColVisible (which consults AppGridLayout). *@
+                    @for (int w = 1; w <= 40; w++)
+                    {
+                        var wbsIdx = w;
+                        var wbsField = $"WBS{wbsIdx:D2}";
+                        var hasCustomDesc = _wbsLabels.TryGetValue(wbsIdx, out var customLabel);
+                        // VB6 LoadWBSDescriptions: a non-empty custom_description
+                        // is the sole signal to make the column visible.
+                        // Otherwise consult AppGridLayout.
+                        var visible = hasCustomDesc || IsColVisible(wbsField, defaultVisible: wbsIdx == 1);
+                        var label = hasCustomDesc ? customLabel! : (wbsIdx == 1 ? "Bid Item" : wbsField);
+                        <GridColumn HeaderText="@label"
+                                    Field="@wbsField"
+                                    Width="@ColWidth(wbsField, "100px")"
+                                    AllowEditing="false"
+                                    Visible="@visible">
+                            <Template>
+                                @{ var row = (TakeoffItemRow)context; }
+                                @(row.WBS != null && row.WBS.TryGetValue(wbsIdx, out var wbsVal) ? wbsVal : "")
+                            </Template>
+                        </GridColumn>
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
+
+        @* Items-grid context menu (VB6 FMain.mnuAssemblyItems via FTakeoff's own handler). *@
+        @if (_showItemsGridMenu)
+        {
+            <div style="position:fixed;inset:0;z-index:999;background:transparent;"
+                 @onclick="@(() => _showItemsGridMenu = false)"
+                 @oncontextmenu="@(() => _showItemsGridMenu = false)"
+                 @oncontextmenu:preventDefault="true"></div>
+            <div class="context-menu" style="left:@(_itemsGridMenuX)px;top:@(_itemsGridMenuY)px;z-index:1000;">
+                <button @onclick="CopySelectedItems">Make a Copy</button>
+                <button @onclick="SubstituteSelectedItemsAsync">Substitute Item...</button>
+                <button @onclick="RemoveSelectedItems">Remove</button>
+                <button @onclick="OnEditItemChartClick">Edit Item Chart...</button>
+                <hr />
+                <button @onclick="OnAttachmentsClick">Attachments...</button>
+            </div>
+        }
 
         @* ── Footer Bar ───────────────────────────────────── *@
         <div class="footer-bar">
             <label>Override JC Category</label>
-            <select @bind="OverrideCategory" style="width: 200px;">
-                <option value=""></option>
-                @foreach (var cat in CategoryList)
-                {
-                    <option value="@cat.Value">@cat.Text</option>
-                }
-            </select>
+            <DropDownListControl TValue="string" TItem="ComboItem"
+                                 @bind-Value="OverrideCategory"
+                                 DataSource="@OverrideCategoryOptions"
+                                 TextFieldName="Text"
+                                 ValueFieldName="Value"
+                                 CssClass="override-jc-dropdown fx-dropdown-open-up"
+                                 Width="200px" />
 
             <label style="margin-left: 16px;">Sale Qty</label>
-            <input type="number" @bind="SaleQty" style="width: 70px;" step="any" />
+            <NumericTextBoxControl TValue="double" @bind-Value="SaleQty" Width="70px" />
 
             <span style="flex: 1;"></span>
 
-            <button class="btn btn-primary" style="@(OkVisible ? "" : "display:none")" @onclick="OnOkClick">&amp;OK</button>
-            <button class="btn" @onclick="OnCloseClick">@CloseButtonCaption</button>
+            @* VB6 parity (FTakeoff.frm: cmdOK / cmdCancel / cmdClose, Visible
+               flags toggled in DataGridChanged + SaveData). Initially only
+               Close shows. Once the lower grid has rows (Add Pass / Update /
+               etc. set OkVisible=true), OK + Cancel show and Close hides.
+               OK commits to the host and resets back to empty (modal stays
+               open). Cancel discards the staged rows and resets (modal stays
+               open). Close dismisses the modal entirely. *@
+            @* VB6 cmdOK Caption "&OK" → Alt+O hotkey. HTML equivalent is
+               accesskey="O" (browser combo: Alt+O in Chrome/Edge on Windows,
+               Ctrl+Alt+O in Safari/Firefox on Mac). The <u>O</u> mirrors
+               VB6's underline-the-accelerator visual cue. Kept as a raw
+               <button> ONLY because ButtonControl has no accesskey passthrough
+               and the Alt+O accelerator is load-bearing VB6 parity — adding the
+               param is a FlexKit change (out of scope for this conversion). *@
+            <button class="btn btn-primary" style="@(OkVisible ? "" : "display:none")" accesskey="O" @onclick="OnOkClick"><u>O</u>K</button>
+            <ButtonControl CssClass="btn" Style="@(OkVisible ? "" : "display:none")" OnClick="OnCancelClick">Cancel</ButtonControl>
+            <ButtonControl CssClass="btn" Style="@(OkVisible ? "display:none" : "")" OnClick="OnCloseClick">Close</ButtonControl>
         </div>
     </div>
 </div>
 
+@* FPickList rendered at component scope so the Find… menu item can open it.
+   VB6 FTakeoff.frm:1225 calls FPickList.Choose with the current view's
+   findQry — same lookup surface here. OnSelected lands the chosen ID in
+   OnFindResult, which today just notifies; future work can carry the ID
+   into AddItem. *@
+<FPickList @ref="pickList" OnSelected="OnFindResult" />
+
+@* In-app message box for Save / zero-qty / discard prompts. Matches the
+   FAssembly / FItemChart pattern so all dialogs share the same chrome
+   instead of falling back to the browser's confirm(). *@
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
+
+@* HHM-547: "Edit Item Chart…" context-menu host. VB6 FItemChart was a
+   modal-blocking editor; we render it inline with IsModal=true so the
+   FTakeoff modal stays put. OnClose flips _showItemChartModal back off.
+   Same host pattern as FAssembly. *@
+@if (_showItemChartModal)
+{
+    <FItemChart IsModal="true" ChartName="@_editItemChartName" OnClose="OnItemChartModalClosed" />
+}
+@* HHM-547: "Attachments…" context-menu host. VB6 mnuAssemblyItemsSub(mcITEM_VIEWFILES)
+   → EditAttachments for the selected item (FMain.frm:1610-1612; FAssembly.frm:4137-4141).
+   FAttachments is a self-contained modal host — same pattern as FAssembly. *@
+<FAttachments @ref="attachmentsDialog" />
+
 @code {
     // ── Query Parameters (from FAssembly toolbar navigation) ─
-    [SupplyParameterFromQuery] public string? mode { get; set; }
-    [SupplyParameterFromQuery] public string? isChangeOrder { get; set; }
-    [SupplyParameterFromQuery] public string? assemblyType { get; set; }
-    [SupplyParameterFromQuery] public string? description { get; set; }
-    [SupplyParameterFromQuery] public string? community { get; set; }
-    [SupplyParameterFromQuery] public string? communityPhase { get; set; }
-    [SupplyParameterFromQuery] public string? model { get; set; }
-    [SupplyParameterFromQuery] public string? optionID { get; set; }
-    [SupplyParameterFromQuery] public string? assembly { get; set; }
+    // Each parameter accepts BOTH a query-string value (when reached via the
+    // /takeoff route) AND an explicit [Parameter] set from a host component
+    // (when rendered inline as a modal child of FAssembly). The two intake
+    // paths don't conflict — [SupplyParameterFromQuery] only fills the
+    // property if the URL contained the named query var; otherwise the
+    // [Parameter] value the parent passed wins.
+    [Parameter, SupplyParameterFromQuery] public string? mode { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? isChangeOrder { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? assemblyType { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? description { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? community { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? communityPhase { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? model { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? optionID { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? assembly { get; set; }
+    [Parameter, SupplyParameterFromQuery] public string? returnUrl { get; set; }
+
+    /// <summary>When true, FTakeoff renders inside a modal overlay so the
+    /// host page stays visible behind it. Set by FAssembly when launching
+    /// a takeoff so the user keeps the assembly editor visible underneath.
+    /// Standalone /takeoff URL navigation leaves this false → full-page
+    /// layout.</summary>
+    [Parameter] public bool IsModal { get; set; }
+
+    /// <summary>Fires when the modal should be dismissed (OK + save success,
+    /// or Close/Cancel). Only used when <see cref="IsModal"/> is true — host
+    /// listens and flips its visibility flag. In standalone mode FTakeoff
+    /// falls back to NavigationManager.NavigateTo(returnUrl).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Fires after the user clicks OK and SaveData has filtered
+    /// zero-qty rows. The host (e.g. FAssembly) receives the kept
+    /// <see cref="TakeoffItemRow"/>s and is responsible for translating them
+    /// into its own row model (AssemblyItemRow) and appending them to its
+    /// items list with RowStatus="new" so the host's existing Save flow
+    /// persists them.
+    ///
+    /// VB6 parity: FTakeoff.frm:1590 — `Call mParentForm.AddItem(...)` —
+    /// VB6 invoked a method directly on the caller form per row. We emit a
+    /// single batch via this callback instead, which matches Blazor's
+    /// idiomatic "parent owns state, child raises events" pattern. Fires
+    /// BEFORE <see cref="OnClose"/> so the host can stage rows and the
+    /// caller's LoadDataAsync (if any) doesn't race the close.</summary>
+    [Parameter] public EventCallback<List<TakeoffItemRow>> OnItemsCommitted { get; set; }
+
+    /// <summary>HHM-236: name of a file the HOST already let the user pick
+    /// before opening this modal. VB6's Custom takeoff pops the OS file-open
+    /// dialog the instant the toolbar button is clicked (FTakeoff.frm:1706
+    /// VBGetOpenFileName) and only then shows the import; the web mirrors
+    /// that by putting the file picker ON the FAssembly toolbar (label-for
+    /// over a hidden InputFile) and handing the picked file in through
+    /// these two parameters so the Custom panel opens already imported.
+    /// Empty/null → legacy behavior (panel shows its own pick control).</summary>
+    [Parameter] public string? InitialCustomFileName { get; set; }
+
+    /// <summary>Text content of <see cref="InitialCustomFileName"/> (.txt/.csv
+    /// only — binary formats pass null and get the existing "not yet
+    /// supported" status). Read by the host during its InputFile OnChange
+    /// event because the IBrowserFile stream is only valid there.</summary>
+    [Parameter] public string? InitialCustomFileContent { get; set; }
 
     // ── Database ──────────────────────────────────────────────
-    private HomeFront.Data.DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // ── State ─────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────
     private bool IsLoading = false;
     private bool ShowOnScreenBar = false;
     private bool ShowHFVariables = false;
     private bool ShowTLVariables = false;
     private bool AddPassEnabled = false;
     private bool OkVisible = false;
-    private string CloseButtonCaption = "Close";
     private string HelpText = "";
     private double SaleQty = 0;
     private string OverrideCategory = "";
@@ -424,34 +695,294 @@
     private string mJob = "";
     private string mVendor = "";
     private bool mIsChangeOrder = false;
-    private bool mUseAltCostCodesForCO = false;
     private long mOnScreenBidID = 0;
     private string OnScreenProjectName = "";
-    private bool mCommercial = false;
     private int mViewIndex = 0;
 
+    // ── Dynamic WBS columns (VB6 LoadWBSDescriptions parity) ──────────────
+    // Maps WBS slot index (1..40) to the user-defined custom_description
+    // pulled from the customdescriptions table. Only slots WITH a non-empty
+    // description appear here — VB6 LoadWBSDescriptions both un-hides AND
+    // re-labels these columns regardless of the AppGridLayout Hidden flag.
+    // Loaded once per FTakeoff lifetime in OnInitializedAsync; cheap query,
+    // small result set (typically ≤ 5 entries). SortedDictionary keeps the
+    // columns in WBS01..WBS40 order regardless of how the DB returns them.
+    private readonly SortedDictionary<int, string> _wbsLabels = new();
+
+    // ── Items-grid layout (VB6 AppGridLayout 'FTakeoff.gItems' parity) ───
+    // The 39 static + 40 WBS column DESIGN set is excessive to show at
+    // once; VB6 reads AppGridLayout to learn which columns are visible
+    // (Hidden=0) and which are hidden (Hidden=1). Seed default
+    // (MDBUpgrade3.bas:3133-) leaves only 9 visible: Phase, Item,
+    // Description, TakeoffQty, OrderQty, JCCostCode, JCCategory, POIndex,
+    // WBS01. Per-user customizations live in the same table keyed by uid.
+    //
+    // We load with key ("FTakeoff", "gItems", 0) through the standard
+    // GridLayoutService which already falls back from the user's row to
+    // the default uid='' row when there's no per-user customization.
+    // ── Grid layout via the shared GridLayoutPresenter (standard AppGridLayout
+    //    path — same load + uid→uid=''→char(1)→defaults fallback + processing
+    //    as every other migrated grid). VB6: IniGetGrid(Me, gItems). The layout
+    //    is keyed by raw colkey (== TakeoffItemRow property name for the fields
+    //    read by IsColVisible/ColCaption and the WBS loop). Column ORDER stays
+    //    fixed in markup here — unlike the persistent views, gItems is a
+    //    TRANSIENT staging grid (ColumnReorder off) and must emit EVERY column
+    //    so the header column-chooser can re-show hidden ones; the WBS slots
+    //    also need custom-description caption/visibility (VB6 LoadWBSDescriptions)
+    //    that the standard GetOrdered() can't express. So the presenter drives
+    //    the DATA (load/fallback/caption/visibility) and the markup consumes it
+    //    via IsColVisible/ColCaption below.
+    private readonly GridLayoutPresenter<TakeoffItemRow> _itemsGrid = new("FTakeoff", "gItems");
+    private Dictionary<string, GridLayoutColumn> _itemsGridLayout => _itemsGrid.Layout;
+
+    /// <summary>Per-field visibility lookup driven by AppGridLayout. If the
+    /// field appears in the layout, its <c>Hidden</c> flag wins; otherwise
+    /// the hardcoded <paramref name="defaultVisible"/> stands in. Callers
+    /// pass <c>true</c> for fields that VB6 ships visible-by-default and
+    /// <c>false</c> for the hidden helpers (RawFormula, ResolvedFormula,
+    /// the Pass* shadows, etc.). Keeps the markup tidy and lets a user
+    /// who customizes their layout flip any column without code changes.</summary>
+    private bool IsColVisible(string field, bool defaultVisible)
+    {
+        if (_itemsGridLayout.TryGetValue(field, out var col))
+            return !col.Hidden;
+        return defaultVisible;
+    }
+
+    /// <summary>Per-field HEADER caption driven by AppGridLayout (FTakeoff.gItems) —
+    /// the same source VB6 uses (DBGetGrid), so headers read "Comments"/"POIndex"/
+    /// "Conversion Factor" exactly like legacy instead of the hardcoded
+    /// "Notes"/"PO Index"/"Conv Factor" that had drifted from the DB. The layout's
+    /// caption wins when present; otherwise the VB6 fallback stands in.</summary>
+    private string ColCaption(string field, string defaultCaption)
+    {
+        if (_itemsGridLayout.TryGetValue(field, out var col)
+            && !string.IsNullOrWhiteSpace(col.Caption))
+            return col.Caption;
+        return defaultCaption;
+    }
+
+    /// <summary>Per-field WIDTH driven by AppGridLayout (HHM-210). VB6 DBGetGrid
+    /// applies <c>.ColWidth(Col) = rs("width")</c> (twips) for every layout row,
+    /// so legacy column proportions come from the saved layout — the migrated
+    /// grid had hardcoded pixel widths instead, which made the rendered columns
+    /// visibly different from the legacy ones. Twips convert via the canonical
+    /// <see cref="GridLayoutPresenter.WidthPx"/> (/15 + 16px padding, clamped);
+    /// fields absent from the layout keep their markup default.</summary>
+    private string ColWidth(string field, string defaultWidth)
+    {
+        if (_itemsGridLayout.TryGetValue(field, out var col)
+            && col.Width is > 0)
+            return $"{GridLayoutPresenter.WidthPx(col.Width.Value)}px";
+        return defaultWidth;
+    }
+
+    /// <summary>Choose Columns schema (HHM-613.2/3). VB6 FColumns lists only the
+    /// CAPTIONED AppGridLayout columns (the presenter filters those), and
+    /// LoadWBSDescriptions additionally surfaces — and re-labels — every WBS slot
+    /// with a custom description, exactly like the markup's WBS loop. Without this
+    /// schema the dialog fell back to every GridColumn child (raw colkeys legacy
+    /// never shows).</summary>
+    private IEnumerable<ChooseColumnDescriptor>? GetTakeoffChooseColumnsSchema()
+    {
+        var schema = _itemsGrid.GetChooseColumnsSchema();
+        if (schema == null) return null;
+
+        var list = new List<ChooseColumnDescriptor>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in schema)
+        {
+            if (TryGetWbsSlot(c.Field, out var slot) && _wbsLabels.TryGetValue(slot, out var label))
+                list.Add(new ChooseColumnDescriptor { Field = c.Field, Header = label, Visible = true });
+            else
+                list.Add(c);
+            seen.Add(c.Field);
+        }
+        foreach (var (slot, label) in _wbsLabels)
+        {
+            var field = $"WBS{slot:D2}";
+            if (!seen.Contains(field))
+                list.Add(new ChooseColumnDescriptor { Field = field, Header = label, Visible = true });
+        }
+        return list;
+    }
+
+    private static bool TryGetWbsSlot(string field, out int slot)
+    {
+        slot = 0;
+        return field is { Length: 5 }
+            && field.StartsWith("WBS", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(field.AsSpan(3), out slot);
+    }
+
+    /// <summary>Applies Choose Columns picks into the AppGridLayout dictionary so
+    /// IsColVisible flips the real GridColumn Visible parameter (HHM-613.2) —
+    /// that is also what lets arrow-key navigation reach a newly inserted column,
+    /// because the grid's keyboard targets read column.Visible. Column ORDER stays
+    /// fixed: this is a transient staging grid (ColumnReorder off), same as VB6.</summary>
+    private Task OnTakeoffColumnsChosenAsync(ChooseColumnsResult result)
+    {
+        if (result?.Columns == null) return Task.CompletedTask;
+
+        foreach (var picked in result.Columns)
+        {
+            if (_itemsGridLayout.TryGetValue(picked.Field, out var layout))
+                layout.Hidden = !picked.Visible;
+            else
+                _itemsGridLayout[picked.Field] = new GridLayoutColumn { Field = picked.Field, Hidden = !picked.Visible };
+        }
+
+        _itemsGrid.BumpVersion();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // ── List-panel right-click menu (VB6 FTakeoff: gList_MouseDown → mnuTakeoff) ──
+    // Right-clicking the assembly list pops a menu that switches the current
+    // Views[] entry. Tracks visibility + cursor position; handlers below.
+    private bool _showListContextMenu;
+    private double _listContextMenuX;
+    private double _listContextMenuY;
+
     // ── Grid Refs ─────────────────────────────────────────────
-    private HfGrid<TakeoffItemRow>? ItemsGrid;
-    private HfGrid<HFVariableRow>? HFVariablesGrid;
-    private HfGrid<TLVariableRow>? TLVariablesGrid;
+    private GridControl<TakeoffItemRow>? ItemsGrid;
+    private GridControl<HFVariableRow>? HFVariablesGrid;
+    private GridControl<TLVariableRow>? TLVariablesGrid;
+
+    // GridControl OnCellSave wiring — without this, inline edits to
+    // TakeoffQty / OrderQty in the lower grid never reach ItemsData,
+    // so SaveData reads OrderQty=0 even though the user typed 20. The
+    // handler also mirrors VB6 gItems_AfterEdit: TakeoffQty edit →
+    // recalc OrderQty; OrderQty edit → back-solve TakeoffQty.
+    private GridControlEvents<TakeoffItemRow> itemsGridEvents = new();
+
+    // In-app message box (replaces JS confirm() for the zero-qty prompt
+    // in SaveData and any future prompts). Same FlexKit control as
+    // FAssembly / FItemChart so all dialogs share one look-and-feel.
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
+
+    // Variables-grid events (HHM-232 validation) + pre-edit snapshot for revert.
+    private GridControlEvents<HFVariableRow> hfVariablesEvents = new();
+    private string _hfVarPrevValue = "";
+
+    private async Task OnHFVariableCellSave(CellSaveArgs<HFVariableRow> args)
+    {
+        if (!string.Equals(args.ColumnName, nameof(HFVariableRow.Value), StringComparison.OrdinalIgnoreCase))
+            return;
+        var row = args.Data;
+        if (row == null) return;
+        // Rows driven by a ListOfValues translate numeric picks elsewhere — VB6
+        // only range-checks plain numeric variables.
+        if (!string.IsNullOrEmpty(row.ListOfValues)) return;
+
+        var text = (row.Value ?? "").Trim();
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var val))
+        {
+            row.Value = _hfVarPrevValue;   // VB6: Cancel = True (silent reject)
+            StateHasChanged();
+            return;
+        }
+        if (row.Max > 0 && val > row.Max)
+        {
+            row.Value = _hfVarPrevValue;
+            StateHasChanged();
+            if (_messageBox != null)
+                await _messageBox.ShowAsync(
+                    $"The maximum value for {row.Name} is '{row.Max:0}'. The number you have entered is too large.",
+                    title: "Precision Builder", buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, icon: "info");
+            return;
+        }
+        if (val < row.Min)
+        {
+            row.Value = _hfVarPrevValue;
+            StateHasChanged();
+            if (_messageBox != null)
+                await _messageBox.ShowAsync(
+                    $"The minimum value for {row.Name} is '{row.Min:0}'. The number you have entered is too small.",
+                    title: "Precision Builder", buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, icon: "info");
+            return;
+        }
+        // VB6 `.EditText = Val(.EditText)` — normalize the accepted value.
+        row.Value = val.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // VB6 MFormulas.LoadVariables (bas:98): the "Quantity" row comes from the
+    // `variables` TABLE — Value=DefaultValue, UOM/Min/Max from the record; a
+    // missing record leaves UOM empty with ±1e18 bounds. The old hardcoded
+    // UOM="each" showed a unit label legacy never displays (HHM-232).
+    private async Task<HFVariableRow> BuildQuantityVariableAsync()
+    {
+        var qty = new HFVariableRow
+        {
+            Name = "Quantity", Value = "1.000", UOM = "",
+            Min = -1e18, Max = 1e18, DisplayOrder = -1
+        };
+        try
+        {
+            var rows = await db.QueryAsync("SELECT * FROM variables WHERE name = @Name", new { Name = "Quantity" });
+            var rec = rows.FirstOrDefault();
+            if (rec != null)
+            {
+                var lov = (rec["listofvalues"]?.ToString() ?? "").Trim();
+                if (lov.Length == 0)
+                {
+                    var def = ToDouble(rec["defaultvalue"]);
+                    qty.Value = def.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    qty.UOM = rec["uom"]?.ToString() ?? "";
+                    qty.Min = ToDouble(rec["minimumvalue"]);
+                    qty.Max = ToDouble(rec["maximumvalue"]);
+                }
+                else
+                {
+                    qty.ListOfValues = " |" + lov;
+                }
+                qty.Help = rec["help"]?.ToString() ?? "";
+            }
+        }
+        catch { /* variables table missing/unreadable — keep defaults */ }
+        return qty;
+    }
+
+    // ── Mass-edit target column (FAssembly multi-select fan-out parity) ─
+    //
+    // When the user types a number with multiple rows selected,
+    // GridControl raises OnTypeAheadCommit with the typed value + the
+    // currently-selected rows. We need to know WHICH column to target:
+    // OnCellEdit fires whenever the user enters an editable cell, so
+    // _activeEditColumn captures it. The default fallback is OrderQty —
+    // the most common mass-edit target on the takeoff form.
+    private string? _activeEditColumn;
+
+    // VB6 bUseQuotePricing (SaveData frm:1419): true = keep the quote's pricing,
+    // false = look up new pricing. Recorded by the Refresh Costs gate (HHM-231).
+    private bool mUseQuotePricing = true;
+    private string ItemsTypeAheadTargetField =>
+        string.IsNullOrEmpty(_activeEditColumn) ? nameof(TakeoffItemRow.OrderQty) : _activeEditColumn;
 
     // ── Grid Settings ─────────────────────────────────────────
-    private HfEditSettings variableEditSettings = new()
+    private EditSettings variableEditSettings = new()
     {
         AllowEditing = true,
         AllowEditOnDblClick = true,
         ShowConfirmDialog = false
     };
-    private HfEditSettings itemEditSettings = new()
+    // EditMode.Batch matches FAssembly so multi-row type-ahead fan-out
+    // works on TakeoffQty / OrderQty: typing a number while several
+    // rows are selected commits the value to every selected row in
+    // one shot via OnTypeAheadCommit. Single-row edits still go
+    // through OnCellSave as before.
+    private EditSettings itemEditSettings = new()
     {
         AllowEditing = true,
         AllowDeleting = true,
         AllowEditOnDblClick = true,
-        ShowConfirmDialog = false
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
     };
-    private HfSelectionSettings itemSelectionSettings = new()
+    private SelectionSettings itemSelectionSettings = new()
     {
-        Mode = SelectionMode.Row,
+        Mode = SelectionMode.Cell,
         Type = SelectionType.Multiple,
         EnableToggle = true
     };
@@ -461,17 +992,403 @@
     private List<HFVariableRow> HFVariablesData = new();
     private List<TLVariableRow> TLVariablesData = new();
     private List<ListTreeNode> ListNodes = new();
+    /// <summary>Monotonically increasing index used to generate unique SQL
+    /// parameter names for the parameterized drill-down WHERE fragments.</summary>
+    private int node_index_counter;
     private List<ComboItem> CategoryList = new();
+
+    // DropDownListControl DataSource for the footer "Override JC Category"
+    // picker. The leading empty-value entry preserves the old
+    // <option value=""></option> so the user can clear the override (select
+    // blank). Recomputed from CategoryList so it tracks LoadCategories().
+    private IEnumerable<ComboItem> OverrideCategoryOptions =>
+        new[] { new ComboItem { Value = "", Text = "" } }.Concat(CategoryList);
 
     // ── View Definitions ──────────────────────────────────────
     private List<ViewDef> Views = new();
+
+    /// <summary>True only when the active view's name is "Estimates" — used
+    /// to show/hide the OverridePrice column. Mirrors VB6 FTakeoff:
+    /// <c>gItems.ColHidden(gItems.ColIndex("OverridePrice")) = mViews(mViewIndex).Name &lt;&gt; "Estimates"</c>.</summary>
+    private bool IsEstimatesView =>
+        mViewIndex >= 0 && mViewIndex < Views.Count
+        && string.Equals(Views[mViewIndex].Name, "Estimates", StringComparison.Ordinal);
+
+    /// <summary>Display name of the currently active view, used by the
+    /// modal title bar. VB6 set <c>Me.Caption = mViews(mViewIndex).Name</c>
+    /// on every view switch (FTakeoff.frm:2087); we just project off the
+    /// same field. Empty Views[] (constructor race) falls back to "Takeoff".
+    /// Custom mode has no list view at all — VB6 titles the window after
+    /// the picked file (<c>Me.Caption = sFileName</c>, FTakeoff.frm:1708),
+    /// so never show a view name like "Assemblies" there (HHM-236).</summary>
+    private string CurrentViewName =>
+        IsCustomMode
+            ? (string.IsNullOrEmpty(CustomTakeoffSelectedFileName)
+                ? "Custom Takeoff"
+                : CustomTakeoffSelectedFileName)
+            : Views.Count > 0 && mViewIndex >= 0 && mViewIndex < Views.Count
+                ? Views[mViewIndex].Name
+                : "Takeoff";
+
+    // ── Right-click menu state (replaces the old flat list) ─────────────
+    // Mirrors VB6 FMain.mnuTakeoff: Find… (Ctrl+F), then four submenu
+    // groups (View Assemblies, View Quotes & Jobs, View Items, View
+    // Estimates). The "open submenu" pointer lets us drive submenu visibility
+    // from C# instead of CSS :hover — the hover path was unreliable inside
+    // a fixed-position context-menu host.
+    private enum MenuGroup { None, Assemblies, QuotesJobs, Items, Estimates }
+    private MenuGroup _openSubmenu = MenuGroup.None;
+
+    /// <summary>FPickList instance used by the Find… menu entry.</summary>
+    private FPickList? pickList;
+
+    // ── Custom takeoff (file-import) mode ──────────────────────────────
+    // See HomeFront FTakeoff.razor for the full design rationale — this
+    // mirror is kept in lockstep with the per-app FTakeoff in HomeFront/.
+
+    private bool IsCustomMode =>
+        string.Equals(mTakeoffMode, "Custom", StringComparison.OrdinalIgnoreCase);
+
+    private record CustomExtensionOption(int Index, string Label, string Accept);
+
+    private static readonly List<CustomExtensionOption> CustomTakeoffExtensionOptions = new()
+    {
+        new(1, "All Import Files (*.pee;*.xls;*.xlsx;*.txt;*.csv)", ".pee,.xls,.xlsx,.txt,.csv"),
+        new(2, "Timberline Estimates (*.pee)",                       ".pee"),
+        new(3, "Excel Files (*.xls;*.xlsx)",                          ".xls,.xlsx"),
+        new(4, "Text Files (*.txt;*.csv)",                            ".txt,.csv")
+    };
+
+    private int CustomTakeoffExtension { get; set; } = 1;
+    private string CustomTakeoffAcceptAttr =>
+        CustomTakeoffExtensionOptions.FirstOrDefault(o => o.Index == CustomTakeoffExtension)?.Accept
+        ?? ".txt,.csv";
+    private string CustomTakeoffSelectedFileName = "";
+    private int CustomTakeoffParsedRowCount;
+    private string CustomTakeoffStatus = "";
+    private bool CustomTakeoffStatusIsError;
+
+    private string? _customTakeoffCachedContent;
+    private char _customTakeoffCachedDelimiter;
+    private List<string> _customTakeoffUnmappedHeaders = new();
+    private Dictionary<string, string> _customTakeoffPendingMappings =
+        new(StringComparer.Ordinal);
+
+    private static readonly string[] CustomTakeoffCanonicalFields =
+    {
+        "Phase", "Item", "Description",
+        "TakeoffQty", "TakeoffUOM",
+        "OrderQty", "OrderUOM",
+        "JCCostCode", "JCCategory",
+        "Price", "POIndex", "Vendor",
+        "Notes", "Location"
+    };
+
+    // DropDownListControl DataSource for the per-column mapping picker. The
+    // leading empty-value entry preserves the old <option value="">(skip)</option>
+    // so a header can be mapped to nothing (Value="" → drop the column).
+    private static readonly List<ComboItem> CustomTakeoffMappingOptions =
+        new[] { new ComboItem { Value = "", Text = "(skip)" } }
+            .Concat(CustomTakeoffCanonicalFields.Select(f => new ComboItem { Value = f, Text = f }))
+            .ToList();
+
+    private void LoadCustomTakeoffPrefs()
+    {
+        var raw = UserPrefs.Get("Options", "CustomTakeoffType", "1");
+        CustomTakeoffExtension = int.TryParse(raw, out var v) && v >= 1 && v <= CustomTakeoffExtensionOptions.Count
+            ? v : 1;
+    }
+
+    // DropDownListControl ValueChanged bridge — mirrors the old
+    // `<select @bind="CustomTakeoffExtension" @bind:after="OnCustomExtensionChanged">`:
+    // commit the picked value, then persist the pref. CustomTakeoffAcceptAttr
+    // recomputes from CustomTakeoffExtension on the next render.
+    private void OnCustomExtensionDropdownChanged(int value)
+    {
+        CustomTakeoffExtension = value;
+        OnCustomExtensionChanged();
+    }
+
+    private void OnCustomExtensionChanged()
+    {
+        UserPrefs.Put("Options", "CustomTakeoffType", CustomTakeoffExtension.ToString());
+    }
+
+    private async Task OnCustomFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        var ext = (Path.GetExtension(file.Name) ?? "").ToLowerInvariant();
+        string? content = null;
+        try
+        {
+            if (ext == ".csv" || ext == ".txt")
+            {
+                const long maxBytes = 8L * 1024 * 1024;
+                await using var stream = file.OpenReadStream(maxBytes);
+                using var reader = new StreamReader(stream);
+                content = await reader.ReadToEndAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Custom takeoff import failed");
+            CustomTakeoffSelectedFileName = file.Name;
+            CustomTakeoffParsedRowCount = 0;
+            CustomTakeoffStatusIsError = true;
+            CustomTakeoffStatus = $"Import failed: {ex.Message}";
+            StateHasChanged();
+            return;
+        }
+
+        ProcessCustomTakeoffFile(file.Name, content);
+        StateHasChanged();
+    }
+
+    /// <summary>Shared import step for BOTH intake paths: the in-panel
+    /// InputFile (re-pick) and the host-picked file handed in through
+    /// <see cref="InitialCustomFileName"/>/<see cref="InitialCustomFileContent"/>
+    /// (HHM-236 — FAssembly's Custom button opens the OS picker directly,
+    /// like VB6's VBGetOpenFileName, then opens this form pre-imported).
+    /// <paramref name="content"/> is null for binary formats (.pee/.xls/
+    /// .xlsx) which keep their "not yet supported" status message.</summary>
+    private void ProcessCustomTakeoffFile(string fileName, string? content)
+    {
+        CustomTakeoffStatus = "";
+        CustomTakeoffStatusIsError = false;
+        CustomTakeoffParsedRowCount = 0;
+        CustomTakeoffSelectedFileName = fileName;
+
+        var ext = (Path.GetExtension(fileName) ?? "").ToLowerInvariant();
+        try
+        {
+            if (ext == ".csv" || ext == ".txt")
+            {
+                if (content == null)
+                {
+                    CustomTakeoffStatusIsError = true;
+                    CustomTakeoffStatus = "Import failed: the file could not be read.";
+                }
+                else
+                {
+                    ParseTextCustomTakeoff(content, ext == ".csv" ? ',' : '\t');
+                }
+            }
+            else if (ext == ".pee")
+            {
+                CustomTakeoffStatusIsError = true;
+                CustomTakeoffStatus = "Timberline (.pee) imports are not yet supported in the web client. " +
+                                      "Export to CSV from Timberline and re-import.";
+            }
+            else if (ext == ".xls" || ext == ".xlsx")
+            {
+                CustomTakeoffStatusIsError = true;
+                CustomTakeoffStatus = "Excel (.xls/.xlsx) imports are not yet supported in the web client. " +
+                                      "Save the workbook as CSV and re-import.";
+            }
+            else
+            {
+                CustomTakeoffStatusIsError = true;
+                CustomTakeoffStatus = $"Unsupported file extension: {ext}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Custom takeoff import failed");
+            CustomTakeoffStatusIsError = true;
+            CustomTakeoffStatus = $"Import failed: {ex.Message}";
+        }
+    }
+
+    private void ParseTextCustomTakeoff(string content, char delimiter)
+    {
+        _customTakeoffCachedContent = content;
+        _customTakeoffCachedDelimiter = delimiter;
+        _customTakeoffUnmappedHeaders.Clear();
+        _customTakeoffPendingMappings.Clear();
+
+        var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+                           .Where(l => !string.IsNullOrWhiteSpace(l))
+                           .ToList();
+        if (lines.Count == 0)
+        {
+            CustomTakeoffStatus = "File is empty.";
+            CustomTakeoffStatusIsError = true;
+            return;
+        }
+
+        var firstRow = SplitDelimited(lines[0], delimiter);
+        var hasHeader = firstRow.Any(c => CustomTakeoffHeaderAlias(c) != null);
+        var headers = hasHeader
+            ? firstRow.Select(c => CustomTakeoffResolveHeader(c)).ToList()
+            : DefaultHeaders(firstRow.Count);
+
+        if (hasHeader)
+        {
+            for (int i = 0; i < firstRow.Count && i < headers.Count; i++)
+            {
+                var rawHeader = firstRow[i].Trim();
+                if (string.IsNullOrEmpty(rawHeader)) continue;
+                if (!string.IsNullOrEmpty(headers[i]))
+                    UserPrefs.Put("CustomTakeoffMapping", rawHeader, headers[i]);
+                else if (!_customTakeoffUnmappedHeaders.Contains(rawHeader))
+                    _customTakeoffUnmappedHeaders.Add(rawHeader);
+            }
+        }
+
+        ItemsData = new List<TakeoffItemRow>();
+        var dataStart = hasHeader ? 1 : 0;
+        for (int r = dataStart; r < lines.Count; r++)
+        {
+            var cells = SplitDelimited(lines[r], delimiter);
+            var row = new TakeoffItemRow { Job = mJob };
+            for (int c = 0; c < headers.Count && c < cells.Count; c++)
+            {
+                var field = headers[c];
+                if (string.IsNullOrEmpty(field)) continue;
+                ApplyCustomTakeoffCell(row, field, cells[c].Trim());
+            }
+            ItemsData.Add(row);
+        }
+        CustomTakeoffParsedRowCount = ItemsData.Count;
+        var unmappedNote = _customTakeoffUnmappedHeaders.Count > 0
+            ? $" — {_customTakeoffUnmappedHeaders.Count} unmapped column(s) shown below"
+            : "";
+        CustomTakeoffStatus = $"Imported {ItemsData.Count} row(s){unmappedNote} — review in the items grid below.";
+        CustomTakeoffStatusIsError = false;
+        // VB6 ReadText ends with a modal review whose OK hands the rows to
+        // the host via mParentForm.AddItem (FTakeoff.frm:1590). Surface the
+        // OK button so the imported rows can commit through the existing
+        // OnOkClick → SaveData → OnItemsCommitted pipeline; a zero-row
+        // parse keeps OK hidden (HHM-236).
+        OkVisible = ItemsData.Count > 0;
+    }
+
+    private void ApplyCustomTakeoffMapping()
+    {
+        if (string.IsNullOrEmpty(_customTakeoffCachedContent)) return;
+        foreach (var kv in _customTakeoffPendingMappings)
+        {
+            if (string.IsNullOrEmpty(kv.Key) || string.IsNullOrEmpty(kv.Value)) continue;
+            UserPrefs.Put("CustomTakeoffMapping", kv.Key, kv.Value);
+        }
+        ParseTextCustomTakeoff(_customTakeoffCachedContent!, _customTakeoffCachedDelimiter);
+    }
+
+    private static List<string> SplitDelimited(string line, char delimiter)
+    {
+        var result = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        bool inQuotes = false;
+        foreach (var ch in line)
+        {
+            if (ch == '"') { inQuotes = !inQuotes; continue; }
+            if (ch == delimiter && !inQuotes) { result.Add(sb.ToString()); sb.Clear(); continue; }
+            sb.Append(ch);
+        }
+        result.Add(sb.ToString());
+        return result;
+    }
+
+    private string? CustomTakeoffHeaderAlias(string raw)
+    {
+        var key = (raw ?? "").Trim().ToLowerInvariant().Replace(" ", "").Replace("_", "");
+        return key switch
+        {
+            "phase" => "Phase",
+            "item" or "partnumber" or "part#" or "partno" => "Item",
+            "description" or "desc" or "itemdesc" => "Description",
+            "qty" or "quantity" or "takeoffqty" => "TakeoffQty",
+            "uom" or "unit" or "takeoffuom" => "TakeoffUOM",
+            "orderqty" or "poqty" => "OrderQty",
+            "orderuom" or "pouom" => "OrderUOM",
+            "costcode" or "jccostcode" => "JCCostCode",
+            "category" or "jccategory" => "JCCategory",
+            "price" or "rate" or "porate" => "Price",
+            "poindex" => "POIndex",
+            "vendor" or "povendor" => "Vendor",
+            "notes" or "comments" => "Notes",
+            "location" => "Location",
+            _ => null
+        };
+    }
+
+    private string CustomTakeoffResolveHeader(string raw)
+    {
+        var alias = CustomTakeoffHeaderAlias(raw);
+        if (alias != null) return alias;
+        return UserPrefs.Get("CustomTakeoffMapping", raw.Trim(), "");
+    }
+
+    private static List<string> DefaultHeaders(int count)
+    {
+        var defaults = new[] { "Phase", "Item", "Description", "TakeoffQty", "TakeoffUOM" };
+        var headers = new List<string>(count);
+        for (int i = 0; i < count; i++)
+            headers.Add(i < defaults.Length ? defaults[i] : "");
+        return headers;
+    }
+
+    private static void ApplyCustomTakeoffCell(TakeoffItemRow row, string field, string value)
+    {
+        switch (field)
+        {
+            case "Phase":         row.Phase = value; break;
+            case "Item":          row.Item = value; break;
+            case "Description":   row.Description = value; break;
+            case "TakeoffQty":    row.TakeoffQty = ParseDouble(value); break;
+            case "TakeoffUOM":    row.TakeoffUOM = value; break;
+            case "OrderQty":      row.OrderQty = ParseDouble(value); break;
+            case "OrderUOM":      row.OrderUOM = value; break;
+            case "JCCostCode":    row.JCCostCode = value; break;
+            case "JCCategory":    row.JCCategory = value; break;
+            case "Price":         row.Price = ParseDouble(value); break;
+            case "POIndex":       row.POIndex = value; break;
+            case "Notes":         row.Notes = value; break;
+            case "Location":      row.Location = value; break;
+        }
+    }
+
+    private static double ParseDouble(string s) =>
+        double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0d;
 
     // ── Lifecycle ─────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
         mSessionID = $"{Environment.MachineName}_{Environment.ProcessId}";
+
+        // Inline-edit persistence + VB6 gItems_AfterEdit cross-recalc.
+        // Without this the user's typed TakeoffQty / OrderQty values
+        // never make it back to ItemsData and SaveData's zero-qty check
+        // wrongly fires.
+        itemsGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<TakeoffItemRow>>(this, OnItemsCellSave);
+
+        // FAssembly-parity multi-select fan-out: OnCellEdit tracks which
+        // editable column the user is in so type-ahead knows where to
+        // commit; OnTypeAheadCommit fans the typed value across every
+        // selected row in one shot.
+        itemsGridEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<TakeoffItemRow>>(this, args =>
+        {
+            _activeEditColumn = args.ColumnName;
+        });
+        itemsGridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<TakeoffItemRow>>(this, OnItemsTypeAheadCommit);
+
+        // VB6 gHFVariables_BeforeEdit "value" case (frm:2977-2995): non-numeric
+        // input is rejected outright; values outside the variable's Min/Max get
+        // the legacy "too large"/"too small" message and the edit reverts
+        // (HHM-232). OnCellEdit snapshots the pre-edit value for the revert.
+        hfVariablesEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<HFVariableRow>>(this, args =>
+        {
+            _hfVarPrevValue = args.Data?.Value ?? "";
+        });
+        hfVariablesEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<HFVariableRow>>(this, OnHFVariableCellSave);
+
         await LoadCategories();
+        await LoadWbsDescriptionsAsync();
+        await LoadItemsGridLayoutAsync();
         LoadViewDefinitions();
+        LoadCustomTakeoffPrefs();
 
         // If navigated with query params (from FAssembly toolbar), call Takeoff()
         if (!string.IsNullOrEmpty(mode))
@@ -502,7 +1419,7 @@
         try
         {
             var rows = await db.QueryAsync(
-                $"SELECT ISNULL(Category,'') + ' - ' + ISNULL(Description,'') AS Display, Category FROM StandardCategories WHERE DivisionID = {DivisionID} ORDER BY Category");
+                $"SELECT ISNULL(Category,'') + ' - ' + ISNULL(Description,'') AS Display, Category FROM StandardCategories WHERE DivisionID = {SessionState.DivisionID} ORDER BY Category");
             CategoryList = rows.Select(r => new ComboItem
             {
                 Value = r["Category"]?.ToString() ?? "",
@@ -511,7 +1428,64 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadCategories error: {ex.Message}");
+            Logger.LogError(ex, $"LoadCategories error: ");
+        }
+    }
+
+    /// <summary>VB6 parity for FTakeoff.frm:3259 <c>LoadWBSDescriptions</c>.
+    /// VB6 allocates 40 hidden WBS-N columns at runtime then SELECTs from
+    /// <c>customdescriptions</c> for any item like 'WBS__' that has a
+    /// non-empty <c>custom_description</c> — each match un-hides its column
+    /// and replaces the header caption with the description. We do the
+    /// data part: build a sorted slot→label map; the grid markup iterates
+    /// the map to render one <see cref="GridColumn"/> per visible slot.
+    /// Slots WITHOUT a custom description simply aren't rendered.</summary>
+    private async Task LoadWbsDescriptionsAsync()
+    {
+        try
+        {
+            // SQL mirrors VB6 verbatim — single-column custom_description
+            // table; the LIKE 'WBS__' matches WBS01..WBS40 plus any other
+            // 5-char codes starting with WBS. The TryParse below filters
+            // strictly to numeric 1..40 to stay safe against stray entries.
+            var rows = await db.QueryAsync(
+                "SELECT Item, custom_description FROM customdescriptions " +
+                "WHERE ISNULL(custom_description,'') <> '' AND item LIKE 'WBS__' " +
+                "ORDER BY Item");
+            _wbsLabels.Clear();
+            foreach (var r in rows)
+            {
+                var item = r["Item"]?.ToString();
+                if (string.IsNullOrEmpty(item) || item.Length != 5) continue;
+                if (!int.TryParse(item.AsSpan(3), out var idx)) continue;
+                if (idx < 1 || idx > 40) continue;
+                var label = r["custom_description"]?.ToString();
+                if (string.IsNullOrWhiteSpace(label)) continue;
+                _wbsLabels[idx] = label;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Don't let a customdescriptions lookup failure block the form.
+            Logger.LogWarning(ex, "LoadWbsDescriptionsAsync failed; no WBS columns will render.");
+        }
+    }
+
+    /// <summary>Loads AppGridLayout rows for 'FTakeoff.gItems' so the
+    /// markup's IsColVisible(field, default) helper can defer to the
+    /// configured visibility. GridLayoutService already does the
+    /// per-user → default('') fallback internally, so this is a single
+    /// read. Failures are logged and swallowed — we just fall back to
+    /// the hardcoded Visible defaults in the markup.</summary>
+    private async Task LoadItemsGridLayoutAsync()
+    {
+        try
+        {
+            await _itemsGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadItemsGridLayoutAsync failed; columns will use hardcoded defaults.");
         }
     }
 
@@ -526,8 +1500,9 @@
                 Name = "Assemblies",
                 KeyFlds = "m.community|m.model+'~'+m.assembly",
                 DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional  -- ')|m.Assembly + isnull(' - '+m.description,'')",
-                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=0",
-                Database = "HomeFront"
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=0",
+                Database = "HomeFront",
+                FindQry = $"select AssemblyID ID,isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional  -- ') Community,m.Assembly,m.Model,m.Series,m.Description from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=0 order by 2,3,4,5"
             },
             // 1: Specific Extras
             new ViewDef
@@ -535,8 +1510,9 @@
                 Name = "Assemblies Specific Extras",
                 KeyFlds = "m.community|m.model|m.optionid+'~'+m.assembly",
                 DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional -- ')|m.Model + isnull(' - ' +em.description,'')|m.Assembly + isnull(' - '+m.description,'')",
-                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join estmodellist em on(m.model=em.model) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=2",
-                Database = "HomeFront"
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join estmodellist em on(m.model=em.model) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=2",
+                Database = "HomeFront",
+                FindQry = $"select m.assemblyid id,m.Assembly,m.Model,m.OptionID,m.Series,m.Description,m.Category from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join estmodellist em on(m.model=em.model) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=2 order by 2,3,4,5"
             },
             // 2: Global Extras
             new ViewDef
@@ -544,8 +1520,9 @@
                 Name = "Global Extras",
                 KeyFlds = "m.community|m.category|m.optionid+'~'+m.assembly",
                 DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional -- ')|m.category+isnull(' - '+c.description,'')|m.Assembly + isnull(' - '+m.description,'')",
-                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=3",
-                Database = "HomeFront"
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=3",
+                Database = "HomeFront",
+                FindQry = $"select m.assemblyid id,m.Assembly,m.OptionID,m.Description,m.Category from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=3 order by 2,3,4,5"
             },
             // 3: Design Center Options
             new ViewDef
@@ -553,8 +1530,9 @@
                 Name = "Design Center Options",
                 KeyFlds = "m.community|m.category|m.optionid+'~'+m.assembly",
                 DisplayFlds = "isnull(nullif(m.community+isnull(' - '+l.description,''),''),' -- Non-regional Options -- ')|m.category+isnull(' - '+c.description,'')|m.Assembly + isnull(' - '+m.description,'')",
-                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=4",
-                Database = "HomeFront"
+                FromWhere = $" from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=4",
+                Database = "HomeFront",
+                FindQry = $"select m.assemblyid id,m.Assembly,m.OptionID,m.Series,m.Description,m.Category from tbldbassemblymaster m left outer join tbllocality l on(m.community=l.area) left outer join tblcategories c on(m.category=c.category) where m.DivisionID = {SessionState.DivisionID} and isnull(m.inactive,0)=0 and m.assemblytype=4 order by 2,3,4,5"
             },
             // 4: Quotes
             new ViewDef
@@ -563,8 +1541,9 @@
                 KeyFlds = "job|changeorder|assembly",
                 DisplayFlds = "job + ' - ' + jobdesc|changeorderdesc|assemblydesc",
                 SortFlds = "||assemblytype",
-                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {DivisionID} and isquote=1",
-                Database = "HomeFront"
+                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {SessionState.DivisionID} and isquote=1",
+                Database = "HomeFront",
+                FindQry = $"select Assembly ID,Job,JobDesc,ChangeOrderDesc,AssemblyDesc from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {SessionState.DivisionID} and isquote=1 order by 2,3,4,5"
             },
             // 5: Open Jobs
             new ViewDef
@@ -573,12 +1552,27 @@
                 KeyFlds = "job|changeorder|assembly",
                 DisplayFlds = "job + ' - ' + jobdesc|changeorderdesc|assemblydesc",
                 SortFlds = "||assemblytype",
-                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {DivisionID} and isquote=0",
-                Database = "HomeFront"
+                FromWhere = $" from OpenJobAndQuoteAssemblies where OpenJobAndQuoteAssemblies.DivisionID = {SessionState.DivisionID} and isquote=0",
+                Database = "HomeFront",
+                FindQry = $"select Assembly ID,Job,JobDesc,ChangeOrderDesc,AssemblyDesc from OpenJobAndQuoteAssemblies where DivisionID = {SessionState.DivisionID} and isquote=0 order by 2,3,4,5"
             },
-            // 6-7: Estimating Assemblies (placeholder)
+            // 6: Custom Options (VB6 Job_CustomOptions, FTakeoff.frm:1952)
+            new ViewDef
+            {
+                Name = "Custom Options",
+                KeyFlds = "job|changeorder|assembly",
+                DisplayFlds = "job + ' - ' + jobdesc|changeorderdesc|assemblydesc",
+                SortFlds = "||assemblytype",
+                FromWhere = $" from dbo.UnApprovedCustomOptions where DivisionID = {SessionState.DivisionID} and isquote=0",
+                Database = "HomeFront",
+                FindQry = $"select Assembly ID,Job,JobDesc,ChangeOrderDesc,Assembly,AssemblyDesc from dbo.UnApprovedCustomOptions where DivisionID = {SessionState.DivisionID} and isquote=0 order by 2,3,4,5"
+            },
+            // 7: (reserved — VB6 Estimating Assemblies; left as a placeholder
+            //    until the cross-DB Sage100/Timberline path is wired)
             new ViewDef { Name = "Estimating Assemblies", Database = "Estimating" },
-            new ViewDef { Name = "Estimating Assemblies Alpha", Database = "Estimating" },
+            // Shared Find SELECT for the four item views — VB6 uses a single
+            // findQry across them (FTakeoff.frm:1965 sets `findQry` once and
+            // assigns the same value to mViews(7..10).findQry).
             // 8: Items by Groups & Phases
             new ViewDef
             {
@@ -586,8 +1580,9 @@
                 KeyFlds = "GrpPhase|Phase|Phase+'/'+Item",
                 SortFlds = "GrpSortOrder|PhaseSortOrder|ItemSortOrder",
                 DisplayFlds = "GrpPhase + '   ' + GrpDesc|Phase + '   ' + PhaseDesc|Item + '   ' + ItemDesc",
-                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
-                Database = "HomeFront"
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID} and 1=1",
+                Database = "HomeFront",
+                FindQry = $"select i.Phase,p.Description PhaseDesc, i.Item, POIndex, i.Description, OrderUOM from tblPhaseItem i join tblestphases p on (p.DivisionID = i.DivisionID and p.phase = i.phase) where i.DivisionID = {SessionState.DivisionID} order by i.Phase,i.item"
             },
             // 9: Items by Purchase Orders
             new ViewDef
@@ -595,8 +1590,9 @@
                 Name = "Items by Purchase Orders",
                 KeyFlds = "POIndex|Phase+'/'+item",
                 DisplayFlds = "POIndex + '   ' + POIndexDescription|ItemDesc",
-                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
-                Database = "HomeFront"
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID} and 1=1",
+                Database = "HomeFront",
+                FindQry = $"select i.Phase,p.Description PhaseDesc, i.Item, POIndex, i.Description, OrderUOM from tblPhaseItem i join tblestphases p on (p.DivisionID = i.DivisionID and p.phase = i.phase) where i.DivisionID = {SessionState.DivisionID} order by i.Phase,i.item"
             },
             // 10: Items by Cost Codes
             new ViewDef
@@ -604,8 +1600,9 @@
                 Name = "Items by Cost Codes",
                 KeyFlds = "JCCostCode|Phase+'/'+item",
                 DisplayFlds = "JCCostCode + '   ' + JCCostCodeDesc|ItemDesc",
-                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
-                Database = "HomeFront"
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID} and 1=1",
+                Database = "HomeFront",
+                FindQry = $"select i.Phase,p.Description PhaseDesc, i.Item, POIndex, i.Description, OrderUOM from tblPhaseItem i join tblestphases p on (p.DivisionID = i.DivisionID and p.phase = i.phase) where i.DivisionID = {SessionState.DivisionID} order by i.Phase,i.item"
             },
             // 11: Items alphabetical
             new ViewDef
@@ -613,8 +1610,9 @@
                 Name = "Items",
                 KeyFlds = "left(itemdesc,1)|Phase+'/'+item",
                 DisplayFlds = "left(itemdesc,1)|ItemDesc",
-                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {DivisionID} and 1=1",
-                Database = "HomeFront"
+                FromWhere = $"FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID} and 1=1",
+                Database = "HomeFront",
+                FindQry = $"select i.Phase,p.Description PhaseDesc, i.Item, POIndex, i.Description, OrderUOM from tblPhaseItem i join tblestphases p on (p.DivisionID = i.DivisionID and p.phase = i.phase) where i.DivisionID = {SessionState.DivisionID} order by i.Phase,i.item"
             }
         };
     }
@@ -626,7 +1624,19 @@
         StateHasChanged();
         try
         {
-            if (clearTree) ListNodes.Clear();
+            if (clearTree)
+            {
+                ListNodes.Clear();
+                node_index_counter = 0;
+                // VB6 LoadList (frm:2086): switching views blanks the variables
+                // grid + help. The RHS shows nothing until a leaf node is
+                // double-clicked. gItems (bottom) is left as-is, as in VB6.
+                ShowHFVariables = false;
+                ShowTLVariables = false;
+                HFVariablesData = new List<HFVariableRow>();
+                TLVariablesData = new List<TLVariableRow>();
+                HelpText = "";
+            }
 
             if (mViewIndex >= Views.Count || string.IsNullOrEmpty(Views[mViewIndex].FromWhere))
             {
@@ -653,6 +1663,10 @@
             var rows = await db.QueryAsync(sql);
             foreach (var row in rows)
             {
+                // Parameterized — values containing single-quotes would otherwise
+                // break the SQL on subsequent drill-down loads.
+                var paramName = $"lvl0_{node_index_counter++}";
+                var keyVal = row["KeyVal"] ?? DBNull.Value;
                 var node = new ListTreeNode
                 {
                     KeyValue = row["KeyVal"]?.ToString() ?? "",
@@ -660,7 +1674,8 @@
                     KeyFieldName = keyFld,
                     Level = 0,
                     HasChildren = keyFields.Length > 1,
-                    WhereClause = $" AND {keyFld} = '{row["KeyVal"]}'",
+                    WhereClause = $" AND {keyFld} = @{paramName}",
+                    WhereParams = new Dictionary<string, object> { [paramName] = keyVal },
                     ViewIndex = mViewIndex
                 };
                 ListNodes.Add(node);
@@ -668,7 +1683,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadListAsync error: {ex.Message}");
+            Logger.LogError(ex, $"LoadListAsync error: ");
         }
         finally
         {
@@ -680,28 +1695,33 @@
     // ── Render Tree Node ──────────────────────────────────────
     private RenderFragment RenderListNode(ListTreeNode node, int depth) => __builder =>
     {
-        <div style="padding-left: @(depth * 16)px;">
+        <div class="vb6-tree-item @(depth == 0 ? "root" : "") @(node.HasChildren ? "branch" : "leaf") @(node.Expanded ? "expanded" : "collapsed")"
+             style="--tree-depth:@depth;">
             <div class="tree-node @(node.IsSelected ? "selected" : "") @(node.IsBold ? "bold" : "")"
                  @ondblclick="() => OnListNodeDblClick(node)"
                  @onclick="() => OnListNodeClick(node)">
                 @if (node.HasChildren)
                 {
-                    <span class="tree-toggle" @onclick="() => ToggleListNode(node)" @onclick:stopPropagation="true">
-                        @(node.Expanded ? "▼" : "▶")
+                    <span class="tree-toggle has-children" @onclick="() => ToggleListNode(node)" @onclick:stopPropagation="true">
+                        @(node.Expanded ? "-" : "+")
                     </span>
+                    <span class="tree-folder-icon @(node.Expanded ? "open" : "closed")" aria-hidden="true"></span>
                 }
                 else
                 {
-                    <span class="tree-toggle">&nbsp;</span>
+                    <span class="tree-toggle leaf">&nbsp;</span>
+                    <span class="tree-folder-spacer" aria-hidden="true"></span>
                 }
-                @node.DisplayText
+                <span class="tree-label">@node.DisplayText</span>
             </div>
             @if (node.Expanded && node.Children != null)
             {
+                <div class="tree-children">
                 @foreach (var child in node.Children)
                 {
                     @RenderListNode(child, depth + 1)
                 }
+                </div>
             }
         </div>
     };
@@ -739,13 +1759,41 @@
             var displayFld = displayFields.Length > nextLevel ? displayFields[nextLevel] : keyFld;
             var sortFld = sortFields.Length > nextLevel && !string.IsNullOrEmpty(sortFields[nextLevel]) ? sortFields[nextLevel] : "2";
 
-            var sql = $"SELECT DISTINCT {keyFld} AS KeyVal, {displayFld} AS DisplayVal, {sortFld} AS SortVal {view.FromWhere} {parentNode.WhereClause} ORDER BY {sortFld}";
+            var sql = $"SELECT DISTINCT {keyFld} AS KeyVal, {displayFld} AS DisplayVal, {sortFld} AS SortVal {view.FromWhere} {parentNode.WhereClause}";
+
+            // VB6 FTakeoff.frm:2135-2137 parity. The OpenJobAndQuoteAssemblies
+            // view (used by Quotes + Open Jobs) carries multiple rowtypes —
+            // 'Job', 'ChangeOrder', 'Assembly', etc. Without filtering to
+            // rowtype='Assembly' at the assembly level (nextLevel == 2),
+            // non-Assembly rows leak in with blank `assembly` /
+            // `assemblydesc` values and render as empty tree nodes.
+            // VB6 only applied this to mViewIndex 4/5 (Quotes/Open Jobs);
+            // Custom Options uses a different view (UnApprovedCustomOptions)
+            // so we leave it alone.
+            if (nextLevel == 2
+                && (string.Equals(view.Name, "Quotes", StringComparison.Ordinal)
+                    || string.Equals(view.Name, "Open Jobs", StringComparison.Ordinal)))
+            {
+                sql += " AND rowtype='Assembly'";
+            }
+
+            // VB6 FTakeoff.frm:2140: ORDER BY SortFld + ",2" unless SortFld IS the display
+            // column — sorting by assemblytype ALONE left same-type assemblies under
+            // "Original contract" in arbitrary order (HHM-219); VB6 sub-sorts by display.
+            sql += $" ORDER BY {sortFld}" + (sortFld == "2" ? "" : ",2");
             sql = sql.Replace("|", ",");
 
-            var rows = await db.QueryAsync(sql);
+            var rows = await db.QueryAsync(sql, parentNode.WhereParams);
             parentNode.Children = new List<ListTreeNode>();
             foreach (var row in rows)
             {
+                // Parameterized — see LoadListAsync for the rationale.
+                var paramName = $"lvl{nextLevel}_{node_index_counter++}";
+                var keyVal = row["KeyVal"] ?? DBNull.Value;
+                var childParams = new Dictionary<string, object>(parentNode.WhereParams)
+                {
+                    [paramName] = keyVal
+                };
                 var child = new ListTreeNode
                 {
                     KeyValue = row["KeyVal"]?.ToString() ?? "",
@@ -753,7 +1801,8 @@
                     KeyFieldName = keyFld,
                     Level = nextLevel,
                     HasChildren = nextLevel + 1 < keyFields.Length,
-                    WhereClause = parentNode.WhereClause + $" AND {keyFld} = '{row["KeyVal"]}'",
+                    WhereClause = parentNode.WhereClause + $" AND {keyFld} = @{paramName}",
+                    WhereParams = childParams,
                     ViewIndex = parentNode.ViewIndex
                 };
                 parentNode.Children.Add(child);
@@ -761,7 +1810,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadChildNodes error: {ex.Message}");
+            Logger.LogError(ex, $"LoadChildNodes error: ");
         }
     }
 
@@ -772,21 +1821,130 @@
         StateHasChanged();
     }
 
+    // VB6 gList keyboard (FTakeoff.frm:1200-1309): Up/Down walk the VISIBLE rows,
+    // Enter expands/collapses a branch (or loads a leaf — same as double-click),
+    // Left collapses / goes to the parent, Right expands / goes to the first
+    // child (HHM-642).
+    private void FlattenVisibleListNodes(List<ListTreeNode> nodes, List<ListTreeNode> into)
+    {
+        foreach (var n in nodes)
+        {
+            into.Add(n);
+            if (n.Expanded && n.Children != null)
+                FlattenVisibleListNodes(n.Children, into);
+        }
+    }
+
+    private ListTreeNode? FindListParent(List<ListTreeNode> nodes, ListTreeNode child)
+    {
+        foreach (var n in nodes)
+        {
+            if (n.Children != null)
+            {
+                if (n.Children.Contains(child)) return n;
+                var deeper = FindListParent(n.Children, child);
+                if (deeper != null) return deeper;
+            }
+        }
+        return null;
+    }
+
+    // HHM-642: give the list tree keyboard focus as soon as it has nodes, so
+    // arrow keys and Enter work right when the window opens (VB6 gList gets
+    // focus on Form_Load) — without this the user had to click the tree first.
+    private ElementReference _listTreeRef;
+    private bool _listTreeFocusDone;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_listTreeFocusDone && ListNodes.Count > 0)
+        {
+            _listTreeFocusDone = true;
+            try { await _listTreeRef.FocusAsync(); } catch { /* pane not attached yet */ }
+        }
+    }
+
+    private async Task OnListTreeKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        var visible = new List<ListTreeNode>();
+        FlattenVisibleListNodes(ListNodes, visible);
+        if (visible.Count == 0) return;
+
+        var current = visible.FirstOrDefault(n => n.IsSelected) ?? visible[0];
+        var idx = visible.IndexOf(current);
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (idx < visible.Count - 1)
+                {
+                    ClearListSelection(ListNodes);
+                    visible[idx + 1].IsSelected = true;
+                    StateHasChanged();
+                }
+                break;
+            case "ArrowUp":
+                if (idx > 0)
+                {
+                    ClearListSelection(ListNodes);
+                    visible[idx - 1].IsSelected = true;
+                    StateHasChanged();
+                }
+                break;
+            case "Enter":
+                await OnListNodeDblClick(current);
+                break;
+            case "ArrowLeft":
+                if (current.HasChildren && current.Expanded)
+                {
+                    current.Expanded = false;
+                    StateHasChanged();
+                }
+                else
+                {
+                    var parent = FindListParent(ListNodes, current);
+                    if (parent != null)
+                    {
+                        ClearListSelection(ListNodes);
+                        parent.IsSelected = true;
+                        StateHasChanged();
+                    }
+                }
+                break;
+            case "ArrowRight":
+                if (current.HasChildren && !current.Expanded)
+                {
+                    await ToggleListNode(current);
+                }
+                else if (current.Expanded && current.Children is { Count: > 0 })
+                {
+                    ClearListSelection(ListNodes);
+                    current.Children[0].IsSelected = true;
+                    StateHasChanged();
+                }
+                break;
+        }
+    }
+
     private async Task OnListNodeDblClick(ListTreeNode node)
     {
-        ClearListBold(ListNodes);
-        node.IsBold = true;
-
         var view = Views[node.ViewIndex];
         var keyFields = view.KeyFlds?.Split('|') ?? Array.Empty<string>();
         var levels = keyFields.Length;
 
-        // If not at lowest level, toggle expand
-        if (node.Level + 1 < levels && node.HasChildren)
+        // Branch nodes toggle; leaf nodes always load/add on a simple double-click.
+        // Open Jobs keeps the VB6 exception that group nodes can load too.
+        if (node.HasChildren && node.Level + 1 < levels && node.ViewIndex != 5)
         {
             await ToggleListNode(node);
             return;
         }
+
+        // HHM-220: bold only in the load branch — VB6 clears/sets
+        // flexcpFontBold inside the Else (load) arm of gList_KeyDown
+        // (frm:1270-1272), never when merely expanding/collapsing.
+        ClearListBold(ListNodes);
+        node.IsBold = true;
 
         // At lowest level - load assembly/item
         SaleQty = 0;
@@ -839,8 +1997,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadAssemblyOrItem error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            Logger.LogError(ex, $"LoadAssemblyOrItem error: ");
+            Notifications.Error($"Error: {ex.Message}");
         }
         finally
         {
@@ -858,10 +2016,14 @@
         HelpText = "";
         AddPassEnabled = true;
         OkVisible = true;
-        CloseButtonCaption = "Cancel";
 
-        var whereClause = node.WhereClause?.Replace(" AND ", " AND m.") ?? "";
-        // Build the key from the node's where clause
+        // Use the node's WhereClause as-is — the views feeding this code path
+        // (mViewIndex 0..3) already produce keys prefixed with "m." that matches
+        // `tbldbassemblymaster m` below. The legacy Replace(" AND ", " AND m.")
+        // turned every constraint into "m.m.community = ..." → SQL Server
+        // "Invalid column name 'm'." (parser reads m.m.x as alias m → column m
+        // → .x), which is the bug the user filed against this page.
+        var whereClause = node.WhereClause ?? "";
         var sql = $@"
             SELECT m.assembly, m.description AS assemblydescription, m.assemblytype, m.model, m.optionid,
                    i.phase, i.item, d.itemchart, i.description, d.formula, d.TakeoffQty,
@@ -876,9 +2038,18 @@
             LEFT OUTER JOIN tbldbassemblydetails d ON(m.DivisionID = d.DivisionID AND m.community=d.community AND m.model=d.model AND m.optionid=d.optionid AND m.assembly=d.assembly)
             LEFT OUTER JOIN tblphaseitem i ON(i.DivisionID = d.DivisionID AND i.phase=d.phase AND i.item=d.item)
             LEFT OUTER JOIN tblPOIndex p ON(p.DivisionID = d.DivisionID AND isnull(nullif(d.POIndex,''),isnull(i.POIndex,''))=p.POIndex)
-            WHERE m.DivisionID = {DivisionID} {whereClause}";
+            WHERE m.DivisionID = @DivisionID {whereClause}";
 
-        var rows = await db.QueryAsync(sql);
+        var sqlParams = new Dictionary<string, object>(node.WhereParams)
+        {
+            ["DivisionID"] = SessionState.DivisionID
+        };
+        // Diagnostic: log the full SQL + parameters so the next failure shows
+        // exactly what went to SQL Server (the previous error report only had
+        // the first ~600 chars truncated mid-JOIN).
+        Logger.LogInformation("FTakeoff.LoadModelOrOption SQL: {Sql} | params: {Params}",
+            sql, string.Join(", ", sqlParams.Select(kv => $"@{kv.Key}={kv.Value}")));
+        var rows = await db.QueryAsync(sql, sqlParams);
         ItemsData = new List<TakeoffItemRow>();
 
         foreach (var row in rows)
@@ -919,18 +2090,19 @@
                 P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
             };
 
-            item.ResolvedFormula = item.RawFormula; // Simplified - would call ResolveFormula
+            // VB6 ResolveFormula expands {formulaName} tokens against the
+            // Formulas table. An empty formula defaults to the row's stored
+            // TakeoffQty (so an item with no formula still adds its base qty).
+            item.ResolvedFormula = await ResolveFormulaAsync(item.RawFormula);
             if (string.IsNullOrEmpty(item.ResolvedFormula))
                 item.ResolvedFormula = (row["TakeoffQty"] ?? "0").ToString() ?? "0";
 
             ItemsData.Add(item);
         }
 
-        // Load variables - simplified: just add Quantity
-        HFVariablesData = new List<HFVariableRow>
-        {
-            new HFVariableRow { Name = "Quantity", Value = "1", UOM = "each", DisplayOrder = -1 }
-        };
+        // VB6 AddModelOrOption seeds variablelist with "Quantity" then loads it
+        // from the variables table (MFormulas.LoadVariables).
+        HFVariablesData = new List<HFVariableRow> { await BuildQuantityVariableAsync() };
     }
 
     // ── Load Quote ────────────────────────────────────────────
@@ -942,14 +2114,37 @@
         HelpText = "";
         AddPassEnabled = true;
         OkVisible = true;
-        CloseButtonCaption = "Cancel";
+
+        // The tree was built against OpenJobAndQuoteAssemblies (KeyFlds =
+        // "job|changeorder|assembly") so node.WhereClause looks like:
+        //     AND job = @lvl0_X AND changeorder = @lvl1_Y AND assembly = @lvl2_Z
+        // estimateditems uses these columns (VB6 FTakeoff.frm:2548-2561):
+        //   • Level 1 → job_no
+        //   • Level 2 → changeorder
+        //   • Level 3 → estassemblyid (the NUMERIC EstAssemblyID, which is
+        //              what OpenJobAndQuoteAssemblies returns in its
+        //              `Assembly` column — see VB6 line 2515 `EstAssemblyID
+        //              As Long` and findQry `select Assembly ID,…`)
+        // VB6 also did `Replace("AND changeorder =", "AND changeorderno =")`
+        // at line 2561, but that was for an older DB schema — the modern
+        // estimateditems table uses `changeorder` (no `no` suffix), and
+        // applying the rename throws "Invalid column name 'changeorderno'".
+        // We DROP that rename. Level 3 needs the `assembly → estassemblyid`
+        // rewrite though, since the column carrying the assembly's primary
+        // key is `estassemblyid`, not `assembly` (which is a string-typed
+        // assembly-code column).
+        var whereClause = (node.WhereClause ?? "")
+            .Replace(" AND job = ", " AND job_no = ", StringComparison.OrdinalIgnoreCase)
+            .Replace(" AND assembly = ", " AND estassemblyid = ", StringComparison.OrdinalIgnoreCase);
 
         var sql = $@"
             SELECT * FROM estimateditems
             WHERE (isnull(BudgetDeleted,0)=0 or isnull(PODeleted,0)=0)
-            {node.WhereClause}";
+            {whereClause}";
 
-        var rows = await db.QueryAsync(sql);
+        Logger.LogInformation("FTakeoff.LoadQuote SQL: {Sql} | params: {Params}",
+            sql, string.Join(", ", node.WhereParams.Select(kv => $"@{kv.Key}={kv.Value}")));
+        var rows = await db.QueryAsync(sql, node.WhereParams);
         ItemsData = new List<TakeoffItemRow>();
 
         foreach (var row in rows)
@@ -984,12 +2179,19 @@
                 RoundDir = ToDouble(row["RoundDir"]),
                 POIndex = row["POIndex"]?.ToString() ?? "",
                 Location = row["Location"]?.ToString() ?? "",
+                // VB6 FTakeoff.frm:2622/2624 (the Quotes/Open Jobs mapping): the grid's
+                // Comments/Notes column reads ItemComments — it was unmapped here, so
+                // rows showed blank/mismatched comments (HHM-217).
+                Notes = row["ItemComments"]?.ToString() ?? "",
                 P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
             };
+            // VB6 2653: WBS01..WBS40 come across from estimateditems too.
+            for (int w = 1; w <= 40; w++)
+                item.WBS[w] = row[$"WBS{w:D2}"]?.ToString() ?? "";
 
-            item.ResolvedFormula = item.RawFormula;
+            item.ResolvedFormula = await ResolveFormulaAsync(item.RawFormula);
             if (string.IsNullOrEmpty(item.ResolvedFormula))
-                item.ResolvedFormula = item.TakeoffQty.ToString();
+                item.ResolvedFormula = item.TakeoffQty.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             ItemsData.Add(item);
         }
@@ -1003,11 +2205,10 @@
         HelpText = "";
         AddPassEnabled = true;
         OkVisible = true;
-        CloseButtonCaption = "Cancel";
 
         var sql = $@"
             SELECT * FROM EstimatingItems
-            WHERE DivisionID = {DivisionID}
+            WHERE DivisionID = {SessionState.DivisionID}
               AND phase = @Phase AND item = @Item";
 
         var rows = await db.QueryAsync(sql, new { Phase = phase, Item = item });
@@ -1031,7 +2232,8 @@
             JCCostCode = row["JCCostCode"]?.ToString() ?? "",
             JCCategory = row["JCCategory"]?.ToString() ?? "",
             Price = ToDouble(row["Price"]),
-            WastePercent = ToDouble(row["WastePercent"]),
+            WastePercent = (row["WastePercent"] == null || row["WastePercent"] == DBNull.Value)
+                ? (double?)null : ToDouble(row["WastePercent"]),
             RoundTo = ToDouble(row["RoundTo"]),
             RoundDir = ToDouble(row["RoundDir"]),
             POIndex = row["POIndex"]?.ToString() ?? "",
@@ -1040,20 +2242,15 @@
             P1 = 0, P2 = 0, P3 = 0, P4 = 0, P5 = 0
         };
 
-        newItem.ResolvedFormula = newItem.RawFormula;
+        newItem.ResolvedFormula = await ResolveFormulaAsync(newItem.RawFormula);
         if (string.IsNullOrEmpty(newItem.ResolvedFormula))
             newItem.ResolvedFormula = "1";
 
         ItemsData.Add(newItem);
 
-        // Ensure Quantity variable exists
+        // Ensure Quantity variable exists (from the variables table — VB6 parity)
         if (!HFVariablesData.Any(v => v.Name == "Quantity"))
-        {
-            HFVariablesData = new List<HFVariableRow>
-            {
-                new HFVariableRow { Name = "Quantity", Value = "1", UOM = "each", DisplayOrder = -1 }
-            };
-        }
+            HFVariablesData = new List<HFVariableRow> { await BuildQuantityVariableAsync() };
     }
 
     // ── Add Pass ──────────────────────────────────────────────
@@ -1063,44 +2260,183 @@
 
         try
         {
-            var qtyVar = HFVariablesData.FirstOrDefault(v => v.Name == "Quantity");
+            // VB6 cmdAddPass_Click (FTakeoff.frm:711-795) uses the FIRST
+            // variable row's value as the pass multiplier `qty`
+            // (gHFVariables.TextMatrix(0, "Value")). For the legacy
+            // single-Quantity view that's the Quantity field; for a
+            // multi-variable item it's the first variable. We mirror that:
+            // take row 0's value, falling back to the named Quantity row.
+            var qtyVar = HFVariablesData.Count > 0
+                ? HFVariablesData[0]
+                : HFVariablesData.FirstOrDefault(v => v.Name == "Quantity");
             double qty = qtyVar != null ? ToDouble(qtyVar.Value) : 1;
 
+            // VB6 evaluates in two passes (FTakeoff.frm:738-786):
+            //   Pass 1 — "normal" rows whose resolved formula has NO lookup
+            //            functions: PassTakeoffQty = qty × CalcFormula(formula).
+            //   Pass 2 — rows whose formula DOES use TotalTakeoffQty / etc.:
+            //            PassTakeoffQty = CalcFormula(formula) (NO qty factor —
+            //            the lookup already aggregates the per-pass totals
+            //            accumulated in pass 1). FormulaHasLookups draws the line.
+            // Doing pass 1 first means GetItemTotal sees this pass's
+            // PassTakeoffQty values when pass 2 evaluates the lookups.
+            string? firstError = null;
+
+            // Pass 1 — non-lookup rows.
             foreach (var item in ItemsData)
             {
-                // Shift pass history
-                item.P5 = item.P4;
-                item.P4 = item.P3;
-                item.P3 = item.P2;
-                item.P2 = item.P1;
-                item.P1 = item.TakeoffQty;
+                var f = item.ResolvedFormula ?? "";
+                if (FormulaHasLookups(f)) continue;
 
-                // Evaluate formula (simplified - just use resolved formula as number)
-                double formulaResult = 0;
-                if (double.TryParse(item.ResolvedFormula, out var parsed))
-                    formulaResult = parsed;
-                else
-                    formulaResult = 1;
-
-                item.PassTakeoffQty = qty * formulaResult;
-                item.TakeoffQty += item.PassTakeoffQty;
-
-                // Calculate order qty
-                RecalculateOrderQty(item);
+                ShiftPassHistory(item);
+                try
+                {
+                    item.PassTakeoffQty = qty * CalcFormula(f, quiet: true);
+                    item.TakeoffQty += item.PassTakeoffQty;
+                    RecalculateOrderQty(item);
+                }
+                catch (Exception ex)
+                {
+                    // VB6: On Error Resume Next around the eval, then a single
+                    // MsgBox naming the offending row + raw formula.
+                    firstError ??= $"Row '{item.Description}' formula error: {item.RawFormula} ({ex.Message})";
+                }
             }
 
+            // Pass 2 — lookup rows (resolve after pass-1 totals are in place).
+            foreach (var item in ItemsData)
+            {
+                var f = item.ResolvedFormula ?? "";
+                if (!FormulaHasLookups(f)) continue;
+
+                ShiftPassHistory(item);
+                try
+                {
+                    item.PassTakeoffQty = CalcFormula(f, quiet: true);
+                    item.TakeoffQty += item.PassTakeoffQty;
+                    RecalculateOrderQty(item);
+                }
+                catch (Exception ex)
+                {
+                    firstError ??= $"Row '{item.Description}' formula error: {item.RawFormula} ({ex.Message})";
+                }
+            }
+
+            // VB6 accumulates the running sale qty in txtQty.
             SaleQty += qty;
 
             if (ItemsGrid != null)
                 await ItemsGrid.Refresh();
 
             StateHasChanged();
+
+            if (firstError != null)
+                Notifications.Warning(firstError);
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error adding pass: {ex.Message}");
+            Notifications.Error($"Error adding pass: {ex.Message}");
         }
     }
+
+    /// <summary>VB6 cmdAddPass_Click pass-history shift (FTakeoff.frm:743-747
+    /// and 769-773): push the current TakeoffQty down the p1..p5 stack so
+    /// Undo Pass can pop it back. Done once per row per pass.</summary>
+    private static void ShiftPassHistory(TakeoffItemRow item)
+    {
+        item.P5 = item.P4;
+        item.P4 = item.P3;
+        item.P3 = item.P2;
+        item.P2 = item.P1;
+        item.P1 = item.TakeoffQty;
+    }
+
+    // ── Single-Quantity Textbox helpers (VB6 parity) ─────────────────
+    //
+    // The legacy "Items by Groups & Phases" view shows Quantity as a plain
+    // label + textbox (top-right of the FTakeoff form) — NOT a grid. The
+    // grid only appears when an item has 2+ variables. These helpers
+    // detect that single-Quantity case and bridge the simple textbox UI
+    // to the underlying HFVariablesData list.
+    private bool IsHFQuantityOnly =>
+        HFVariablesData.Count == 1
+        && string.Equals(HFVariablesData[0].Name, "Quantity", StringComparison.OrdinalIgnoreCase);
+
+    private string HFQuantityValue =>
+        HFVariablesData.Count > 0 ? (HFVariablesData[0].Value ?? "") : "";
+
+    private string HFQuantityUOM =>
+        HFVariablesData.Count > 0 ? (HFVariablesData[0].UOM ?? "") : "";
+
+    /// <summary>
+    /// Passive Quantity-textbox setter. Mirrors VB6 cmdAddPass_Click
+    /// semantics: the Quantity field is JUST a multiplier value — it
+    /// has no side effect on the items grid until the user clicks the
+    /// "+" (Add Pass) button, which is the ONLY place that runs
+    /// <c>qty × CalcFormula → PassTakeoffQty</c> and accumulates into
+    /// <c>TakeoffQty</c> (FTakeoff.frm lines 723-751).
+    ///
+    /// Earlier revisions live-propagated the typed value into every
+    /// item row on blur to match a "type-and-it-just-works" mental
+    /// model, but that overrode the legacy multi-pass behavior — the
+    /// user wants strict VB6 parity (Quantity = inert, + = action).
+    /// We also reformat the input as <c>0.000</c> (three decimal
+    /// places, e.g. "20.000") to match legacy txtQuantity display.
+    ///
+    /// HHM-232: the field is a NumericTextBoxControl, so non-numeric
+    /// characters never reach here (unparseable/empty input becomes 0,
+    /// VB6 Val() parity). Range validation mirrors VB6
+    /// gHFVariables_ValidateEdit (FTakeoff.frm:2976-2990): a value above
+    /// the Quantity variable's Max (variables table; 1e18 fallback when
+    /// the row is absent — MFormulas.LoadVariables:123-125) or below its
+    /// Min REJECTS the edit — the previous value is kept and the legacy
+    /// "too large" / "too small" MsgBox shows (vbInformation,
+    /// App.ProductName → "Precision Builder"). No silent clamping.
+    /// </summary>
+    private async Task OnHFQuantityChanged(double newValue)
+    {
+        if (!IsHFQuantityOnly) return;
+        var row = HFVariablesData[0];
+
+        // VB6: If Val(.EditText) > .ValueMatrix(Row, 5) And .ValueMatrix(Row, 5) > 0
+        if (newValue > row.Max && row.Max > 0)
+        {
+            _qtyInputEpoch++;   // remount the input → shows the kept value again
+            StateHasChanged();
+            if (_messageBox != null)
+                await _messageBox.ShowAsync(
+                    $"The maximum value for {row.Name} is '{row.Max:0}'. The number you have entered is too large.",
+                    title: "Precision Builder", buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, icon: "info");
+            return;
+        }
+
+        // VB6: If Val(.EditText) < .ValueMatrix(Row, 4)
+        if (newValue < row.Min)
+        {
+            _qtyInputEpoch++;
+            StateHasChanged();
+            if (_messageBox != null)
+                await _messageBox.ShowAsync(
+                    $"The minimum value for {row.Name} is '{row.Min:0}'. The number you have entered is too small.",
+                    title: "Precision Builder", buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, icon: "info");
+            return;
+        }
+
+        row.Value =
+            newValue.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture);
+        StateHasChanged();
+    }
+
+    // Bumped whenever an out-of-range Quantity edit is rejected. The bound
+    // Value doesn't change on a reject, so without a remount Blazor's diff
+    // would leave the user's raw typed text in the DOM input; keying the
+    // NumericTextBoxControl on this counter recreates it with the kept value.
+    private int _qtyInputEpoch;
+
+    // The committed Quantity text re-parsed for the numeric input's Value.
+    private double HFQuantityNumericValue =>
+        double.TryParse(HFQuantityValue, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0d;
 
     // ── Undo Pass ─────────────────────────────────────────────
     private async Task OnUndoPass()
@@ -1123,12 +2459,108 @@
         StateHasChanged();
     }
 
+    // ── Inline-Edit Handler (VB6 gItems_AfterEdit parity) ───────────
+    //
+    // GridControl raises OnCellSave AFTER it has written the typed value
+    // back to the row property via reflection — so args.Data already
+    // carries the new value when we arrive. We mirror VB6's
+    // gItems_AfterEdit Select Case on .ColKey(Col):
+    //   • TakeoffQty edited  → recalc OrderQty (waste % + conversion + round)
+    //   • OrderQty edited    → back-solve TakeoffQty so the two stay
+    //                          consistent (VB6 line 2722-2727)
+    //   • ConversionFactor   → recalc OrderQty from the current TakeoffQty
+    // Without this handler the typed value lives only in the grid cell
+    // and never makes it into ItemsData — SaveData then reports
+    // "order quantity of zero" even though the user filled the cell.
+    private async Task OnItemsCellSave(CellSaveArgs<TakeoffItemRow> args)
+    {
+        if (args?.Data == null) return;
+        var item = args.Data;
+        var field = args.ColumnName;
+
+        switch (field)
+        {
+            case nameof(TakeoffItemRow.TakeoffQty):
+            case nameof(TakeoffItemRow.ConversionFactor):
+                // Recalc OrderQty from the (possibly new) TakeoffQty.
+                RecalculateOrderQty(item);
+                break;
+
+            case nameof(TakeoffItemRow.OrderQty):
+                // VB6 reverse path: derive TakeoffQty from edited OrderQty
+                // so the row's pair stays in lock-step. ConversionFactor
+                // and WastePercent are unchanged from the row record.
+                double conversion = item.ConversionFactor;
+                if (conversion == 0) conversion = 1;
+                double wasteFactor = (100 + (item.WastePercent ?? 0)) / 100.0;
+                if (wasteFactor == 0) wasteFactor = 1;
+                item.TakeoffQty = Math.Round(item.OrderQty / wasteFactor / conversion, 5);
+                break;
+        }
+
+        if (ItemsGrid != null)
+            await ItemsGrid.Refresh();
+        StateHasChanged();
+    }
+
+    // ── Multi-select Fan-out (FAssembly parity) ─────────────────────
+    //
+    // GridControl fires this once per type-ahead Enter when one or
+    // more rows are selected. We apply the typed value to every
+    // selected row's target field, then run the same
+    // gItems_AfterEdit recalc as the single-cell save path so the
+    // pair stays consistent (TakeoffQty edit → OrderQty recalc,
+    // OrderQty edit → TakeoffQty back-solve).
+    //
+    // Restricted to the numeric Qty columns by design: ConversionFactor /
+    // Price / WastePercent live on the source EstimatingItems record
+    // and shouldn't be hand-edited mid-takeoff. Adding more fan-out
+    // targets is a one-line case-statement extension below.
+    private async Task OnItemsTypeAheadCommit(TypeAheadCommitArgs<TakeoffItemRow> args)
+    {
+        var field = !string.IsNullOrEmpty(args.ColumnName)
+            ? args.ColumnName
+            : ItemsTypeAheadTargetField;
+
+        if (field != nameof(TakeoffItemRow.TakeoffQty)
+            && field != nameof(TakeoffItemRow.OrderQty))
+            return;
+
+        var qty = ParseDouble(args.Value);
+        var applied = 0;
+        foreach (var item in args.SelectedItems)
+        {
+            switch (field)
+            {
+                case nameof(TakeoffItemRow.TakeoffQty):
+                    item.TakeoffQty = qty;
+                    RecalculateOrderQty(item);
+                    break;
+
+                case nameof(TakeoffItemRow.OrderQty):
+                    item.OrderQty = qty;
+                    double conversion = item.ConversionFactor;
+                    if (conversion == 0) conversion = 1;
+                    double wasteFactor = (100 + (item.WastePercent ?? 0)) / 100.0;
+                    if (wasteFactor == 0) wasteFactor = 1;
+                    item.TakeoffQty = Math.Round(item.OrderQty / wasteFactor / conversion, 5);
+                    break;
+            }
+            applied++;
+        }
+        if (applied == 0) return;
+
+        if (ItemsGrid != null)
+            await ItemsGrid.Refresh();
+        StateHasChanged();
+    }
+
     // ── Recalculate Order Qty ─────────────────────────────────
     private void RecalculateOrderQty(TakeoffItemRow item)
     {
         double conversion = item.ConversionFactor;
         if (conversion == 0) conversion = 1;
-        double waste = item.WastePercent;
+        double waste = item.WastePercent ?? 0;
         double orderQty = item.TakeoffQty * (100 + waste) / 100 * conversion;
 
         // Apply rounding
@@ -1146,55 +2578,154 @@
     }
 
     // ── Save Data ─────────────────────────────────────────────
+    /// <summary>VB6 parity: FTakeoff.frm SaveData (lines 1333-1612). VB6
+    /// walked the takeoff grid, dropped zero-qty rows per the
+    /// ZeroQtyTakeoffs option (or per-prompt fallback), then called
+    /// <c>mParentForm.AddItem(...)</c> for every kept row — the caller form
+    /// staged them in memory and its own Save flow persisted them later.
+    ///
+    /// We do the same: build the kept list, raise <see cref="OnItemsCommitted"/>
+    /// with it (the host translates TakeoffItemRow → its own model with
+    /// RowStatus="new"), then return true so OnOkClick fires OnClose.
+    ///
+    /// VB6 also looked up vendor / price / tax-group when the caller wasn't
+    /// FAssembly — that branch is intentionally NOT ported here because the
+    /// FAssembly-caller code path explicitly skipped it (FTakeoff.frm:1508:
+    /// `If mParentForm.Name <> "FAssembly" Then …`). FAssembly's
+    /// RefreshVendorPrice on next LoadDataAsync handles the rate lookup from
+    /// scratch using Purch_GetItemRate / Purch_GetItemRateQuality.</summary>
     private async Task<bool> SaveData()
     {
         try
         {
-            // Check for zero qty items
-            bool hasZeroQty = ItemsData.Any(i => i.OrderQty == 0);
-            if (hasZeroQty)
+            // Zero-qty handling — VB6 lines 1389-1415. Prompt-only branch
+            // (ztPrompt); the ztAccept/ztIgnore paths from HFApp.Options
+            // would require a user-pref lookup we don't have here yet.
+            //
+            // Uses MessageBoxControl (in-app dialog) instead of the browser
+            // confirm() so the chrome matches the rest of the app. Falls
+            // back to JS confirm only if the control reference isn't wired
+            // (defensive — shouldn't happen in normal flow).
+            var keep = ItemsData;
+            if (keep.Any(i => i.OrderQty == 0))
             {
-                var include = await JSRuntime.InvokeAsync<bool>("confirm",
-                    "You have items with an order quantity of zero.\nDo you want to add these items anyway?");
-                if (!include)
+                var prompt = _messageBox != null
+                    ? await _messageBox.ShowAsync(
+                        "You have items with an order quantity of zero.\n\nDo you want to add these items anyway?",
+                        title: "Zero Order Qty",
+                        buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo)
+                    : (await Dialogs.ConfirmAsync(
+                            "You have items with an order quantity of zero.\nDo you want to add these items anyway?")
+                        ? Fx.ControlKit.Dialogs.MessageBoxResult.Yes
+                        : Fx.ControlKit.Dialogs.MessageBoxResult.No);
+
+                if (prompt != Fx.ControlKit.Dialogs.MessageBoxResult.Yes)
                 {
-                    // Filter out zero qty items
-                    ItemsData = ItemsData.Where(i => i.OrderQty != 0).ToList();
+                    keep = keep.Where(i => i.OrderQty != 0).ToList();
+                    ItemsData = keep; // mirror filtered view back to the grid
                 }
             }
 
-            // In a real implementation, this would call the parent form's AddItem method
-            // For now, just signal success
-            await JSRuntime.InvokeVoidAsync("alert", $"Takeoff saved with {ItemsData.Count} items. Sale Qty: {SaleQty}");
+            if (keep.Count == 0)
+            {
+                Notifications.Info("Nothing to save — no items have a non-zero Order Qty.");
+                return false;
+            }
+
+            // VB6 SaveData frm:1418-1420: committing from the Open Jobs / Quotes
+            // views ALWAYS asks "Do you want to lookup new pricing on this quote?"
+            // (Refresh Costs, default No = keep the quote's pricing) before any
+            // write. The gate was missing, so OK saved silently (HHM-231). In the
+            // FAssembly-host branch VB6 hands items across without pricing either
+            // way (frm:1508) — the answer is recorded for the estimate-target port.
+            if (mViewIndex == 4 || mViewIndex == 5)
+            {
+                var refresh = _messageBox != null
+                    ? await _messageBox.ShowAsync(
+                        "Do you want to lookup new pricing on this quote?",
+                        title: "Refresh Costs",
+                        buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo)
+                    : Fx.ControlKit.Dialogs.MessageBoxResult.No;
+                mUseQuotePricing = refresh == Fx.ControlKit.Dialogs.MessageBoxResult.No;
+            }
+
+            // Emit the kept rows to whoever's listening (FAssembly today;
+            // FQuote / FEstimateItems in future ports). The host owns the
+            // translation to its own row model and the persistence step.
+            if (OnItemsCommitted.HasDelegate)
+                await OnItemsCommitted.InvokeAsync(keep.ToList());
+
+            Notifications.Success($"Added {keep.Count} item{(keep.Count == 1 ? "" : "s")} to the assembly.");
             return true;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Notifications.Error($"Error saving: {ex.Message}");
             return false;
         }
     }
 
     // ── Button Handlers ───────────────────────────────────────
+    // VB6 parity (FTakeoff.frm cmdOK_Click / cmdCancel_Click / cmdClose_Click):
+    // OK commits the kept rows to the host form (via OnItemsCommitted) and
+    // clears the lower grid — the modal stays open so the user can rack up
+    // another pass. Cancel discards the staged rows without committing —
+    // again, the modal stays open. ONLY Close dismisses the modal.
     private async Task OnOkClick()
     {
+        // VB6 cmdOK_Click parity: OK commits whatever is currently
+        // staged in ItemsData — it does NOT auto-apply the Quantity
+        // field. The user must click "+" (Add Pass) to multiply qty
+        // × formula into the TakeoffQty before OK. Items with
+        // TakeoffQty=0 fall under SaveData's existing zero-qty
+        // prompt path.
+        //
+        // An earlier revision force-propagated Quantity here as a
+        // convenience — removed per user request 2026-05-26 because
+        // it diverged from VB6 (which made + the sole trigger).
         if (await SaveData())
         {
+            // SaveData already raised OnItemsCommitted — FAssembly has the
+            // rows. Reset the lower grid so the user sees an empty staging
+            // area, OK/Cancel hide, and Close re-appears. The modal itself
+            // stays open per VB6 cmdOK_Click (it only flipped button
+            // visibility; closing was reserved for cmdClose_Click).
+            //
+            // Standalone /takeoff URL has no host form to keep open behind
+            // it, so honor returnUrl when present — that's the only path
+            // that should leave FTakeoff after OK.
+            if (!IsModal && !string.IsNullOrWhiteSpace(returnUrl))
+            {
+                NavigationManager.NavigateTo(returnUrl);
+                return;
+            }
             ResetToListMode();
         }
     }
 
+    private void OnCancelClick()
+    {
+        // VB6 cmdCancel_Click — abandon staged rows, return to empty list
+        // state. Modal stays open; user can start a new selection.
+        ResetToListMode();
+    }
+
     private async Task OnCloseClick()
     {
-        if (CloseButtonCaption == "Cancel")
+        // VB6 cmdClose_Click + the × in the modal header — dismiss the
+        // dialog entirely. Modal mode hands control back to the host via
+        // OnClose; standalone mode falls back to returnUrl / route.
+        if (IsModal && OnClose.HasDelegate)
         {
-            ResetToListMode();
+            await OnClose.InvokeAsync();
+            return;
         }
-        else
+        if (!string.IsNullOrWhiteSpace(returnUrl))
         {
-            // Close
-            NavigationManager.NavigateTo("/");
+            NavigationManager.NavigateTo(returnUrl);
+            return;
         }
+        NavigationManager.NavigateTo("/edit-model-assembly");
     }
 
     private void ResetToListMode()
@@ -1206,13 +2737,13 @@
         SaleQty = 0;
         OkVisible = false;
         AddPassEnabled = false;
-        CloseButtonCaption = "Close";
         StateHasChanged();
     }
 
     private async Task OnBrowseProject()
     {
-        await JSRuntime.InvokeVoidAsync("alert", "Browse OnCenter Project - not implemented");
+        // Info, not Error — this is a known stub, not a failure.
+        Notifications.Info("Browse OnCenter Project - not implemented");
     }
 
     // ── Public Methods (for external callers) ─────────────────
@@ -1253,15 +2784,339 @@
             case "Assembly":
                 mViewIndex = 0;
                 break;
+
+            // "Custom" is the VB6 file-browse import (FTakeoff.frm:1696-1719
+            // — VBGetOpenFileName over .pee/.xls/.xlsx/.txt/.csv, then
+            // ReadEstimate/ReadText). VB6 Form_Load skips list init entirely
+            // in this mode (FTakeoff.frm:903 `If mTakeoffMode = "Custom"
+            // Then Exit Sub`), so return here WITHOUT LoadListAsync and
+            // WITHOUT closing: mTakeoffMode is already set above, so
+            // IsCustomMode flips true and the Custom Takeoff panel (markup
+            // top-section) renders. HHM-236: the HOST now runs the file
+            // pick BEFORE opening this form (FAssembly's Custom toolbar
+            // label opens the browser picker directly, mirroring VB6's
+            // immediate VBGetOpenFileName) and hands the choice in via
+            // InitialCustomFileName/-Content — import it right away so the
+            // panel opens showing the parse result; the in-panel pick
+            // control remains for re-picks. No initial file (standalone
+            // /takeoff?mode=Custom navigation) keeps the old flow.
+            case "Custom":
+                if (!string.IsNullOrEmpty(InitialCustomFileName))
+                    ProcessCustomTakeoffFile(InitialCustomFileName, InitialCustomFileContent);
+                return;
+
+            // VB6 dispatched "OneTime" → FTakeoffOneTime, "PlanSwift" →
+            // ReadPlanSwift, and the OnCenter/OnScreen-only binary import
+            // paths (FTakeoff.frm:1696-1721). None of those external takeoff
+            // integrations are available in this version. Rather than fall
+            // through to an empty list (silent no-op), surface a clear
+            // message and close gracefully — matching the prompt's "show a
+            // message instead of a break" requirement.
+            case "OneTime":
+            case "PlanSwift":
+            case "OnScreen":
+                await ShowIntegrationUnavailableAsync(mTakeoffMode);
+                return;
         }
 
         await LoadListAsync(true);
+    }
+
+    /// <summary>External takeoff integrations (One-Time, PlanSwift, OnCenter
+    /// On-Screen) are out of scope in this version. Show a single explanatory
+    /// dialog, then dismiss the form (so the user isn't left staring at an
+    /// empty modal). VB6 hosted these in separate forms / COM automations
+    /// (Planswift, OnScreen) that don't exist here.</summary>
+    private async Task ShowIntegrationUnavailableAsync(string mode)
+    {
+        var label = mode switch
+        {
+            "OneTime" => "One-Time takeoff",
+            "PlanSwift" => "PlanSwift import",
+            "OnScreen" => "OnCenter On-Screen takeoff",
+            _ => "This takeoff"
+        };
+        var message = $"{label} is not available in this version.";
+
+        if (_messageBox != null)
+            await _messageBox.ShowAsync(message, title: "Takeoff",
+                buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok);
+        else
+            Notifications.Info(message);
+
+        await OnCloseClick();
     }
 
     public void SetView(int viewIndex)
     {
         mViewIndex = viewIndex;
         _ = LoadListAsync(true);
+    }
+
+    // ── Right-click context menu handlers ──────────────────────────────
+    private void OnListContextMenu(MouseEventArgs e)
+    {
+        _listContextMenuX = e.ClientX;
+        _listContextMenuY = e.ClientY;
+        _showListContextMenu = true;
+    }
+
+    private void CloseListContextMenu()
+    {
+        _showListContextMenu = false;
+    }
+
+    private void OnListContextSetView(int viewIndex)
+    {
+        _showListContextMenu = false;
+        _openSubmenu = MenuGroup.None;
+        SetView(viewIndex);
+    }
+
+    /// <summary>VB6 parity: FTakeoff.frm:1223 — Find… opens FPickList over
+    /// the active view's findQry SELECT so the user can search across the
+    /// flattened result set instead of drilling through the tree. The
+    /// PickList result currently surfaces as an Info notification; future
+    /// work can route the selected ID to AddItem like VB6 did when the user
+    /// double-clicks a hit.</summary>
+    private async Task OnFindClick()
+    {
+        _showListContextMenu = false;
+        _openSubmenu = MenuGroup.None;
+
+        if (mViewIndex < 0 || mViewIndex >= Views.Count) return;
+        var view = Views[mViewIndex];
+        if (string.IsNullOrWhiteSpace(view.FindQry))
+        {
+            Notifications.Info($"Find isn't wired up for the '{view.Name}' view yet.");
+            return;
+        }
+
+        // VB6 Choose(..., HideColumns:="ID", MultiSelect:=True) — the ID column
+        // is the lookup key, never shown (FTakeoff.frm:1225).
+        if (pickList != null)
+        {
+            _takeoffPickContext = "Find";
+            await pickList.Open(view.Name, view.FindQry, hideColumns: "ID", multiSelect: true);
+        }
+    }
+
+    /// <summary>Receives the Find… picker's selection. VB6 used the chosen
+    /// ID to navigate the tree to that node (FTakeoff.frm:1232 onwards);
+    /// for now we surface it as an Info notification so the wiring is
+    /// visible end-to-end. Carrying the ID into tree drill-down is a small
+    /// follow-up — uses Views[mViewIndex].KeyFlds to descend.</summary>
+    private Task OnFindResult(List<IDictionary<string, object>> rows)
+    {
+        if (rows == null || rows.Count == 0) { _takeoffPickContext = ""; return Task.CompletedTask; }
+
+        // ── Substitute Item (VB6 FTakeoff.frm:2814-2833): overwrite the selected grid
+        // rows' item identity + master-data fields with the picked tblPhaseItem row;
+        // Assembly/AssemblyDescription clear, OrderQty recomputes = TakeoffQty × ConvFactor. ──
+        if (_takeoffPickContext == "SubstituteItem")
+        {
+            _takeoffPickContext = "";
+            var pick = rows[0];
+            string S(string k) => pick.TryGetValue(k, out var v) && v != null ? v.ToString() ?? "" : "";
+            foreach (var r in _itemsGridMenuSelection)
+            {
+                r.Assembly = "";
+                r.AssemblyDescription = "";
+                r.Phase = S("Phase");
+                r.Item = S("Item");
+                r.Description = S("Description");
+                r.TakeoffUOM = S("TakeoffUOM");
+                r.ConversionFactor = ToDouble(pick.TryGetValue("ConversionFactor", out var cf) ? cf : 0);
+                r.OrderUOM = S("OrderUOM");
+                r.POIndex = S("POIndex");
+                r.Notes = S("Notes");
+                r.JCCostCode = S("CostCode");
+                r.JCCategory = S("Category");
+                r.OrderQty = r.TakeoffQty * r.ConversionFactor;
+            }
+            _itemsGridMenuSelection = new();
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
+        // ── Find (VB6 FTakeoff.frm:1224-1249, Ctrl+F handler): the pick does NOT
+        // drill the tree — it loads the chosen record straight into the RHS via the
+        // same per-view dispatch a tree double-click uses (AddModelOrOption /
+        // AddQuote level 3 / AddItem), which is also what enables Add Pass / OK
+        // (HHM-212). Assembly views key on m.AssemblyID; job views on the numeric
+        // EstAssemblyID (LoadQuote rewrites `assembly =` → `estassemblyid =`);
+        // item views on Phase/Item.
+        _takeoffPickContext = "";
+        return LoadFindResultAsync(rows);
+    }
+
+    private async Task LoadFindResultAsync(List<IDictionary<string, object>> rows)
+    {
+        string S(IDictionary<string, object> r, string k) =>
+            r.TryGetValue(k, out var v) && v != null ? v.ToString() ?? "" : "";
+        string Id(IDictionary<string, object> r) =>
+            r.TryGetValue("ID", out var v1) && v1 != null ? v1.ToString() ?? ""
+            : r.TryGetValue("id", out var v2) && v2 != null ? v2.ToString() ?? "" : "";
+
+        foreach (var pick in rows)
+        {
+            ListTreeNode? node = null;
+            if (mViewIndex >= 0 && mViewIndex <= 3)
+            {
+                node = new ListTreeNode
+                {
+                    WhereClause = " AND m.AssemblyID = @FindID",
+                    WhereParams = new Dictionary<string, object> { ["FindID"] = Id(pick) }
+                };
+            }
+            else if (mViewIndex >= 4 && mViewIndex <= 5)
+            {
+                node = new ListTreeNode
+                {
+                    WhereClause = " AND assembly = @FindID",
+                    WhereParams = new Dictionary<string, object> { ["FindID"] = Id(pick) }
+                };
+            }
+            else if (mViewIndex >= 8 && mViewIndex <= 11)
+            {
+                node = new ListTreeNode { KeyValue = $"{S(pick, "Phase")}/{S(pick, "Item")}" };
+            }
+            if (node != null)
+                await LoadAssemblyOrItem(node);
+        }
+        StateHasChanged();
+    }
+
+    // ── Items-grid context menu (HHM-214/218) ──────────────────────────────────
+    // VB6 gItems_BeforeMouseDown: right-click on a data row → FMain.mnuAssemblyItems;
+    // FTakeoff's handler implements Copy / Substitute / Remove (frm:2777-2842).
+    // Suppressed while the grid is empty, matching the grid-menu convention.
+    private bool _showItemsGridMenu;
+    private double _itemsGridMenuX, _itemsGridMenuY;
+    private string _takeoffPickContext = "";
+    private List<TakeoffItemRow> _itemsGridMenuSelection = new();
+
+    private void OnItemsGridContextMenu(MouseEventArgs e)
+    {
+        if ((ItemsData?.Count ?? 0) == 0) return;
+        _itemsGridMenuX = e.ClientX;
+        _itemsGridMenuY = e.ClientY;
+        _showItemsGridMenu = true;
+    }
+
+    private List<TakeoffItemRow> SelectedItemsOrCurrent()
+    {
+        var sel = ItemsGrid?.GetSelectedRecords()?.ToList() ?? new List<TakeoffItemRow>();
+        if (sel.Count == 0 && ItemsData.Count > 0) sel.Add(ItemsData[0]);
+        return sel;
+    }
+
+    // VB6 mcITEM_COPY (frm:2786-2793): duplicate each selected row directly below the selection.
+    private void CopySelectedItems()
+    {
+        _showItemsGridMenu = false;
+        var sel = SelectedItemsOrCurrent();
+        if (sel.Count == 0) return;
+        int insertAt = sel.Max(r => ItemsData.IndexOf(r)) + 1;
+        foreach (var r in sel)
+        {
+            var copy = new TakeoffItemRow();
+            foreach (var p in typeof(TakeoffItemRow).GetProperties().Where(p => p.CanRead && p.CanWrite))
+                p.SetValue(copy, p.GetValue(r));
+            copy.WBS = new Dictionary<int, string>(r.WBS);
+            ItemsData.Insert(insertAt++, copy);
+        }
+        StateHasChanged();
+    }
+
+    // VB6 mcITEM_REMOVE → the Ctrl+Del path: drop the selected rows from the staging grid.
+    private void RemoveSelectedItems()
+    {
+        _showItemsGridMenu = false;
+        foreach (var r in SelectedItemsOrCurrent())
+            ItemsData.Remove(r);
+        StateHasChanged();
+    }
+
+    // VB6 mcITEM_SUBSTITUE (frm:2795-2833): pick a tblPhaseItem row (cost-code/category
+    // descriptions resolved), then overwrite the selected rows — handled in OnFindResult.
+    private async Task SubstituteSelectedItemsAsync()
+    {
+        _showItemsGridMenu = false;
+        if (pickList == null) return;
+        _itemsGridMenuSelection = SelectedItemsOrCurrent();
+        if (_itemsGridMenuSelection.Count == 0) return;
+        _takeoffPickContext = "SubstituteItem";
+        var sql = $@"
+SELECT i.Phase, i.Item, i.Description, i.TakeoffUOM, i.ConversionFactor, i.OrderUOM,
+       i.POIndex, i.Notes, i.JCCostCode CostCode, cod.description CostCodeDesc,
+       i.JCCategory Category, cat.Description CategoryDesc
+  FROM tblPhaseItem i
+LEFT OUTER JOIN StandardCostCodes cod ON(i.DivisionID = cod.DivisionID and i.jccostcode=cod.costcode)
+LEFT OUTER JOIN StandardCategories cat ON(i.DivisionID = cat.DivisionID and i.jccategory=cat.category)
+ WHERE i.DivisionID = {SessionState.DivisionID}";
+        await pickList.Open(
+            title: "Item",
+            queries: sql,
+            hideColumns: "TakeoffUOM,ConversionFactor,OrderUOM,POIndex,Notes,CostCode,CostCodeDesc,Category,CategoryDesc",
+            multiSelect: false);
+    }
+
+    // ── Items-grid context menu: Edit Item Chart / Attachments (HHM-547) ────
+    // VB6 mnuAssemblyItemsSub entries 3 (Edit Item Chart) and 5 (Attachments)
+    // are wired to the same FItemChart / FAttachments hosts FAssembly uses so
+    // FTakeoff's six-entry right-click menu matches VB6 (FMain.frm:1588-1614).
+    // FItemChart modal visibility flag; ChartName preload comes from the row.
+    private bool _showItemChartModal;
+    private string? _editItemChartName;
+    // FAttachments host for the "Attachments…" entry.
+    private FAttachments? attachmentsDialog;
+
+    private void OnItemChartModalClosed()
+    {
+        _showItemChartModal = false;
+        _editItemChartName = null;
+    }
+
+    /// <summary>VB6 mnuAssemblyItemsSub(mcITEM_EDITITEMCHART) — FItemChart.Edit(row
+    /// ItemChart). Opens the FItemChart modal preloaded with the selected item's
+    /// item-chart name.</summary>
+    private void OnEditItemChartClick()
+    {
+        _showItemsGridMenu = false;
+        var selected = SelectedItemsOrCurrent().FirstOrDefault();
+        if (selected == null)
+        {
+            Notifications.Info("Select an item row first.");
+            return;
+        }
+        _editItemChartName = selected.ItemChart ?? "";
+        _showItemChartModal = true;
+        StateHasChanged();
+    }
+
+    /// <summary>VB6 mnuAssemblyItemsSub(mcITEM_VIEWFILES) — EditAttachments for the
+    /// selected item. VB6 (FAssembly.frm:4139) uses the item-level object id
+    /// "ITM~{phase}~{item}" against the "Item Database" folder; we build the same
+    /// shape and open the shared FAttachments host.</summary>
+    private async Task OnAttachmentsClick()
+    {
+        _showItemsGridMenu = false;
+        var selected = SelectedItemsOrCurrent().FirstOrDefault();
+        if (selected == null)
+        {
+            Notifications.Info("Select an item row first.");
+            return;
+        }
+        if (attachmentsDialog == null) return;
+
+        var objectId = $"ITM~{selected.Phase ?? ""}~{selected.Item ?? ""}";
+        // VB6 files item-level attachments under the "Item Database" folder
+        // (FAssembly.frm:4139 "ITM~...|Item Database") — the folder header shows
+        // that caption, not the raw object id (HHM-627).
+        await attachmentsDialog.ShowForm(
+            "Item Database",
+            (objectId, "Item Database"));
     }
 
     // ── GetItemTotal (formula lookup support) ─────────────────
@@ -1290,6 +3145,146 @@
         return v;
     }
 
+    // ── Formula engine (VB6 MFormulas.bas + clsEquation parity) ──────────
+    //
+    // VB6 evaluates a takeoff item's quantity in three steps:
+    //   1. ResolveFormula  — replace {formulaName} with the Formulas-table
+    //                        text (recursive, with a 30-deep circular-ref
+    //                        guard).  MFormulas.bas:4.
+    //   2. CalcFormula     — replace [VariableName] with the variable's
+    //                        numeric value (or quoted string for a
+    //                        list-of-values variable), then hand the
+    //                        arithmetic string to clsEquation. MFormulas.bas:204.
+    //   3. clsEquation     — a full expression solver: + - * / \ ^ %  / mod,
+    //                        comparisons (= < > <= >= <>), AND/OR, unary
+    //                        minus, implicit multiplication ("2(3)", "2 x"),
+    //                        and the function library (abs/round/roundto/min/
+    //                        max/avg/sum/int/trunc/floor/ceiling/sqrt/power/
+    //                        if(...) plus the totaltakeoffqty/totalorderqty/
+    //                        totalcost DB lookups). clsEquation.cls.
+    //
+    // The previous port collapsed any non-bare-number formula to 1, so a
+    // formula like "[Quantity] * 2" or "roundto([SqFt]/100,1,1)" produced
+    // PassTakeoffQty = qty × 1 — wrong takeoff quantities. We now run the
+    // real pipeline. Lookup functions (FormulaHasLookups) are routed through
+    // GetItemTotal, matching clsEquation.cls:413-415.
+
+    /// <summary>VB6 MFormulas.bas:200 — a formula needs the second pass (and
+    /// the cross-item totals) when it references one of the aggregate lookup
+    /// functions.</summary>
+    private static bool FormulaHasLookups(string resolvedFormula) =>
+        resolvedFormula.IndexOf("TotalTakeoffQty", StringComparison.Ordinal) >= 0
+        || resolvedFormula.IndexOf("TotalOrderQty", StringComparison.Ordinal) >= 0
+        || resolvedFormula.IndexOf("TotalCost", StringComparison.Ordinal) >= 0;
+
+    /// <summary>VB6 MFormulas.bas:4 ResolveFormula — replace every
+    /// <c>{formulaName}</c> with <c>(text)</c> from the Formulas table,
+    /// recursively, guarding against a runaway/circular reference at 30
+    /// substitutions (VB6's exact limit). Returns the original on a missing
+    /// formula name so the equation solver surfaces the error per-row, just
+    /// like VB6 (which MsgBox'd and left the token in place).</summary>
+    private async Task<string> ResolveFormulaAsync(string rawFormula)
+    {
+        if (string.IsNullOrEmpty(rawFormula)) return rawFormula ?? "";
+
+        var s = rawFormula.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        int guard = 0;
+        int open;
+        while ((open = s.IndexOf('{')) >= 0)
+        {
+            var close = s.IndexOf('}', open + 1);
+            if (close < 0) break; // unbalanced — leave as-is for the solver
+            var name = s.Substring(open + 1, close - open - 1);
+
+            guard++;
+            if (guard > 30)
+            {
+                Logger.LogWarning("ResolveFormula: circular/over-deep formula reference in '{Formula}'", rawFormula);
+                return "";
+            }
+
+            string? text = null;
+            try
+            {
+                text = await db.ExecuteScalarAsync<string>(
+                    "SELECT text FROM Formulas WHERE name = @Name",
+                    new { Name = name });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "ResolveFormula: lookup failed for formula '{Name}'", name);
+            }
+
+            if (text == null)
+            {
+                // VB6 MsgBox "Unknown formula" then Exit Function leaving the
+                // raw token; we do the same so the row's eval fails loudly
+                // rather than silently resolving to something else.
+                Logger.LogWarning("ResolveFormula: unknown formula '{Name}'", name);
+                return s;
+            }
+
+            s = s.Replace("{" + name + "}", "(" + text + ")");
+        }
+        return s;
+    }
+
+    /// <summary>VB6 MFormulas.bas:204 CalcFormula — substitute the takeoff
+    /// variables into the resolved formula, then evaluate with the equation
+    /// solver. <paramref name="quiet"/> mirrors VB6's Quiet flag (errors are
+    /// swallowed and 0 returned instead of surfaced) — Add Pass passes
+    /// quiet:true and reports a single aggregate error per failing row, as
+    /// VB6's cmdAddPass_Click did via <c>On Error Resume Next</c>.</summary>
+    private double CalcFormula(string resolvedFormula, bool quiet)
+    {
+        // VB6: list-of-values variables substitute as a quoted string; plain
+        // numeric variables substitute as Val(value). Replace longest names
+        // first so "[SqFt]" isn't partially clobbered by a "[Sq]" variable.
+        var s = resolvedFormula ?? "";
+        foreach (var v in HFVariablesData
+                              .Where(v => !string.IsNullOrEmpty(v.Name))
+                              .OrderByDescending(v => v.Name.Length))
+        {
+            var token = "[" + v.Name + "]";
+            string replacement = !string.IsNullOrEmpty(v.ListOfValues)
+                ? "\"" + (v.Value ?? "") + "\""
+                : ToDouble(v.Value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            s = ReplaceCaseInsensitive(s, token, replacement);
+        }
+
+        if (string.IsNullOrWhiteSpace(s)) return 0;
+
+        try
+        {
+            return new FormulaEquation(s, GetItemTotal).Solve();
+        }
+        catch (Exception ex)
+        {
+            if (!quiet)
+                Notifications.Error($"Error evaluating formula: {ex.Message}");
+            throw;
+        }
+    }
+
+    private static string ReplaceCaseInsensitive(string input, string search, string replacement)
+    {
+        if (string.IsNullOrEmpty(input) || string.IsNullOrEmpty(search)) return input;
+        var sb = new System.Text.StringBuilder();
+        int idx = 0;
+        while (true)
+        {
+            int found = input.IndexOf(search, idx, StringComparison.OrdinalIgnoreCase);
+            if (found < 0) { sb.Append(input, idx, input.Length - idx); break; }
+            sb.Append(input, idx, found - idx);
+            sb.Append(replacement);
+            idx = found + search.Length;
+        }
+        return sb.ToString();
+    }
+    // FormulaEquation (the clsEquation.cls port) now lives in Models/FormulaEquation.cs —
+    // extracted so the Formula Editor's Test button (HHM-211) shares the SAME solver.
+    // This host passes GetItemTotal for the Total* aggregate functions.
+
     // ── Helpers ───────────────────────────────────────────────
     private double ToDouble(object? val)
     {
@@ -1308,6 +3303,10 @@
         public string DisplayFlds { get; set; } = "";
         public string FromWhere { get; set; } = "";
         public string Database { get; set; } = "HomeFront";
+        /// <summary>SELECT used by the Find… menu item to flatten this view
+        /// into an FPickList. Mirrors VB6 mViews(i).findQry. When empty,
+        /// the Find… item is hidden / disabled in the context menu.</summary>
+        public string FindQry { get; set; } = "";
     }
 
     public class ListTreeNode
@@ -1321,6 +3320,10 @@
         public bool IsSelected { get; set; }
         public bool IsBold { get; set; }
         public string WhereClause { get; set; } = "";
+        /// <summary>SQL parameter values referenced by <see cref="WhereClause"/>.
+        /// Cumulative across drill-down levels — each child copies the parent's
+        /// dictionary and adds its own @lvlN parameter.</summary>
+        public Dictionary<string, object> WhereParams { get; set; } = new();
         public int ViewIndex { get; set; }
         public List<ListTreeNode>? Children { get; set; }
     }
@@ -1339,13 +3342,17 @@
         public double OrderQty { get; set; }
         public string OrderUOM { get; set; } = "";
         public double ConversionFactor { get; set; } = 1;
-        public double WastePercent { get; set; }
+        // HHM-613: nullable — VB6's Quotes view never fills the WastePercent
+        // cell, so a quote row shows BLANK, not 0.
+        public double? WastePercent { get; set; }
         public double RoundTo { get; set; }
         public double RoundDir { get; set; }
         public string JCCostCode { get; set; } = "";
         public string JCCategory { get; set; } = "";
         public string JCExtra { get; set; } = "";
         public double Price { get; set; }
+        /// <summary>Per-row price override applied when the active view is "Estimates".</summary>
+        public double? OverridePrice { get; set; }
         public string POIndex { get; set; } = "";
         public string Notes { get; set; } = "";
         public string Location { get; set; } = "";
@@ -1403,4 +3410,3 @@
         public string Text { get; set; } = "";
     }
 }
-```

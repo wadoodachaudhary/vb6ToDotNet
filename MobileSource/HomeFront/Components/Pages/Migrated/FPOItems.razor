@@ -1,207 +1,24 @@
-```razor
 @page "/po-items"
 @rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using System
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FPOItems> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Purchase Order Setup - HomeFront</PageTitle>
-
-<style>
-    .po-items-container {
-        height: calc(100vh - 80px);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    .header-row {
-        display: flex;
-        align-items: center;
-        padding: 4px 8px;
-        gap: 8px;
-    }
-
-    .header-row label {
-        font-weight: 700;
-        font-size: 13px;
-    }
-
-    .view-label {
-        margin-left: auto;
-        font-size: 13px;
-        text-align: right;
-    }
-
-    .view-select {
-        padding: 4px 8px;
-        border: 1px solid #c9c9c9;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #fff;
-    }
-
-    .split-container {
-        flex: 1;
-        display: flex;
-        overflow: hidden;
-    }
-
-    .items-panel {
-        flex: 1;
-        min-width: 300px;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .slider-handle {
-        width: 6px;
-        background: #dee2e6;
-        cursor: col-resize;
-        flex-shrink: 0;
-        transition: background 0.15s;
-    }
-
-    .slider-handle:hover {
-        background: #adb5bd;
-    }
-
-    .pos-panel {
-        flex: 1;
-        min-width: 300px;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .panel-header {
-        padding: 4px 8px;
-        font-weight: 700;
-        font-size: 13px;
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .grid-wrapper {
-        flex: 1;
-        overflow: auto;
-    }
-
-    /* Tree node styling */
-    .tree-list {
-        list-style: none;
-        padding-left: 0;
-        margin: 0;
-    }
-
-    .tree-list ul {
-        list-style: none;
-        padding-left: 20px;
-        margin: 0;
-    }
-
-    .tree-node-row {
-        display: flex;
-        align-items: center;
-        padding: 2px 6px;
-        cursor: pointer;
-        user-select: none;
-        font-size: 13px;
-        gap: 4px;
-    }
-
-    .tree-node-row:hover {
-        background-color: #e8f0fe;
-    }
-
-    .tree-node-row.selected {
-        background-color: #cce5ff;
-        font-weight: 600;
-    }
-
-    .tree-node-row.checked-item {
-        color: #198754;
-    }
-
-    .tree-toggle {
-        width: 16px;
-        text-align: center;
-        font-size: 10px;
-        color: #666;
-        flex-shrink: 0;
-    }
-
-    .tree-icon {
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
-    }
-
-    .tree-text {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .po-index-col {
-        color: #6c757d;
-        font-size: 11px;
-        margin-left: 8px;
-    }
-
-    /* Drop indicator */
-    .drop-indicator {
-        height: 2px;
-        background: #0d6efd;
-        margin: 0 4px;
-    }
-
-    /* Drag styling */
-    .dragging {
-        opacity: 0.5;
-    }
-
-    .drag-over {
-        background-color: #e3f2fd !important;
-    }
-
-    /* Loading */
-    .loading-overlay {
-        position: absolute;
-        height: 100%;
-        width: 100%;
-        background-color: rgba(1, 1, 1, 0.2);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-spinner {
-        padding: 20px 40px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        font-size: 16px;
-        font-weight: 500;
-        color: #333;
-    }
-
-    .hidden-node {
-        display: none;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -211,26 +28,30 @@
 }
 
 <div class="po-items-container">
-    <!-- Header Row -->
-    <div class="header-row">
-        <label>Items</label>
-        <span class="view-label">View:</span>
-        <select class="view-select" value="@ItemViewIndex" @onchange="OnItemViewChanged">
-            <option value="0">all items</option>
-            <option value="1">un-assigned items only</option>
-        </select>
-        <label style="margin-left: 24px;">PO Indexes</label>
-    </div>
-
     <!-- Split Container -->
     <div class="split-container">
-        <!-- Left: Items Panel -->
+        <!-- Left: Items Panel. VB6 Form_Resize anchors the header pieces to the
+             GRIDS (lblPOs.left = gPOs.left; cboItemView right-aligned to gItems,
+             FPOItems.frm:853-866), so the labels live INSIDE each panel and track
+             every splitter move (HHM-628 1+4). -->
         <div class="items-panel">
-            <div class="grid-wrapper" style="padding: 4px;">
-                <ul class="tree-list">
+            <div class="panel-header">
+                <label>Items</label>
+                <span class="view-label">View:</span>
+                <DropDownListControl TValue="int" TItem="ViewOption"
+                                     DataSource="@ItemViewOptions"
+                                     ValueFieldName="Value" TextFieldName="Text"
+                                     Value="ItemViewIndex" ValueChanged="OnItemViewSelected"
+                                     Width="200px" />
+            </div>
+            <div class="grid-wrapper item-tree-grid"
+                 tabindex="0"
+                 @onkeydown="OnItemTreeKeyDown"
+                 @onkeydown:preventDefault="true">
+                <ul class="tree-list item-tree-list">
                     @foreach (var node in ItemNodes)
                     {
-                        @RenderItemNode(node)
+                        @RenderItemNode(node, 0)
                     }
                 </ul>
             </div>
@@ -241,8 +62,14 @@
 
         <!-- Right: PO Indexes Panel -->
         <div class="pos-panel">
-            <div class="grid-wrapper" style="padding: 4px;">
-                <ul class="tree-list">
+            <div class="panel-header">
+                <label>PO Indexes</label>
+            </div>
+            <div class="grid-wrapper item-tree-grid"
+                 tabindex="0"
+                 @onkeydown="OnPOTreeKeyDown"
+                 @onkeydown:preventDefault="true">
+                <ul class="tree-list item-tree-list">
                     @foreach (var node in PONodes)
                     {
                         @RenderPONode(node)
@@ -254,29 +81,26 @@
 </div>
 
 @* ── Confirm Save Dialog ─────────────────────────────────────── *@
-@if (IsConfirmDialogVisible)
-{
-    <div style="position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
-        <div style="background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,0.2);min-width:400px;max-width:500px;padding:20px;">
-            <h5 style="margin-bottom:12px;">@ConfirmDialogTitle</h5>
-            <p>@ConfirmDialogMessage</p>
-            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
-                <button class="btn btn-primary btn-sm" @onclick="OnConfirmYes">Yes</button>
-                <button class="btn btn-secondary btn-sm" @onclick="OnConfirmNo">No</button>
-                <button class="btn btn-outline-secondary btn-sm" @onclick="OnConfirmCancel">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<DialogControl Visible="@IsConfirmDialogVisible"
+               Header="@ConfirmDialogTitle"
+               Width="450px"
+               IsModal="true"
+               ShowCloseIcon="false">
+    <ChildContent>
+        <p>@ConfirmDialogMessage</p>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnConfirmYes">Yes</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnConfirmNo">No</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnConfirmCancel">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     private const string SRCFILE = "FPOItems::";
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === UI State ===
+// === UI State ===
     private bool IsLoading = false;
     private bool mDirty = false;
     private bool mLoading = false;
@@ -311,6 +135,21 @@
         await LoadAllData();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("fxPOItemsSplitter.init");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error initializing splitter in FPOItems");
+            }
+        }
+    }
+
     private async Task LoadAllData()
     {
         IsLoading = true;
@@ -325,13 +164,31 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{SRCFILE}LoadAllData error: {ex.Message}");
+            Logger.LogError(ex, "{SRCFILE}LoadAllData error");
+
         }
         finally
         {
             IsLoading = false;
             StateHasChanged();
         }
+    }
+
+    // === View dropdown options (mirrors the original <option> list) ===
+    private record ViewOption(int Value, string Text);
+    private static readonly List<ViewOption> ItemViewOptions = new()
+    {
+        new ViewOption(0, "all items"),
+        new ViewOption(1, "un-assigned items only"),
+    };
+
+    // Thin adapter: DropDownListControl exposes Value/ValueChanged (no @onchange),
+    // so reshape the selected int into the ChangeEventArgs the original handler expects.
+    // Binding the non-nullable Value="ItemViewIndex" makes Razor infer TValue=int, so the
+    // paired ValueChanged delegate is Func<int, Task> — the handler must take int, not int?.
+    private async Task OnItemViewSelected(int newIndex)
+    {
+        await OnItemViewChanged(new ChangeEventArgs { Value = newIndex.ToString() });
     }
 
     // === Item View Changed ===
@@ -421,10 +278,11 @@
 
                     var sql = @"UPDATE tblPhaseItem
                                 SET POIndex = @POIndex
+                                   ,UpdateEstimating = 1
                                 WHERE DivisionID = @DivisionID
                                   AND Phase = @Phase
                                   AND Item = @Item";
-                    await db.ExecuteAsync(sql, new { POIndex = poIndex, DivisionID, Phase = phase, Item = item });
+                    await db.ExecuteAsync(sql, new { POIndex = poIndex, SessionState.DivisionID, Phase = phase, Item = item });
                     node.RowState = "CLEAN";
                 }
             }
@@ -432,8 +290,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{SRCFILE}SaveItems error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Logger.LogError(ex, "{SRCFILE}SaveItems error");
+
+            Notifications.Error($"Error saving: {ex.Message}");
         }
     }
 
@@ -459,7 +318,7 @@
         sql += @" WHERE p.DivisionID = @DivisionID
                    ORDER BY p.SortOrder";
 
-        var rows = await db.QueryAsync(sql, new { DivisionID });
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
         string currentGroup = "";
         string currentPhase = "";
@@ -568,7 +427,7 @@
                      WHERE p.DivisionID = @DivisionID
                      ORDER BY 1";
 
-        var rows = await db.QueryAsync(sql, new { DivisionID });
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
         string currentPO = "\x01";
         POTreeNode? poNode = null;
@@ -681,6 +540,22 @@
         }
     }
 
+    private ItemTreeNode? FindParentItemNode(ItemTreeNode target)
+    {
+        return FindParentItemNodeRecursive(ItemNodes, target);
+    }
+
+    private ItemTreeNode? FindParentItemNodeRecursive(List<ItemTreeNode> nodes, ItemTreeNode target)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Children.Contains(target)) return node;
+            var found = FindParentItemNodeRecursive(node.Children, target);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     private ItemTreeNode? FindItemNodeByKey(string key)
     {
         return FindItemNodeByKeyRecursive(ItemNodes, key);
@@ -764,46 +639,109 @@
     }
 
     // === Key Handling for Items ===
-    private void OnItemNodeKeyDown(ItemTreeNode node, KeyboardEventArgs e)
+    // VB6 gItems_KeyDown / gPOs_KeyDown (FPOItems.frm:702-839) act on the grid's
+    // CURRENT row; the web port navigated from the event-source row instead, so
+    // repeated arrow presses never advanced (focus stayed on the old row) and the
+    // panel scrolled. The handlers now live on the tree CONTAINER and walk from the
+    // SELECTED node; Enter expands/collapses a branch and drills a leaf (HHM-628.6).
+    private void OnItemTreeKeyDown(KeyboardEventArgs e)
     {
+        var node = SelectedItemNode ?? ItemNodes.FirstOrDefault();
+        if (node == null) return;
+
         switch (e.Key)
         {
             case "Enter":
-                OnItemNodeDoubleClick(node);
+                if (node.Children.Count > 0)
+                    node.IsExpanded = !node.IsExpanded;
+                else
+                    OnItemNodeDoubleClick(node);
                 break;
             case " ":
                 node.IsExpanded = !node.IsExpanded;
                 break;
+            case "ArrowUp":
+                var prevItem = GetPreviousVisibleItemNode(node);
+                if (prevItem != null) SelectedItemNode = prevItem;
+                break;
+            case "ArrowDown":
+                var nextItem = GetNextVisibleItemNode(node);
+                if (nextItem != null) SelectedItemNode = nextItem;
+                break;
             case "ArrowLeft":
                 if (node.Children.Count > 0 && node.IsExpanded)
+                {
                     node.IsExpanded = false;
+                }
+                else
+                {
+                    var parent = FindParentItemNode(node);
+                    if (parent != null)
+                    {
+                        SelectedItemNode = parent;
+                    }
+                }
                 break;
             case "ArrowRight":
-                if (node.Children.Count > 0 && !node.IsExpanded)
-                    node.IsExpanded = true;
+                if (node.Children.Count > 0)
+                {
+                    if (!node.IsExpanded)
+                        node.IsExpanded = true;
+                    else
+                        SelectedItemNode = node.Children[0];
+                }
                 break;
         }
         StateHasChanged();
     }
 
     // === Key Handling for POs ===
-    private async Task OnPONodeKeyDown(POTreeNode node, KeyboardEventArgs e)
+    private async Task OnPOTreeKeyDown(KeyboardEventArgs e)
     {
+        var node = SelectedPONode ?? PONodes.FirstOrDefault();
+        if (node == null) return;
+
         switch (e.Key)
         {
             case "Enter":
-                OnPONodeDoubleClick(node);
+                if (node.Children.Count > 0)
+                    node.IsExpanded = !node.IsExpanded;
+                else
+                    OnPONodeDoubleClick(node);
                 break;
             case " ":
                 node.IsExpanded = !node.IsExpanded;
                 break;
+            case "ArrowUp":
+                var prevPO = GetPreviousVisiblePONode(node);
+                if (prevPO != null) SelectedPONode = prevPO;
+                break;
+            case "ArrowDown":
+                var nextPO = GetNextVisiblePONode(node);
+                if (nextPO != null) SelectedPONode = nextPO;
+                break;
             case "ArrowLeft":
                 if (node.Children.Count > 0 && node.IsExpanded)
+                {
                     node.IsExpanded = false;
+                }
+                else
+                {
+                    var parentPO = PONodes.FirstOrDefault(p => p.Children.Contains(node));
+                    if (parentPO != null)
+                    {
+                        SelectedPONode = parentPO;
+                    }
+                }
                 break;
             case "ArrowRight":
-                if (node.Children.Count > 0 && !node.IsExpanded)
-                    node.IsExpanded = true;
+                if (node.Children.Count > 0)
+                {
+                    if (!node.IsExpanded)
+                        node.IsExpanded = true;
+                    else
+                        SelectedPONode = node.Children[0];
+                }
                 break;
             case "Delete":
                 await DeleteSelectedPONodes(node);
@@ -1036,37 +974,42 @@
     }
 
     // === Render Item Tree Node ===
-    private RenderFragment RenderItemNode(ItemTreeNode node) => __builder =>
+    private RenderFragment RenderItemNode(ItemTreeNode node, int depth) => __builder =>
     {
-        <li>
+        // VB6 renders rows at their RowOutlineLevel regardless of a missing parent
+        // (a phase with no preceding group still indents to level 1,
+        // FPOItems.frm:914). When the node sits higher in the DOM than its outline
+        // level, add the missing indent explicitly (HHM-628.5).
+        var outlineIndent = node.OutlineLevel > depth
+            ? $"margin-left:{(node.OutlineLevel - depth) * 27}px;"
+            : "";
+        <li style="@outlineIndent">
             <div class="tree-node-row @(SelectedItemNode == node ? "selected" : "") @(!string.IsNullOrEmpty(node.POIndex) ? "checked-item" : "")"
-                 tabindex="0"
                  @onclick="() => OnItemNodeClick(node)"
                  @ondblclick="() => OnItemNodeDoubleClick(node)"
-                 @onkeydown="(e) => OnItemNodeKeyDown(node, e)"
                  draggable="@(node.NodeType == ItemNodeType.Item ? "true" : "false")"
                  @ondragstart="() => OnItemDragStart(node)"
                  @ondragend="OnDragEnd">
 
                 @if (node.Children.Count > 0)
                 {
-                    <span class="tree-toggle">@(node.IsExpanded ? "▼" : "▶")</span>
+                    <span class="tree-toggle tree-toggle-box">@(node.IsExpanded ? "-" : "+")</span>
                 }
                 else
                 {
-                    <span class="tree-toggle">&nbsp;</span>
+                    <span class="tree-toggle tree-toggle-spacer" aria-hidden="true"></span>
                 }
 
                 @switch (node.NodeType)
                 {
                     case ItemNodeType.Group:
-                        <span>📁</span>
+                        <img class="tree-node-icon" src="images/16/Group.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                     case ItemNodeType.Phase:
-                        <span>📋</span>
+                        <img class="tree-node-icon" src="images/16/Phase.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                     case ItemNodeType.Item:
-                        <span>@(!string.IsNullOrEmpty(node.POIndex) ? "☑️" : "📄")</span>
+                        <img class="tree-node-icon tree-node-icon-leaf" src="images/16/Item2.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                 }
 
@@ -1083,7 +1026,7 @@
                 <ul>
                     @foreach (var child in node.Children)
                     {
-                        @RenderItemNode(child)
+                        @RenderItemNode(child, depth + 1)
                     }
                 </ul>
             }
@@ -1097,10 +1040,8 @@
 
         <li>
             <div class="tree-node-row @(SelectedPONode == node ? "selected" : "") @(DropTargetPONode == node ? "drag-over" : "")"
-                 tabindex="0"
                  @onclick="() => OnPONodeClick(node)"
                  @ondblclick="() => OnPONodeDoubleClick(node)"
-                 @onkeydown="async (e) => await OnPONodeKeyDown(node, e)"
                  draggable="@(node.NodeType == PONodeType.Item ? "true" : "false")"
                  @ondragstart="() => OnPOItemDragStart(node)"
                  @ondragover:preventDefault="true"
@@ -1110,24 +1051,20 @@
 
                 @if (node.Children.Count > 0)
                 {
-                    <span class="tree-toggle">@(node.IsExpanded ? "▼" : "▶")</span>
-                }
-                else if (node.NodeType == PONodeType.POIndex)
-                {
-                    <span class="tree-toggle">▶</span>
+                    <span class="tree-toggle tree-toggle-box">@(node.IsExpanded ? "-" : "+")</span>
                 }
                 else
                 {
-                    <span class="tree-toggle">&nbsp;</span>
+                    <span class="tree-toggle tree-toggle-spacer" aria-hidden="true"></span>
                 }
 
                 @switch (node.NodeType)
                 {
                     case PONodeType.POIndex:
-                        <span>📦</span>
+                        <img class="tree-node-icon" src="images/16/poindex.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                     case PONodeType.Item:
-                        <span>📄</span>
+                        <img class="tree-node-icon tree-node-icon-leaf" src="images/16/Item2.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                 }
 
@@ -1150,6 +1087,70 @@
             }
         </li>
     };
+
+    // === Visible-order navigation (ArrowUp/Down) ===
+    private List<ItemTreeNode> GetVisibleItemNodes()
+    {
+        var result = new List<ItemTreeNode>();
+        CollectVisibleItemNodes(ItemNodes, result);
+        return result;
+    }
+
+    private void CollectVisibleItemNodes(List<ItemTreeNode> nodes, List<ItemTreeNode> result)
+    {
+        foreach (var node in nodes)
+        {
+            result.Add(node);
+            if (node.IsExpanded && node.Children.Count > 0)
+                CollectVisibleItemNodes(node.Children, result);
+        }
+    }
+
+    private ItemTreeNode? GetPreviousVisibleItemNode(ItemTreeNode current)
+    {
+        var visible = GetVisibleItemNodes();
+        var idx = visible.IndexOf(current);
+        return idx > 0 ? visible[idx - 1] : null;
+    }
+
+    private ItemTreeNode? GetNextVisibleItemNode(ItemTreeNode current)
+    {
+        var visible = GetVisibleItemNodes();
+        var idx = visible.IndexOf(current);
+        return idx >= 0 && idx < visible.Count - 1 ? visible[idx + 1] : null;
+    }
+
+    private List<POTreeNode> GetVisiblePONodes()
+    {
+        var result = new List<POTreeNode>();
+        foreach (var node in PONodes)
+        {
+            if (node.IsHidden) continue;
+            result.Add(node);
+            if (node.IsExpanded && node.Children.Count > 0)
+            {
+                foreach (var child in node.Children)
+                {
+                    if (!child.IsHidden) result.Add(child);
+                }
+            }
+        }
+        return result;
+    }
+
+    private POTreeNode? GetPreviousVisiblePONode(POTreeNode current)
+    {
+        var visible = GetVisiblePONodes();
+        var idx = visible.IndexOf(current);
+        return idx > 0 ? visible[idx - 1] : null;
+    }
+
+    private POTreeNode? GetNextVisiblePONode(POTreeNode current)
+    {
+        var visible = GetVisiblePONodes();
+        var idx = visible.IndexOf(current);
+        return idx >= 0 && idx < visible.Count - 1 ? visible[idx + 1] : null;
+    }
 
     // === Model Classes ===
     public enum ItemNodeType { Group, Phase, Item }
@@ -1185,4 +1186,3 @@
         public List<POTreeNode> Children { get; set; } = new();
     }
 }
-```
