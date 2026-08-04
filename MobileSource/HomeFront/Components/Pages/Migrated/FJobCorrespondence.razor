@@ -1,108 +1,27 @@
-```razor
 @page "/job-correspondence"
 @page "/job-correspondence/{Job}"
 @rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
 
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
+@using HomeFront.Models
 @using System.Data
+@using System.Reflection
+@using System.Text
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FJobCorrespondence> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>Correspondence Log - HomeFront</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 16px;
-    }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        transition: background 0.15s;
-        min-width: 60px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
-    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
-    .tool-label { font-size: 11px; }
-
-    .priority-cell { cursor: pointer; user-select: none; text-align: center; }
-    .priority-high { color: #dc3545; font-weight: bold; }
-    .priority-low { color: #28a745; }
-    .priority-none { color: #6c757d; }
-
-    .email-icon { color: #0d6efd; cursor: pointer; }
-    .attachment-icon { color: #ffc107; }
-
-    .loading-overlay {
-        position: absolute; height: 92%; width: 100%;
-        background-color: rgba(1,1,1,0.2); z-index: 10000;
-        display: flex; align-items: center; justify-content: center;
-    }
-    .loading-spinner {
-        padding: 20px 40px; background: #fff; border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
-        font-weight: 500; color: #333;
-    }
-
-    .dirty-row { background-color: #fff3cd !important; }
-
-    .dialog-overlay {
-        position: fixed; inset: 0; z-index: 1000;
-        background: rgba(0,0,0,0.3); display: flex;
-        align-items: center; justify-content: center;
-    }
-    .dialog-panel {
-        background: #fff; border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-        min-width: 500px; max-width: 700px; max-height: 80vh;
-        display: flex; flex-direction: column; overflow: hidden;
-    }
-    .dialog-header {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 20px; font-weight: 600; font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-    .dialog-header button {
-        background: none; border: none; font-size: 22px;
-        cursor: pointer; color: #6c757d; padding: 0 4px;
-    }
-    .dialog-header button:hover { color: #212529; }
-    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
-    .dialog-footer {
-        display: flex; justify-content: flex-end; gap: 8px;
-        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
-    }
-    .dialog-footer .btn {
-        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 14px;
-    }
-    .dialog-footer .btn:hover { background: #e9ecef; }
-    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
-
-    .pick-list-item {
-        padding: 6px 12px; cursor: pointer; border-bottom: 1px solid #eee;
-    }
-    .pick-list-item:hover { background: #e9ecef; }
-    .pick-list-item.selected { background: #cce5ff; font-weight: 600; }
-</style>
 
 @if (IsLoading)
 {
@@ -111,41 +30,56 @@
     </div>
 }
 
-<div>
+<div class="job-correspondence-page">
     @* ── TOOLBAR ─────────────────────────────────────────── *@
     <div class="toolbar-cntr">
         <button class="tbar-btn" @onclick="OnOpenClick">
             <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
             <span class="tool-label">Open</span>
         </button>
-        <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        @* Save is enabled ONLY when the form is dirty (standing rule: Save is never
+           auto-enabled). Per-cell edits raise OnCellSave → mDirty → Save enables. *@
+        <button class="tbar-btn" @onclick="OnSaveClick" disabled="@(!mDirty)">
             <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
             <span class="tool-label">Save</span>
         </button>
     </div>
 
-    <h3 style="margin-bottom: 16px;">Correspondence Log @(!string.IsNullOrEmpty(mJob) ? $"- Job {mJob}" : "")</h3>
+    @* HHM-454: in-content heading removed; the MDI tab caption ("Correspondence Log")
+       is the sole title, matching the reference forms (FVendor has no in-content heading). *@
 
     @* ── MESSAGES GRID ─────────────────────────────────────── *@
-    <HfGrid @ref="MessagesGrid"
+    <GridControl @ref="MessagesGrid"
             TValue="MessageRow"
             DataSource="@MessagesData"
             AllowSorting="true"
             AllowResizing="true"
             AllowSelection="true"
+            HighlightSelectedRows="false"
             AllowFiltering="true"
             EnableHover="true"
-            Height="calc(100vh - 200px)"
+            Height="100%"
             FilterSettingsRef="@filterSettings"
             PageSettingsRef="@pageSettings"
             SelectionSettingsRef="@selectionSettings"
             EditSettingsRef="@editSettings"
+            BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+            EditOnSingleClick="true"
+            NewItemFactory="CreatePlaceholderRow"
+            EnsureTrailingNewRow="true"
+            IsTrailingNewRow="IsInlineNewRow"
+            AddNewRowOnLastCellExit="true"
+            CanAddNewRowOnLastCellExit="CanAppendInlineNewRowAfter"
             EventsRef="@gridEvents">
-        <HfGridColumnsBase>
-            <HfGridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false"
+        <GridColumnsBase @key="gMessagesLayoutVersion">
+            <GridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false"
                           IsPrimaryKey="true" AllowEditing="false" />
-
-            <HfGridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="50px"
+            @* HHM-458: VB6 shows the Qlt / Original / Attachments icon columns regardless
+               of the saved AppGridLayout, so render them once here — ahead of BOTH the
+               layout-driven foreach and the fallback branch. The dynamic loop renders
+               ONLY colkeys resolving to the LayoutRenderableFields whitelist (VB6
+               IniGetGrid's ColIndex <> -1 guard), so these can never duplicate. *@
+            <GridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="50px"
                           TextAlign="TextAlign.Center" AllowEditing="false">
                 <Template>
                     @{
@@ -155,22 +89,16 @@
                             1 => "priority-high",
                             2 => "priority-low",
                             _ => "priority-none"
-                        };
-                        var priorityIcon = row.Priority switch
-                        {
-                            1 => "🔴",
-                            2 => "🔵",
-                            _ => "⚪"
-                        };
+                        };                   
                     }
                     <span class="priority-cell @priorityClass"
                           @onclick="() => OnPriorityClick(row)"
                           @onclick:stopPropagation="true"
-                          title="Click to change priority">@priorityIcon</span>
+                          title="Click to change priority">!</span>
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="50px"
+            <GridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="50px"
                           TextAlign="TextAlign.Center" AllowEditing="false">
                 <Template>
                     @{
@@ -182,9 +110,9 @@
                         }
                     }
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(MessageRow.Attachments)" HeaderText="📎" Width="50px"
+            <GridColumn Field="@nameof(MessageRow.Attachments)" HeaderText="📎" Width="50px"
                           TextAlign="TextAlign.Center" AllowEditing="false">
                 <Template>
                     @{
@@ -195,278 +123,231 @@
                         }
                     }
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Type" Width="100px">
-                <EditTemplate>
-                    @{
-                        var row = (MessageRow)context;
-                        if (row.MessageType == "Email")
-                        {
-                            <span>Email</span>
-                        }
-                        else
-                        {
-                            <select @bind="row.MessageType" @bind:after="() => MarkDirty(row)">
-                                <option value="Mail">Mail</option>
-                                <option value="Fax">Fax</option>
-                                <option value="Phone">Phone</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        }
+            @if (HasGridLayout)
+            {
+                foreach (var entry in GetOrderedGridLayout())
+                {
+                    var layout = entry.Layout;
+                    var fieldName = entry.Field;
+                    var columnType = entry.ColumnType;
+                    var textAlign = entry.TextAlign;
+                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                    var allowEdit = IsFieldEditable(fieldName);
+
+                    if (fieldName == nameof(MessageRow.MessageType))
+                    {
+                        @* HHM-460: Sent Via edits through the STANDARD batch dropdown editor.
+                           An EditTemplate is dead in batch mode (only the row-level inline path
+                           reads it), which is why the cell opened as free text. The provider
+                           mirrors VB6 gMessages_BeforeEdit: ComboList "Mail|Fax|Phone|Other".
+                           Email rows remain read-only through OnCellBeginEdit. *@
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="Sent Via"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      AllowEditing="@allowEdit"
+                                      EditOptionsProvider="GetMessageTypeEditOptions"
+                                      ClipMode="ClipMode.Ellipsis" />
                     }
-                </EditTemplate>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="180px">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span>@row.Sender</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickContact(row, nameof(MessageRow.Sender))"
-                                    @onclick:stopPropagation="true">...</button>
-                        }
+                    else if (fieldName == nameof(MessageRow.Sender)
+                             || fieldName == nameof(MessageRow.Recipients)
+                             || fieldName == nameof(MessageRow.RecipientsCC)
+                             || fieldName == nameof(MessageRow.RecipientsBCC))
+                    {
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      AllowEditing="false"
+                                      ShowEditButton="true"
+                                      ShowEditButtonPredicate="CanShowMessagePickerButton"
+                                      ClipMode="ClipMode.Ellipsis">
+                        </GridColumn>
                     }
-                </Template>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="200px">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span title="@row.Recipients">@TruncateText(row.Recipients, 30)</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickContact(row, nameof(MessageRow.Recipients))"
-                                    @onclick:stopPropagation="true">...</button>
-                        }
+                    else if (fieldName == nameof(MessageRow.SentDate)
+                             || fieldName == nameof(MessageRow.ReceivedDate))
+                    {
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      Format="MMM d, yyyy"
+                                      TextAlign="@textAlign"
+                                      AllowEditing="@allowEdit"
+                                      ClipMode="ClipMode.Ellipsis" />
                     }
-                </Template>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="180px">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span title="@row.RecipientsCC">@TruncateText(row.RecipientsCC, 25)</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickContact(row, nameof(MessageRow.RecipientsCC))"
-                                    @onclick:stopPropagation="true">...</button>
-                        }
+                    else
+                    {
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      AllowEditing="@allowEdit"
+                                      ClipMode="ClipMode.Ellipsis" />
                     }
-                </Template>
-            </HfGridColumn>
+                }
+            }
+            else
+            {
+            @* HHM-458: Priority / Original / Attachments icon columns are now rendered
+               unconditionally above, so they are intentionally omitted from this fallback. *@
+            @* HHM-460: same standard batch dropdown as the layout-driven branch above. *@
+            <GridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Sent Via" Width="100px"
+                        EditOptionsProvider="GetMessageTypeEditOptions"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="180px">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span title="@row.RecipientsBCC">@TruncateText(row.RecipientsBCC, 25)</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickContact(row, nameof(MessageRow.RecipientsBCC))"
-                                    @onclick:stopPropagation="true">...</button>
-                        }
-                    }
-                </Template>
-            </HfGridColumn>
+            <GridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="180px"
+                        AllowEditing="false"
+                        ShowEditButton="true" ShowEditButtonPredicate="CanShowMessagePickerButton"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="250px" />
+            <GridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="200px"
+                        AllowEditing="false"
+                        ShowEditButton="true" ShowEditButtonPredicate="CanShowMessagePickerButton"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="300px">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span title="@row.Body">@TruncateText(row.Body, 40)</span>
-                    }
-                </Template>
-            </HfGridColumn>
+            <GridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="180px"
+                        AllowEditing="false"
+                        ShowEditButton="true" ShowEditButtonPredicate="CanShowMessagePickerButton"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px"
+            <GridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="180px"
+                        AllowEditing="false"
+                        ShowEditButton="true" ShowEditButtonPredicate="CanShowMessagePickerButton"
+                        ClipMode="ClipMode.Ellipsis" />
+
+            <GridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="250px" />
+
+            <GridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="300px"
+                        ClipMode="ClipMode.Ellipsis" />
+
+            <GridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px"
                           AllowEditing="false" TextAlign="TextAlign.Right" />
 
-            <HfGridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent Date" Width="120px"
-                          Type="ColumnType.Date" Format="d">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span>@(row.SentDate?.ToString("MMM d, yyyy") ?? "")</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickDate(row, nameof(MessageRow.SentDate))"
-                                    @onclick:stopPropagation="true">📅</button>
-                        }
-                    }
-                </Template>
-            </HfGridColumn>
+            <GridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent Date" Width="120px"
+                        Type="ColumnType.Date" Format="MMM d, yyyy"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received Date" Width="120px"
-                          Type="ColumnType.Date" Format="d">
-                <Template>
-                    @{
-                        var row = (MessageRow)context;
-                        <span>@(row.ReceivedDate?.ToString("MMM d, yyyy") ?? "")</span>
-                        @if (row.MessageType != "Email")
-                        {
-                            <button class="btn btn-sm btn-outline-secondary" style="padding:1px 6px; font-size:11px; margin-left:4px;"
-                                    @onclick="() => OnPickDate(row, nameof(MessageRow.ReceivedDate))"
-                                    @onclick:stopPropagation="true">📅</button>
-                        }
-                    }
-                </Template>
-            </HfGridColumn>
+            <GridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received Date" Width="120px"
+                        Type="ColumnType.Date" Format="MMM d, yyyy"
+                        ClipMode="ClipMode.Ellipsis" />
 
-            <HfGridColumn Field="@nameof(MessageRow.RowState)" Visible="false" />
-        </HfGridColumnsBase>
-    </HfGrid>
-
-    @* New row button *@
-    <div style="margin-top: 8px;">
-        <button class="btn btn-outline-primary btn-sm" @onclick="OnAddNewRow">
-            ➕ Add New Message
-        </button>
-    </div>
+            <GridColumn Field="@nameof(MessageRow.RowState)" Visible="false" />
+            }
+        </GridColumnsBase>
+    </GridControl>
+    @* HHM-465: the manual "Add New Message" button is replaced by the VB6-style
+       trailing blank row (NewItemFactory / EnsureTrailingNewRow on the grid above). *@
 </div>
 
-@* ── Job Picker Dialog ──────────────────────────────────────── *@
-@if (IsJobPickerVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsJobPickerVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Select Job</span>
-                <button @onclick="() => IsJobPickerVisible = false">×</button>
-            </div>
-            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
-                @foreach (var job in JobPickerItems)
-                {
-                    <div class="pick-list-item @(job.JobNo == SelectedPickerJob ? "selected" : "")"
-                         @onclick="() => SelectedPickerJob = job.JobNo">
-                        <strong>@job.JobNo</strong> — @job.Description
-                        <br /><small style="color: #6c757d;">@job.Address | PM: @job.PM</small>
-                    </div>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnJobPickerConfirm"
-                        disabled="@(string.IsNullOrEmpty(SelectedPickerJob))">Select</button>
-                <button class="btn" @onclick="() => IsJobPickerVisible = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+@* Shared FlexKit picklist (search + type-to-search + sortable) — VB6 FPickList. *@
+<FPickList @ref="_pickList" OnSelected="OnPickListSelected" OnCancel="OnPickListCancelled" />
 
-@* ── Contact Picker Dialog ──────────────────────────────────── *@
-@if (IsContactPickerVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsContactPickerVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Select Contacts</span>
-                <button @onclick="() => IsContactPickerVisible = false">×</button>
-            </div>
-            <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
-                @foreach (var contact in ContactPickerItems)
-                {
-                    <div class="pick-list-item @(SelectedContacts.Contains(contact.Name) ? "selected" : "")"
-                         @onclick="() => ToggleContact(contact.Name)">
-                        @contact.Name
-                    </div>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnContactPickerConfirm"
-                        disabled="@(!SelectedContacts.Any())">OK</button>
-                <button class="btn" @onclick="() => IsContactPickerVisible = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
-
-@* ── Date Picker Dialog ─────────────────────────────────────── *@
-@if (IsDatePickerVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsDatePickerVisible = false">
-        <div class="dialog-panel" style="min-width: 300px;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Select Date</span>
-                <button @onclick="() => IsDatePickerVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <input type="date" @bind="PickedDate" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;" />
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnDatePickerConfirm">OK</button>
-                <button class="btn" @onclick="() => IsDatePickerVisible = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
 
 @code {
     [Parameter] public string? Job { get; set; }
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === UI State ===
+// === UI State ===
     private bool IsLoading = false;
     private bool mDirty = false;
     private string mJob = "";
-    private HfGrid<MessageRow>? MessagesGrid;
+    private GridControl<MessageRow>? MessagesGrid;
 
     // === Grid Settings ===
-    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
-    private HfPageSettings pageSettings = new() { PageSize = 50 };
-    private HfSelectionSettings selectionSettings = new()
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private PageSettings pageSettings = new() { PageSize = 50 };
+    private SelectionSettings selectionSettings = new()
     {
         Type = SelectionType.Single,
-        Mode = SelectionMode.Row
+        Mode = SelectionMode.Cell
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
+        // HHM-467: Batch mode so per-cell edits raise OnCellSave → mDirty → Save enables.
+        Mode = EditMode.Batch,
         AllowAdding = true,
         AllowEditing = true,
         AllowDeleting = true,
         AllowEditOnDblClick = true,
-        ShowConfirmDialog = false
+        ShowConfirmDialog = false,
+        // HHM-465: VB6 keeps the blank "new" row at the bottom of the grid.
+        NewRowPosition = NewRowPosition.Bottom
     };
-    private HfGridEvents<MessageRow> gridEvents = new();
+    private GridControlEvents<MessageRow> gridEvents = new();
+
+    // ── Grid layout via the shared GridLayoutPresenter ──────────
+    // The load/resolve/width boilerplate lives in GridLayoutPresenter<TRow>; only the
+    // VB6 form/grid name strings + the layout-field aliases stay here (fidelity).
+    // gMessagesLayout / HasGridLayout / gMessagesLayoutVersion below are thin
+    // delegations, so the markup is unchanged. The keyed("(0)")-then-unkeyed two-call
+    // fallback that LoadGridLayoutAsync used is now expressed via the ctor's
+    // instanceKey, and the ResolveGridField switch is the ctor's alias map (keyed by
+    // the normalized layout field).
+    //
+    // DRIFT (preserved, NOT delegated): GetColumnTypeForField maps bool →
+    // ColumnType.CheckBox where the canonical presenter uses ColumnType.Boolean
+    // (MessageRow has the bool columns HasAttachments / IsDeleted), so GetOrdered must
+    // keep using the local type map. ConvertLayoutWidthToPx matches WidthPx's +16, so
+    // it IS delegated; Layout / Has / Version and ResolveGridField are delegated too.
+    private readonly GridLayoutPresenter<MessageRow> _messagesGrid =
+        new("FJobCorrespondence", "gMessages", instanceKey: "(0)",
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["from"] = nameof(MessageRow.Sender),
+                ["sendername"] = nameof(MessageRow.Sender),
+                ["to"] = nameof(MessageRow.Recipients),
+                ["recipientname"] = nameof(MessageRow.Recipients),
+                ["cc"] = nameof(MessageRow.RecipientsCC),
+                ["bcc"] = nameof(MessageRow.RecipientsBCC),
+                ["type"] = nameof(MessageRow.MessageType)
+            });
+
+    private Dictionary<string, GridLayoutColumn> gMessagesLayout => _messagesGrid.Layout;
+    private bool HasGridLayout => _messagesGrid.Has;
+    private int gMessagesLayoutVersion => _messagesGrid.Version;
+
+    // Used by the local GetColumnTypeForField (kept due to the bool→CheckBox drift).
+    private static readonly Dictionary<string, PropertyInfo> _messageRowPropMap =
+        typeof(MessageRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
     // === Data ===
     private List<MessageRow> MessagesData = new();
 
-    // === Job Picker ===
-    private bool IsJobPickerVisible = false;
-    private List<JobPickerItem> JobPickerItems = new();
-    private string SelectedPickerJob = "";
+    // HHM-460: VB6 gMessages_BeforeEdit arms .ComboList = "Mail|Fax|Phone|Other" for the
+    // Sent Via column and cancels the edit entirely on Email rows — the provider below
+    // reproduces both (an empty option list keeps the dropdown cue off Email cells).
+    private static readonly string[] MessageTypeEditOptions = { "Mail", "Fax", "Phone", "Other" };
 
-    // === Contact Picker ===
-    private bool IsContactPickerVisible = false;
-    private List<ContactItem> ContactPickerItems = new();
-    private HashSet<string> SelectedContacts = new();
+    private static IEnumerable<string> GetMessageTypeEditOptions(object row)
+        => row is MessageRow { MessageType: "Email" } ? Array.Empty<string>() : MessageTypeEditOptions;
+
+    // === Pickers ===
+    private FPickList? _pickList;
+    private string _pickListContext = "";
     private MessageRow? ContactPickerTargetRow;
     private string ContactPickerTargetField = "";
 
-    // === Date Picker ===
-    private bool IsDatePickerVisible = false;
-    private DateTime? PickedDate = DateTime.Today;
-    private MessageRow? DatePickerTargetRow;
-    private string DatePickerTargetField = "";
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
 
     // === Lifecycle ===
     protected override async Task OnInitializedAsync()
     {
+        gridEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<MessageRow>>(this, OnCellBeginEdit);
         gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<MessageRow>>(this, OnCellSaved);
+        gridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<MessageRow>>(this, OnMessagesEditButtonClick);
+        await LoadGridLayoutAsync();
 
         mJob = Job ?? "";
         await LoadJob(mJob);
@@ -480,37 +361,54 @@
     }
 
     // === LoadJob ===
+    private async Task OpenJobPicker()
+    {
+        _pickListContext = "Jobs";
+        var sql = @"
+            SELECT DISTINCT j.Job_No AS Job, j.Description, j.Municipal_Address AS Address,
+                   j.PM, j.Purchaser, j.Estimator
+            FROM tblJobs j
+            WHERE divisionid = @DivisionID
+              AND ISNULL(j.Inactive, 0) = 0
+            ORDER BY j.Job_No";
+        var parameters = new Dictionary<string, object>
+        {
+            { "DivisionID", SessionState.DivisionID }
+        };
+        if (_pickList != null)
+        {
+            await _pickList.Open(
+                title: "Jobs",
+                queries: sql,
+                parameters: parameters
+            );
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (string.IsNullOrEmpty(mJob))
+            {
+                await OpenJobPicker();
+            }
+        }
+    }
+
     private async Task LoadJob(string job)
     {
+        if (string.IsNullOrEmpty(job))
+        {
+            await OpenJobPicker();
+            return;
+        }
+
         IsLoading = true;
         StateHasChanged();
 
         try
         {
-            if (string.IsNullOrEmpty(job))
-            {
-                // Show job picker
-                var sql = @"
-                    SELECT DISTINCT j.Job_No AS JobNo, j.Description, j.Municipal_Address AS Address,
-                           j.PM, j.Purchaser, j.Estimator
-                    FROM tblJobs j
-                    WHERE divisionid = @DivisionID
-                      AND ISNULL(j.Inactive, 0) = 0
-                    ORDER BY j.Job_No";
-                var rows = await db.QueryAsync(sql, new { DivisionID });
-                JobPickerItems = rows.Select(r => new JobPickerItem
-                {
-                    JobNo = r["JobNo"]?.ToString() ?? "",
-                    Description = r["Description"]?.ToString() ?? "",
-                    Address = r["Address"]?.ToString() ?? "",
-                    PM = r["PM"]?.ToString() ?? ""
-                }).ToList();
-
-                IsLoading = false;
-                IsJobPickerVisible = true;
-                StateHasChanged();
-                return;
-            }
 
             mJob = job;
 
@@ -545,8 +443,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadJob error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading job: {ex.Message}");
+            Logger.LogError(ex, "LoadJob error");
+
+            Notifications.Error($"Error loading job: {ex.Message}");
         }
         finally
         {
@@ -562,9 +461,13 @@
 
         if (prompt)
         {
-            var answer = await JSRuntime.InvokeAsync<string>("eval",
-                "(() => { const r = confirm('This data has changed.\\n\\nDo you want to save these changes?'); return r ? 'Yes' : 'No'; })()");
-            if (answer == "No") return true;
+            // HHM-454: VB6 MsgBox vbYesNoCancel — Yes=save, No=discard, Cancel=abort.
+            // Was a JS confirm() with only two buttons, so Cancel (abort the Open)
+            // was impossible; now the standard FlexKit Yes/No/Cancel dialog.
+            var resp = await ShowSavePromptDialog();
+            if (resp == null) return false;   // Cancel → abort the caller's action
+            if (resp == false) return true;   // No → discard changes, allow proceed
+            // Yes → fall through to save
         }
 
         IsLoading = true;
@@ -580,8 +483,8 @@
             }
             MessagesData.RemoveAll(r => r.IsDeleted);
 
-            // Process dirty rows
-            foreach (var row in MessagesData.Where(r => r.RowState == "DIRTY"))
+            // Process dirty rows (HHM-465: never persist an untouched trailing placeholder)
+            foreach (var row in MessagesData.Where(r => r.RowState == "DIRTY" && !r.IsInlineNewRow))
             {
                 if (string.IsNullOrEmpty(row.ID))
                 {
@@ -647,8 +550,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"SaveData error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            Logger.LogError(ex, "SaveData error");
+
+            Notifications.Error($"Error saving data: {ex.Message}");
             return false;
         }
         finally
@@ -670,13 +574,7 @@
         await SaveData(false);
     }
 
-    // === Job Picker ===
-    private async Task OnJobPickerConfirm()
-    {
-        if (string.IsNullOrEmpty(SelectedPickerJob)) return;
-        IsJobPickerVisible = false;
-        await LoadJob(SelectedPickerJob);
-    }
+
 
     // === Priority Click (cycles 0 → 1 → 2 → 0) ===
     private void OnPriorityClick(MessageRow row)
@@ -694,135 +592,235 @@
     }
 
     // === Open Original Email ===
+    // VB6: ShellFile(Me.hwnd, "c:\demo\files\" & ID & ".msg")
     private async Task OnOpenOriginal(MessageRow row)
     {
         if (row.MessageType != "Email" || string.IsNullOrEmpty(row.ID)) return;
-        // In VB6 this opened a .msg file via ShellFile
-        await JSRuntime.InvokeVoidAsync("alert", $"Would open original email: {row.ID}.msg");
+
+        try
+        {
+            // Retrieve the original email file path from the database
+            var sql = "SELECT Original FROM messages WHERE id = @Id";
+            var rows = await db.QueryAsync(sql, new { Id = row.ID });
+            var firstRow = rows.FirstOrDefault();
+            var filePath = firstRow?["Original"]?.ToString() ?? "";
+
+            if (string.IsNullOrEmpty(filePath))
+            {
+                // Fallback: construct path from ID as VB6 did
+                filePath = $"{row.ID}.msg";
+            }
+
+            // In a web context, open the file via a download/viewer endpoint
+            await JSRuntime.InvokeVoidAsync("open", $"/api/files/email/{row.ID}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "OnOpenOriginal error");
+
+        }
     }
 
     // === Contact Picker ===
-    private async Task OnPickContact(MessageRow row, string field)
-    {
-        try
-        {
-            var sql = "SELECT * FROM addressbook ORDER BY name";
-            var rows = await db.QueryAsync(sql);
-            ContactPickerItems = rows.Select(r => new ContactItem
-            {
-                Name = r["name"]?.ToString() ?? ""
-            }).ToList();
-        }
-        catch
-        {
-            ContactPickerItems = new();
-        }
+    private static bool CanShowMessagePickerButton(object row)
+        => row is MessageRow { MessageType: not "Email" };
 
-        ContactPickerTargetRow = row;
-        ContactPickerTargetField = field;
-        SelectedContacts.Clear();
-        IsContactPickerVisible = true;
-    }
-
-    private void ToggleContact(string name)
+    private async Task OnMessagesEditButtonClick(CellEditButtonArgs<MessageRow> args)
     {
-        if (SelectedContacts.Contains(name))
-            SelectedContacts.Remove(name);
-        else
-            SelectedContacts.Add(name);
-    }
-
-    private void OnContactPickerConfirm()
-    {
-        if (ContactPickerTargetRow == null || !SelectedContacts.Any())
-        {
-            IsContactPickerVisible = false;
+        if (args.Data == null || args.Data.MessageType == "Email")
             return;
-        }
 
-        var contactString = string.Join("; ", SelectedContacts);
-
-        switch (ContactPickerTargetField)
+        switch (args.ColumnName)
         {
             case nameof(MessageRow.Sender):
-                ContactPickerTargetRow.Sender = contactString;
-                break;
             case nameof(MessageRow.Recipients):
-                ContactPickerTargetRow.Recipients = contactString;
-                break;
             case nameof(MessageRow.RecipientsCC):
-                ContactPickerTargetRow.RecipientsCC = contactString;
-                break;
             case nameof(MessageRow.RecipientsBCC):
-                ContactPickerTargetRow.RecipientsBCC = contactString;
+                await OnPickContact(args.Data, args.ColumnName);
                 break;
         }
-
-        MarkDirty(ContactPickerTargetRow);
-        IsContactPickerVisible = false;
-        StateHasChanged();
     }
 
-    // === Date Picker ===
-    private void OnPickDate(MessageRow row, string field)
+    private async Task OnPickContact(MessageRow row, string field)
     {
-        DatePickerTargetRow = row;
-        DatePickerTargetField = field;
-        PickedDate = field == nameof(MessageRow.SentDate) ? row.SentDate : row.ReceivedDate;
-        PickedDate ??= DateTime.Today;
-        IsDatePickerVisible = true;
-    }
+        ContactPickerTargetRow = row;
+        ContactPickerTargetField = field;
+        _pickListContext = "Contact";
 
-    private void OnDatePickerConfirm()
-    {
-        if (DatePickerTargetRow == null)
+        if (_pickList != null)
         {
-            IsDatePickerVisible = false;
-            return;
+            await _pickList.Open(
+                title: "Contact",
+                queries: "SELECT name FROM addressbook ORDER BY name",
+                multiSelect: true
+            );
         }
-
-        switch (DatePickerTargetField)
-        {
-            case nameof(MessageRow.SentDate):
-                DatePickerTargetRow.SentDate = PickedDate;
-                break;
-            case nameof(MessageRow.ReceivedDate):
-                DatePickerTargetRow.ReceivedDate = PickedDate;
-                break;
-        }
-
-        MarkDirty(DatePickerTargetRow);
-        IsDatePickerVisible = false;
-        StateHasChanged();
     }
 
-    // === Add New Row ===
-    private void OnAddNewRow()
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
     {
-        var newRow = new MessageRow
+        var ctx = _pickListContext;
+        _pickListContext = "";
+
+        try
         {
-            ID = "",
-            Priority = 1,
-            MessageType = "Other",
-            ReceivedDate = DateTime.Today,
-            RowState = "DIRTY",
-            IsDeleted = false
+            if (ctx == "Jobs")
+            {
+                if (selectedRows.Count == 0) return;
+                var pick = selectedRows[0];
+                var selectedJob = pick.TryGetValue("Job", out var val) ? val?.ToString() ?? "" : "";
+                if (string.IsNullOrEmpty(selectedJob))
+                {
+                    selectedJob = pick.TryGetValue("job", out val) ? val?.ToString() ?? "" : "";
+                }
+                if (!string.IsNullOrEmpty(selectedJob))
+                {
+                    await LoadJob(selectedJob);
+                }
+            }
+            else if (ctx == "Contact")
+            {
+                if (ContactPickerTargetRow == null || selectedRows.Count == 0) return;
+
+                var names = selectedRows
+                    .Select(r => r.TryGetValue("name", out var val) ? val?.ToString() ?? "" : "")
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList();
+
+                if (names.Count == 0) return;
+
+                var contactString = string.Join("; ", names);
+
+                switch (ContactPickerTargetField)
+                {
+                    case nameof(MessageRow.Sender):
+                        ContactPickerTargetRow.Sender = contactString;
+                        break;
+                    case nameof(MessageRow.Recipients):
+                        ContactPickerTargetRow.Recipients = contactString;
+                        break;
+                    case nameof(MessageRow.RecipientsCC):
+                        ContactPickerTargetRow.RecipientsCC = contactString;
+                        break;
+                    case nameof(MessageRow.RecipientsBCC):
+                        ContactPickerTargetRow.RecipientsBCC = contactString;
+                        break;
+                }
+
+                MarkDirty(ContactPickerTargetRow);
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            if (MessagesGrid != null)
+            {
+                await MessagesGrid.ResumeKeyboardNavigationAsync();
+            }
+        }
+    }
+
+    private async Task OnPickListCancelled()
+    {
+        _pickListContext = "";
+        if (MessagesGrid != null)
+        {
+            await MessagesGrid.ResumeKeyboardNavigationAsync();
+        }
+    }
+
+    // === Trailing New Row (HHM-465, mirrors VB6's blank .Rows-1 row) ===
+    // A fresh blank placeholder is left CLEAN so SaveData skips it until the user
+    // actually types into it (which promotes it via MarkDirty).
+    private MessageRow CreatePlaceholderRow() => new()
+    {
+        ID = "",
+        IsInlineNewRow = true,
+        RowState = "CLEAN",
+        IsDeleted = false,
+        MessageType = "Other",
+        Priority = 1,
+        ReceivedDate = DateTime.Today
+    };
+
+    private bool IsInlineNewRow(MessageRow row) => row.IsInlineNewRow;
+
+    // Only spawn a new blank once the current placeholder holds real content.
+    private bool CanAppendInlineNewRowAfter(MessageRow row)
+        => !row.IsInlineNewRow || RowHasMeaningfulValue(row);
+
+    private static bool RowHasMeaningfulValue(MessageRow row)
+        => !string.IsNullOrWhiteSpace(row.Sender)
+           || !string.IsNullOrWhiteSpace(row.Recipients)
+           || !string.IsNullOrWhiteSpace(row.RecipientsCC)
+           || !string.IsNullOrWhiteSpace(row.RecipientsBCC)
+           || !string.IsNullOrWhiteSpace(row.Subject)
+           || !string.IsNullOrWhiteSpace(row.Body)
+           || row.Priority != 0
+           || !string.IsNullOrEmpty(row.MessageType)
+           || row.SentDate.HasValue
+           || row.ReceivedDate.HasValue;
+
+    // === Save-prompt dialog (HHM-454, mirrors VB6 MsgBox vbYesNoCancel) ===
+    private async Task<bool?> ShowSavePromptDialog()
+    {
+        if (_messageBox == null)
+            return null;
+
+        var result = await _messageBox.ShowAsync(
+            "This data has changed.\n\nDo you want to save these changes?",
+            title: "HomeFront",
+            buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNoCancel);
+
+        return result switch
+        {
+            Fx.ControlKit.Dialogs.MessageBoxResult.Yes => true,
+            Fx.ControlKit.Dialogs.MessageBoxResult.No => false,
+            _ => null
         };
-        MessagesData.Add(newRow);
-        mDirty = true;
-        StateHasChanged();
     }
 
-    // === Cell Save Event ===
+    // === Before-edit veto (mirrors VB6 gMessages_BeforeEdit) ===
+    // HHM-454: VB6 cancels the edit outright for Email rows — every column of an
+    // Email row is read-only. Previously the in-cell editor still opened and the
+    // change was only discarded on save, which read as a functionality mismatch.
+    private void OnCellBeginEdit(CellEditArgs<MessageRow> args)
+    {
+        if (args.Data != null)
+        {
+            if (args.Data.MessageType == "Email")
+            {
+                args.Cancel = true;
+                return;
+            }
+
+        }
+    }
+
+    // === Cell Save Event (mirrors VB6 gMessages_ValidateEdit) ===
     private void OnCellSaved(CellSaveArgs<MessageRow> args)
     {
         if (args.Data != null)
         {
-            // Validate dates
             var column = args.ColumnName;
+
+            // VB6: validate date fields - if not a valid date, cancel the edit
             if (column == nameof(MessageRow.SentDate) || column == nameof(MessageRow.ReceivedDate))
             {
-                // Date validation handled by type
+                if (args.Value is string dateStr && !string.IsNullOrEmpty(dateStr))
+                {
+                    if (!DateTime.TryParse(dateStr, out _))
+                    {
+                        // Invalid date — ignore the edit
+                        return;
+                    }
+                }
+            }
+
+            // VB6: email rows are read-only — ignore edits
+            if (args.Data.MessageType == "Email")
+            {
+                return;
             }
 
             MarkDirty(args.Data);
@@ -832,15 +830,20 @@
     // === Helpers ===
     private void MarkDirty(MessageRow row)
     {
+        // HHM-465: first edit of the trailing placeholder promotes it to a real row,
+        // seeding the VB6 gMessages_StartEdit defaults (Priority=1 / MessageType="Other"
+        // / ReceivedDate=Today) without clobbering the value the user just entered.
+        if (row.IsInlineNewRow)
+        {
+            row.IsInlineNewRow = false;
+            if (row.Priority == 0) row.Priority = 1;
+            if (string.IsNullOrEmpty(row.MessageType)) row.MessageType = "Other";
+            row.ReceivedDate ??= DateTime.Today;
+        }
+
         row.RowState = "DIRTY";
         mDirty = true;
         StateHasChanged();
-    }
-
-    private string TruncateText(string? text, int maxLength)
-    {
-        if (string.IsNullOrEmpty(text)) return "";
-        return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
 
     private int SafeInt(object? val, int def = 0)
@@ -855,6 +858,117 @@
         if (val == null || val == DBNull.Value) return null;
         var s = val.ToString() ?? "";
         return DateTime.TryParse(s, out var result) ? result : null;
+    }
+
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // The keyed/unkeyed fallback + Version bump live in the presenter
+            // (its ctor was given the "FJobCorrespondence"/"gMessages" names + instanceKey "(0)").
+            await _messagesGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+    {
+        if (!HasGridLayout) yield break;
+
+        // HHM-454/458: VB6 IniGetGrid (MMisc.bas) applies a saved AppGridLayout entry
+        // ONLY when its colkey matches an existing grid column (rows with
+        // ColIndex(colkey) = -1 are skipped) — a layout can reorder/resize/hide the
+        // FormatString's columns but can never ADD one. Mirror that guard: only
+        // colkeys resolving to a legacy text column (LayoutRenderableFields) render.
+        // This both keeps the fixed Priority / Original / Attachments icon columns
+        // from duplicating as plain-text columns (raw priority integer / "Original"
+        // caption — the stray "1" / "Original" columns QA reported) AND drops any
+        // unknown/stale colkey a seeded layout might carry.
+        var ordered = gMessagesLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden
+                        && LayoutRenderableFields.Contains(ResolveGridField(c.Field)))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    // Delegated: the alias switch moved verbatim to the presenter ctor's alias map.
+    private string ResolveGridField(string layoutField)
+        => _messagesGrid.ResolveField(layoutField);
+
+    // DRIFT (preserved): maps bool → ColumnType.CheckBox (canonical presenter uses
+    // ColumnType.Boolean). MessageRow has bool columns (HasAttachments / IsDeleted), so
+    // this stays local — see the note on the presenter field above.
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_messageRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+            if (type == typeof(DateTime)) return ColumnType.Date;
+        }
+        return ColumnType.Text;
+    }
+
+    private static bool IsFieldEditable(string field)
+    {
+        return field switch
+        {
+            "ID" or "RowState" or "IsDeleted" or "HasAttachments" or "Original" or "Attachments" or "Size"
+                or "Priority" => false,
+            _ => true
+        };
+    }
+
+    // HHM-454/458: the ONLY fields the AppGridLayout-driven loop may render — the
+    // VB6 gMessages text columns (FJobCorrespondence.frm colkeys, minus the fixed
+    // icon columns Priority / Original / Attachments and the hidden ID key, which
+    // are rendered once as fixed GridColumns in the markup). Mirrors VB6
+    // IniGetGrid's "existing column only" rule — see GetOrderedGridLayout.
+    private static readonly HashSet<string> LayoutRenderableFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        nameof(MessageRow.MessageType),
+        nameof(MessageRow.Sender),
+        nameof(MessageRow.Recipients),
+        nameof(MessageRow.RecipientsCC),
+        nameof(MessageRow.RecipientsBCC),
+        nameof(MessageRow.Subject),
+        nameof(MessageRow.Body),
+        nameof(MessageRow.Size),
+        nameof(MessageRow.SentDate),
+        nameof(MessageRow.ReceivedDate)
+    };
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    // Still used by _messageRowPropMap + the local GetColumnTypeForField.
+    private static string NormalizeGridKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
     }
 
     // === Models ===
@@ -877,6 +991,8 @@
         public DateTime? ReceivedDate { get; set; }
         public string RowState { get; set; } = "CLEAN";
         public bool IsDeleted { get; set; }
+        // HHM-465: true only for the untouched trailing "new" placeholder row.
+        public bool IsInlineNewRow { get; set; }
     }
 
     public class JobPickerItem
@@ -891,5 +1007,10 @@
     {
         public string Name { get; set; } = "";
     }
+
+    public class ComboBoxItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
 }
-```

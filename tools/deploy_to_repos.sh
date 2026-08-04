@@ -238,6 +238,23 @@ if [ "$MODE" = "pull" ]; then
             fi
         done
         ok "Mirrored page files to HF Migrated/"
+
+        # HF Migrated/ files need @namespace HomeFront.Components.Pages
+        # (PB's flat Pages/ auto-gets the right namespace; Migrated/ doesn't).
+        # Inject the directive if missing — affects files referenced as types
+        # by other pages (FAttachments, FTakeoff, etc.).
+        for razor in "$HF_DIR"/Components/Pages/Migrated/F*.razor; do
+            [ -f "$razor" ] || continue
+            [[ "$razor" == *.razor.css ]] && continue
+            if ! grep -q '@namespace' "$razor"; then
+                # Insert after the closing comment block or at line 1
+                if grep -qn '───── \*@' "$razor"; then
+                    sed -i '' '/───── \*@/a\
+@namespace HomeFront.Components.Pages' "$razor"
+                fi
+            fi
+        done
+        ok "Ensured @namespace on HF Migrated/ files"
     fi
 
     # Mirror service files

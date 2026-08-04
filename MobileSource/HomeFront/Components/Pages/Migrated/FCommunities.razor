@@ -1,46 +1,91 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
 @page "/communities"
-@rendermode InteractiveServer
 @using HomeFront.Data
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Notifications
 @using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Routing
 @using System.Data
 @using System.Reflection
+@inject ILogger<FCommunities> Logger
+@inject NotificationService Notifications
+@inject NavigationManager NavigationManager
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@using HomeFront.Models
+@inject DbWrapperSqlServer db
+@inject IWebHostEnvironment Env
+@layout HFComponent
+<PageTitle>Community</PageTitle>
 
-<PageTitle>Communities</PageTitle>
+@* VB6 Form_Unload (FCommunities.frm 366-374): If Not SaveData(True) Then Cancel=True —
+   i.e. on navigate-away with unsaved changes, prompt "save the changes?" (Yes/No/Cancel)
+   and CANCEL the navigation if the user picks Cancel. NavigationLock is the Blazor
+   equivalent: OnBeforeInternalNavigation fires for in-app navigation, and
+   ConfirmExternalNavigation guards browser-level exits. No JS. *@
+<NavigationLock ConfirmExternalNavigation="@mDirty"
+                OnBeforeInternalNavigation="OnBeforeInternalNavigation" />
 
 <div class="tabs-container">
-    <div class="tab-buttons">
-        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">.NET</button>
-        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">VB6</button>
-    </div>
+    
 
     <div class="tab-content">
-        @if (activeTab == 1)
-        {
             <div class="panel">
                 <div class="toolbar-cntr">
-                    <button class="e-btn" @onclick="OnNewClick">
-                        <img src="images/32/new.ico" class="tbar-icon" alt="New" />
-                        <span class="tool-label">New</span>
-                    </button>
-                    <button class="e-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
-                        <img src="images/32/save.ico" class="tbar-icon" alt="Save" />
-                        <span class="tool-label">Save</span>
-                    </button>
-                    <button class="e-btn" disabled="@(SelectedCommunity == null)" @onclick="OnDeleteClick">
-                        <img src="images/32/delete.ico" class="tbar-icon" alt="Delete" />
-                        <span class="tool-label">Delete</span>
-                    </button>
+                    @* FlexKit toolbar buttons (ToolbarButtonControl) — same icon+label
+                       toolbar pattern as FItems. CssClass="e-btn" keeps the existing
+                       framed look; the OnClick / disabled wiring is identical to the
+                       raw <button> it replaced. *@
+                    <ToolbarButtonControl CssClass="e-btn"
+                                          OnClick="OnNewClick"
+                                          IconSrc="images/32/new.ico"
+                                          IconAlt="New"
+                                          Label="New" />
+                    <ToolbarButtonControl CssClass="e-btn"
+                                          Disabled="@(!mDirty)"
+                                          OnClick="OnSaveClick"
+                                          IconSrc="images/32/save.ico"
+                                          IconAlt="Save"
+                                          Label="Save" />
+                    <ToolbarButtonControl CssClass="e-btn"
+                                          Disabled="@(SelectedCommunity == null)"
+                                          OnClick="OnDeleteClick"
+                                          IconSrc="images/32/delete.ico"
+                                          IconAlt="Delete"
+                                          Label="Delete" />
+
+@* HHM-221: VB6 FCommunities has NO Find/search UI (frm toolbar = New/Save/Delete only) — removed. *@
                 </div>
 
-                <div class="content-wrapper">
+                @* VB6 KeyPreview=-1 + Form_KeyDown (Ctrl+S save) + gData_KeyDown
+                   (Ctrl+Delete delete current row). The GridControl has no consumer
+                   keydown event, so catch both keystrokes on a wrapper div: the grid's
+                   own @onkeydown bubbles up here. No JS — pure Blazor @onkeydown. *@
+                <div class="content-wrapper" @onkeydown="OnGridKeyDown">
                     @if (IsLoading)
                     {
                         <div class="loading-overlay">
                             <div class="loading-card">Loading...</div>
                         </div>
                     }
-                    <HfGrid @ref="gData"
+                    @* Viewport-absolute Height (NOT 100%): the grid must be its own
+                       bounded scroll container so the sticky column header freezes on
+                       scroll and BeginEditCellAsync can scroll a new row into view.
+                       height:100% only resolves if every flex ancestor has a definite
+                       height, which this page's flex:1/min-height:0 chain doesn't
+                       guarantee — so the grid grew to content height and the OUTER page
+                       scrolled instead (header never stuck, no in-grid autoscroll).
+                       Same calc() idiom as FPricingWorkSheet (320) / FAssembly (380);
+                       this page has only a toolbar above the grid, hence ~140px. *@
+                    <GridControl @ref="gData"
                             TValue="CommunityRow"
                             DataSource="@CommunitiesData"
                             AllowSelection="true"
@@ -48,14 +93,16 @@
                             AllowFiltering="true"
                             AllowResizing="true"
                             EnableHover="true"
-                            Height="600px"
-                            RowHeight="32"
-                            ShowSearchBar="true"
+                            Height="calc(100vh - 140px)"
+                            RowCssClassSelector="@GetCommunityRowCssClass"
+                            BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                            AllowSingleCellColumnMassEdit="true"
                             FilterSettingsRef="@filterSettings"
                             SelectionSettingsRef="@selectionSettings"
+                            EditSettingsRef="@communitiesEditSettings"
                             EventsRef="@communitiesEvents">
-                        <HfGridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunities-gData">
-                            <HfGridColumn Field="@nameof(CommunityRow.OriginalArea)" HeaderText="OriginalArea" Visible="false" AllowEditing="false" IsPrimaryKey="true" />
+                        <GridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunities-gData">
+                            <GridColumn Field="@nameof(CommunityRow.OriginalArea)" HeaderText="OriginalArea" Visible="false" AllowEditing="false" IsPrimaryKey="true" />
 
                             @if (HasGridLayout)
                             {
@@ -71,6 +118,18 @@
 
                                     @RenderColumn(fieldName, headerText, width)
                                 }
+
+                                @* VB6 frmload: IniGetGrid adds every column, then
+                                   hides ABN_D02Function unless the accounting system
+                                   is asD365_ABN. The Blazor AppGridLayout has NO row
+                                   for ABN_D02Function (it's a new D365-ABN-only field),
+                                   so the dynamic loop above never emits it — append it
+                                   here, ONLY for D365-ABN, and only if the layout didn't
+                                   already supply it (future-proof against a layout row). *@
+                                if (IsD365ABN && !GridLayout.ContainsKey("ABN_D02Function"))
+                                {
+                                    @RenderColumn("ABN_D02Function", "Function (D02)", GetDefaultWidth("ABN_D02Function"))
+                                }
                             }
                             else
                             {
@@ -85,6 +144,12 @@
                                 @RenderColumn("CustServiceID", "Service Rep", "140px")
                                 @RenderColumn("WarrantyJob", "Warranty Job", "140px")
                                 @RenderColumn("DC_Sales_Person", "DC Sales Person", "160px")
+                                @RenderColumn("PreconScheduleTemplate", "PreCon Template", "150px")
+                                @* VB6: ABN_D02Function shown only for asD365_ABN. *@
+                                @if (IsD365ABN)
+                                {
+                                    @RenderColumn("ABN_D02Function", "Function (D02)", "160px")
+                                }
                                 @RenderColumn("Inactive", "Inactive", "90px")
                                 @RenderColumn("BuildPro", "BuildPro", "90px")
                                 @RenderColumn("WrapInsuranceExempt", "Wrap Ins Exempt", "140px")
@@ -121,84 +186,100 @@
                                 @RenderColumn("IntacctParentJob", "Intacct Parent Job", "160px")
                                 @RenderColumn("IntacctDepartment", "Intacct Dept", "140px")
                             }
-                        </HfGridColumnsBase>
-                    </HfGrid>
+                        </GridColumnsBase>
+                    </GridControl>
                 </div>
             </div>
-        }
-        else if (activeTab == 2)
-        {
-            <div class="panel">
-                <img src="images/VB6/Screen_IndexCommunities.png" class="task-icon-vb6" />
-            </div>
-        }
+
     </div>
 </div>
 
-<HfDialog Visible="@CommentsDialogVisible"
-          Header="Edit Comments"
-          Width="500px"
-          Height="400px"
+@* HHM-501/522/524: reuse the faithful FComments port (VB6 FComments.frm) instead of a
+   hand-rolled dialog — it drops the "Enter comments..." placeholder, caps input at
+   MaxLength 8000, shows the "(Ctrl + Enter) to save -- (Esc) to cancel" tooltip and
+   wires those keyboard shortcuts, matching legacy. *@
+<FComments @bind-Visible="CommentsDialogVisible"
+           @bind-Value="EditingComments"
+           Title="Comments"
+           MaxLength="8000"
+           OnSave="SaveComments"
+           OnCancel="CloseCommentsDialog" />
+
+@* ── Company popup (VB6 FCompany.frm) ─────────────────────────────────
+   Field order + labels mirror ScreenShot3. Address is one multiline box
+   that splits into Address1/Address2 on newline (VB6 Parse on vbCrLf).
+   Province/Country are countrycodes combos with the province cascading
+   off the selected country. All FlexKit controls. *@
+<DialogControl Visible="@CompanyDialogVisible"
+          Header="Company"
+          Width="360px"
           IsModal="true"
           ShowCloseIcon="true"
-          OnClose="CloseCommentsDialog">
+          CssClass="company-dialog"
+          CloseOnEscape="true"
+          OnClose="SaveCompany">
     <ChildContent>
-        <HfTextBox @bind-Value="EditingComments"
-                   Multiline="true"
-                   CssClass="comments-textarea"
-                   Placeholder="Enter comments..."
-                   Rows="10" />
+        <div class="form-section">
+            <div class="field-row">
+                <label class="field-label">Company Name</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoCompanyName" AutoFocus="true" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Address</label>
+                <div class="field-input">
+                    <TextBoxControl @bind-Value="CoAddress" Multiline="true" Rows="2" MaxLength="102" />
+                </div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">City/Prov</label>
+                <div class="field-input field-input-split">
+                    <TextBoxControl @bind-Value="CoCity" MaxLength="50" />
+                    <DropDownListControl TValue="string" TItem="string"
+                                    @bind-Value="CoProvince" DataSource="@CompanyProvinces"
+                                    AllowFiltering="true" Width="60px" />
+                </div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Postal Code</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoPostal" MaxLength="7" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Country</label>
+                <div class="field-input">
+                    <DropDownListControl TValue="string" TItem="string"
+                                    Value="@CoCountry" ValueChanged="OnCompanyCountryChanged"
+                                    DataSource="@CompanyCountries"
+                                    AllowFiltering="true" Width="80px" />
+                </div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">County</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoCounty" MaxLength="50" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Email</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoEmail" MaxLength="50" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Phone</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoPhone" MaxLength="30" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Fax</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoFax" MaxLength="30" /></div>
+            </div>
+            <div class="field-row">
+                <label class="field-label">Tax Number</label>
+                <div class="field-input"><TextBoxControl @bind-Value="CoTaxNumber" MaxLength="20" /></div>
+            </div>
+        </div>
     </ChildContent>
-    <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="SaveComments">OK</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="CloseCommentsDialog">Cancel</HfButton>
-    </FooterContent>
-</HfDialog>
+    @* HHM-507/526: VB6 FCompany.frm has NO OK/Cancel buttons — it commits live and on
+       window close (Form_Unload). The header close-icon / Escape now route to SaveCompany
+       (OnClose above) so closing commits the fields, matching legacy. *@
+</DialogControl>
 
-<HfDialog Visible="@DivisionsDialogVisible"
-          Header="Select Divisions"
-          Width="400px"
-          Height="500px"
-          IsModal="true"
-          ShowCloseIcon="true"
-          OnClose="CloseDivisionsDialog">
-    <ChildContent>
-        <HfListBox TItem="DivisionItem"
-                   DataSource="@AvailableDivisions"
-                   TextField="DivisionName"
-                   ValueField="DivisionCode"
-                   SelectionMode="HfListBoxSelectionMode.Multiple"
-                   ShowCheckbox="true"
-                   @bind-Value="SelectedDivisionCodes" />
-    </ChildContent>
-    <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="SaveDivisions">OK</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="CloseDivisionsDialog">Cancel</HfButton>
-    </FooterContent>
-</HfDialog>
-
-<HfDialog Visible="@PickerDialogVisible"
-          Header="@PickerTitle"
-          Width="500px"
-          Height="400px"
-          IsModal="true"
-          ShowCloseIcon="true"
-          OnClose="ClosePickerDialog">
-    <ChildContent>
-        <HfGrid TValue="PickerItem" DataSource="@PickerItems" AllowSelection="true" Height="250px" SelectionSettingsRef="@pickerSelectionSettings" EventsRef="@pickerEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(PickerItem.Id)" HeaderText="ID" Width="100px" />
-                <HfGridColumn Field="@nameof(PickerItem.Name)" HeaderText="Name" Width="200px" />
-            </HfGridColumnsBase>
-        </HfGrid>
-    </ChildContent>
-    <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmPicker">OK</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="ClosePickerDialog">Cancel</HfButton>
-    </FooterContent>
-</HfDialog>
-
-<HfDialog Visible="@ConfirmDialogVisible"
+<DialogControl Visible="@ConfirmDialogVisible"
           Header="Confirm"
           Width="400px"
           IsModal="true"
@@ -208,52 +289,62 @@
         <p>@ConfirmMessage</p>
     </ChildContent>
     <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmYes">Yes</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmNo">No</HfButton>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="ConfirmYes">Yes</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="ConfirmNo">No</ButtonControl>
         @if (ShowCancelButton)
         {
-            <HfButton CssClass="hf-dialog-btn" OnClick="ConfirmCancel">Cancel</HfButton>
+            <ButtonControl CssClass="fx-dialog-btn" OnClick="ConfirmCancel">Cancel</ButtonControl>
         }
     </FooterContent>
-</HfDialog>
+</DialogControl>
 
-<HfDialog Visible="@AccountingDialogVisible"
+@* HHM-500: VB6 FCommunities.frm uses a modal MsgBox (OK popup) for the
+   blank-community validation — MessageBoxControl replaces the inline toast. *@
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
+
+@* HHM-532: VB6 FCommunityAccounting has NO Ok/Cancel buttons — ShowForm (frm 665-692)
+   resumes after ANY unload (title-bar X, or Escape via Form_KeyDown frm 702-704) and
+   always copies field() back into the grid row; FCommunities.frm 717 then sets
+   mDirty=True. So closing the dialog IS the save — no footer, OnClose saves. *@
+<DialogControl Visible="@AccountingDialogVisible"
           Header="Accounting"
-          Width="650px"
+          Width="470px"
           IsModal="true"
           ShowCloseIcon="true"
           CssClass="accounting-dialog"
           CloseOnEscape="true"
-          OnClose="OnAcctCancelClick">
+          OnClose="OnAcctClose">
     <ChildContent>
         @if (!IsIntacctSystem)
         {
+            @* HHM-534: every text1 in VB6 FCommunityAccounting.frm has MaxLength=50 —
+               cap the prefix/lot-inventory (and Intacct/Tarion) fields the same way. *@
             <div class="form-section">
                 <div class="form-section-title">GL Accounts</div>
                 <div class="field-row">
                     <label class="field-label">Income Stmt Prefix</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="IncomePrefix" />
+                        <TextBoxControl @bind-Value="IncomePrefix" MaxLength="50" AutoFocus="true" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="() => BrowsePrefix(1)">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="() => BrowsePrefix(1)" Disabled="@(!IsTimberline)">...</ButtonControl>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Balance Sheet Prefix</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="BalanceSheetPrefix" />
+                        <TextBoxControl @bind-Value="BalanceSheetPrefix" MaxLength="50" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="() => BrowsePrefix(2)">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="() => BrowsePrefix(2)" Disabled="@(!IsTimberline)">...</ButtonControl>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Lot Inventory Debit</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="LotInventoryDebit" />
+                        <TextBoxControl @bind-Value="LotInventoryDebit" MaxLength="50" />
                     </div>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Lot Inventory Credit</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="LotInventoryCredit" />
+                        <TextBoxControl @bind-Value="LotInventoryCredit" MaxLength="50" />
                     </div>
                 </div>
             </div>
@@ -265,30 +356,30 @@
                 <div class="field-row">
                     <label class="field-label">Entity</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="IntacctEntity" />
+                        <TextBoxControl @bind-Value="IntacctEntity" MaxLength="50" AutoFocus="true" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctEntity">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="BrowseIntacctEntity">...</ButtonControl>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Location</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="IntacctLocation" />
+                        <TextBoxControl @bind-Value="IntacctLocation" MaxLength="50" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctLocation">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="BrowseIntacctLocation">...</ButtonControl>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Parent Job</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="IntacctParentJob" />
+                        <TextBoxControl @bind-Value="IntacctParentJob" MaxLength="50" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctParentJob">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="BrowseIntacctParentJob">...</ButtonControl>
                 </div>
                 <div class="field-row">
                     <label class="field-label">Department</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="IntacctDepartment" />
+                        <TextBoxControl @bind-Value="IntacctDepartment" MaxLength="50" />
                     </div>
-                    <HfButton CssClass="mini-btn" OnClick="BrowseIntacctDepartment">...</HfButton>
+                    <ButtonControl CssClass="mini-btn" OnClick="BrowseIntacctDepartment">...</ButtonControl>
                 </div>
             </div>
         }
@@ -299,35 +390,35 @@
                 <div class="tax-group-col">
                     <div class="tax-field-row">
                         <label class="tax-field-label">Labour</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="LabourTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(5)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="LabourTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(5)">...</ButtonControl>
                     </div>
                     <div class="tax-field-row">
                         <label class="tax-field-label">Material</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="MaterialTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(6)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="MaterialTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(6)">...</ButtonControl>
                     </div>
                     <div class="tax-field-row">
                         <label class="tax-field-label">Sub Contracts</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="SubContractTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(7)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="SubContractTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(7)">...</ButtonControl>
                     </div>
                 </div>
                 <div class="tax-group-col">
                     <div class="tax-field-row">
                         <label class="tax-field-label">Equipment</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="EquipmentTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(8)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="EquipmentTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(8)">...</ButtonControl>
                     </div>
                     <div class="tax-field-row">
                         <label class="tax-field-label">Overhead</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="OverheadTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(9)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="OverheadTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(9)">...</ButtonControl>
                     </div>
                     <div class="tax-field-row">
                         <label class="tax-field-label">Other</label>
-                        <HfTextBox CssClass="tax-field-input" @bind-Value="OtherTaxGroup" />
-                        <HfButton CssClass="mini-btn" OnClick="() => BrowseTaxGroup(10)">...</HfButton>
+                        <TextBoxControl CssClass="tax-field-input" @bind-Value="OtherTaxGroup" MaxLength="50" />
+                        <ButtonControl CssClass="mini-btn" OnClick="() => BrowseTaxGroup(10)">...</ButtonControl>
                     </div>
                 </div>
             </div>
@@ -337,17 +428,17 @@
             <div class="field-row">
                 <label class="field-label">Loan Draw Liability Acct</label>
                 <div class="field-input">
-                    <HfTextBox @bind-Value="MortgageCredit" />
+                    <TextBoxControl @bind-Value="MortgageCredit" MaxLength="50" />
                 </div>
-                <HfButton CssClass="mini-btn" OnClick="BrowseGLAccount">...</HfButton>
+                <ButtonControl CssClass="mini-btn" OnClick="BrowseGLAccount">...</ButtonControl>
             </div>
 
             <div class="field-row">
                 <label class="field-label">Bank Account</label>
                 <div class="field-input">
-                    <HfTextBox @bind-Value="BankAccount" />
+                    <TextBoxControl @bind-Value="BankAccount" MaxLength="50" />
                 </div>
-                <HfButton CssClass="mini-btn" OnClick="BrowseBankAccount">...</HfButton>
+                <ButtonControl CssClass="mini-btn" OnClick="BrowseBankAccount">...</ButtonControl>
             </div>
         </div>
 
@@ -356,7 +447,7 @@
             <div class="field-row">
                 <label class="field-label">Warranty Job</label>
                 <div class="field-input">
-                    <HfTextBox @bind-Value="WarrantyJob" />
+                    <TextBoxControl @bind-Value="WarrantyJob" MaxLength="50" />
                 </div>
             </div>
 
@@ -365,354 +456,73 @@
                 <div class="field-row">
                     <label class="field-label">Tarion Builder No</label>
                     <div class="field-input">
-                        <HfTextBox @bind-Value="TarionBuilderNumber" />
+                        <TextBoxControl @bind-Value="TarionBuilderNumber" MaxLength="50" />
                     </div>
                 </div>
             }
         </div>
     </ChildContent>
-    <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="OnAcctOkClick">OK</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="OnAcctCancelClick">Cancel</HfButton>
-    </FooterContent>
-</HfDialog>
+</DialogControl>
 
-<HfDialog Visible="@AccountingPickListDialogVisible"
-          Header="@PicklistTitle"
-          Width="500px"
-          IsModal="true"
-          ShowCloseIcon="true"
-          OnClose="() => AccountingPickListDialogVisible = false">
-    <ChildContent>
-        <HfGrid TValue="PickerItem" DataSource="@PickerItems" AllowSelection="true" Height="300px" SelectionSettingsRef="@pickerSelectionSettings" EventsRef="@picklistEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(PickerItem.Id)" HeaderText="ID" Width="100px" />
-                <HfGridColumn Field="@nameof(PickerItem.Name)" HeaderText="Name" Width="200px" />
-            </HfGridColumnsBase>
-        </HfGrid>
-    </ChildContent>
-    <FooterContent>
-        <HfButton CssClass="hf-dialog-btn" OnClick="OnPicklistSelect">Select</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="() => AccountingPickListDialogVisible = false">Cancel</HfButton>
-    </FooterContent>
-</HfDialog>
+@* Shared FlexKit picklist (search + type-to-search + sortable) — VB6 FPickList.
+   Every cell/accounting "…" picker routes through this, exactly like
+   FAssembly / FPricingWorkSheet. No one-off pickers. *@
+<FPickList @ref="pickList" OnSelected="OnPickListSelected" OnCancel="OnPickListCancelled" />
 
-<style>
-    .tabs-container {
-        margin: 20px auto;
-        font-family: Arial, Helvetica, sans-serif;
-    }
-
-    .tab-buttons {
-        display: flex;
-        border-bottom: 2px solid #ddd;
-    }
-
-    .tab-buttons button {
-        padding: 12px 24px;
-        border: none;
-        background: #f0f0f0;
-        cursor: pointer;
-        font-size: 16px;
-        transition: background 0.2s;
-    }
-
-    .tab-buttons button:hover {
-        background: #e0e0e0;
-    }
-
-    .tab-buttons button.active {
-        background: #fff;
-        border-bottom: 2px solid #007bff;
-        margin-bottom: -2px;
-        color: #007bff;
-        font-weight: bold;
-    }
-
-    .tab-content {
-        padding: 20px;
-        border: 1px solid #ddd;
-        border-top: none;
-        background: #fff;
-    }
-
-    .panel {
-        text-align: center;
-    }
-
-    .panel img {
-        max-width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .toolbar-cntr {
-        padding-top: 12px;
-        padding-bottom: 12px;
-        border-top: 1px solid #c9c9c9;
-        border-bottom: 1px solid #c9c9c9;
-        margin-bottom: 10px;
-        display: flex;
-        gap: 6px;
-        justify-content: flex-start;
-        flex-wrap: wrap;
-    }
-
-    .tool-label {
-        width: 100%;
-        display: block;
-    }
-
-    .e-btn {
-        margin-right: 5px;
-        padding: 6px 10px;
-        border: 1px solid #ccc;
-        background: #f7f7f7;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    .tbar-icon {
-        width: 24px;
-        height: 24px;
-        margin-bottom: 4px;
-    }
-
-    .task-icon-vb6 {
-        width: 2000px;
-        height: auto;
-        display: block;
-    }
-
-    .content-wrapper {
-        position: relative;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(255, 255, 255, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 5;
-    }
-
-    .loading-card {
-        padding: 12px 18px;
-        background: #fff;
-        border: 1px solid #c9c9c9;
-        border-radius: 6px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    }
-
-    .inline-edit {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        justify-content: space-between;
-    }
-
-    .mini-btn {
-        padding: 2px 6px;
-        font-size: 12px;
-        border: none;
-        background: transparent;
-        cursor: pointer;
-        color: #666;
-    }
-    .mini-btn:hover {
-        color: #007bff;
-    }
-
-    .grid-input {
-        width: 100%;
-        padding: 2px 4px;
-        border: none;
-        background: transparent;
-        outline: none;
-    }
-
-    .comments-textarea {
-        width: 100%;
-        min-height: 200px;
-        padding: 8px;
-        border: 1px solid #c9c9c9;
-        border-radius: 4px;
-    }
-
-    .division-list {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        max-height: 320px;
-        overflow: auto;
-    }
-
-    .division-item {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-    }
-
-    .form-section {
-        margin-bottom: 20px;
-        padding: 15px;
-        background: #f8f9fa;
-        border-radius: 8px;
-    }
-
-    .form-section-title {
-        font-weight: bold;
-        color: #0066cc;
-        margin-bottom: 15px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .field-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-        gap: 8px;
-    }
-
-    .field-label {
-        width: 160px;
-        text-align: right;
-        padding-right: 10px;
-        font-weight: 500;
-    }
-
-    .field-input {
-        flex: 1;
-        max-width: 300px;
-    }
-
-    .tax-group-row {
-        display: flex;
-        gap: 20px;
-        flex-wrap: wrap;
-    }
-
-    .tax-group-col {
-        flex: 1;
-        min-width: 240px;
-    }
-
-    .tax-field-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 8px;
-        gap: 6px;
-    }
-
-    .tax-field-label {
-        width: 100px;
-        text-align: right;
-        padding-right: 10px;
-    }
-
-    .tax-field-input {
-        width: 120px;
-    }
-
-    .hf-dialog-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-
-    .hf-dialog {
-        background: #fff;
-        border-radius: 8px;
-        min-width: 320px;
-        max-width: 90vw;
-        max-height: 90vh;
-        overflow: auto;
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
-    }
-
-    .hf-dialog-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        border-bottom: 1px solid #e0e0e0;
-        font-weight: 600;
-    }
-
-    .hf-dialog-close {
-        border: none;
-        background: transparent;
-        font-size: 18px;
-        cursor: pointer;
-        line-height: 1;
-    }
-
-    .hf-dialog-body {
-        padding: 16px;
-    }
-
-    .hf-dialog-footer {
-        padding: 12px 16px;
-        border-top: 1px solid #e0e0e0;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-    }
-
-    .hf-dialog-btn {
-        padding: 6px 12px;
-        border: 1px solid #c9c9c9;
-        background: #f7f7f7;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    .accounting-dialog {
-        width: 650px;
-        max-width: 90vw;
-    }
-
-    .hf-filter-row {
-        background-color: #FFFFCC !important;
-    }
-
-    .hf-filter-row input {
-        background-color: #FFFFCC !important;
-        border: 1px solid #999;
-    }
-</style>
+@* Contract-document file browser — VB6 raised a native file-open dialog (GetOpenFileName,
+   *.dot;*.rpt). When NO server-side templates exist, the Contract Doc picker opens this hidden
+   client file input instead of dead-ending on a message; the chosen file is uploaded into the
+   Contract Documents folder and its name written to the cell (see OnContractFileSelected). *@
+<div class="fcomm-contract-file" style="display:none">
+    <InputFile @ref="contractFileInput" OnChange="OnContractFileSelected" accept=".dot,.rpt" />
+</div>
 
 @code {
     [Inject] public IJSRuntime JSRuntime { get; set; } = default!;
 
     private const string SRCFILE = "Communities::";
-    private const string PRODUCT_NAME = "HomeFront";
+    private const string PRODUCT_NAME = "Precision Builder";
     private const string FormName = "FCommunities";
     private const string GridName = "gData";
-
-    private readonly DbWrapperSqlServer db = new();
-
-    private HfGrid<CommunityRow>? gData;
+private GridControl<CommunityRow>? gData;
+    private FPickList? pickList;
 
     private bool mDirty = false;
     private bool IsLoading = false;
     private string CommunityTerm = "Community";
-    private int activeTab = 1;
 
-    private bool ShowGSTRate = true;
+    // VB6 Form_Load (344-349) hides the GSTRate column unless HFApp.Options(Show_CDN_GST)
+    // and the PSTRate column unless HFApp.Options(UsePst). Those options live on the
+    // system_setup row (id = DivisionID) — NOT hardcoded — so the GST/PST columns vary
+    // per division (e.g. division 15 uses PST). Loaded in LoadAccountingOptions(); these
+    // are only the no-option-set defaults (VB6 empty-Variant → False for both).
+    private bool ShowGSTRate = false;
     private bool ShowPSTRate = false;
 
     // === Grid Layout (from IniGetGrid) ===
-    private Dictionary<string, MMain.GridLayoutColumn> GridLayout = new(StringComparer.OrdinalIgnoreCase);
-    private int GridLayoutVersion = 0;
-    private bool HasGridLayout => GridLayout.Count > 0;
+    // Load/resolve/order/width boilerplate lives in the shared GridLayoutPresenter;
+    // the VB6 form/grid name strings (FormName/GridName) stay here for fidelity.
+    private readonly GridLayoutPresenter<CommunityRow> _grid =
+        new(FormName, GridName, grouped: false);
+    private Dictionary<string, GridLayoutColumn> GridLayout => _grid.Layout;
+    private int GridLayoutVersion => _grid.Version;
+    private bool HasGridLayout => _grid.Has;
+
+    // VB6 gData_BeforeEdit: Case "PreconScheduleTemplate":
+    //   .ComboList = HFApp.Options.ValueByName("ScheduleTemplates")
+    // The PreCon Template cell is an in-cell dropdown whose choices come from the
+    // pipe-separated 'ScheduleTemplates' AppOption (e.g. "DJSSHELL|SLAB"), exactly
+    // like FOptions reads it. Loaded once in OnInitializedAsync; a leading blank
+    // entry lets the user clear the value.
+    private List<string> ScheduleTemplateOptions = new();
+
+    // VB6 gData_BeforeEdit / sub_ShowPickList Case "ABN_D02Function":
+    //   SELECT Value, Description, value id FROM D365FinancialDimensionValues
+    //   WHERE Dimension='D02_Function' ORDER BY 1   (stores Value, hidecol id)
+    // The D365-ABN financial-dimension (D02_Function) in-cell dropdown. Loaded
+    // once in OnInitializedAsync; a leading blank entry lets the user clear it.
+    // The whole column is hidden unless the accounting system is asD365_ABN.
+    private List<string> D365FunctionOptions = new();
 
     private List<CommunityRow> CommunitiesData = new();
     private CommunityRow? SelectedCommunity;
@@ -720,25 +530,29 @@
     private bool CommentsDialogVisible = false;
     private string EditingComments = "";
     private CommunityRow? EditingRow;
-    private bool DivisionsDialogVisible = false;
     private List<DivisionItem> AvailableDivisions = new();
     private List<string> SelectedDivisionCodes = new();
-    private bool PickerDialogVisible = false;
-    private string PickerTitle = "";
     private List<PickerItem> PickerItems = new();
-    private PickerItem? SelectedPickerItem;
-    private Action<string>? PickerCallback;
     private bool ConfirmDialogVisible = false;
     private string ConfirmMessage = "";
     private bool ShowCancelButton = false;
     private bool AccountingDialogVisible = false;
-    private bool AccountingPickListDialogVisible = false;
+    // HHM-500: modal MsgBox equivalent for the blank-community validation.
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
 
     private TaskCompletionSource<bool?>? ConfirmTcs;
-
-    private int DivisionID { get; set; } = 1;
-    private bool IsIntacctSystem { get; set; } = true;
-    private bool ShowTarionFields { get; set; } = true;
+    // Defaults match VB6's "no option set" behavior (asNone, no Tarion); the real
+    // values are loaded from appoptions in LoadAccountingOptions().
+    private bool IsIntacctSystem { get; set; } = false;
+    // VB6 frmload: If HFApp.Options(AccountingSystem) <> asD365_ABN Then
+    //   gData.ColHidden(gData.ColIndex("ABN_D02Function")) = True
+    // The ABN_D02Function column is shown ONLY when the accounting system is
+    // asD365_ABN (=11). Set in LoadAccountingOptions from the same appoption read.
+    private bool IsD365ABN { get; set; } = false;
+    // HHM-515: VB6 only opens the GL-prefix picker for Timberline (asTimberline=1);
+    // under the default asNone config the prefix ellipsis is a no-op.
+    private bool IsTimberline { get; set; } = false;
+    private bool ShowTarionFields { get; set; } = false;
     private string IntacctCompanyID { get; set; } = "";
     private string IntacctUID { get; set; } = "";
     private string IntacctPWD { get; set; } = "";
@@ -766,88 +580,246 @@
     private string WarrantyJob = "";
     private string TarionBuilderNumber = "";
 
-    private string PicklistTitle = "";
     private List<Dictionary<string, object>> PicklistData = new();
     private List<string> PicklistColumns = new();
-    private PickerItem? SelectedPicklistItem;
-    private int CurrentPicklistFieldIndex = 0;
-    private string PicklistValueColumn = "";
 
-    private string? _intacctEntitySQL = null;
-    private string? _intacctJobsSQL = null;
+    private readonly FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    // VB6 gData: AllowSelection=True + SelectionMode=3 (FCommunities.frm:51,54) —
+    // the legacy grid IS multi-select, and one committed edit fans out to every
+    // selected row (owner directive 2026-08-01). SelectionType.Multiple +
+    // SelectionMode.Cell + AllowSingleCellColumnMassEdit reproduce that, the
+    // same wiring FDBGrid / FAddPricelist / FTakeoff / FAssembly use (HHM-605).
+    private readonly SelectionSettings selectionSettings = new() { Type = SelectionType.Multiple, Mode = SelectionMode.Cell, EnableToggle = true };
+    // VB6 Editable=2 (flexEDKbdMouse): the whole grid is editable; per-column /
+    // per-row gating happens in gData_BeforeEdit (mirrored by OnCommunityCellEdit).
+    private readonly EditSettings communitiesEditSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+    private readonly GridControlEvents<CommunityRow> communitiesEvents = new();
 
-    private readonly HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
-    private readonly HfSelectionSettings selectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
-    private readonly HfGridEvents<CommunityRow> communitiesEvents = new();
+    private readonly SelectionSettings pickerSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+    private readonly GridControlEvents<PickerItem> pickerEvents = new();
+    private readonly GridControlEvents<PickerItem> picklistEvents = new();
+    private bool _resumeGridKeyboardAfterRender;
 
-    private readonly HfSelectionSettings pickerSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
-    private readonly HfGridEvents<PickerItem> pickerEvents = new();
-    private readonly HfGridEvents<PickerItem> picklistEvents = new();
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_resumeGridKeyboardAfterRender)
+            return;
+
+        _resumeGridKeyboardAfterRender = false;
+        if (gData != null)
+            await gData.ResumeKeyboardNavigationAsync();
+    }
+
+    private void RequestGridKeyboardResume()
+    {
+        _resumeGridKeyboardAfterRender = true;
+    }
+
+    private void RequestGridKeyboardResumeIfNoModal()
+    {
+        if (!CommentsDialogVisible
+            && !CompanyDialogVisible
+            && !AccountingDialogVisible
+            && !ConfirmDialogVisible)
+        {
+            RequestGridKeyboardResume();
+        }
+    }
+
+    // MDI tab caption. FMain's PrettyTitleForRoute seeds it as the plural "Communities" when the
+    // tab is created; the MdiHost wires this per-pane delegate so a child can override its own
+    // tab title. Invoked once in OnInitializedAsync (NOT OnParametersSet — that re-render-loops,
+    // see the fmain_dynamic_component note) to set the singular "Community".
+    [CascadingParameter(Name = "SetPageTitle")]
+    private Action<string?>? SetPageTitle { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
+        SetPageTitle?.Invoke("Community");
         communitiesEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityRow>>(this, OnRowSelected);
-        pickerEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPickerRowSelected);
-        picklistEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickerItem>>(this, OnPicklistRowSelected);
+        // Cell-mode parity with VB6 gData: track the active cell's row so Delete/
+        // Save/Company/Accounting act on it (no row blue-bar), veto edits per the
+        // BeforeEdit rules, and persist + mark dirty on commit (AfterEdit).
+        communitiesEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<CommunityRow>>(this, OnCommunityCellSelected);
+        communitiesEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<CommunityRow>>(this, OnCommunityCellEdit);
+        communitiesEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CommunityRow>>(this, OnCommunityCellSave);
+        // Multi-cell entry: raised once per committed edit when 2+ cells are
+        // selected in the edited column — fan the value across the selection.
+        communitiesEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<CommunityRow>>(this, OnCommunityTypeAheadCommit);
+        communitiesEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<CommunityRow>>(this, OnGridEditButtonClick);
+        await LoadAccountingOptions();
+        await LoadScheduleTemplates();
+        await LoadD365Functions();
         await LoadGridLayoutAsync();
         await LoadCustomDescriptions();
         await LoadData();
         await LoadDivisions();
     }
 
-    private async Task LoadGridLayoutAsync()
+    // VB6 FCommunityAccounting.ShowForm: layout + Tarion visibility are driven by
+    // app options, NOT hardcoded. AccountingSystem is an enum (asIntacct = 9,
+    // Application.cls:55); EnableTarionFields is a "true"/"false" string. Customer
+    // data here has AccountingSystem = 0 (asNone) so the GL-Accounts layout shows.
+    private const int asIntacct = 9;
+    // VB6 Application.cls AccountingSystems.asD365_ABN = 11 — drives the
+    // ABN_D02Function column's visibility (shown only for D365-ABN).
+    private const int asD365_ABN = 11;
+    // VB6 Application.cls AccountingSystems.asTimberline = 1.
+    private const int asTimberline = 1;
+    private async Task<string> GetAppOptionValueAsync(string optionName)
     {
-        GridLayout = await MMain.IniGetGridAsync(FormName, GridName, 0, grouped: false);
-        GridLayoutVersion++;
-    }
-
-    private IEnumerable<(MMain.GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
-    {
-        if (!HasGridLayout)
-            yield break;
-
-        var ordered = GridLayout.Values
-            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
-            .OrderBy(c => c.ColIndex ?? int.MaxValue)
-            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        foreach (var layout in ordered)
+        try
         {
-            var resolvedField = ResolveGridField(layout.Field);
-            yield return (layout, resolvedField);
+            var val = await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 optionvalue FROM appoptions
+                   WHERE ISNULL(divisionid,0) IN (0, @Div) AND optionname = @Name AND ISNULL(uid,'') = ''
+                   ORDER BY divisionid DESC",
+                new { Div = SessionState.DivisionID, Name = optionName });
+            return val ?? "";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to read appoption {Option}", optionName);
+            return "";
         }
     }
 
-    private static readonly Dictionary<string, System.Reflection.PropertyInfo> _communityRowPropMap =
-        typeof(CommunityRow)
-            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-            .GroupBy(p => p.Name.ToLowerInvariant())
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-    private static string ResolveGridField(string layoutField)
+    private async Task LoadAccountingOptions()
     {
-        if (string.IsNullOrWhiteSpace(layoutField))
-            return "";
+        try
+        {
+            var acctSys = await GetAppOptionValueAsync("AccountingSystem");
+            var hasSys = int.TryParse(acctSys, out var sys);
+            IsIntacctSystem = hasSys && sys == asIntacct;
+            IsD365ABN = hasSys && sys == asD365_ABN;
+            IsTimberline = hasSys && sys == asTimberline;
 
-        var trimmed = layoutField.Trim();
+            var tarion = await GetAppOptionValueAsync("EnableTarionFields");
+            ShowTarionFields = string.Equals(tarion, "true", StringComparison.OrdinalIgnoreCase);
 
-        // Direct match
-        if (_communityRowPropMap.TryGetValue(trimmed.ToLowerInvariant(), out var prop))
-            return prop.Name;
+            DefaultIntacctEntity = await GetAppOptionValueAsync("IntacctEntity");
 
-        return trimmed;
+            // VB6 Form_Load (344-349): GSTRate column hidden unless Show_CDN_GST,
+            // PSTRate hidden unless UsePst. Both are system_setup columns keyed by
+            // id = DivisionID (with an appoptions fallback) — see Options.cls
+            // ValueByName (810-811). Per-division: e.g. division 15 has UsePst=1.
+            ShowGSTRate = await ReadBoolOption("Show_CDN_GST");
+            ShowPSTRate = await ReadBoolOption("UsePst");
+        }
+        catch (Exception ex)
+        {
+            // VB6 default when options can't be read: non-Intacct, no Tarion, GST/PST hidden.
+            Logger.LogWarning(ex, "Couldn't read accounting app-options; defaulting to non-Intacct");
+            IsIntacctSystem = false;
+            IsD365ABN = false;
+            IsTimberline = false;
+            ShowTarionFields = false;
+            ShowGSTRate = false;
+            ShowPSTRate = false;
+        }
     }
+
+    // VB6 Options.cls ValueByName (810-811): a boolean app-option resolves first from
+    // the system_setup row for this division, then falls back to appoptions
+    // (divisionid IN (0, @Div), most-specific wins). Returns the VB6-truthy
+    // interpretation (1 / true / -1 / non-empty-nonzero).
+    private async Task<bool> ReadBoolOption(string optionName)
+    {
+        string? raw = null;
+        try
+        {
+            // system_setup.<col> — column name is a fixed VB6 option identifier (not
+            // user data), so it must be a bracket-quoted identifier, not a parameter.
+            raw = await db.ExecuteScalarAsync<string>(
+                $"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id = @Div",
+                new { Div = SessionState.DivisionID });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "system_setup has no '{Option}' column; falling back to appoptions", optionName);
+        }
+        if (string.IsNullOrEmpty(raw))
+        {
+            raw = await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 optionvalue FROM appoptions
+                  WHERE ISNULL(divisionid,0) IN (0, @Div) AND optionname = @Name
+                  ORDER BY divisionid DESC",
+                new { Div = SessionState.DivisionID, Name = optionName });
+        }
+        return ToBool(raw);
+    }
+
+    // VB6: HFApp.Options.ValueByName("ScheduleTemplates") — the pipe-separated
+    // PreCon-template list (same source FOptions reads/writes). Split into the
+    // in-cell dropdown choices, with a leading blank so the value can be cleared.
+    private async Task LoadScheduleTemplates()
+    {
+        try
+        {
+            var raw = await db.ExecuteScalarAsync<string>(
+                $@"SELECT TOP 1 optionvalue FROM appoptions
+                   WHERE optionname = 'ScheduleTemplates'
+                     AND DivisionID IN (0, {SessionState.DivisionID})
+                   ORDER BY DivisionID DESC") ?? "";
+            var items = raw.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                           .Select(s => s.Trim())
+                           .Where(s => s.Length > 0);
+            ScheduleTemplateOptions = new List<string>();
+            ScheduleTemplateOptions.AddRange(items);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't read ScheduleTemplates app-option");
+            ScheduleTemplateOptions = new List<string>();
+        }
+    }
+
+    // VB6 sub_ShowPickList Case "ABN_D02Function":
+    //   s = "select Value,Description,value id from D365FinancialDimensionValues
+    //        where Dimension='D02_Function' order by 1"
+    // Load the D02_Function dimension values once for the in-cell dropdown. We
+    // store/display the Value (matches VB6: it stores Value, the 'id' hidecol).
+    // A leading blank lets the user clear the cell.
+    private async Task LoadD365Functions()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                @"SELECT Value FROM D365FinancialDimensionValues
+                  WHERE Dimension = 'D02_Function'
+                  ORDER BY 1");
+            var items = rows.Select(r => r["Value"]?.ToString() ?? "")
+                            .Where(s => s.Length > 0);
+            D365FunctionOptions = new List<string> { "" };
+            D365FunctionOptions.AddRange(items);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't read D365FinancialDimensionValues (D02_Function)");
+            D365FunctionOptions = new List<string> { "" };
+        }
+    }
+
+    private async Task LoadGridLayoutAsync()
+    {
+        await _grid.LoadAsync(GridLayoutSvc);
+    }
+
+    private IEnumerable<(GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
+        => _grid.GetOrdered().Select(e => (e.Layout, e.Field));
+
+    private string ResolveGridField(string layoutField)
+        => _grid.ResolveField(layoutField);
 
     private static int ConvertLayoutWidthToPx(double layoutWidth)
-    {
-        if (layoutWidth <= 0) return 0;
-        var px = (int)Math.Round(layoutWidth / 15.0);
-        px += 16;
-        if (px < 32) px = 32;
-        if (px > 2000) px = 2000;
-        return px;
-    }
+        => GridLayoutPresenter.WidthPx(layoutWidth);
 
     // Columns that have custom templates (button pickers, checkboxes, etc.)
     private static readonly HashSet<string> _buttonPickerFields = new(StringComparer.OrdinalIgnoreCase)
@@ -862,6 +834,14 @@
         "Inactive", "BuildPro", "WrapInsuranceExempt"
     };
 
+    // VB6 in-cell ComboList columns (dropdown of fixed choices, not a "…" picker).
+    // PreconScheduleTemplate's choices come from the ScheduleTemplates AppOption;
+    // ABN_D02Function's come from D365FinancialDimensionValues (D02_Function).
+    private static readonly HashSet<string> _dropDownFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "PreconScheduleTemplate", "ABN_D02Function"
+    };
+
     private static readonly HashSet<string> _numericFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "GSTRate", "PSTRate"
@@ -870,6 +850,14 @@
     private static readonly HashSet<string> _textBoxFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "Area", "Description", "Abr", "SalesManagerEmail"
+    };
+
+    // HHM-508: VB6 gData_BeforeEdit sets EditMaxLength per column (Area 10, Description 50,
+    // WarrantyJob 12). Cap the in-cell editor to match, so overflow input is silently
+    // truncated (no error toast) like legacy.
+    private static readonly Dictionary<string, int> _maxLengths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Area"] = 10, ["Description"] = 50, ["WarrantyJob"] = 12
     };
 
     // Default columns that are hidden unless IniGetGrid reveals them
@@ -888,7 +876,9 @@
         ["Area"] = "120px", ["Description"] = "200px", ["Comments"] = "160px",
         ["Company"] = "150px", ["LotInventoryDebit"] = "140px", ["Divisions"] = "140px",
         ["Project_Manager"] = "160px", ["CustServiceID"] = "140px", ["WarrantyJob"] = "140px",
-        ["DC_Sales_Person"] = "160px", ["Inactive"] = "90px", ["BuildPro"] = "90px",
+        ["DC_Sales_Person"] = "160px", ["PreconScheduleTemplate"] = "150px",
+        ["ABN_D02Function"] = "160px",
+        ["Inactive"] = "90px", ["BuildPro"] = "90px",
         ["WrapInsuranceExempt"] = "140px", ["GSTRate"] = "100px", ["PSTRate"] = "100px",
         ["Contract_Document"] = "160px", ["Abr"] = "80px", ["Purchaser"] = "140px",
         ["SalesManagerEmail"] = "200px", ["Email"] = "180px",
@@ -909,12 +899,16 @@
 
     private bool IsColumnVisible(string fieldName)
     {
+        // VB6 Form_Load applies these ColHidden overrides AFTER IniGetGrid, so the
+        // GST/PST hide rules win regardless of whether the layout (or the fallback
+        // default list) made the column visible — see LoadAccountingOptions /
+        // VB6 lines 344-349. Check them in BOTH the dynamic-layout and fallback paths.
+        if (fieldName.Equals("GSTRate", StringComparison.OrdinalIgnoreCase)) return ShowGSTRate;
+        if (fieldName.Equals("PSTRate", StringComparison.OrdinalIgnoreCase)) return ShowPSTRate;
         // When using IniGetGrid layout, all returned columns are visible (hidden ones are filtered out)
         if (HasGridLayout) return true;
         // For default layout, check hidden fields and special visibility
         if (_defaultHiddenFields.Contains(fieldName)) return false;
-        if (fieldName.Equals("GSTRate", StringComparison.OrdinalIgnoreCase)) return ShowGSTRate;
-        if (fieldName.Equals("PSTRate", StringComparison.OrdinalIgnoreCase)) return ShowPSTRate;
         return true;
     }
 
@@ -924,109 +918,109 @@
 
         if (_checkboxFields.Contains(fieldName))
         {
-            builder.OpenComponent<HfGridColumn>(0);
+            builder.OpenComponent<GridColumn>(0);
             builder.AddAttribute(1, "Field", fieldName);
             builder.AddAttribute(2, "HeaderText", headerText);
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
-            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
-            {
-                var row = (CommunityRow)context;
-                b2.OpenElement(0, "input");
-                b2.AddAttribute(1, "type", "checkbox");
-                b2.AddAttribute(2, "checked", GetCheckboxValue(row, fieldName));
-                b2.AddAttribute(3, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
-                {
-                    SetCheckboxValue(row, fieldName, (bool)(e.Value ?? false));
-                    MarkDirty(row);
-                }));
-                b2.CloseElement();
-            }));
+            builder.AddAttribute(5, "Type", ColumnType.CheckBox);
+            builder.AddAttribute(6, "AllowEditing", true);
+            // HHM-541: VB6 vsFlexGrid centers checkbox cells; BuildPro/Wrap Ins headers right-aligned.
+            builder.AddAttribute(7, "TextAlign", TextAlign.Center);
+            if (fieldName.Equals("BuildPro", StringComparison.OrdinalIgnoreCase)
+                || fieldName.Equals("WrapInsuranceExempt", StringComparison.OrdinalIgnoreCase))
+                builder.AddAttribute(8, "HeaderTextAlign", TextAlign.Right);
             builder.CloseComponent();
         }
         else if (_numericFields.Contains(fieldName))
         {
-            builder.OpenComponent<HfGridColumn>(0);
+            builder.OpenComponent<GridColumn>(0);
             builder.AddAttribute(1, "Field", fieldName);
             builder.AddAttribute(2, "HeaderText", headerText);
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
-            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
-            {
-                var row = (CommunityRow)context;
-                b2.OpenElement(0, "input");
-                b2.AddAttribute(1, "class", "grid-input");
-                b2.AddAttribute(2, "type", "number");
-                b2.AddAttribute(3, "step", "0.01");
-                b2.AddAttribute(4, "value", GetNumericValue(row, fieldName));
-                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
-                {
-                    SetNumericValue(row, fieldName, e.Value?.ToString() ?? "0");
-                    MarkDirty(row);
-                }));
-                b2.CloseElement();
-            }));
+            builder.AddAttribute(5, "Type", ColumnType.Number);
+            // HHM-542: VB6 GSTRate/PSTRate use "#,###.##" (comma grouping).
+            builder.AddAttribute(6, "Format", "#,##0.00");
+            builder.AddAttribute(7, "AllowEditing", true);
+            // HHM-541: right-align the numeric rate values and headers.
+            builder.AddAttribute(8, "TextAlign", TextAlign.Right);
+            builder.AddAttribute(9, "HeaderTextAlign", TextAlign.Right);
+            if (fieldName.Equals("GSTRate", StringComparison.OrdinalIgnoreCase))
+                builder.AddAttribute(10, "MaxLength", 12);
+            builder.CloseComponent();
+        }
+        else if (_dropDownFields.Contains(fieldName))
+        {
+            builder.OpenComponent<GridColumn>(0);
+            builder.AddAttribute(1, "Field", fieldName);
+            builder.AddAttribute(2, "HeaderText", headerText);
+            builder.AddAttribute(3, "Width", width);
+            builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "AllowEditing", true);
+            builder.AddAttribute(6, "EditOptions", GetDropDownOptions(fieldName));
             builder.CloseComponent();
         }
         else if (_buttonPickerFields.Contains(fieldName))
         {
-            builder.OpenComponent<HfGridColumn>(0);
+            var pickerField = fieldName;
+            builder.OpenComponent<GridColumn>(0);
             builder.AddAttribute(1, "Field", fieldName);
             builder.AddAttribute(2, "HeaderText", headerText);
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
-            builder.AddAttribute(5, "AllowEditing", false);
-            builder.AddAttribute(6, "Template", (RenderFragment<object>)(context => b2 =>
+            builder.AddAttribute(5, "AllowEditing", true);
+            builder.AddAttribute(6, "ShowEditButton", true);
+            builder.AddAttribute(7, "Template", (RenderFragment<object>)(context => cellBuilder =>
             {
-                var row = (CommunityRow)context;
-                b2.OpenElement(0, "div");
-                b2.AddAttribute(1, "class", "inline-edit");
-                b2.OpenElement(2, "span");
-                b2.AddContent(3, GetPickerDisplayValue(row, fieldName));
-                b2.CloseElement();
-                b2.OpenElement(4, "button");
-                b2.AddAttribute(5, "class", "mini-btn");
-                b2.AddAttribute(6, "onclick", EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, () => OnPickerButtonClick(row, fieldName)));
-                b2.AddContent(7, "...");
-                b2.CloseElement();
-                b2.CloseElement();
+                if (context is not CommunityRow row)
+                    return;
+
+                var display = GetPickerDisplayValue(row, pickerField);
+                cellBuilder.OpenElement(0, "div");
+                cellBuilder.AddAttribute(1, "class", "poindex-cell");
+
+                cellBuilder.OpenElement(2, "span");
+                cellBuilder.AddAttribute(3, "class", "poindex-text");
+                // HHM-503: VB6 grid has no cell tooltip — dropped the native title hover.
+                cellBuilder.AddContent(5, display);
+                cellBuilder.CloseElement();
+
+                cellBuilder.OpenComponent<ButtonControl>(6);
+                cellBuilder.AddAttribute(7, "CssClass", "poindex-btn fx-grid-popup-btn");
+                cellBuilder.AddAttribute(8, "OnClick", EventCallback.Factory.Create<MouseEventArgs>(this, () => OnPickerButtonClick(row, pickerField)));
+                cellBuilder.AddAttribute(9, "StopPropagation", true);
+                cellBuilder.AddAttribute(10, "ChildContent", (RenderFragment)(childBuilder => childBuilder.AddContent(0, "...")));
+                cellBuilder.CloseComponent();
+
+                cellBuilder.CloseElement();
             }));
             builder.CloseComponent();
         }
         else if (_textBoxFields.Contains(fieldName))
         {
-            builder.OpenComponent<HfGridColumn>(0);
+            builder.OpenComponent<GridColumn>(0);
             builder.AddAttribute(1, "Field", fieldName);
             builder.AddAttribute(2, "HeaderText", fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase) ? CommunityTerm : headerText);
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
-            builder.AddAttribute(5, "Template", (RenderFragment<object>)(context => b2 =>
-            {
-                var row = (CommunityRow)context;
-                var isArea = fieldName.Equals("Area", StringComparison.OrdinalIgnoreCase);
-                b2.OpenElement(0, "input");
-                b2.AddAttribute(1, "class", "grid-input");
-                b2.AddAttribute(2, "type", "text");
-                b2.AddAttribute(3, "value", GetStringValue(row, fieldName));
-                if (isArea && !string.IsNullOrEmpty(row.OriginalArea))
-                    b2.AddAttribute(4, "disabled", true);
-                b2.AddAttribute(5, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
-                {
-                    SetStringValue(row, fieldName, e.Value?.ToString() ?? "");
-                    MarkDirty(row);
-                }));
-                b2.CloseElement();
-            }));
+            builder.AddAttribute(5, "AllowEditing", true);
+            // HHM-508: VB6 EditMaxLength per column (Area 10, Description 50).
+            if (_maxLengths.TryGetValue(fieldName, out var ml))
+                builder.AddAttribute(6, "MaxLength", ml);
             builder.CloseComponent();
         }
         else
         {
-            // Plain text column (no template)
-            builder.OpenComponent<HfGridColumn>(0);
+            builder.OpenComponent<GridColumn>(0);
             builder.AddAttribute(1, "Field", fieldName);
             builder.AddAttribute(2, "HeaderText", headerText);
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
+            builder.AddAttribute(5, "AllowEditing", true);
+            // HHM-508: VB6 EditMaxLength per column.
+            if (_maxLengths.TryGetValue(fieldName, out var ml))
+                builder.AddAttribute(6, "MaxLength", ml);
             builder.CloseComponent();
         }
     };
@@ -1055,9 +1049,9 @@
         switch (field)
         {
             case "Comments": EditComments(row); break;
-            case "Company": EditCompany(row); break;
+            case "Company": _ = EditCompany(row); break;
             case "LotInventoryDebit": EditAccounting(row); break;
-            case "Divisions": EditDivisions(row); break;
+            case "Divisions": await EditDivisions(row); break;
             case "Project_Manager": await SelectProjectManager(row); break;
             case "CustServiceID": await SelectCustService(row); break;
             case "WarrantyJob": await SelectWarrantyJob(row); break;
@@ -1067,68 +1061,15 @@
         }
     }
 
-    private string GetStringValue(CommunityRow row, string field)
+    // In-cell dropdown choices per VB6 ComboList column. PreconScheduleTemplate
+    // → ScheduleTemplates AppOption; ABN_D02Function → D365 D02_Function values.
+    private List<string> GetDropDownOptions(string field)
     {
         return field switch
         {
-            "Area" => row.Area,
-            "Description" => row.Description,
-            "Abr" => row.Abr,
-            "SalesManagerEmail" => row.SalesManagerEmail,
-            _ => ""
+            "ABN_D02Function" => D365FunctionOptions,
+            _ => ScheduleTemplateOptions
         };
-    }
-
-    private void SetStringValue(CommunityRow row, string field, string value)
-    {
-        switch (field)
-        {
-            case "Area": row.Area = value; break;
-            case "Description": row.Description = value; break;
-            case "Abr": row.Abr = value; break;
-            case "SalesManagerEmail": row.SalesManagerEmail = value; break;
-        }
-    }
-
-    private bool GetCheckboxValue(CommunityRow row, string field)
-    {
-        return field switch
-        {
-            "Inactive" => row.Inactive,
-            "BuildPro" => row.BuildPro,
-            "WrapInsuranceExempt" => row.WrapInsuranceExempt,
-            _ => false
-        };
-    }
-
-    private void SetCheckboxValue(CommunityRow row, string field, bool value)
-    {
-        switch (field)
-        {
-            case "Inactive": row.Inactive = value; break;
-            case "BuildPro": row.BuildPro = value; break;
-            case "WrapInsuranceExempt": row.WrapInsuranceExempt = value; break;
-        }
-    }
-
-    private decimal GetNumericValue(CommunityRow row, string field)
-    {
-        return field switch
-        {
-            "GSTRate" => row.GSTRate,
-            "PSTRate" => row.PSTRate,
-            _ => 0m
-        };
-    }
-
-    private void SetNumericValue(CommunityRow row, string field, string value)
-    {
-        if (!decimal.TryParse(value, out var d)) d = 0;
-        switch (field)
-        {
-            case "GSTRate": row.GSTRate = d; break;
-            case "PSTRate": row.PSTRate = d; break;
-        }
     }
 
     private void MarkDirty(CommunityRow row)
@@ -1162,7 +1103,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}LoadCustomDescriptions] Error: {ex.Message}");
+            Logger.LogError(ex, $"[{SRCFILE}LoadCustomDescriptions] Error: ");
         }
     }
 
@@ -1182,10 +1123,11 @@
                        l.LabourTaxGroup, l.MaterialTaxGroup, l.SubContractTaxGroup, l.EquipmentTaxGroup, 
                        l.OverheadTaxGroup, l.TarionBuilderNumber, l.OtherTaxGroup, l.WarrantyJob, l.GSTRate, 
                        l.PSTRate, l.SalesManagerEmail, l.LastPOSeq, l.purchaser, dc.BuildProEnabled BuildPro, 
-                       l.WrapInsuranceExempt, l.IntacctEntity, l.IntacctParentJob, l.IntacctDepartment, l.Mortgage_Credit
+                       l.WrapInsuranceExempt, l.IntacctEntity, l.IntacctParentJob, l.IntacctDepartment, l.Mortgage_Credit,
+                       l.PreconScheduleTemplate, l.ABN_D02Function
                 FROM tbllocality l
                 LEFT OUTER JOIN DivisionCommunities dc ON dc.Community = l.Area AND dc.DivisionID = @DivisionID";
-            var results = await db.QueryAsync(sql, new { DivisionID });
+            var results = await db.QueryAsync(sql, new { SessionState.DivisionID });
             CommunitiesData = results.Select(row => new CommunityRow
             {
                 OriginalArea = row["Area"]?.ToString() ?? "",
@@ -1217,6 +1159,8 @@
                 CustServiceID = row["CustServiceID"]?.ToString() ?? "",
                 DC_Sales_Person = row["DC_Sales_Person"]?.ToString() ?? "",
                 Contract_Document = row["Contract_Document"]?.ToString() ?? "",
+                PreconScheduleTemplate = row["PreconScheduleTemplate"]?.ToString() ?? "",
+                ABN_D02Function = row["ABN_D02Function"]?.ToString() ?? "",
                 Purchaser = row["purchaser"]?.ToString() ?? "",
                 LabourTaxGroup = row["LabourTaxGroup"]?.ToString() ?? "",
                 MaterialTaxGroup = row["MaterialTaxGroup"]?.ToString() ?? "",
@@ -1236,14 +1180,13 @@
                 IsDirty = false,
                 IsDeleted = false
             }).ToList();
-            Console.WriteLine($"Abbreviations: {CommunitiesData[0].Abr} Area: {CommunitiesData[0].Area} Desc: {CommunitiesData[0].Description}"); 
             await LoadCommunityDivisions();
             mDirty = false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}LoadData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Logger.LogError(ex, $"[{SRCFILE}LoadData] Error: ");
+            Notifications.Error($"Error loading data: {ex.Message}");
         }
         finally
         {
@@ -1318,7 +1261,9 @@
             {
                 if (string.IsNullOrWhiteSpace(row.Area))
                 {
-                    await JSRuntime.InvokeVoidAsync("alert", "The community field cannot be blank");
+                    // HHM-500: VB6 shows a modal MsgBox (OK popup), not an inline toast.
+                    if (_messageBox != null)
+                        await _messageBox.ShowAsync("The community field cannot be blank", PRODUCT_NAME, Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "info");
                     return false;
                 }
 
@@ -1332,7 +1277,7 @@
                         FROM tbllocality a 
                         LEFT OUTER JOIN DivisionCommunities dc ON dc.Community = a.Area AND dc.DivisionID = @DivisionID  
                         WHERE a.area = @Area AND dc.community IS NULL";
-                    await db.ExecuteAsync(insertDivSql, new { DivisionID, row.Area });
+                    await db.ExecuteAsync(insertDivSql, new { SessionState.DivisionID, row.Area });
                     row.OriginalArea = row.Area;
                 }
 
@@ -1363,6 +1308,8 @@
                         CustServiceID = @CustServiceID,
                         DC_Sales_Person = @DC_Sales_Person,
                         Contract_Document = @Contract_Document,
+                        ABN_D02Function = @ABN_D02Function,
+                        PreconScheduleTemplate = @PreconScheduleTemplate,
                         WarrantyJob = @WarrantyJob,
                         Purchaser = @Purchaser,
                         WrapInsuranceExempt = @WrapInsuranceExempt,
@@ -1408,6 +1355,8 @@
                     row.CustServiceID,
                     row.DC_Sales_Person,
                     row.Contract_Document,
+                    row.ABN_D02Function,
+                    row.PreconScheduleTemplate,
                     row.WarrantyJob,
                     row.Purchaser,
                     WrapInsuranceExempt = row.WrapInsuranceExempt ? 1 : 0,
@@ -1450,14 +1399,14 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
+            Logger.LogError(ex, $"[{SRCFILE}SaveData] Error: ");
             if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "This ID is taken. Please choose something else.");
+                Notifications.Error("This ID is taken. Please choose something else.");
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+                Notifications.Error($"Error saving data: {ex.Message}");
             }
             return false;
         }
@@ -1473,6 +1422,27 @@
         await SaveData(false);
     }
 
+    // Once the user has answered the save-prompt and chosen to leave, we re-issue the
+    // navigation; this flag lets that second pass through without re-prompting.
+    private bool _navigationPromptSuppressed;
+
+    // VB6 Form_Unload (FCommunities.frm 366-371): If Not SaveData(True) Then Cancel=True.
+    // SaveData(true) shows the Yes/No/Cancel "save the changes?" prompt and returns false
+    // ONLY when the user picks Cancel (or a save error) — in which case we keep the user
+    // on the page (PreventNavigation). Yes saves then proceeds, No discards then proceeds.
+    private async Task OnBeforeInternalNavigation(LocationChangingContext context)
+    {
+        if (_navigationPromptSuppressed || !mDirty)
+            return;
+
+        context.PreventNavigation();
+        if (await SaveData(true))
+        {
+            _navigationPromptSuppressed = true;
+            NavigationManager.NavigateTo(context.TargetLocation);
+        }
+    }
+
     private async Task OnNewClick()
     {
         var newRow = new CommunityRow
@@ -1485,45 +1455,185 @@
 
         var defaultDivision = db.ExecuteScalar<string>(
             "SELECT DivisionCode FROM Divisions WHERE DivisionID = @DivisionID",
-            new { DivisionID });
+            new { SessionState.DivisionID });
         if (!string.IsNullOrEmpty(defaultDivision))
         {
             newRow.Divisions = defaultDivision;
         }
-        CommunitiesData.Add(newRow);
         SelectedCommunity = newRow;
         mDirty = true;
-        StateHasChanged();
 
         if (gData != null)
         {
-            var targetPage = Math.Max(1, gData.TotalPages);
-            await gData.GoToPageAsync(targetPage);
+            // GridControl owns row insertion + current-cell navigation so every
+            // consumer gets the same append/scroll/edit behavior.
+            await gData.AppendRowAsync(newRow);
+        }
+        else
+        {
+            CommunitiesData.Add(newRow);
+            StateHasChanged();
         }
     }
 
+    // VB6 gData_KeyDown / Toolbar "DELETE" (FCommunities.frm 747-761, 790-791): the
+    // toolbar Delete just calls gData_KeyDown(vbKeyDelete, vbCtrlMask). Both routes
+    // run sp_CanDeleteCommunity, block if it returns false, else mark the row for
+    // delete + hide it. OnDeleteClick is the shared handler for the toolbar button;
+    // OnGridKeyDown forwards Ctrl+Delete here so the two paths stay identical.
     private async Task OnDeleteClick()
     {
-        if (SelectedCommunity == null) return;
+        await DeleteCurrentRow(SelectedCommunity);
+    }
 
-        var canDelete = db.ExecuteScalar<string>(
-            "SELECT dbo.sp_CanDeleteCommunity(@Area)",
-            new { Area = SelectedCommunity.Area });
-        if (canDelete == "False")
+    // VB6 gData_KeyDown (FCommunities.frm 747-761): the delete logic, factored out so
+    // both the toolbar button and the Ctrl+Delete keystroke share one code path.
+    private async Task DeleteCurrentRow(CommunityRow? row)
+    {
+        if (row == null) return;
+
+        // Unsaved rows have no database identity yet, so delete them locally
+        // instead of running sp_CanDeleteCommunity with a blank Area value.
+        if (string.IsNullOrEmpty(row.OriginalArea))
         {
-            await JSRuntime.InvokeVoidAsync("alert",
-                "You cannot delete a community that has customers, jobs or assemblies associated with it.");
+            CommunitiesData.Remove(row);
+            if (ReferenceEquals(SelectedCommunity, row))
+                SelectedCommunity = CommunitiesData.FirstOrDefault(r => !r.IsDeleted);
+            mDirty = CommunitiesData.Any(r => r.IsDirty || r.IsDeleted);
+            if (gData != null)
+                await gData.Refresh();
+            StateHasChanged();
             return;
         }
-        SelectedCommunity.IsDeleted = true;
-        SelectedCommunity.IsDirty = true;
+
+        // VB6: rs = SqlExec("select dbo.sp_CanDeleteCommunity(@Area)"); If ""&rs(0)="False".
+        // sp_CanDeleteCommunity is a scalar function returning a SQL bit, so read it as
+        // a bool — the old ExecuteScalar<string> + (== "False") relied on Boolean.ToString()
+        // formatting and would silently let a non-deletable community through if the
+        // wrapper ever yielded "0"/"1" or a non-bit value instead.
+        var canDelete = await db.ExecuteScalarAsync<bool>(
+            "SELECT dbo.sp_CanDeleteCommunity(@Area)",
+            new { Area = row.Area });
+        if (!canDelete)
+        {
+            Notifications.Error("You cannot delete a community that has customers, jobs or assemblies associated with it.");
+            return;
+        }
+        // VB6: mDirty = True : RowData = "DELETE" : RowHidden(Row) = True. The row stays
+        // in CommunitiesData (so Save can issue sp_DeleteCommunity) but is hidden from
+        // the grid immediately via the .row-hidden CSS class (GetCommunityRowCssClass).
+        row.IsDeleted = true;
+        row.IsDirty = true;
         mDirty = true;
         StateHasChanged();
+    }
+
+    // VB6 Form_KeyDown (FCommunities.frm 327-332) + gData_KeyDown (747-761): the form
+    // has KeyPreview=-1, so Ctrl+S saves (no prompt) and Ctrl+Delete deletes the current
+    // grid row. The GridControl exposes no consumer keydown event, so we catch these on
+    // the wrapper div — the grid's keydown bubbles up. Pure Blazor @onkeydown, no JS.
+    private async Task OnGridKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        // VB6 gData_KeyDown: Ctrl+Delete on the current row (Row > 1, i.e. a data row).
+        if (e.CtrlKey && (e.Key == "Delete" || e.Code == "Delete"))
+        {
+            await DeleteCurrentRow(SelectedCommunity);
+            return;
+        }
+        // VB6 Form_KeyDown: Ctrl+S => SaveData(False) (save without the changed-data prompt).
+        if (e.CtrlKey && (e.Key == "s" || e.Key == "S"))
+        {
+            await SaveData(false);
+        }
     }
 
     private void OnRowSelected(RowSelectEventArgs<CommunityRow> args)
     {
         SelectedCommunity = args.Data;
+    }
+
+    // VB6 gData (cell mode): clicking any cell makes that row "current" so the
+    // toolbar (Delete) and the Company/Accounting popups act on it — without a
+    // whole-row blue highlight. The visual highlight is the cell itself.
+    private void OnCommunityCellSelected(CellSelectEventArgs<CommunityRow> args)
+    {
+        SelectedCommunity = args.Data;
+    }
+
+    // VB6 gData_BeforeEdit: decide whether a cell may enter edit mode.
+    //   • Area  — editable only while blank; once saved it's the key (locked).
+    //   • Popup/lookup columns (Company, Divisions, Project_Manager, …) do NOT
+    //     accept typed text — they open the "…" FPickList. Veto the inline edit
+    //     so the cell stays read-only and the picker button is the only way in.
+    //   • Everything else (Description, Abr, SalesManagerEmail, plain address /
+    //     accounting text) is freely typeable.
+    private void OnCommunityCellEdit(CellEditArgs<CommunityRow> args)
+    {
+        var field = args.ColumnName ?? "";
+        if (_buttonPickerFields.Contains(field))
+        {
+            args.Cancel = true;
+            return;
+        }
+        if (field.Equals("Area", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(args.Data?.OriginalArea))
+        {
+            args.Cancel = true;
+        }
+    }
+
+    // VB6 gData_AfterEdit: the grid already wrote the typed value into the bound
+    // property (FlexKit reflection). Just mark the row dirty so Save persists it.
+    private void OnCommunityCellSave(CellSaveArgs<CommunityRow> args)
+    {
+        if (args.Data != null)
+            MarkDirty(args.Data);
+    }
+
+    // VB6 multi-cell entry (AllowSelection=True / SelectionMode=3): one committed
+    // edit applies to every selected row in the column. Same page-side fan-out as
+    // FDBGrid's HHM-605 handler; the picker-button columns and the Area key column
+    // keep the same gating OnCommunityCellEdit enforces for single edits.
+    private async Task OnCommunityTypeAheadCommit(TypeAheadCommitArgs<CommunityRow> args)
+    {
+        var field = args.ColumnName ?? "";
+        if (string.IsNullOrWhiteSpace(field) || _buttonPickerFields.Contains(field)) return;
+
+        var prop = typeof(CommunityRow).GetProperty(field);
+        if (prop == null || !prop.CanWrite) return;
+
+        foreach (var row in args.SelectedItems)
+        {
+            // Area is the key: only still-new rows may take it (gData_BeforeEdit).
+            if (field.Equals("Area", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(row.OriginalArea))
+                continue;
+
+            try
+            {
+                object? val = args.Value;
+                if (prop.PropertyType != typeof(string))
+                    val = string.IsNullOrWhiteSpace(args.Value)
+                        ? Activator.CreateInstance(prop.PropertyType)
+                        : Convert.ChangeType(args.Value,
+                            Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType,
+                            System.Globalization.CultureInfo.InvariantCulture);
+                prop.SetValue(row, val);
+                MarkDirty(row);
+            }
+            catch
+            {
+                // Unparseable value for this cell's type — leave that cell unchanged.
+            }
+        }
+
+        if (gData != null) await gData.Refresh();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnGridEditButtonClick(CellEditButtonArgs<CommunityRow> args)
+    {
+        await OnPickerButtonClick(args.Data, args.ColumnName);
     }
 
     private void EditComments(CommunityRow row)
@@ -1542,144 +1652,332 @@
             MarkDirty(EditingRow);
         }
         CommentsDialogVisible = false;
+        RequestGridKeyboardResume();
         StateHasChanged();
     }
 
     private void CloseCommentsDialog()
     {
         CommentsDialogVisible = false;
+        RequestGridKeyboardResume();
         StateHasChanged();
     }
 
-    private void EditDivisions(CommunityRow row)
+    // ── FPickList-driven cell pickers (VB6 gData_CellButtonClick) ──────────
+    // Every selector below routes through the shared FlexKit FPickList (search +
+    // type-to-search + sortable columns), exactly like FAssembly / FPricingWorkSheet.
+    // A per-open delegate writes the chosen value back to the row.
+    private Func<List<IDictionary<string, object>>, Task>? _pickHandler;
+
+    private async Task OnPickListSelected(List<IDictionary<string, object>> rows)
     {
+        var handler = _pickHandler;
+        _pickHandler = null;
+        if (handler != null) await handler(rows);
+        RequestGridKeyboardResumeIfNoModal();
+        StateHasChanged();
+    }
+
+    private Task OnPickListCancelled()
+    {
+        _pickHandler = null;
+        RequestGridKeyboardResumeIfNoModal();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private static string PickCol(IDictionary<string, object> row, string col)
+    {
+        foreach (var kv in row)
+            if (string.Equals(kv.Key, col, StringComparison.OrdinalIgnoreCase))
+                return kv.Value?.ToString() ?? "";
+        return "";
+    }
+
+    // VB6 (gData_CellButtonClick Case "Divisions"): FPickList.Choose("Division",
+    // "select divisioncode Code,divisionname Name from divisions", MultiSelect:=True),
+    // then loops ALL picked rows building a comma-separated list of Codes:
+    //   For i = 1 To FPickList.SelectedItems: s = s & ", " & FPickList.SelectedItem("Code", i)
+    //   .TextMatrix(Row, Col) = Mid(s, 3)
+    // DivisionCommunities is genuinely many-to-many — a community can map to several
+    // divisions, so this MUST be multi-select. Single-select silently collapsed the
+    // junction to one code on re-open (data loss). The save side splits this comma
+    // list back into one DivisionCommunities row per code.
+    // (VB6 omits a DefaultItem on the multi-pick — the dialog opens fresh, no pre-seed.)
+    private async Task EditDivisions(CommunityRow row)
+    {
+        if (pickList == null) return;
         EditingRow = row;
-        SelectedDivisionCodes = (row.Divisions ?? "")
-            .Split(',')
-            .Select(d => d.Trim())
-            .Where(d => !string.IsNullOrEmpty(d))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        DivisionsDialogVisible = true;
-        StateHasChanged();
-    }
-
-    private void SaveDivisions()
-    {
-        if (EditingRow != null)
+        _pickHandler = rows =>
         {
-            EditingRow.Divisions = string.Join(", ", SelectedDivisionCodes);
-            MarkDirty(EditingRow);
-        }
-        DivisionsDialogVisible = false;
-        StateHasChanged();
+            if (rows.Count > 0)
+            {
+                row.Divisions = string.Join(", ",
+                    rows.Select(r => PickCol(r, "Code"))
+                        .Where(c => !string.IsNullOrWhiteSpace(c)));
+                MarkDirty(row);
+            }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            title: "Division",
+            queries: "SELECT divisioncode Code, divisionname Name FROM divisions ORDER BY divisioncode",
+            multiSelect: true);
     }
 
-    private void CloseDivisionsDialog()
-    {
-        DivisionsDialogVisible = false;
-        StateHasChanged();
-    }
-
+    // VB6: select pm id,pmname Name ... HideColumns="id"; returns id.
     private async Task SelectProjectManager(CommunityRow row)
     {
-        await ShowPicker(
-            "Select Project Manager",
-            "SELECT pm Id, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(PrjMgr,0)=1",
-            value =>
-            {
-                row.Project_Manager = value;
-                MarkDirty(row);
-            });
+        if (pickList == null) return;
+        EditingRow = row;
+        _pickHandler = rows =>
+        {
+            if (rows.Count > 0) { row.Project_Manager = PickCol(rows[0], "id"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            title: "Project Manager",
+            // VB6 prepends "select '' ID,'' Name union …" so the value can be cleared.
+            // HHM-538: VB6 shows the id column for PM (no hidecols) and the UNION orders
+            // by column 1 (id).
+            queries: "SELECT '' ID, '' Name UNION SELECT pm ID, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(PrjMgr,0)=1 ORDER BY 1",
+            defaultItem: row.Project_Manager);
     }
 
     private async Task SelectPurchaser(CommunityRow row)
     {
-        await ShowPicker(
-            "Select Purchaser",
-            "SELECT pm Id, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(Purchaser,0)=1",
-            value =>
-            {
-                row.Purchaser = value;
-                MarkDirty(row);
-            });
+        if (pickList == null) return;
+        EditingRow = row;
+        _pickHandler = rows =>
+        {
+            if (rows.Count > 0) { row.Purchaser = PickCol(rows[0], "id"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            title: "Purchaser",
+            // VB6 prepends "select '' ID,'' Name union …" so the value can be cleared.
+            queries: "SELECT '' id, '' Name UNION SELECT pm id, pmname Name FROM tblprojectmanager WHERE ISNULL(inactive,0)=0 AND ISNULL(Purchaser,0)=1 ORDER BY 2",
+            hideColumns: "id", defaultItem: row.Purchaser);
     }
 
     private async Task SelectCustService(CommunityRow row)
     {
-        await ShowPicker(
-            "Select Customer Service Person",
-            "SELECT custserviceid Id, custservicename Name FROM tblcustserviceperson",
-            value =>
-            {
-                row.CustServiceID = value;
-                MarkDirty(row);
-            });
+        if (pickList == null) return;
+        EditingRow = row;
+        _pickHandler = rows =>
+        {
+            if (rows.Count > 0) { row.CustServiceID = PickCol(rows[0], "id"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            // HHM-539: VB6 passes ItemTitle = grid header "Service Rep" and leaves hidecols
+            // empty for CustServiceID, so both the ID and Name columns show.
+            title: "Service Rep",
+            // VB6 prepends "select '' ID,'' Name union …" so the value can be cleared.
+            queries: "SELECT '' ID, '' Name UNION SELECT custserviceid ID, custservicename Name FROM tblcustserviceperson ORDER BY 2",
+            defaultItem: row.CustServiceID);
     }
 
     private async Task SelectDCSalesPerson(CommunityRow row)
     {
-        await ShowPicker(
-            "Select DC Sales Person",
-            "SELECT sales_person_id Id, sales_person_name Name FROM tblsales_persons WHERE ISNULL(inactive,0)=0 AND ISNULL(dcsales,0)=1",
-            value =>
-            {
-                row.DC_Sales_Person = value;
-                MarkDirty(row);
-            });
+        if (pickList == null) return;
+        EditingRow = row;
+        _pickHandler = rows =>
+        {
+            if (rows.Count > 0) { row.DC_Sales_Person = PickCol(rows[0], "id"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            title: "DC Sales Person",
+            // VB6 prepends "select '' ID,'' Name union …" so the value can be cleared.
+            queries: "SELECT '' id, '' Name UNION SELECT sales_person_id id, sales_person_name Name FROM tblsales_persons WHERE ISNULL(inactive,0)=0 AND ISNULL(dcsales,0)=1 ORDER BY 2",
+            hideColumns: "id", defaultItem: row.DC_Sales_Person);
     }
 
+    // VB6: select job_no Job, Description, job_no ID ... HideColumns="id"; returns ID (job_no).
     private async Task SelectWarrantyJob(CommunityRow row)
     {
-        await ShowPicker(
-            "Select Warranty Job",
-            $"SELECT job_no Id, Description Name FROM tblJobs WHERE DivisionID = {DivisionID} AND ISNULL(inactive,0)=0",
-            value =>
-            {
-                row.WarrantyJob = value;
-                MarkDirty(row);
-            });
-    }
-
-    private async Task ShowPicker(string title, string sql, Action<string> callback)
-    {
-        PickerTitle = title;
-        PickerCallback = callback;
-        var results = await db.QueryAsync(sql);
-        PickerItems = results.Select(r => new PickerItem
+        if (pickList == null) return;
+        EditingRow = row;
+        _pickHandler = rows =>
         {
-            Id = r["Id"]?.ToString() ?? "",
-            Name = r["Name"]?.ToString() ?? ""
-        }).ToList();
-        SelectedPickerItem = null;
-        PickerDialogVisible = true;
-        StateHasChanged();
+            if (rows.Count > 0) { row.WarrantyJob = PickCol(rows[0], "ID"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        await pickList.Open(
+            title: "Warranty Job",
+            queries: $"SELECT job_no Job, Description, job_no ID FROM tblJobs WHERE DivisionID = {SessionState.DivisionID} AND ISNULL(inactive,0)=0 ORDER BY job_no",
+            hideColumns: "ID", defaultItem: row.WarrantyJob);
     }
 
-    private void OnPickerRowSelected(RowSelectEventArgs<PickerItem> args)
+    // VB6 gData_ValidateEdit Case "WarrantyJob" (FCommunities.frm 768-778):
+    //   If .EditText <> "" Then
+    //     Set rs = SqlExec("select * from tbljobs where DivisionID=… and job_no=@j")
+    //     If rs.EOF Then MsgBox "invalid job": Cancel = True
+    //     Else .EditText = rs("Job_no")   ' normalize to the canonical job_no
+    // The WarrantyJob cell is typeable (gData_BeforeEdit set .ComboList = "|...",
+    // EditMaxLength = 12); on commit we validate the typed value is a real job for
+    // this division. A blank clears the field (VB6 skips validation when EditText is
+    // empty). Invalid → reject (restore prior value) + "invalid job" message.
+    private async Task OnWarrantyJobTyped(CommunityRow row, string typed)
     {
-        SelectedPickerItem = args.Data;
-    }
+        var value = (typed ?? "").Trim();
 
-    private void ConfirmPicker()
-    {
-        if (SelectedPickerItem != null && PickerCallback != null)
+        if (value.Length == 0)
         {
-            PickerCallback(SelectedPickerItem.Id);
+            // Blank is allowed (clears the warranty job) — mark dirty so Save persists it.
+            row.WarrantyJob = "";
+            MarkDirty(row);
+            return;
         }
-        PickerDialogVisible = false;
-        StateHasChanged();
+
+        try
+        {
+            // Parameterized — never interpolate the typed job into SQL. Return the
+            // canonical job_no so casing/padding normalizes to the stored value (VB6
+            // assigned .EditText = rs("Job_no")).
+            var canonical = await db.ExecuteScalarAsync<string>(
+                "SELECT TOP 1 Job_No FROM tblJobs WHERE DivisionID = @Div AND Job_No = @Job",
+                new { Div = SessionState.DivisionID, Job = value });
+
+            if (string.IsNullOrEmpty(canonical))
+            {
+                // VB6: MsgBox "invalid job" + Cancel = True (the edit is rejected).
+                Notifications.Error("invalid job");
+                // Restore the prior committed value so the rejected edit doesn't stick.
+                row.WarrantyJob = row.WarrantyJob ?? "";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            row.WarrantyJob = canonical;
+            MarkDirty(row);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[{Src}OnWarrantyJobTyped] Error validating job '{Job}'", SRCFILE, value);
+            Notifications.Error($"Error validating job: {ex.Message}");
+        }
     }
 
-    private void ClosePickerDialog()
-    {
-        PickerDialogVisible = false;
-        StateHasChanged();
-    }
+    // ── Company popup (VB6 FCompany.frm) ───────────────────────────────
+    private bool CompanyDialogVisible = false;
+    private string CoCompanyName = "";
+    private string CoAddress = "";          // multiline; splits to Address1/Address2
+    private string CoCity = "";
+    private string CoProvince = "";
+    private string CoPostal = "";
+    private string CoCountry = "";
+    private string CoCounty = "";
+    private string CoEmail = "";
+    private string CoPhone = "";
+    private string CoFax = "";
+    private string CoTaxNumber = "";
+    private List<string> CompanyCountries = new();
+    private List<string> CompanyProvinces = new();
 
-    private void EditCompany(CommunityRow row)
+    // VB6 FCompany.ShowForm: load the 11 fields from the grid row. Address is the
+    // two address lines joined with a newline (split back on save).
+    private async Task EditCompany(CommunityRow row)
     {
         EditingRow = row;
+        CoCompanyName = row.Company;
+        CoAddress = string.IsNullOrEmpty(row.Address2)
+            ? row.Address1
+            : row.Address1 + "\n" + row.Address2;
+        CoCity = row.City;
+        CoProvince = row.Province;
+        CoPostal = row.Postal;
+        CoCountry = row.Country;
+        CoCounty = row.County;
+        CoEmail = row.Email;
+        CoPhone = row.Phone;
+        CoFax = row.Fax;
+        CoTaxNumber = row.TaxNumber;
+
+        await LoadCompanyCountries();
+        await LoadCompanyProvinces(CoCountry);
+
+        CompanyDialogVisible = true;
+        StateHasChanged();
+    }
+
+    // VB6: LoadComboBox(cboCompanyCountry, "select distinct country,'',0 from countrycodes order by 1")
+    private async Task LoadCompanyCountries()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT DISTINCT country FROM countrycodes WHERE ISNULL(country,'') <> '' ORDER BY country");
+            CompanyCountries = rows.Select(r => r["country"]?.ToString() ?? "")
+                                   .Where(s => s.Length > 0).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't load country list");
+            CompanyCountries = new();
+        }
+    }
+
+    // VB6 cboCompanyCountry_Click: reload provinces filtered by the chosen country.
+    private async Task LoadCompanyProvinces(string country)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(country)) { CompanyProvinces = new(); return; }
+            var rows = await db.QueryAsync(
+                "SELECT DISTINCT state FROM countrycodes WHERE country = @Country AND ISNULL(state,'') <> '' ORDER BY state",
+                new { Country = country });
+            CompanyProvinces = rows.Select(r => r["state"]?.ToString() ?? "")
+                                   .Where(s => s.Length > 0).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't load province list");
+            CompanyProvinces = new();
+        }
+    }
+
+    private async Task OnCompanyCountryChanged(string country)
+    {
+        CoCountry = country;
+        CoProvince = "";                 // VB6 clears province on country change
+        await LoadCompanyProvinces(country);
+        StateHasChanged();
+    }
+
+    // VB6 FCompany.ShowForm save-back: write the 11 fields to the grid row.
+    // Address splits on the first newline into Address1 / Address2.
+    private void SaveCompany()
+    {
+        if (EditingRow != null)
+        {
+            var parts = (CoAddress ?? "").Replace("\r\n", "\n").Split('\n');
+            EditingRow.Company = CoCompanyName ?? "";
+            EditingRow.Address1 = parts.Length > 0 ? parts[0] : "";
+            EditingRow.Address2 = parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : "";
+            EditingRow.City = CoCity ?? "";
+            EditingRow.Province = CoProvince ?? "";
+            EditingRow.Postal = CoPostal ?? "";
+            EditingRow.Country = CoCountry ?? "";
+            EditingRow.County = CoCounty ?? "";
+            EditingRow.Email = CoEmail ?? "";
+            EditingRow.Phone = CoPhone ?? "";
+            EditingRow.Fax = CoFax ?? "";
+            EditingRow.TaxNumber = CoTaxNumber ?? "";
+            MarkDirty(EditingRow);
+        }
+        CompanyDialogVisible = false;
+        RequestGridKeyboardResume();
+        StateHasChanged();
+    }
+
+    private void CloseCompanyDialog()
+    {
+        CompanyDialogVisible = false;
+        RequestGridKeyboardResume();
+        StateHasChanged();
     }
 
     private void EditAccounting(CommunityRow row)
@@ -1699,7 +1997,8 @@
             OverheadTaxGroup = row.OverheadTaxGroup,
             OtherTaxGroup = row.OtherTaxGroup,
             IntacctEntity = row.IntacctEntity,
-            IntacctLocation = row.IntacctDepartment,
+            // VB6: location maps to the GL prefix (BalanceSheet), not Department.
+            IntacctLocation = row.BalanceSheet,
             IntacctParentJob = row.IntacctParentJob,
             IntacctDepartment = row.IntacctDepartment,
             MortgageCredit = row.Mortgage_Credit,
@@ -1709,10 +2008,159 @@
         ShowAccountingForm(data);
     }
 
+    // Row CSS: pending-delete rows hide instantly like VB6 RowHidden (HHM-221
+    // removed the Find/search highlight — VB6 FCommunities has no Find).
+    private string? GetCommunityRowCssClass(CommunityRow row, int rowIndex)
+    {
+        // VB6 gData_KeyDown sets RowHidden(Row)=True the instant a row is marked for
+        // delete, so it vanishes immediately (the actual sp_DeleteCommunity runs at
+        // Save). Mirror that with a display:none class — Save still iterates the row
+        // because it stays in CommunitiesData.
+        if (row.IsDeleted)
+            return "row-hidden";
+        // HHM-499: tag the current/selected row so the page CSS paints the
+        // whole-row highlight.
+        if (ReferenceEquals(row, SelectedCommunity))
+            return "row-current";
+        return null;
+    }
+
+    // VB6 gData_CellButtonClick Case "Contract_Document" (FCommunities.frm 707-710):
+    //   s = .Text
+    //   If VBGetOpenFileName(s, …, "Contract Documents (*.dot;*.rpt)|*.dot;*.rpt",
+    //                        …, "Select Contract Document", …, Me.hwnd) Then .Text = s
+    // VB6 raised the Win32 GetOpenFileName dialog to pick a Word .dot template or a
+    // Crystal .rpt contract document; the file NAME/PATH is stored in the
+    // Contract_Document varchar column (nothing is uploaded — the print engine later
+    // opens it by path). A browser can't raise a native file-open dialog, but per the
+    // user decision we list the server-side files instead — exactly like FVendor's
+    // "PO Format" dropdown lists wwwroot/resources/Estimating/PO Formats/*.rpt. Here
+    // the templates live in wwwroot/resources/Estimating/Contract Documents/ and we
+    // surface *.dot + *.rpt (the VB6 filter) through the shared FPickList. The chosen
+    // file name is written to the cell; the cell also stays free-text so an existing
+    // or hand-typed path keeps working.
     private async Task BrowseContractDocument(CommunityRow row)
     {
+        if (pickList == null) return;
         EditingRow = row;
-        await JSRuntime.InvokeVoidAsync("alert", "File browsing would be implemented with an InputFile component or file picker service");
+
+        var files = GetContractDocumentFiles();
+        if (files.Count == 0)
+        {
+            // VB6 ALWAYS raised the native file-open dialog here (GetOpenFileName), so when no
+            // server-side templates exist yet we open the client file browser to match it —
+            // rather than dead-ending on a message. EditingRow was captured above; the picked
+            // .dot/.rpt is uploaded + written to the cell in OnContractFileSelected.
+            await OpenContractFileBrowser();
+            return;
+        }
+
+        _pickHandler = rows =>
+        {
+            if (rows.Count > 0) { row.Contract_Document = PickCol(rows[0], "Document"); MarkDirty(row); }
+            return Task.CompletedTask;
+        };
+        // Single "Document" column (no hidden ID) — the displayed value IS the stored
+        // value, matching VB6 (.Text = the file the dialog returned).
+        await pickList.Open(
+            title: "Select Contract Document",
+            queries: BuildFileListQuery(files),
+            defaultItem: row.Contract_Document);
+    }
+
+    // The hidden <InputFile> used as the empty-folder file browser (VB6's GetOpenFileName).
+    private InputFile? contractFileInput;
+
+    // Open the OS file browser by clicking the hidden <InputFile> (the only way to raise a
+    // file-open dialog from a browser — same approach FImportExportAssemblies uses). The
+    // accept filter (.dot,.rpt) mirrors VB6's "Contract Documents (*.dot;*.rpt)" filter.
+    private async Task OpenContractFileBrowser()
+    {
+        await JSRuntime.InvokeVoidAsync("eval",
+            "document.querySelector('.fcomm-contract-file input[type=file]').click()");
+    }
+
+    // File chosen from the empty-folder browser. VB6 stored the file the dialog returned in the
+    // Contract_Document cell; on the web the server can't reach the client's path later, so we
+    // upload the .dot/.rpt into the Contract Documents templates folder (where the print engine
+    // and the FPickList both read from) and write its name to the cell — the same value a list
+    // pick would produce. Cancelling the dialog raises no event, so nothing changes (as in VB6).
+    private async Task OnContractFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null || EditingRow == null) return;
+
+        var ext = Path.GetExtension(file.Name).ToLowerInvariant();
+        if (ext != ".dot" && ext != ".rpt")
+        {
+            Notifications.Warning("A contract document must be a Word template (*.dot) or Crystal report (*.rpt).");
+            return;
+        }
+
+        try
+        {
+            var safeName = Path.GetFileName(file.Name);   // strip any path → no directory traversal
+            var dir = Path.Combine(Env.WebRootPath, "resources", "Estimating", "Contract Documents");
+            Directory.CreateDirectory(dir);
+            var dest = Path.Combine(dir, safeName);
+
+            await using (var fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
+            await using (var src = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024))
+                await src.CopyToAsync(fs);
+
+            EditingRow.Contract_Document = safeName;
+            MarkDirty(EditingRow);
+            Notifications.Info($"Contract document “{safeName}” added to the Contract Documents folder.");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[{Src}OnContractFileSelected]", SRCFILE);
+            Notifications.Error("Couldn't save the selected contract document", ex.Message);
+        }
+    }
+
+    // List the contract-template files in wwwroot/resources/Estimating/Contract
+    // Documents (VB6 filter: *.dot;*.rpt). File NAMES are returned (with extension,
+    // as VB6's .Text held the file the dialog returned). Sorted, de-duped.
+    private List<string> GetContractDocumentFiles()
+    {
+        var result = new List<string>();
+        try
+        {
+            var dir = Path.Combine(Env.WebRootPath, "resources", "Estimating", "Contract Documents");
+            if (Directory.Exists(dir))
+            {
+                var names = Directory.GetFiles(dir, "*.dot")
+                    .Concat(Directory.GetFiles(dir, "*.rpt"))
+                    .Select(Path.GetFileName)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Select(n => n!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+                result.AddRange(names);
+            }
+            else
+            {
+                Logger.LogWarning("[{Src}BrowseContractDocument] Contract Documents folder not found at {Dir}", SRCFILE, dir);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "[{Src}BrowseContractDocument] Couldn't list Contract Documents folder", SRCFILE);
+        }
+        return result;
+    }
+
+    // FPickList runs its list off a SQL query; turn the in-memory file names into a
+    // VALUES-backed single-column ("Document") result set so the picker shows them
+    // with its standard search/sort. The names are server filenames (not user input),
+    // but quote-escape defensively so an apostrophe in a file name stays safe. ("File"
+    // is a T-SQL reserved word, so the column is named Document.)
+    private static string BuildFileListQuery(List<string> files)
+    {
+        var rows = string.Join(",", files.Select(f => $"('{f.Replace("'", "''")}')"));
+        return $"SELECT Document FROM (VALUES {rows}) AS t(Document) ORDER BY Document";
     }
 
     private async Task<bool?> ShowConfirmDialog(string message, bool showCancel = false)
@@ -1761,177 +2209,118 @@
         return Convert.ToBoolean(value);
     }
 
-    private async Task<bool> ValidateTaxGroups()
-    {
-        var taxGroups = new[]
-        {
-            (LabourTaxGroup, "Labour"),
-            (MaterialTaxGroup, "Material"),
-            (SubContractTaxGroup, "Sub Contract"),
-            (EquipmentTaxGroup, "Equipment"),
-            (OverheadTaxGroup, "Overhead"),
-            (OtherTaxGroup, "Other")
-        };
-
-        foreach (var (value, name) in taxGroups)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                var isValid = await ValidateTaxGroup(value);
-                if (!isValid)
-                {
-                    await JSRuntime.InvokeVoidAsync("alert", $"Invalid Tax Group for {name}: {value}");
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
     private async Task<bool> ValidateTaxGroup(string taxGroup)
     {
         var sql = "SELECT TaxGroup FROM TaxGroups WHERE DivisionID = @DivisionID AND TaxGroup = @TaxGroup";
-        var result = await db.QueryAsync(sql, new { DivisionID, TaxGroup = taxGroup });
+        var result = await db.QueryAsync(sql, new { SessionState.DivisionID, TaxGroup = taxGroup });
         return result.Any();
     }
 
-    private async Task BrowsePrefix(int fieldIndex)
+    // ── Accounting "…" pickers — all via the shared FPickList ─────────────
+    // VB6 FCommunityAccounting text1_KeyDown F4 handlers; SetFieldValue maps the
+    // chosen value back into the bound accounting field by index.
+    private async Task OpenAcctPick(string title, string queries, string valueCol, string? hideColumns, int fieldIndex)
     {
-        if (IsIntacctSystem)
+        if (pickList == null) return;
+        _pickHandler = rows =>
         {
-            var sql = @"SELECT Description, GL_Prefix AS Location, '' AS Extra 
-                        FROM GL_Prefix 
-                        WHERE DivisionID = @DivisionID 
-                        ORDER BY Description";
-            await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", fieldIndex);
-        }
-        else
-        {
-            var sql = @"SELECT Description, GL_Prefix AS Prefix 
-                        FROM GL_Prefix 
-                        WHERE DivisionID = @DivisionID 
-                        ORDER BY Description";
-            await ShowPicklistDialog("Prefix List", sql, new { DivisionID }, "Prefix", fieldIndex);
-        }
+            if (rows.Count > 0) SetFieldValue(fieldIndex, PickCol(rows[0], valueCol));
+            return Task.CompletedTask;
+        };
+        await pickList.Open(title: title, queries: queries, hideColumns: hideColumns);
     }
 
+    // HHM-515: VB6 FCommunityAccounting only opens the GL-prefix picker for Timberline
+    // (Case 1,2); under the default asNone config the ellipsis is disabled on UI.
+    private Task BrowsePrefix(int fieldIndex)
+    {
+        if (!IsTimberline) return Task.CompletedTask;
+        return OpenAcctPick(
+            fieldIndex == 1 ? "Location" : "Prefix",
+            $"SELECT Description, GL_Prefix FROM GL_Prefix WHERE DivisionID = {SessionState.DivisionID} ORDER BY Description",
+            "GL_Prefix", null, fieldIndex);
+    }
+
+    // HHM-534: VB6 FCommunityAccounting text1_Validate (Case 5-10, frm 821-837) fires
+    // when focus leaves a tax-group box — which the "…" click forces. Non-empty text
+    // that isn't in taxgroups pops MsgBox "Invalid Tax Group" (vbExclamation) with
+    // Cancel=True, vetoing the move; a valid entry is rewritten with the DB casing
+    // (text1 = rs("taxgroup")). Mirror both before opening the picker.
     private async Task BrowseTaxGroup(int fieldIndex)
     {
-        var sql = @"SELECT TaxGroup, Description 
-                    FROM TaxGroups 
-                    WHERE DivisionID = @DivisionID 
-                    ORDER BY TaxGroup";
-        await ShowPicklistDialog("Tax Group", sql, new { DivisionID }, "TaxGroup", fieldIndex);
-    }
-
-    private async Task BrowseGLAccount()
-    {
-        var sql = @"SELECT Account, Description, AccountType 
-                    FROM GLAccounts 
-                    WHERE DivisionID = @DivisionID 
-                    ORDER BY Account";
-        await ShowPicklistDialog("GL Account", sql, new { DivisionID }, "Account", 15);
-    }
-
-    private async Task BrowseBankAccount()
-    {
-        var sql = @"SELECT BankAccount, Description 
-                    FROM BankAccounts 
-                    WHERE DivisionID = @DivisionID 
-                    ORDER BY BankAccount";
-        await ShowPicklistDialog("Bank Account", sql, new { DivisionID }, "BankAccount", 16);
-    }
-
-    private async Task BrowseIntacctEntity()
-    {
-        if (string.IsNullOrEmpty(_intacctEntitySQL))
+        var current = GetTaxGroupFieldValue(fieldIndex);
+        if (!string.IsNullOrEmpty(current))
         {
-            _intacctEntitySQL = @"SELECT EntityID, Name AS Description 
-                                  FROM IntacctEntities 
-                                  WHERE DivisionID = @DivisionID 
-                                  ORDER BY Name";
-        }
-        await ShowPicklistDialog("Entity", _intacctEntitySQL, new { DivisionID }, "EntityID", 11);
-    }
-
-    private async Task BrowseIntacctLocation()
-    {
-        var sql = @"SELECT Description, GL_Prefix AS Location 
-                    FROM GL_Prefix 
-                    WHERE DivisionID = @DivisionID 
-                    ORDER BY Description";
-        await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", 12);
-    }
-
-    private async Task BrowseIntacctParentJob()
-    {
-        if (string.IsNullOrEmpty(_intacctJobsSQL))
-        {
-            _intacctJobsSQL = @"SELECT JobID AS Job, Name AS Description 
-                                FROM IntacctJobs 
-                                WHERE DivisionID = @DivisionID 
-                                ORDER BY Name";
-        }
-        await ShowPicklistDialog("Parent Job", _intacctJobsSQL, new { DivisionID }, "Job", 13);
-    }
-
-    private async Task BrowseIntacctDepartment()
-    {
-        var sql = @"SELECT ID, Name 
-                    FROM IntacctDepartments 
-                    WHERE DivisionID = @DivisionID 
-                    ORDER BY ID";
-        await ShowPicklistDialog("Department", sql, new { DivisionID }, "ID", 14);
-    }
-
-    private async Task ShowPicklistDialog(string title, string sql, object parameters, string valueColumn, int fieldIndex)
-    {
-        try
-        {
-            var data = await db.QueryAsync(sql, parameters);
-            if (!data.Any())
+            var match = await LookupTaxGroup(current);
+            if (match == null)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "No items found.");
+                if (_messageBox != null)
+                    await _messageBox.ShowAsync("Invalid Tax Group", PRODUCT_NAME, Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "warning");
                 return;
             }
-            PicklistTitle = title;
-            PicklistData = data.ToList();
-            PicklistColumns = data.First().Keys.ToList();
-            var idCol = PicklistColumns[0];
-            var idName = PicklistColumns[1];
-            PickerItems = data.Select(r => new PickerItem
-            {
-                Id = r[idCol]?.ToString() ?? "",
-                Name = r[idName]?.ToString() ?? ""
-            }).ToList();
-
-            PicklistValueColumn = valueColumn;
-            CurrentPicklistFieldIndex = fieldIndex;
-            SelectedPicklistItem = null;
-
-            AccountingPickListDialogVisible = true;
-            StateHasChanged();
+            SetFieldValue(fieldIndex, match);
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading picklist: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading list: {ex.Message}");
-        }
+        await OpenAcctPick(
+            "Tax Group",
+            $"SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID = {SessionState.DivisionID} ORDER BY TaxGroup",
+            "TaxGroup", null, fieldIndex);
     }
 
-    private void OnPicklistRowSelected(RowSelectEventArgs<PickerItem> args)
+    // Current text of a tax-group field by its VB6 text1 index (5-10).
+    private string GetTaxGroupFieldValue(int index) => index switch
     {
-        SelectedPicklistItem = args.Data;
+        5 => LabourTaxGroup,
+        6 => MaterialTaxGroup,
+        7 => SubContractTaxGroup,
+        8 => EquipmentTaxGroup,
+        9 => OverheadTaxGroup,
+        10 => OtherTaxGroup,
+        _ => ""
+    };
+
+    // HHM-534: the stored TaxGroup (DB casing) for this division, or null when the
+    // text isn't a valid tax group — VB6 text1_Validate's taxgroups SELECT.
+    private async Task<string?> LookupTaxGroup(string taxGroup)
+    {
+        var sql = "SELECT TaxGroup FROM TaxGroups WHERE DivisionID = @DivisionID AND TaxGroup = @TaxGroup";
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, TaxGroup = taxGroup });
+        return rows.Count > 0 ? rows[0]["TaxGroup"]?.ToString() : null;
     }
 
-    private void OnPicklistSelect()
-    {
-        if (SelectedPicklistItem == null) return;
+    private Task BrowseGLAccount() => OpenAcctPick(
+        "GL Account",
+        $"SELECT Account, Description, AccountType FROM GLAccounts WHERE DivisionID = {SessionState.DivisionID} ORDER BY Account",
+        "Account", null, 15);
 
-        var value = SelectedPicklistItem.Id;
-        SetFieldValue(CurrentPicklistFieldIndex, value);
-        AccountingPickListDialogVisible = false;
-        StateHasChanged();
+    private Task BrowseBankAccount() => OpenAcctPick(
+        "Bank Account",
+        $"SELECT BankAccount, Description FROM BankAccounts WHERE DivisionID = {SessionState.DivisionID} ORDER BY BankAccount",
+        "BankAccount", null, 16);
+
+    private Task BrowseIntacctLocation() => OpenAcctPick(
+        "Location",
+        $"SELECT Description, GL_Prefix FROM GL_Prefix WHERE DivisionID = {SessionState.DivisionID} ORDER BY Description",
+        "GL_Prefix", null, 12);
+
+    private Task BrowseIntacctDepartment() => OpenAcctPick(
+        "Department",
+        $"SELECT ID, Name FROM IntacctDepartments WHERE DivisionID = {SessionState.DivisionID} ORDER BY ID",
+        "ID", null, 14);
+
+    // VB6 FCommunityAccounting Case 11/13: Entity + Parent Job come from the Intacct
+    // WEB SERVICE (Intacct_EntityList / Intacct.GetJobs), NOT DB tables — querying
+    // IntacctEntities/IntacctJobs threw SQL 208. No Intacct connection wired here, so
+    // surface that; the fields stay free-text entry.
+    private Task BrowseIntacctEntity()
+    {
+        Notifications.Info("Intacct Entity is selected via the Intacct web service, which isn't connected. Enter the Entity ID manually.");
+        return Task.CompletedTask;
+    }
+
+    private Task BrowseIntacctParentJob()
+    {
+        Notifications.Info("Intacct Parent Job is selected via the Intacct web service, which isn't connected. Enter the Parent Job manually.");
+        return Task.CompletedTask;
     }
 
     private void SetFieldValue(int index, string value)
@@ -2025,7 +2414,11 @@
         return data;
     }
 
-    private async Task OnAcctOkClick()
+    // HHM-532: VB6 FCommunityAccounting has no Ok/Cancel — closing the dialog (X or
+    // Escape) IS the save. ShowForm (frm 665-692) copies field() back into the grid
+    // row after Me.Show vbModal returns, whichever way the form was unloaded, and
+    // FCommunities.frm 717 sets mDirty=True right after. Apply + mark dirty on close.
+    private async Task OnAcctClose()
     {
         var data = GetCurrentData();
         if (EditingRow != null)
@@ -2034,12 +2427,7 @@
             MarkDirty(EditingRow);
         }
         AccountingDialogVisible = false;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task OnAcctCancelClick()
-    {
-        AccountingDialogVisible = false;
+        RequestGridKeyboardResume();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -2169,6 +2557,10 @@
         public string CustServiceID { get; set; } = "";
         public string DC_Sales_Person { get; set; } = "";
         public string Contract_Document { get; set; } = "";
+        public string PreconScheduleTemplate { get; set; } = "";
+        // D365-ABN financial dimension (D02_Function). Column hidden unless the
+        // accounting system is asD365_ABN — see IsD365ABN / LoadAccountingOptions.
+        public string ABN_D02Function { get; set; } = "";
         public string LabourTaxGroup { get; set; } = "";
         public string MaterialTaxGroup { get; set; } = "";
         public string SubContractTaxGroup { get; set; } = "";
