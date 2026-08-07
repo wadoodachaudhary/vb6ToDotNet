@@ -154,17 +154,38 @@
                the same set as our Views[] config. We surface it as a simple
                context-menu div positioned at the cursor, hidden until a
                right-click sets _showListContextMenu. *@
-            <div class="list-panel vb6-tree fx-treeview-vb6 fx-treeview-no-folder"
-                 tabindex="0"
-                 @ref="_listTreeRef"
-                 @onkeydown="OnListTreeKeyDown"
-                 @onkeydown:preventDefault="true"
+            <div class="list-panel ftakeoff-list-tree-host"
                  @oncontextmenu="OnListContextMenu"
                  @oncontextmenu:preventDefault="true">
-                @foreach (var node in ListNodes)
-                {
-                    @RenderListNode(node, 0)
-                }
+                @* VB6 gList has real Windows scrollbars (FTakeoff.frm designer: ScrollBars = 3);
+                   ShowLegacyScrollBar reproduces one as DOM so it can carry the OS scroll menu.
+                   Keep comments OUTSIDE the tag — Razor reads one inside an attribute list as a
+                   parameter name and the circuit dies at render. *@
+                <TreeGridControl @ref="_listTree"
+                                 TValue="ListTreeNode"
+                                 DataSource="@ListNodes"
+                                 IdMapping="@nameof(ListTreeNode.NodeId)"
+                                 ParentIdMapping="@nameof(ListTreeNode.ParentNodeId)"
+                                 TreeColumnIndex="0"
+                                 EnableCollapseAll="true"
+                                 AllowSelection="true"
+                                 ToggleOnRowClick="false"
+                                 ShowColumnHeaders="false"
+                                 ShowLeafNodeIcons="false"
+                                 Height="100%"
+                                 Width="100%"
+                                 CssClass="fx-treegrid-compact fx-treegrid-dotted-lines ftakeoff-list-tree"
+                                 ShowLegacyScrollBar="true"
+                                 NodeExpandIconStyle="GroupExpandIconStyle.PlusMinus"
+                                 TreatAsParent="IsListTreeParent"
+                                 RowCssClassSelector="GetListTreeRowCssClass"
+                                 RowDoubleClicked="OnListTreeRowDoubleClicked"
+                                 RowActivated="OnListTreeRowActivated"
+                                 Expanded="OnListTreeExpanded">
+                    <TreeGridColumn Field="@nameof(ListTreeNode.DisplayText)"
+                                    HeaderText="@CurrentViewName"
+                                    Width="100%" />
+                </TreeGridControl>
             </div>
             @if (_showListContextMenu)
             {
@@ -410,6 +431,7 @@
                     TypeAheadTargetField="@ItemsTypeAheadTargetField"
                     AvailableColumns="@GetTakeoffChooseColumnsSchema()"
                     OnColumnsChosen="@OnTakeoffColumnsChosenAsync"
+                    OnLayoutChanged="@OnItemsLayoutChangedAsync"
                     EventsRef="@itemsGridEvents">
                 <GridColumnsBase>
                     @* Every GridColumn's Visible attribute now defers to
@@ -446,7 +468,7 @@
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.OrderQty), true)" />
                     <GridColumn Field="@nameof(TakeoffItemRow.OrderUOM)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OrderUOM), "Order UOM")" Width="@ColWidth(nameof(TakeoffItemRow.OrderUOM), "80px")" AllowEditing="false"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.OrderUOM), false)" />
-                    <GridColumn Field="@nameof(TakeoffItemRow.ConversionFactor)" HeaderText="@ColCaption(nameof(TakeoffItemRow.ConversionFactor), "Conversion Factor")" Width="@ColWidth(nameof(TakeoffItemRow.ConversionFactor), "90px")" Format="N4" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false"
+                    <GridColumn Field="@nameof(TakeoffItemRow.ConversionFactor)" HeaderText="@ColCaption(nameof(TakeoffItemRow.ConversionFactor), "Conversion Factor")" Width="@ColWidth(nameof(TakeoffItemRow.ConversionFactor), "90px")" Format="N4" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.ConversionFactor), false)" />
                     <GridColumn Field="@nameof(TakeoffItemRow.WastePercent)" HeaderText="@ColCaption(nameof(TakeoffItemRow.WastePercent), "Waste Percent")" Width="@ColWidth(nameof(TakeoffItemRow.WastePercent), "70px")" Format="N0" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.WastePercent), false)" />
@@ -460,7 +482,8 @@
                        respects AppGridLayout — both must agree to show. *@
                     <GridColumn Field="@nameof(TakeoffItemRow.OverridePrice)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OverridePrice), "Override Price")" Width="@ColWidth(nameof(TakeoffItemRow.OverridePrice), "100px")" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
                                 Visible="@(IsEstimatesView && IsColVisible(nameof(TakeoffItemRow.OverridePrice), false))" />
-                    <GridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="@ColCaption(nameof(TakeoffItemRow.POIndex), "POIndex")" Width="@ColWidth(nameof(TakeoffItemRow.POIndex), "80px")" TextAlign="TextAlign.Right" AllowEditing="true"
+                    <GridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="@ColCaption(nameof(TakeoffItemRow.POIndex), "POIndex")" Width="@ColWidth(nameof(TakeoffItemRow.POIndex), "80px")" TextAlign="TextAlign.Right" AllowEditing="false"
+                                ShowEditButton="true"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.POIndex), true)" />
                     <GridColumn Field="@nameof(TakeoffItemRow.Location)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Location), "Location")" Width="@ColWidth(nameof(TakeoffItemRow.Location), "100px")" AllowEditing="true"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.Location), false)" />
@@ -587,7 +610,7 @@
    findQry — same lookup surface here. OnSelected lands the chosen ID in
    OnFindResult, which today just notifies; future work can carry the ID
    into AddItem. *@
-<FPickList @ref="pickList" OnSelected="OnFindResult" />
+<FPickList @ref="pickList" OnSelected="OnFindResult" OnCancel="OnTakeoffPickCancelled" />
 
 @* In-app message box for Save / zero-qty / discard prompts. Matches the
    FAssembly / FItemChart pattern so all dialogs share the same chrome
@@ -837,6 +860,28 @@
         return Task.CompletedTask;
     }
 
+    // VB6: IniPutGrid(Me, gItems). The resize/reorder/hide/rename lands on the
+    // snapshot, not in the presenter's layout dict, so it has to be merged in
+    // before the write. Layout keys are raw colkeys that already equal the
+    // GridColumn.Field names (including WBSnn), so no field resolver is needed.
+    private async Task OnItemsLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || _itemsGridLayout.Count == 0) return;
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FTakeoff", "gItems", instanceKey: null,
+                _itemsGridLayout, snapshot, layoutFieldResolver: null, staticNames: false);
+
+            _itemsGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FTakeoff gItems layout");
+        }
+    }
+
     // ── List-panel right-click menu (VB6 FTakeoff: gList_MouseDown → mnuTakeoff) ──
     // Right-clicking the assembly list pops a menu that switches the current
     // Views[] entry. Tracks visibility + cursor position; handlers below.
@@ -991,7 +1036,9 @@
     private List<TakeoffItemRow> ItemsData = new();
     private List<HFVariableRow> HFVariablesData = new();
     private List<TLVariableRow> TLVariablesData = new();
+    private TreeGridControl<ListTreeNode>? _listTree;
     private List<ListTreeNode> ListNodes = new();
+    private int _listNodeIdCounter;
     /// <summary>Monotonically increasing index used to generate unique SQL
     /// parameter names for the parameterized drill-down WHERE fragments.</summary>
     private int node_index_counter;
@@ -1373,6 +1420,7 @@
             _activeEditColumn = args.ColumnName;
         });
         itemsGridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<TakeoffItemRow>>(this, OnItemsTypeAheadCommit);
+        itemsGridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<TakeoffItemRow>>(this, OnItemsEditButtonClick);
 
         // VB6 gHFVariables_BeforeEdit "value" case (frm:2977-2995): non-numeric
         // input is rejected outright; values outside the variable's Min/Max get
@@ -1626,7 +1674,9 @@
         {
             if (clearTree)
             {
-                ListNodes.Clear();
+                ListNodes = new List<ListTreeNode>();
+                _listNodeIdCounter = 0;
+                _listTreeFocusDone = false;
                 node_index_counter = 0;
                 // VB6 LoadList (frm:2086): switching views blanks the variables
                 // grid + help. The RHS shows nothing until a leaf node is
@@ -1669,6 +1719,8 @@
                 var keyVal = row["KeyVal"] ?? DBNull.Value;
                 var node = new ListTreeNode
                 {
+                    NodeId = ++_listNodeIdCounter,
+                    ParentNodeId = null,
                     KeyValue = row["KeyVal"]?.ToString() ?? "",
                     DisplayText = (row["DisplayVal"]?.ToString() ?? "").Trim(),
                     KeyFieldName = keyFld,
@@ -1680,6 +1732,7 @@
                 };
                 ListNodes.Add(node);
             }
+            ListNodes = ListNodes.ToList();
         }
         catch (Exception ex)
         {
@@ -1690,57 +1743,6 @@
             IsLoading = false;
             StateHasChanged();
         }
-    }
-
-    // ── Render Tree Node ──────────────────────────────────────
-    private RenderFragment RenderListNode(ListTreeNode node, int depth) => __builder =>
-    {
-        <div class="vb6-tree-item @(depth == 0 ? "root" : "") @(node.HasChildren ? "branch" : "leaf") @(node.Expanded ? "expanded" : "collapsed")"
-             style="--tree-depth:@depth;">
-            <div class="tree-node @(node.IsSelected ? "selected" : "") @(node.IsBold ? "bold" : "")"
-                 @ondblclick="() => OnListNodeDblClick(node)"
-                 @onclick="() => OnListNodeClick(node)">
-                @if (node.HasChildren)
-                {
-                    <span class="tree-toggle has-children" @onclick="() => ToggleListNode(node)" @onclick:stopPropagation="true">
-                        @(node.Expanded ? "-" : "+")
-                    </span>
-                    <span class="tree-folder-icon @(node.Expanded ? "open" : "closed")" aria-hidden="true"></span>
-                }
-                else
-                {
-                    <span class="tree-toggle leaf">&nbsp;</span>
-                    <span class="tree-folder-spacer" aria-hidden="true"></span>
-                }
-                <span class="tree-label">@node.DisplayText</span>
-            </div>
-            @if (node.Expanded && node.Children != null)
-            {
-                <div class="tree-children">
-                @foreach (var child in node.Children)
-                {
-                    @RenderListNode(child, depth + 1)
-                }
-                </div>
-            }
-        </div>
-    };
-
-    private async Task ToggleListNode(ListTreeNode node)
-    {
-        if (node.Expanded)
-        {
-            node.Expanded = false;
-        }
-        else
-        {
-            if (node.Children == null || node.Children.Count == 0)
-            {
-                await LoadChildNodes(node);
-            }
-            node.Expanded = true;
-        }
-        StateHasChanged();
     }
 
     private async Task LoadChildNodes(ListTreeNode parentNode)
@@ -1784,7 +1786,7 @@
             sql = sql.Replace("|", ",");
 
             var rows = await db.QueryAsync(sql, parentNode.WhereParams);
-            parentNode.Children = new List<ListTreeNode>();
+            var childNodes = new List<ListTreeNode>();
             foreach (var row in rows)
             {
                 // Parameterized — see LoadListAsync for the rationale.
@@ -1796,6 +1798,8 @@
                 };
                 var child = new ListTreeNode
                 {
+                    NodeId = ++_listNodeIdCounter,
+                    ParentNodeId = parentNode.NodeId,
                     KeyValue = row["KeyVal"]?.ToString() ?? "",
                     DisplayText = (row["DisplayVal"]?.ToString() ?? "").Trim(),
                     KeyFieldName = keyFld,
@@ -1805,8 +1809,10 @@
                     WhereParams = childParams,
                     ViewIndex = parentNode.ViewIndex
                 };
-                parentNode.Children.Add(child);
+                childNodes.Add(child);
             }
+            parentNode.ChildrenLoaded = true;
+            ListNodes = ListNodes.Concat(childNodes).ToList();
         }
         catch (Exception ex)
         {
@@ -1814,129 +1820,51 @@
         }
     }
 
-    private void OnListNodeClick(ListTreeNode node)
-    {
-        ClearListSelection(ListNodes);
-        node.IsSelected = true;
-        StateHasChanged();
-    }
-
-    // VB6 gList keyboard (FTakeoff.frm:1200-1309): Up/Down walk the VISIBLE rows,
-    // Enter expands/collapses a branch (or loads a leaf — same as double-click),
-    // Left collapses / goes to the parent, Right expands / goes to the first
-    // child (HHM-642).
-    private void FlattenVisibleListNodes(List<ListTreeNode> nodes, List<ListTreeNode> into)
-    {
-        foreach (var n in nodes)
-        {
-            into.Add(n);
-            if (n.Expanded && n.Children != null)
-                FlattenVisibleListNodes(n.Children, into);
-        }
-    }
-
-    private ListTreeNode? FindListParent(List<ListTreeNode> nodes, ListTreeNode child)
-    {
-        foreach (var n in nodes)
-        {
-            if (n.Children != null)
-            {
-                if (n.Children.Contains(child)) return n;
-                var deeper = FindListParent(n.Children, child);
-                if (deeper != null) return deeper;
-            }
-        }
-        return null;
-    }
-
-    // HHM-642: give the list tree keyboard focus as soon as it has nodes, so
-    // arrow keys and Enter work right when the window opens (VB6 gList gets
-    // focus on Form_Load) — without this the user had to click the tree first.
-    private ElementReference _listTreeRef;
+    // HHM-642: select and focus the first FlexKit tree row when the dialog opens.
     private bool _listTreeFocusDone;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_listTreeFocusDone && ListNodes.Count > 0)
+        if (!_listTreeFocusDone && ListNodes.Count > 0 && _listTree != null)
         {
             _listTreeFocusDone = true;
-            try { await _listTreeRef.FocusAsync(); } catch { /* pane not attached yet */ }
+            await _listTree.SelectRecordAsync(ListNodes[0]);
+            await _listTree.FocusAsync();
         }
     }
 
-    private async Task OnListTreeKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    private bool IsListTreeParent(ListTreeNode node) => node.HasChildren;
+
+    private string? GetListTreeRowCssClass(ListTreeNode node, int rowIndex) =>
+        node.IsBold ? "ftakeoff-tree-loaded-node" : null;
+
+    private async Task OnListTreeExpanded(TreeNodeEventArgs<ListTreeNode> args)
     {
-        var visible = new List<ListTreeNode>();
-        FlattenVisibleListNodes(ListNodes, visible);
-        if (visible.Count == 0) return;
-
-        var current = visible.FirstOrDefault(n => n.IsSelected) ?? visible[0];
-        var idx = visible.IndexOf(current);
-
-        switch (e.Key)
-        {
-            case "ArrowDown":
-                if (idx < visible.Count - 1)
-                {
-                    ClearListSelection(ListNodes);
-                    visible[idx + 1].IsSelected = true;
-                    StateHasChanged();
-                }
-                break;
-            case "ArrowUp":
-                if (idx > 0)
-                {
-                    ClearListSelection(ListNodes);
-                    visible[idx - 1].IsSelected = true;
-                    StateHasChanged();
-                }
-                break;
-            case "Enter":
-                await OnListNodeDblClick(current);
-                break;
-            case "ArrowLeft":
-                if (current.HasChildren && current.Expanded)
-                {
-                    current.Expanded = false;
-                    StateHasChanged();
-                }
-                else
-                {
-                    var parent = FindListParent(ListNodes, current);
-                    if (parent != null)
-                    {
-                        ClearListSelection(ListNodes);
-                        parent.IsSelected = true;
-                        StateHasChanged();
-                    }
-                }
-                break;
-            case "ArrowRight":
-                if (current.HasChildren && !current.Expanded)
-                {
-                    await ToggleListNode(current);
-                }
-                else if (current.Expanded && current.Children is { Count: > 0 })
-                {
-                    ClearListSelection(ListNodes);
-                    current.Children[0].IsSelected = true;
-                    StateHasChanged();
-                }
-                break;
-        }
+        if (args.Data is { ChildrenLoaded: false } node)
+            await LoadChildNodes(node);
     }
 
-    private async Task OnListNodeDblClick(ListTreeNode node)
+    private Task OnListTreeRowDoubleClicked(TreeRowSelectEventArgs<ListTreeNode> args) =>
+        ActivateListTreeNodeAsync(args);
+
+    private Task OnListTreeRowActivated(TreeRowSelectEventArgs<ListTreeNode> args) =>
+        ActivateListTreeNodeAsync(args);
+
+    private async Task ActivateListTreeNodeAsync(TreeRowSelectEventArgs<ListTreeNode> args)
     {
+        var node = args.Data;
+        if (node == null) return;
+
         var view = Views[node.ViewIndex];
         var keyFields = view.KeyFlds?.Split('|') ?? Array.Empty<string>();
         var levels = keyFields.Length;
 
         // Branch nodes toggle; leaf nodes always load/add on a simple double-click.
         // Open Jobs keeps the VB6 exception that group nodes can load too.
-        if (node.HasChildren && node.Level + 1 < levels && node.ViewIndex != 5)
+        if (args.HasChildren && node.Level + 1 < levels && node.ViewIndex != 5)
         {
-            await ToggleListNode(node);
+            if (_listTree != null)
+                await _listTree.SetExpandedAsync(node, !args.IsExpanded);
             return;
         }
 
@@ -1951,22 +1879,10 @@
         await LoadAssemblyOrItem(node);
     }
 
-    private void ClearListSelection(List<ListTreeNode> nodes)
-    {
-        foreach (var n in nodes)
-        {
-            n.IsSelected = false;
-            if (n.Children != null) ClearListSelection(n.Children);
-        }
-    }
-
     private void ClearListBold(List<ListTreeNode> nodes)
     {
         foreach (var n in nodes)
-        {
             n.IsBold = false;
-            if (n.Children != null) ClearListBold(n.Children);
-        }
     }
 
     // ── Load Assembly or Item ─────────────────────────────────
@@ -2026,10 +1942,13 @@
         var whereClause = node.WhereClause ?? "";
         var sql = $@"
             SELECT m.assembly, m.description AS assemblydescription, m.assemblytype, m.model, m.optionid,
-                   i.phase, i.item, d.itemchart, i.description, d.formula, d.TakeoffQty,
-                   i.takeoffuom, i.conversionfactor, i.orderuom,
+                   i.phase, i.item, i.itemnumber, d.itemchart, i.description, d.formula, d.TakeoffQty,
+                   i.takeoffuom, ISNULL(NULLIF(d.conversionfactor, 0), i.conversionfactor) conversionfactor,
+                   i.conversionfactor itemconversionfactor, i.orderuom,
                    isnull(nullif(i.JCCostCode,''),isnull(p.JCCostCode,'')) jccostcode,
-                   i.jccategory, i.altjccostcode, i.altjccategory, i.price,
+                   ISNULL(cc.Description, '') jccostcodedesc,
+                   i.jccategory, ISNULL(cat.Description, '') jccategorydesc,
+                   i.altjccostcode, i.altjccategory, i.price,
                    i.roundto, i.rounddir, isnull(nullif(d.POIndex,''),isnull(i.POIndex,'')) poindex,
                    i.wastepercent,
                    isnull(nullif(d.notes,''),i.notes) Notes,
@@ -2038,6 +1957,8 @@
             LEFT OUTER JOIN tbldbassemblydetails d ON(m.DivisionID = d.DivisionID AND m.community=d.community AND m.model=d.model AND m.optionid=d.optionid AND m.assembly=d.assembly)
             LEFT OUTER JOIN tblphaseitem i ON(i.DivisionID = d.DivisionID AND i.phase=d.phase AND i.item=d.item)
             LEFT OUTER JOIN tblPOIndex p ON(p.DivisionID = d.DivisionID AND isnull(nullif(d.POIndex,''),isnull(i.POIndex,''))=p.POIndex)
+            LEFT OUTER JOIN StandardCostCodes cc ON(cc.DivisionID = i.DivisionID AND cc.CostCode=isnull(nullif(i.JCCostCode,''),isnull(p.JCCostCode,'')))
+            LEFT OUTER JOIN StandardCategories cat ON(cat.DivisionID = i.DivisionID AND cat.Category=i.JCCategory)
             WHERE m.DivisionID = @DivisionID {whereClause}";
 
         var sqlParams = new Dictionary<string, object>(node.WhereParams)
@@ -2070,6 +1991,7 @@
                 Model = row["model"]?.ToString() ?? "",
                 Phase = row["phase"]?.ToString() ?? "",
                 Item = row["item"]?.ToString() ?? "",
+                ItemNumber = row["itemnumber"]?.ToString() ?? "",
                 Description = row["description"]?.ToString() ?? "",
                 Job = mJob,
                 WastePercent = ToDouble(row["wastepercent"]),
@@ -2079,8 +2001,11 @@
                 OrderQty = 0,
                 OrderUOM = row["orderuom"]?.ToString() ?? "",
                 ConversionFactor = ToDouble(row["conversionfactor"]),
+                ItemConversionFactor = ToDouble(row["itemconversionfactor"]),
                 JCCostCode = row["jccostcode"]?.ToString() ?? "",
+                JCCostCodeDesc = row["jccostcodedesc"]?.ToString() ?? "",
                 JCCategory = row["jccategory"]?.ToString() ?? "",
+                JCCategoryDesc = row["jccategorydesc"]?.ToString() ?? "",
                 Price = ToDouble(row["price"]),
                 RoundTo = ToDouble(row["roundto"]),
                 RoundDir = ToDouble(row["rounddir"]),
@@ -2138,7 +2063,9 @@
             .Replace(" AND assembly = ", " AND estassemblyid = ", StringComparison.OrdinalIgnoreCase);
 
         var sql = $@"
-            SELECT * FROM estimateditems
+            SELECT e.*, pi.ConversionFactor AS ItemConversionFactor
+            FROM estimateditems e
+            LEFT OUTER JOIN tblPhaseItem pi ON(pi.DivisionID=e.DivisionID AND pi.Phase=e.EstPhase AND pi.Item=e.EstItem)
             WHERE (isnull(BudgetDeleted,0)=0 or isnull(PODeleted,0)=0)
             {whereClause}";
 
@@ -2165,6 +2092,7 @@
                 Model = row["Model"]?.ToString() ?? "",
                 Phase = row["EstPhase"]?.ToString() ?? "",
                 Item = row["EstItem"]?.ToString() ?? "",
+                ItemNumber = row["ItemNumber"]?.ToString() ?? "",
                 Description = row["ItemDesc"]?.ToString() ?? "",
                 RawFormula = row["formula"]?.ToString() ?? "",
                 TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
@@ -2172,8 +2100,11 @@
                 OrderQty = ToDouble(row["POQty"]),
                 OrderUOM = row["OrderUOM"]?.ToString() ?? "",
                 ConversionFactor = ToDouble(row["ConversionFactor"]),
+                ItemConversionFactor = ToDouble(row["ItemConversionFactor"]),
                 JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+                JCCostCodeDesc = row["JCCostCodeDesc"]?.ToString() ?? "",
                 JCCategory = row["JCCategory"]?.ToString() ?? "",
+                JCCategoryDesc = row["JCCategoryDesc"]?.ToString() ?? "",
                 Price = ToDouble(row["PORate"]),
                 RoundTo = ToDouble(row["RoundTo"]),
                 RoundDir = ToDouble(row["RoundDir"]),
@@ -2222,6 +2153,7 @@
             AssemblyDescription = mAssemblyDescription,
             Phase = row["Phase"]?.ToString() ?? "",
             Item = row["Item"]?.ToString() ?? "",
+            ItemNumber = row["ItemNumber"]?.ToString() ?? "",
             Description = row["ItemDesc"]?.ToString() ?? "",
             RawFormula = row["Formula"]?.ToString() ?? "",
             TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
@@ -2229,8 +2161,11 @@
             OrderQty = 0,
             OrderUOM = row["OrderUOM"]?.ToString() ?? "",
             ConversionFactor = ToDouble(row["ConversionFactor"]),
+            ItemConversionFactor = ToDouble(row["ConversionFactor"]),
             JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+            JCCostCodeDesc = row["JCCostCodeDesc"]?.ToString() ?? "",
             JCCategory = row["JCCategory"]?.ToString() ?? "",
+            JCCategoryDesc = row["JCCategoryDesc"]?.ToString() ?? "",
             Price = ToDouble(row["Price"]),
             WastePercent = (row["WastePercent"] == null || row["WastePercent"] == DBNull.Value)
                 ? (double?)null : ToDouble(row["WastePercent"]),
@@ -2481,8 +2416,12 @@
         switch (field)
         {
             case nameof(TakeoffItemRow.TakeoffQty):
-            case nameof(TakeoffItemRow.ConversionFactor):
                 // Recalc OrderQty from the (possibly new) TakeoffQty.
+                RecalculateOrderQty(item);
+                break;
+
+            case nameof(TakeoffItemRow.ConversionFactor):
+                item.ConversionFactor = Math.Abs(item.ConversionFactor);
                 RecalculateOrderQty(item);
                 break;
 
@@ -2512,10 +2451,6 @@
     // pair stays consistent (TakeoffQty edit → OrderQty recalc,
     // OrderQty edit → TakeoffQty back-solve).
     //
-    // Restricted to the numeric Qty columns by design: ConversionFactor /
-    // Price / WastePercent live on the source EstimatingItems record
-    // and shouldn't be hand-edited mid-takeoff. Adding more fan-out
-    // targets is a one-line case-statement extension below.
     private async Task OnItemsTypeAheadCommit(TypeAheadCommitArgs<TakeoffItemRow> args)
     {
         var field = !string.IsNullOrEmpty(args.ColumnName)
@@ -2523,7 +2458,8 @@
             : ItemsTypeAheadTargetField;
 
         if (field != nameof(TakeoffItemRow.TakeoffQty)
-            && field != nameof(TakeoffItemRow.OrderQty))
+            && field != nameof(TakeoffItemRow.OrderQty)
+            && field != nameof(TakeoffItemRow.ConversionFactor))
             return;
 
         var qty = ParseDouble(args.Value);
@@ -2544,6 +2480,11 @@
                     double wasteFactor = (100 + (item.WastePercent ?? 0)) / 100.0;
                     if (wasteFactor == 0) wasteFactor = 1;
                     item.TakeoffQty = Math.Round(item.OrderQty / wasteFactor / conversion, 5);
+                    break;
+
+                case nameof(TakeoffItemRow.ConversionFactor):
+                    item.ConversionFactor = Math.Abs(qty);
+                    RecalculateOrderQty(item);
                     break;
             }
             applied++;
@@ -2908,7 +2849,24 @@
     /// follow-up — uses Views[mViewIndex].KeyFlds to descend.</summary>
     private Task OnFindResult(List<IDictionary<string, object>> rows)
     {
-        if (rows == null || rows.Count == 0) { _takeoffPickContext = ""; return Task.CompletedTask; }
+        if (rows == null || rows.Count == 0)
+        {
+            ClearTakeoffPickState();
+            return Task.CompletedTask;
+        }
+
+        if (_takeoffPickContext == "POIndex")
+        {
+            var target = _poIndexPickRow;
+            var pick = rows[0];
+            ClearTakeoffPickState();
+            if (target != null)
+            {
+                target.POIndex = PickValue(pick, "POIndex");
+                StateHasChanged();
+            }
+            return Task.CompletedTask;
+        }
 
         // ── Substitute Item (VB6 FTakeoff.frm:2814-2833): overwrite the selected grid
         // rows' item identity + master-data fields with the picked tblPhaseItem row;
@@ -2994,7 +2952,39 @@
     private bool _showItemsGridMenu;
     private double _itemsGridMenuX, _itemsGridMenuY;
     private string _takeoffPickContext = "";
+    private TakeoffItemRow? _poIndexPickRow;
     private List<TakeoffItemRow> _itemsGridMenuSelection = new();
+
+    private async Task OnItemsEditButtonClick(CellEditButtonArgs<TakeoffItemRow> args)
+    {
+        if (args.Data == null
+            || !args.ColumnName.Equals(nameof(TakeoffItemRow.POIndex), StringComparison.OrdinalIgnoreCase)
+            || pickList == null)
+            return;
+
+        _poIndexPickRow = args.Data;
+        _takeoffPickContext = "POIndex";
+        await pickList.Open(
+            title: "POIndex",
+            queries: $"SELECT POIndex FROM tblPOIndex WHERE DivisionID = {SessionState.DivisionID} ORDER BY POIndex",
+            multiSelect: false,
+            defaultItem: args.Data.POIndex);
+    }
+
+    private Task OnTakeoffPickCancelled()
+    {
+        ClearTakeoffPickState();
+        return Task.CompletedTask;
+    }
+
+    private void ClearTakeoffPickState()
+    {
+        _takeoffPickContext = "";
+        _poIndexPickRow = null;
+    }
+
+    private static string PickValue(IDictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var value) && value != null ? value.ToString() ?? "" : "";
 
     private void OnItemsGridContextMenu(MouseEventArgs e)
     {
@@ -3311,13 +3301,14 @@ LEFT OUTER JOIN StandardCategories cat ON(i.DivisionID = cat.DivisionID and i.jc
 
     public class ListTreeNode
     {
+        public int NodeId { get; set; }
+        public int? ParentNodeId { get; set; }
         public string KeyValue { get; set; } = "";
         public string DisplayText { get; set; } = "";
         public string KeyFieldName { get; set; } = "";
         public int Level { get; set; }
         public bool HasChildren { get; set; }
-        public bool Expanded { get; set; }
-        public bool IsSelected { get; set; }
+        public bool ChildrenLoaded { get; set; }
         public bool IsBold { get; set; }
         public string WhereClause { get; set; } = "";
         /// <summary>SQL parameter values referenced by <see cref="WhereClause"/>.
@@ -3325,7 +3316,6 @@ LEFT OUTER JOIN StandardCategories cat ON(i.DivisionID = cat.DivisionID and i.jc
         /// dictionary and adds its own @lvlN parameter.</summary>
         public Dictionary<string, object> WhereParams { get; set; } = new();
         public int ViewIndex { get; set; }
-        public List<ListTreeNode>? Children { get; set; }
     }
 
     public class TakeoffItemRow
@@ -3335,6 +3325,7 @@ LEFT OUTER JOIN StandardCategories cat ON(i.DivisionID = cat.DivisionID and i.jc
         public string Model { get; set; } = "";
         public string Phase { get; set; } = "";
         public string Item { get; set; } = "";
+        public string ItemNumber { get; set; } = "";
         public string Description { get; set; } = "";
         public string Job { get; set; } = "";
         public double TakeoffQty { get; set; }
@@ -3342,13 +3333,16 @@ LEFT OUTER JOIN StandardCategories cat ON(i.DivisionID = cat.DivisionID and i.jc
         public double OrderQty { get; set; }
         public string OrderUOM { get; set; } = "";
         public double ConversionFactor { get; set; } = 1;
+        public double ItemConversionFactor { get; set; }
         // HHM-613: nullable — VB6's Quotes view never fills the WastePercent
         // cell, so a quote row shows BLANK, not 0.
         public double? WastePercent { get; set; }
         public double RoundTo { get; set; }
         public double RoundDir { get; set; }
         public string JCCostCode { get; set; } = "";
+        public string JCCostCodeDesc { get; set; } = "";
         public string JCCategory { get; set; } = "";
+        public string JCCategoryDesc { get; set; } = "";
         public string JCExtra { get; set; } = "";
         public double Price { get; set; }
         /// <summary>Per-row price override applied when the active view is "Estimates".</summary>

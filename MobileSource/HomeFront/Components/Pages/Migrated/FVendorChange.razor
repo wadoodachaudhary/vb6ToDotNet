@@ -1,166 +1,20 @@
+@namespace HomeFront.Components.Pages
 @page "/vendor-change"
 @rendermode InteractiveServer
 
 @using System.Text
 @using System.Linq
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FVendorChange> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>Work Reassignment Wizard - HomeFront</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 980px;
-        margin: 20px auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        display: flex;
-        flex-direction: column;
-        min-height: 600px;
-    }
-
-    .wizard-header {
-        padding: 16px 20px;
-        border-bottom: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .wizard-title {
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: 4px;
-    }
-
-    .wizard-desc {
-        font-size: 13px;
-        color: #6c757d;
-    }
-
-    .wizard-body {
-        flex: 1;
-        padding: 20px;
-    }
-
-    .wizard-footer {
-        border-top: 1px solid #dee2e6;
-        padding: 10px 16px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        background: #f8f9fa;
-    }
-
-    .step-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 6px;
-    }
-
-    .step-desc {
-        font-size: 13px;
-        color: #6c757d;
-        margin-bottom: 12px;
-    }
-
-    .form-field {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        margin-bottom: 12px;
-    }
-
-    .form-field label {
-        min-width: 90px;
-        text-align: right;
-        font-weight: 600;
-        padding-top: 6px;
-        font-size: 13px;
-    }
-
-    .vendor-picker {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .vendor-picker textarea {
-        width: 100%;
-        min-height: 120px;
-        resize: vertical;
-        padding: 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #f8f9fa;
-    }
-
-    .checkbox-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-left: 10px;
-        font-size: 13px;
-    }
-
-    .checkbox-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .step-note {
-        color: #6c757d;
-        font-size: 13px;
-        margin-top: 10px;
-    }
-
-    .dirty-indicator {
-        color: #dc3545;
-        font-weight: 700;
-        text-align: center;
-        display: block;
-    }
-
-    .loading-panel {
-        padding: 16px;
-        text-align: center;
-        color: #6c757d;
-    }
-
-    .picker-table {
-        max-height: 400px;
-        overflow: auto;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-    }
-
-    .picker-table table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-    }
-
-    .picker-table th, .picker-table td {
-        padding: 6px 10px;
-        border-bottom: 1px solid #eee;
-    }
-
-    .picker-table th {
-        background: #f8f9fa;
-        text-align: left;
-        font-weight: 600;
-    }
-
-    .grid-note {
-        margin-top: 8px;
-        font-size: 12px;
-        color: #6c757d;
-    }
-</style>
 
 <div class="wizard-container">
     <div class="wizard-header">
@@ -177,8 +31,8 @@
             <div class="form-field">
                 <label>Vendor(s)</label>
                 <div class="vendor-picker">
-                    <textarea readonly>@SelectedVendorNames</textarea>
-                    <button class="btn btn-outline-primary btn-sm" @onclick="OpenVendorPicker">Choose...</button>
+                    <TextAreaControl Value="@SelectedVendorNames" Enabled="false" CssClass="vendor-names" />
+                    <ButtonControl CssClass="btn btn-outline-primary btn-sm" BareStyle="true" OnClick="OpenVendorPicker">Choose...</ButtonControl>
                 </div>
             </div>
 
@@ -191,24 +45,19 @@
 
             <div class="checkbox-list">
                 <div class="checkbox-row">
-                    <input type="checkbox" checked disabled />
-                    <span>Vendor</span>
+                    <CheckBoxControl Checked="true" Disabled="true" Label="Vendor" />
                 </div>
                 <div class="checkbox-row">
-                    <input type="checkbox" checked disabled />
-                    <span>Job</span>
+                    <CheckBoxControl Checked="true" Disabled="true" Label="Job" />
                 </div>
                 <div class="checkbox-row">
-                    <input type="checkbox" @bind="GroupByPOIndex" />
-                    <span>PO Index</span>
+                    <CheckBoxControl @bind-Checked="GroupByPOIndex" Label="PO Index" />
                 </div>
                 <div class="checkbox-row">
-                    <input type="checkbox" @bind="GroupByCostCode" />
-                    <span>Cost Code</span>
+                    <CheckBoxControl @bind-Checked="GroupByCostCode" Label="Cost Code" />
                 </div>
                 <div class="checkbox-row">
-                    <input type="checkbox" @bind="GroupByCategory" />
-                    <span>Category</span>
+                    <CheckBoxControl @bind-Checked="GroupByCategory" Label="Category" />
                 </div>
             </div>
         }
@@ -225,23 +74,23 @@
             }
             else
             {
-                <HfGrid @ref="WorkGrid"
+                <GridControl @ref="WorkGrid"
                         TValue="ReassignRow"
                         DataSource="@WorkData"
                         AllowSorting="true"
                         AllowResizing="true"
                         AllowSelection="true"
                         Height="360px">
-                    <HfGridColumnsBase>
-                        <HfGridColumn Field="@nameof(ReassignRow.Dirty)" HeaderText="*" Width="40px">
+                    <GridColumnsBase>
+                        <GridColumn Field="@nameof(ReassignRow.Dirty)" HeaderText="*" Width="40px">
                             <Template>
                                 @{
                                     var row = (ReassignRow)context;
                                     <span class="dirty-indicator">@((row.Dirty) ? "●" : "")</span>
                                 }
                             </Template>
-                        </HfGridColumn>
-                        <HfGridColumn Field="@nameof(ReassignRow.CompanyName)" HeaderText="Vendor" Width="260px">
+                        </GridColumn>
+                        <GridColumn Field="@nameof(ReassignRow.CompanyName)" HeaderText="Vendor" Width="260px">
                             <Template>
                                 @{
                                     var row = (ReassignRow)context;
@@ -257,18 +106,18 @@
                                     </select>
                                 }
                             </Template>
-                        </HfGridColumn>
-                        <HfGridColumn Field="@nameof(ReassignRow.Community)" HeaderText="Community" Width="110px" />
-                        <HfGridColumn Field="@nameof(ReassignRow.CommunityDesc)" HeaderText="Community Desc" Width="200px" />
-                        <HfGridColumn Field="@nameof(ReassignRow.Job)" HeaderText="Job" Width="90px" />
-                        <HfGridColumn Field="@nameof(ReassignRow.JobDesc)" HeaderText="Job Desc" Width="200px" />
-                        <HfGridColumn Field="@nameof(ReassignRow.POIndex)" HeaderText="PO Index" Width="90px" Visible="@GroupByPOIndex" />
-                        <HfGridColumn Field="@nameof(ReassignRow.CostCode)" HeaderText="Cost Code" Width="90px" Visible="@GroupByCostCode" />
-                        <HfGridColumn Field="@nameof(ReassignRow.CostCodeDesc)" HeaderText="Cost Code Desc" Width="180px" Visible="@GroupByCostCode" />
-                        <HfGridColumn Field="@nameof(ReassignRow.Category)" HeaderText="Category" Width="90px" Visible="@GroupByCategory" />
-                        <HfGridColumn Field="@nameof(ReassignRow.CategoryDesc)" HeaderText="Category Desc" Width="180px" Visible="@GroupByCategory" />
-                    </HfGridColumnsBase>
-                </HfGrid>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(ReassignRow.Community)" HeaderText="Community" Width="110px" />
+                        <GridColumn Field="@nameof(ReassignRow.CommunityDesc)" HeaderText="Community Desc" Width="200px" />
+                        <GridColumn Field="@nameof(ReassignRow.Job)" HeaderText="Job" Width="90px" />
+                        <GridColumn Field="@nameof(ReassignRow.JobDesc)" HeaderText="Job Desc" Width="200px" />
+                        <GridColumn Field="@nameof(ReassignRow.POIndex)" HeaderText="PO Index" Width="90px" Visible="@GroupByPOIndex" />
+                        <GridColumn Field="@nameof(ReassignRow.CostCode)" HeaderText="Cost Code" Width="90px" Visible="@GroupByCostCode" />
+                        <GridColumn Field="@nameof(ReassignRow.CostCodeDesc)" HeaderText="Cost Code Desc" Width="180px" Visible="@GroupByCostCode" />
+                        <GridColumn Field="@nameof(ReassignRow.Category)" HeaderText="Category" Width="90px" Visible="@GroupByCategory" />
+                        <GridColumn Field="@nameof(ReassignRow.CategoryDesc)" HeaderText="Category Desc" Width="180px" Visible="@GroupByCategory" />
+                    </GridColumnsBase>
+                </GridControl>
 
                 <div class="grid-note">Rows marked with ● have pending changes.</div>
             }
@@ -276,14 +125,14 @@
     </div>
 
     <div class="wizard-footer">
-        <button class="btn btn-outline-secondary" @onclick="OnCancel">Cancel</button>
-        <button class="btn btn-secondary" @onclick="OnBack" disabled="@(!CanBack)">Back</button>
-        <button class="btn btn-primary" @onclick="OnNext" disabled="@(!CanNext)">Next</button>
-        <button class="btn btn-success" @onclick="OnCommit" disabled="@(!CanCommit || IsSaving)">Commit</button>
+        <ButtonControl CssClass="btn btn-outline-secondary" BareStyle="true" OnClick="OnCancel">Cancel</ButtonControl>
+        <ButtonControl CssClass="btn btn-secondary" BareStyle="true" OnClick="OnBack" Disabled="@(!CanBack)">Back</ButtonControl>
+        <ButtonControl CssClass="btn btn-primary" BareStyle="true" OnClick="OnNext" Disabled="@(!CanNext)">Next</ButtonControl>
+        <ButtonControl CssClass="btn btn-success" BareStyle="true" OnClick="OnCommit" Disabled="@(!CanCommit || IsSaving)">Commit</ButtonControl>
     </div>
 </div>
 
-<HfDialog @bind-Visible="ShowVendorPicker" Width="650px" Header="Select Vendors"
+<DialogControl @bind-Visible="ShowVendorPicker" Width="650px" Header="Select Vendors"
           IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
     <ChildContent>
         <div class="picker-table">
@@ -299,7 +148,7 @@
                     @foreach (var v in VendorPickList)
                     {
                         <tr>
-                            <td><input type="checkbox" @bind="v.Selected" /></td>
+                            <td><CheckBoxControl @bind-Checked="v.Selected" /></td>
                             <td>@v.CompanyName</td>
                             <td>@v.Vendor</td>
                         </tr>
@@ -309,14 +158,24 @@
         </div>
     </ChildContent>
     <FooterContent>
-        <button class="btn btn-primary" @onclick="OnVendorPickerOk">OK</button>
-        <button class="btn btn-secondary" @onclick="() => ShowVendorPicker = false">Cancel</button>
+        <ButtonControl CssClass="btn btn-primary" BareStyle="true" OnClick="OnVendorPickerOk">OK</ButtonControl>
+        <ButtonControl CssClass="btn btn-secondary" BareStyle="true" OnClick="() => ShowVendorPicker = false">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
+</DialogControl>
 
 @code {
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<ReassignRow>? WorkGrid;
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+private GridControl<ReassignRow>? WorkGrid;
 
     private const int DivisionId = 1;
     private const int MaxStep = 2;
@@ -368,13 +227,13 @@
     {
         if (currentStep == 0 && SelectedVendorIds.Count == 0)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Select at least one vendor.");
+            Notifications.Info("Select at least one vendor.");
             return;
         }
         await SetCurrentStep(currentStep + 1);
     }
 
-    private void OnCancel() => NavigationManager.NavigateTo("/");
+    private void OnCancel() => ClosePage();
 
     private async Task OnCommit()
     {
@@ -449,7 +308,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading work: {ex.Message}");
+            Notifications.Error($"Error loading work: {ex.Message}");
         }
         finally
         {
@@ -555,11 +414,11 @@
         var dirtyRows = WorkData.Where(r => r.Dirty).ToList();
         if (!dirtyRows.Any())
         {
-            await JSRuntime.InvokeVoidAsync("alert", "No changes to commit.");
+            Notifications.Success("No changes to commit.");
             return;
         }
 
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", $"Commit changes for {dirtyRows.Count} row(s)?"))
+        if (!await Dialogs.ConfirmAsync($"Commit changes for {dirtyRows.Count} row(s)?"))
             return;
 
         IsSaving = true;
@@ -574,11 +433,11 @@
                 row.CurrentVendor = row.Vendor;
             }
             await LoadWorkDataAsync();
-            await JSRuntime.InvokeVoidAsync("alert", "Changes committed.");
+            Notifications.Info("Changes committed.");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            Notifications.Error($"Error saving data: {ex.Message}");
         }
         finally
         {

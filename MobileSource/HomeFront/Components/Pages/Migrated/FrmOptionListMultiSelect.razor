@@ -1,273 +1,25 @@
+@namespace HomeFront.Components.Pages
 @page "/option-list-multi-select"
 @page "/option-list-multi-select/{Job}"
 @rendermode InteractiveServer
 
+@using HomeFront.Models
 @using HomeFront.Data
 @using System.Data
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit.Notifications
 
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject ILogger<FrmOptionListMultiSelect> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>HSMC - Option List</PageTitle>
-
-<style>
-    .option-container {
-        display: flex;
-        flex-direction: column;
-        height: calc(100vh - 80px);
-        padding: 8px;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    .option-type-frame {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 8px 12px;
-        margin-bottom: 8px;
-        background: #f8f9fa;
-    }
-
-    .option-type-frame legend {
-        font-size: 13px;
-        font-weight: 600;
-        padding: 0 6px;
-    }
-
-    .option-type-group {
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-
-    .option-type-group label {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .main-content {
-        display: flex;
-        flex: 1;
-        gap: 8px;
-        overflow: hidden;
-    }
-
-    .grid-panel {
-        flex: 1;
-        overflow: hidden;
-    }
-
-    .side-panel {
-        width: 320px;
-        min-width: 280px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .location-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .location-row label {
-        font-size: 13px;
-        min-width: 60px;
-    }
-
-    .location-row input {
-        flex: 1;
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #e9ecef;
-    }
-
-    .location-row button {
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 12px;
-    }
-
-    .location-row button:hover {
-        background: #e9ecef;
-    }
-
-    .image-viewer {
-        flex: 1;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        overflow: hidden;
-        min-height: 200px;
-    }
-
-    .image-viewer img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }
-
-    .image-viewer .no-image {
-        color: #6c757d;
-        font-size: 12px;
-    }
-
-    .button-row {
-        display: flex;
-        gap: 8px;
-        justify-content: flex-start;
-        padding-top: 4px;
-    }
-
-    .button-row button {
-        padding: 8px 16px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 100px;
-    }
-
-    .button-row button:hover {
-        background: #e8e8e8;
-    }
-
-    .button-row button.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .button-row button.primary:hover {
-        background: #0b5ed7;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        height: 100%;
-        width: 100%;
-        background-color: rgba(1, 1, 1, 0.2);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-spinner {
-        padding: 20px 40px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        font-size: 16px;
-        font-weight: 500;
-        color: #333;
-    }
-
-    /* Pick list dialog */
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        min-width: 400px;
-        max-width: 600px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-body {
-        padding: 20px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .pick-list-item {
-        padding: 6px 10px;
-        cursor: pointer;
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    .pick-list-item:hover {
-        background: #e8f0fe;
-    }
-
-    .pick-list-item.selected {
-        background: #cce5ff;
-        font-weight: 600;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -281,36 +33,31 @@
     <fieldset class="option-type-frame">
         <legend>Option Type</legend>
         <div class="option-type-group">
-            <label>
-                <input type="radio" name="optionType" value="3" checked="@(SelectedOptionType == 3)"
-                       @onchange="() => OnOptionTypeChanged(3)" />
-                All Options Combined
-            </label>
-            <label>
-                <input type="radio" name="optionType" value="1" checked="@(SelectedOptionType == 1)"
-                       @onchange="() => OnOptionTypeChanged(1)" />
-                Model Specific Options
-            </label>
-            <label>
-                <input type="radio" name="optionType" value="2" checked="@(SelectedOptionType == 2)"
-                       @onchange="() => OnOptionTypeChanged(2)" />
-                Personal Choice Options
-            </label>
+            <RadioControl TValue="int" Name="optionType" Value="3"
+                          @bind-SelectedValue="SelectedOptionType"
+                          @bind-SelectedValue:after="ReloadOptionsAsync"
+                          Label="All Options Combined" />
+            <RadioControl TValue="int" Name="optionType" Value="1"
+                          @bind-SelectedValue="SelectedOptionType"
+                          @bind-SelectedValue:after="ReloadOptionsAsync"
+                          Label="Model Specific Options" />
+            <RadioControl TValue="int" Name="optionType" Value="2"
+                          @bind-SelectedValue="SelectedOptionType"
+                          @bind-SelectedValue:after="ReloadOptionsAsync"
+                          Label="Personal Choice Options" />
             @if (ShowCustomerShoppingCart)
             {
-                <label>
-                    <input type="radio" name="optionType" value="4" checked="@(SelectedOptionType == 4)"
-                           @onchange="() => OnOptionTypeChanged(4)" />
-                    Customer Shopping Cart
-                </label>
+                <RadioControl TValue="int" Name="optionType" Value="4"
+                              @bind-SelectedValue="SelectedOptionType"
+                              @bind-SelectedValue:after="ReloadOptionsAsync"
+                              Label="Customer Shopping Cart" />
             }
             @if (UseCORequests)
             {
-                <label>
-                    <input type="radio" name="optionType" value="5" checked="@(SelectedOptionType == 5)"
-                           @onchange="() => OnOptionTypeChanged(5)" />
-                    Change Requests
-                </label>
+                <RadioControl TValue="int" Name="optionType" Value="5"
+                              @bind-SelectedValue="SelectedOptionType"
+                              @bind-SelectedValue:after="ReloadOptionsAsync"
+                              Label="Change Requests" />
             }
         </div>
     </fieldset>
@@ -319,7 +66,7 @@
     <div class="main-content">
         @* Grid Panel *@
         <div class="grid-panel">
-            <HfGrid @ref="ItemsGrid"
+            <GridControl @ref="ItemsGrid"
                     TValue="OptionItemRow"
                     DataSource="@ItemsData"
                     AllowSelection="true"
@@ -334,148 +81,270 @@
                     SelectionSettingsRef="@selectionSettings"
                     EditSettingsRef="@editSettings"
                     EventsRef="@gridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Pick)" HeaderText="Pick" Width="60px"
-                                  Type="ColumnType.CheckBox" AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Qty)" HeaderText="Qty" Width="60px"
-                                  Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right"
-                                  AllowEditing="true" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.UOM)" HeaderText="UOM" Width="60px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Price)" HeaderText="Price" Width="100px"
-                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
-                                  AllowEditing="true" />
-                    @if (UseMajorGroup)
+                <GridColumnsBase @key="gItemsGridLayoutVersion">
+                    @if (HasGridLayout)
                     {
-                        <HfGridColumn Field="@nameof(OptionItemRow.MajDesc)" HeaderText="Group" Width="120px"
-                                      AllowEditing="false" />
+                        foreach (var entry in GetOrderedGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                            if (fieldName == "Location")
+                            {
+                                <GridColumn Field="Location" HeaderText="@headerText" Width="@(width ?? "120px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span>@data.Location</span>
+                                            <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                    @onclick="() => OnLocationButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (fieldName == "Color")
+                            {
+                                <GridColumn Field="Color" HeaderText="@headerText" Width="@(width ?? "100px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span>@data.Color</span>
+                                            @if (data.ColorListID != 0)
+                                            {
+                                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                        @onclick="() => OnColorButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            }
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (fieldName == "Style")
+                            {
+                                <GridColumn Field="Style" HeaderText="@headerText" Width="@(width ?? "100px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span>@data.Style</span>
+                                            @if (data.StyleListID != 0)
+                                            {
+                                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                        @onclick="() => OnStyleButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            }
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (fieldName == "Finish")
+                            {
+                                <GridColumn Field="Finish" HeaderText="@headerText" Width="@(width ?? "100px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span>@data.Finish</span>
+                                            @if (data.FinishListID != 0)
+                                            {
+                                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                        @onclick="() => OnFinishButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            }
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (fieldName == "Other")
+                            {
+                                <GridColumn Field="Other" HeaderText="@headerText" Width="@(width ?? "100px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span>@data.Other</span>
+                                            @if (data.OtherListID != 0)
+                                            {
+                                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                        @onclick="() => OnOtherButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            }
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (fieldName == "Comments")
+                            {
+                                <GridColumn Field="Comments" HeaderText="@headerText" Width="@(width ?? "200px")" AllowEditing="true">
+                                    <Template>
+                                        @{
+                                            var data = (OptionItemRow)context;
+                                            <span title="@data.Comments">@TruncateText(data.Comments, 30)</span>
+                                            <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                    @onclick="() => OnCommentsButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                        }
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="true"
+                                              ClipMode="ClipMode.Ellipsis" />
+                            }
+                        }
+                        <GridColumn Field="@nameof(OptionItemRow.ColorListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.StyleListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.FinishListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.OtherListID)" Visible="false" />
                     }
-                    <HfGridColumn Field="@nameof(OptionItemRow.CatDesc)" HeaderText="Category" Width="140px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Description)" HeaderText="Description" Width="250px"
-                                  AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.OPT)" HeaderText="OPT" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Assembly)" HeaderText="Assembly" Width="100px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Location)" HeaderText="Location" Width="120px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span>@data.Location</span>
-                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                        @onclick="() => OnLocationButtonClick(data)" @onclick:stopPropagation="true">...</button>
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Color)" HeaderText="Color" Width="100px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span>@data.Color</span>
-                                @if (data.ColorListID != 0)
-                                {
+                    else
+                    {
+                        @* Fallback: hardcoded columns matching VB6 ItemsGrid *@
+                        <GridColumn Field="@nameof(OptionItemRow.Pick)" HeaderText="Pick" Width="60px"
+                                      Type="ColumnType.CheckBox" AllowEditing="true" />
+                        <GridColumn Field="@nameof(OptionItemRow.Qty)" HeaderText="Qty" Width="60px"
+                                      Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right"
+                                      AllowEditing="true" />
+                        <GridColumn Field="@nameof(OptionItemRow.UOM)" HeaderText="UOM" Width="60px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Price)" HeaderText="Price" Width="100px"
+                                      Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                      AllowEditing="true" />
+                        @if (UseMajorGroup)
+                        {
+                            <GridColumn Field="@nameof(OptionItemRow.MajDesc)" HeaderText="Group" Width="120px"
+                                          AllowEditing="false" />
+                        }
+                        <GridColumn Field="@nameof(OptionItemRow.CatDesc)" HeaderText="Category" Width="140px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Description)" HeaderText="Description" Width="250px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.OPT)" HeaderText="OPT" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Assembly)" HeaderText="Assembly" Width="100px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Location)" HeaderText="Location" Width="120px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span>@data.Location</span>
                                     <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                            @onclick="() => OnColorButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            @onclick="() => OnLocationButtonClick(data)" @onclick:stopPropagation="true">...</button>
                                 }
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Style)" HeaderText="Style" Width="100px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span>@data.Style</span>
-                                @if (data.StyleListID != 0)
-                                {
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.Color)" HeaderText="Color" Width="100px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span>@data.Color</span>
+                                    @if (data.ColorListID != 0)
+                                    {
+                                        <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                @onclick="() => OnColorButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.Style)" HeaderText="Style" Width="100px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span>@data.Style</span>
+                                    @if (data.StyleListID != 0)
+                                    {
+                                        <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                @onclick="() => OnStyleButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.Finish)" HeaderText="Finish" Width="100px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span>@data.Finish</span>
+                                    @if (data.FinishListID != 0)
+                                    {
+                                        <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                @onclick="() => OnFinishButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.Other)" HeaderText="Other" Width="100px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span>@data.Other</span>
+                                    @if (data.OtherListID != 0)
+                                    {
+                                        <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
+                                                @onclick="() => OnOtherButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.Comments)" HeaderText="Comments" Width="200px"
+                                      AllowEditing="true">
+                            <Template>
+                                @{
+                                    var data = (OptionItemRow)context;
+                                    <span title="@data.Comments">@TruncateText(data.Comments, 30)</span>
                                     <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                            @onclick="() => OnStyleButtonClick(data)" @onclick:stopPropagation="true">...</button>
+                                            @onclick="() => OnCommentsButtonClick(data)" @onclick:stopPropagation="true">...</button>
                                 }
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Finish)" HeaderText="Finish" Width="100px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span>@data.Finish</span>
-                                @if (data.FinishListID != 0)
-                                {
-                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                            @onclick="() => OnFinishButtonClick(data)" @onclick:stopPropagation="true">...</button>
-                                }
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Other)" HeaderText="Other" Width="100px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span>@data.Other</span>
-                                @if (data.OtherListID != 0)
-                                {
-                                    <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                            @onclick="() => OnOtherButtonClick(data)" @onclick:stopPropagation="true">...</button>
-                                }
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.Comments)" HeaderText="Comments" Width="200px"
-                                  AllowEditing="true">
-                        <Template>
-                            @{
-                                var data = (OptionItemRow)context;
-                                <span title="@data.Comments">@TruncateText(data.Comments, 30)</span>
-                                <button style="padding:1px 6px; border:1px solid #ced4da; border-radius:3px; background:#fff; font-size:11px; cursor:pointer; margin-left:4px;"
-                                        @onclick="() => OnCommentsButtonClick(data)" @onclick:stopPropagation="true">...</button>
-                            }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(OptionItemRow.EstimatorNotes)" HeaderText="Estimator Notes"
-                                  Width="150px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Cost_Amount)" HeaderText="Cost" Width="90px"
-                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.CO_Price)" HeaderText="CO Price" Width="90px"
-                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.GrandTotal)" HeaderText="Grand Total" Width="100px"
-                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.GrandCOTotal)" HeaderText="Grand CO Total" Width="100px"
-                                  Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.TL_Extra)" HeaderText="TL Extra" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Major_Group)" HeaderText="Major Group" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Category)" HeaderText="Category Code" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Option_Type)" HeaderText="Option Type" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.Graphic_Path)" HeaderText="Graphic" Width="80px"
-                                  AllowEditing="false" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.NoCharge)" HeaderText="No Charge" Width="70px"
-                                  Type="ColumnType.CheckBox" AllowEditing="true" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.ColorListID)" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.StyleListID)" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.FinishListID)" Visible="false" />
-                    <HfGridColumn Field="@nameof(OptionItemRow.OtherListID)" Visible="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(OptionItemRow.EstimatorNotes)" HeaderText="Estimator Notes"
+                                      Width="150px" AllowEditing="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Cost_Amount)" HeaderText="Cost" Width="90px"
+                                      Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.CO_Price)" HeaderText="CO Price" Width="90px"
+                                      Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.GrandTotal)" HeaderText="Grand Total" Width="100px"
+                                      Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.GrandCOTotal)" HeaderText="Grand CO Total" Width="100px"
+                                      Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.TL_Extra)" HeaderText="TL Extra" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Major_Group)" HeaderText="Major Group" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Category)" HeaderText="Category Code" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Option_Type)" HeaderText="Option Type" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.Graphic_Path)" HeaderText="Graphic" Width="80px"
+                                      AllowEditing="false" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.NoCharge)" HeaderText="No Charge" Width="70px"
+                                      Type="ColumnType.CheckBox" AllowEditing="true" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.ColorListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.StyleListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.FinishListID)" Visible="false" />
+                        <GridColumn Field="@nameof(OptionItemRow.OtherListID)" Visible="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
 
         @* Side Panel *@
         <div class="side-panel">
             <div class="location-row">
                 <label>Location</label>
-                <input type="text" @bind="LocationText" readonly />
-                <button @onclick="OnLocationDropdownClick" title="Select Location">...</button>
+                <TextBoxControl @bind-Value="LocationText" readonly CssClass="olms-location-input" />
+                <ButtonControl OnClick="OnLocationDropdownClick" Title="Select Location" CssClass="olms-picker-btn">...</ButtonControl>
             </div>
 
             <div class="image-viewer">
@@ -490,71 +359,63 @@
             </div>
 
             <div class="button-row">
-                <button class="primary" @onclick="OnSaveToCustomerClick">Save to Customer</button>
-                <button @onclick="OnCancelClick">&Cancel</button>
+                <ButtonControl OnClick="OnSaveToCustomerClick" CssClass="olms-btn olms-btn-primary">Save to Customer</ButtonControl>
+                <ButtonControl OnClick="OnCancelClick" CssClass="olms-btn">&Cancel</ButtonControl>
             </div>
         </div>
     </div>
 </div>
 
 @* Comments Edit Dialog *@
-@if (IsCommentsDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="OnCommentsDialogCancel">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Edit Comments</span>
-                <button @onclick="OnCommentsDialogCancel">×</button>
-            </div>
-            <div class="dialog-body">
-                <textarea @bind="EditingComments" rows="10" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:4px; resize:vertical;" maxlength="4000"></textarea>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnCommentsDialogOk">OK</button>
-                <button class="btn" @onclick="OnCommentsDialogCancel">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<DialogControl @bind-Visible="IsCommentsDialogVisible" Header="Edit Comments" Width="600px" OnClose="OnCommentsDialogCancel">
+    <ChildContent>
+        <TextAreaControl @bind-Value="EditingComments" Rows="10" MaxLength="4000" CssClass="olms-comments-textarea" />
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl OnClick="OnCommentsDialogOk" CssClass="olms-btn olms-btn-primary">OK</ButtonControl>
+        <ButtonControl OnClick="OnCommentsDialogCancel" CssClass="olms-btn">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @* Pick List Dialog *@
-@if (IsPickListVisible)
-{
-    <div class="dialog-overlay" @onclick="OnPickListCancel">
-        <div class="dialog-panel" style="min-width:350px;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>@PickListTitle</span>
-                <button @onclick="OnPickListCancel">×</button>
-            </div>
-            <div class="dialog-body" style="max-height:400px; overflow-y:auto;">
-                @foreach (var item in PickListItems)
-                {
-                    <div class="pick-list-item @(item == SelectedPickListItem ? "selected" : "")"
-                         @onclick="() => SelectedPickListItem = item">
-                        @item
-                    </div>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnPickListSelect" disabled="@(SelectedPickListItem == null)">Select</button>
-                <button class="btn" @onclick="OnPickListCancel">Cancel</button>
-            </div>
+<DialogControl @bind-Visible="IsPickListVisible" Header="@PickListTitle" Width="350px" OnClose="OnPickListCancel">
+    <ChildContent>
+        <div class="olms-picklist-body">
+            @foreach (var item in PickListItems)
+            {
+                <div class="pick-list-item @(item == SelectedPickListItem ? "selected" : "")"
+                     @onclick="() => SelectedPickListItem = item">
+                    @item
+                </div>
+            }
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl OnClick="OnPickListSelect" Disabled="@(SelectedPickListItem == null)" CssClass="olms-btn olms-btn-primary">Select</ButtonControl>
+        <ButtonControl OnClick="OnPickListCancel" CssClass="olms-btn">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     [Parameter] public string? Job { get; set; }
 
     // Database
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-    private string LoginID = "";
+private string LoginID = "";
 
     // UI State
     private bool IsLoading = false;
-    private bool gCancel = false;
-    private bool itemschecked = false;
     private int SelectedOptionType = 2;
     private string LocationText = "";
     private List<string> LocationItems = new();
@@ -577,26 +438,38 @@
     private string Phase = "";
 
     // Grid
-    private HfGrid<OptionItemRow>? ItemsGrid;
+    private GridControl<OptionItemRow>? ItemsGrid;
     private List<OptionItemRow> ItemsData = new();
 
     // Grid settings
-    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
-    private HfPageSettings pageSettings = new() { PageSize = 100 };
-    private HfSelectionSettings selectionSettings = new()
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private PageSettings pageSettings = new() { PageSize = 100 };
+    private SelectionSettings selectionSettings = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Single,
         EnableToggle = true
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowEditing = true,
         AllowAdding = false,
         AllowDeleting = false,
         ShowConfirmDialog = false
     };
-    private HfGridEvents<OptionItemRow> gridEvents = new();
+    private GridControlEvents<OptionItemRow> gridEvents = new();
+
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // Load/resolve/order/width boilerplate delegated to the shared
+    // GridLayoutPresenter. The VB6 grid name carries the explicit ".(0)" instance
+    // suffix → instanceKey "(0)" drives the presenter's keyed-then-unkeyed
+    // two-call fallback. The column-type stays local (bool → CheckBox, not the
+    // presenter's generic Boolean — see drift note on GetColumnTypeForField).
+    private readonly GridLayoutPresenter<OptionItemRow> _grid =
+        new("FrmOptionListMultiSelect", "ItemsGrid", instanceKey: "(0)");
+    private Dictionary<string, GridLayoutColumn> gItemsGridLayout => _grid.Layout;
+    private bool HasGridLayout => _grid.Has;
+    private int gItemsGridLayoutVersion => _grid.Version;
 
     // Comments dialog
     private bool IsCommentsDialogVisible = false;
@@ -610,13 +483,12 @@
     private string? SelectedPickListItem;
     private Action<string>? PickListCallback;
 
-    // Connection string
-    private string ConnectionString = "Server=localhost,1433;Database=HomeFrontDB;User Id=sa;Password=YourPassword;Encrypt=false;TrustServerCertificate=true;";
-
     protected override async Task OnInitializedAsync()
     {
         gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<OptionItemRow>>(this, OnRowSelected);
         gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<OptionItemRow>>(this, OnCellSaved);
+
+        await LoadGridLayoutAsync();
 
         sJob = Job ?? "";
         await LoadFormAsync();
@@ -641,7 +513,7 @@
             var custSql = @"SELECT TOP 1 customer_no, ISNULL(Community,'') Community, gst_rate, Item_seq,
                            ISNULL(Elevation,'') Elevation, ISNULL(Phase,'') Phase, Model, ISNULL(Series,'') Series
                            FROM tblcustomers WHERE job_no = @Job AND DivisionID = @DivisionID";
-            var custDt = db.SqlExec(custSql, new { Job = sJob, DivisionID });
+            var custDt = db.SqlExec(custSql, new { Job = sJob, SessionState.DivisionID });
             if (custDt.Rows.Count > 0)
             {
                 var row = custDt.Rows[0];
@@ -665,8 +537,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadFormAsync error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading form: {ex.Message}");
+            Logger.LogError(ex, "LoadFormAsync error");
+
+            Notifications.Error($"Error loading form: {ex.Message}");
         }
         finally
         {
@@ -675,9 +548,9 @@
         }
     }
 
-    private async Task OnOptionTypeChanged(int optionType)
+    // Radio @bind-SelectedValue already set SelectedOptionType; :after triggers the reload.
+    private async Task ReloadOptionsAsync()
     {
-        SelectedOptionType = optionType;
         await LoadOptionsAsync();
     }
 
@@ -742,8 +615,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadOptionsAsync error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading options: {ex.Message}");
+            Logger.LogError(ex, "LoadOptionsAsync error");
+
+            Notifications.Error($"Error loading options: {ex.Message}");
         }
         finally
         {
@@ -787,7 +661,7 @@
             s += " AND T1.Series='" + Series + "'";
             s += " AND (T1.Elevation = '" + Escape(Elevation) + "' OR t1.elevation ='' OR t1.elevation IS NULL)";
             s += BuildAreaFilter("T1.Area", "T1", "tblOptions");
-            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND t1.DivisionID = " + SessionState.DivisionID;
             s += " AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
             s += " ORDER BY T3.Description, T2.Description, T1.Description";
         }
@@ -820,7 +694,7 @@
             s += " AND T1.Series='" + Series + "'";
             s += " AND (T1.Elevation = '" + Escape(Elevation) + "' OR t1.elevation ='' OR t1.elevation IS NULL)";
             s += BuildAreaFilter("T1.Area", "T1", "tblOptions");
-            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND t1.DivisionID = " + SessionState.DivisionID;
             s += " AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
             s += " ORDER BY T2.Description, T1.Description";
         }
@@ -860,7 +734,7 @@
                   LEFT Join tblMajorGroups T3 ON T2.Group_Code = T3.Major_Group
                   WHERE ISNULL(t1.inactive,0) = 0 AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
             s += BuildGlobalAreaFilter();
-            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND t1.DivisionID = " + SessionState.DivisionID;
             s += " ORDER BY T3.Description, T2.Description, T1.Description";
         }
         else
@@ -891,7 +765,7 @@
                   LEFT OUTER JOIN TBLAREAS T4 ON T1.Location = T4.Area
                   WHERE ISNULL(t1.inactive,0) = 0 AND (T1.Construction_Cut_Off>0 OR T1.Construction_Cut_Off=0)";
             s += BuildGlobalAreaFilter();
-            s += " AND t1.DivisionID = " + DivisionID;
+            s += " AND t1.DivisionID = " + SessionState.DivisionID;
             s += " ORDER BY T2.Description, T1.Description";
         }
         return s;
@@ -923,7 +797,7 @@
             s += " AND (Elevation = '" + Escape(Elevation) + "' OR ISNULL(elevation,'') ='')";
             s += BuildCombinedAreaFilter();
             s += " AND (Construction_Cut_Off>0 OR Construction_Cut_Off=0)";
-            s += " AND CombinedOptionList.DivisionID = " + DivisionID;
+            s += " AND CombinedOptionList.DivisionID = " + SessionState.DivisionID;
             s += " ORDER BY CatDesc, CombinedOptionList.Description";
         }
         else
@@ -949,7 +823,7 @@
             s += " AND (Elevation = '" + Escape(Elevation) + "' OR ISNULL(elevation,'') ='')";
             s += BuildCombinedAreaFilter();
             s += " AND (Construction_Cut_Off>0 OR Construction_Cut_Off=0)";
-            s += " AND CombinedOptionList.DivisionID = " + DivisionID;
+            s += " AND CombinedOptionList.DivisionID = " + SessionState.DivisionID;
             s += " ORDER BY CatDesc, CombinedOptionList.Description";
         }
         return s;
@@ -1072,7 +946,7 @@
             var checkedItems = ItemsData.Where(i => i.Pick).ToList();
             if (checkedItems.Count == 0)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "No items selected.");
+                Notifications.Info("No items selected.");
                 return;
             }
 
@@ -1108,12 +982,14 @@
                 db.SqlExec(s);
             }
 
-            await JSRuntime.InvokeVoidAsync("alert", $"{checkedItems.Count} item(s) saved to customer estimate.");
+            Notifications.Info($"{checkedItems.Count} item(s); saved to customer estimate.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"OnSaveToCustomerClick error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Logger.LogError(ex, "OnSaveToCustomerClick error");
+
+            Notifications.Error($"Error saving: {ex.Message}");
         }
         finally
         {
@@ -1224,7 +1100,7 @@
 
     private void OnCancelClick()
     {
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private void OnPickListSelect()
@@ -1263,7 +1139,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadPickListForField error: {ex.Message}");
+            Logger.LogError(ex, "LoadPickListForField error");
+
         }
     }
 
@@ -1277,14 +1154,14 @@
     {
         try
         {
-            var dt = db.SqlExec($"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id=@Id", new { Id = DivisionID });
+            var dt = db.SqlExec($"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id=@Id", new { Id = SessionState.DivisionID });
             if (dt.Rows.Count > 0)
             {
                 var val = dt.Rows[0][0]?.ToString() ?? "";
                 return val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
         }
-        catch { }
+        catch { /* non-critical */ }
         return false;
     }
 
@@ -1304,6 +1181,66 @@
     }
 
     // ── Data Model ──────────────────────────────────────────────────────
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            await _grid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // ── Grid Layout Helpers ──────────────────────────────────
+    // Ordering + field-resolution delegated to the presenter; the column-type is
+    // computed by the form's own GetColumnTypeForField (kept for the bool → CheckBox
+    // mapping — see drift note).
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+    {
+        foreach (var (layout, field, _, _) in _grid.GetOrdered())
+        {
+            var columnType = GetColumnTypeForField(field);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, field, columnType, textAlign);
+        }
+    }
+
+    private string ResolveGridField(string layoutField)
+        => _grid.ResolveField(layoutField);
+
+    // NOTE: intentionally diverges from GridLayoutPresenter.ColumnTypeFor — this
+    // form renders bool columns (Pick, NoCharge) as ColumnType.CheckBox (the
+    // presenter would return Boolean), so the checkbox cell template fires.
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_optionItemRowTypeMap.TryGetValue(GridLayoutPresenter.NormalizeKey(field), out var type))
+        {
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+        return ColumnType.Text;
+    }
+
+    // Minimal normalized field → CLR type map (only what GetColumnTypeForField needs,
+    // since the full reflection prop-map moved into the presenter).
+    private static readonly Dictionary<string, Type> _optionItemRowTypeMap =
+        typeof(OptionItemRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => GridLayoutPresenter.NormalizeKey(p.Name))
+            .ToDictionary(
+                g => g.Key,
+                g => Nullable.GetUnderlyingType(g.First().PropertyType) ?? g.First().PropertyType,
+                StringComparer.OrdinalIgnoreCase);
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
     private sealed class OptionItemRow
     {
         public bool Pick { get; set; }

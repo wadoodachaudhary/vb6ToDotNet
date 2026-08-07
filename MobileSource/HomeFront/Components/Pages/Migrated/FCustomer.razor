@@ -1,216 +1,237 @@
 @page "/customer"
 @page "/customer/{CustomerId}"
+@layout HFComponent
+@namespace HomeFront.Components.Pages
 @rendermode InteractiveServer
 
+@using HomeFront.Models
 @using HomeFront.Data
-@using System.Linq
-@inject IJSRuntime JSRuntime
+@using System.Data
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Notifications
+@using Fx.ControlKit.Dialogs
+
+@inject NavigationManager NavigationManager
+@inject ILogger<FCustomer> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject IGridLayoutService GridLayoutSvc
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Customer - HomeFront</PageTitle>
 
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 16px;
-    }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        transition: background 0.15s;
-        min-width: 60px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
-    .tbar-btn.danger { color: #dc3545; border-color: #dc3545; }
-    .page-title { margin-bottom: 16px; font-size: 20px; font-weight: 600; }
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .panel-card { border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; background: #fff; }
-    .section-title { font-weight: 700; color: #0d6efd; margin: 4px 0 12px; font-size: 13px; }
-    .form-field { margin-bottom: 10px; display: flex; align-items: flex-start; gap: 8px; }
-    .form-field label { min-width: 120px; text-align: right; font-weight: 600; font-size: 13px; padding-top: 6px; }
-    .form-field label.required { color: #0d6efd; }
-    .form-field input, .form-field select, .form-field textarea {
-        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-    }
-    .form-field textarea { resize: vertical; }
-    .contacts-header { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; margin-bottom: 8px; }
-    .contacts-actions { display: flex; gap: 6px; }
-</style>
+<div class="cust-page">
+    @* ── TOOLBAR (VB6: Open, Save only) ──────────────────── *@
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" @onclick="OnOpenClick">
+            <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+            <span class="tool-label">Open</span>
+        </button>
+        <button class="tbar-btn" @onclick="OnSaveClick" disabled="@(!mDirty)">
+            <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+            <span class="tool-label">Save</span>
+        </button>
+    </div>
 
-<div class="toolbar-cntr">
-    <button class="tbar-btn" @onclick="OnOpenClick">
-        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
-        <span>Open</span>
-    </button>
-    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
-        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
-        <span>Save</span>
-    </button>
-</div>
+    <div class="cust-content">
+        @* ── FORM FIELDS (VB6: Left=Customer info, Right=Billing address) ── *@
+        <div class="cust-panel">
+            <div class="cust-grid">
+                @* ── LEFT COLUMN: Customer, Description, Status, Comments ── *@
+                <div>
+                    <div class="cust-field">
+                        <label class="lbl-blue">Customer</label>
+                        @* VB6 txtCustomer (MaxLength none design-time; arcustomer col=40). Enabled only when blank (new). *@
+                        <TextBoxControl Value="@Customer" ValueChanged="OnCustomerChanged" Enabled="@CustomerEditable" MaxLength="40" CssClass="cust-input w-customer" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>Description</label>
+                        @* VB6 txtDescription MaxLength=60 *@
+                        <TextBoxControl Value="@Description" ValueChanged="@(v => { Description = v ?? ""; MarkDirty(); })" MaxLength="60" CssClass="cust-input w-description" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>Status</label>
+                        @* VB6 cboStatus (Active/Inactive) — display only, never persisted by this form *@
+                        <DropDownListControl TValue="string" TItem="string"
+                                             DataSource="@StatusOptions"
+                                             Value="@Status"
+                                             ValueChanged="@(v => { Status = v ?? "Active"; MarkDirty(); })"
+                                             Width="85px"
+                                             CssClass="cust-input w-status" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px; align-items:flex-start;">
+                        <label style="padding-top:4px;">Comments</label>
+                        @* VB6 txtComments MultiLine MaxLength=4000 *@
+                        <TextAreaControl Value="@Comments" ValueChanged="@(v => { Comments = v ?? ""; MarkDirty(); })" Rows="4" MaxLength="4000" CssClass="cust-input w-comments" />
+                    </div>
+                </div>
 
-<h3 class="page-title">Customer</h3>
-
-<div class="form-grid">
-    <div class="panel-card">
-        <div class="form-field">
-            <label class="required">Customer</label>
-            <input type="text" maxlength="50" @bind="Customer" @bind:event="oninput" @bind:after="MarkDirty" disabled="@(!CustomerEditable)" />
+                @* ── RIGHT COLUMN: Phone, Fax, Billing Address, City, Province, Postal ── *@
+                <div>
+                    <div class="cust-field">
+                        <label>Phone</label>
+                        @* VB6 txtPhone MaxLength=25 *@
+                        <TextBoxControl Value="@Phone" ValueChanged="@(v => { Phone = v ?? ""; MarkDirty(); })" MaxLength="25" CssClass="cust-input w-phone" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>Fax</label>
+                        @* VB6 txtFax MaxLength=25 *@
+                        <TextBoxControl Value="@Fax" ValueChanged="@(v => { Fax = v ?? ""; MarkDirty(); })" MaxLength="25" CssClass="cust-input w-phone" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px; align-items:flex-start;">
+                        <label class="lbl-blue lbl-stacked" style="padding-top:4px;">Billing<br />Address</label>
+                        @* VB6 txtAddress MultiLine MaxLength=75 (split to BillAddr1/BillAddr2 on save) *@
+                        <TextAreaControl Value="@Address" ValueChanged="@(v => { Address = v ?? ""; MarkDirty(); })" Rows="3" MaxLength="75" CssClass="cust-input w-address" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>City</label>
+                        @* VB6 txtCity MaxLength=50 *@
+                        <TextBoxControl Value="@City" ValueChanged="@(v => { City = v ?? ""; MarkDirty(); })" MaxLength="50" CssClass="cust-input w-city" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>State/Province</label>
+                        @* VB6 txtProvince MaxLength=20 *@
+                        <TextBoxControl Value="@Province" ValueChanged="@(v => { Province = v ?? ""; MarkDirty(); })" MaxLength="20" CssClass="cust-input w-state" />
+                    </div>
+                    <div class="cust-field" style="margin-top:4px;">
+                        <label>Postal</label>
+                        @* VB6 txtPostal MaxLength=10 *@
+                        <TextBoxControl Value="@Postal" ValueChanged="@(v => { Postal = v ?? ""; MarkDirty(); })" MaxLength="10" CssClass="cust-input w-postal" />
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="form-field">
-            <label>Description</label>
-            <input type="text" maxlength="60" @bind="Description" @bind:event="oninput" @bind:after="MarkDirty" />
+
+        @* ── CONTACTS GRID (VB6: gContacts at bottom) ─────────── *@
+        @* Contacts are managed directly within the inline grid. *@
+        <div class="contacts-header">
+            <h5 class="lbl-blue">Contacts</h5>
         </div>
-        <div class="form-field">
-            <label>Status</label>
-            <select @bind="Status" @bind:after="MarkDirty">
-                @foreach (var s in StatusOptions)
+
+        @* VB6 gContacts_KeyDown: Shift+Del hides the current row (never the
+           trailing blank); the row is deleted on save. *@
+        <div @onkeydown="OnContactsKeyDown">
+        <GridControl @ref="ContactsGrid"
+                TValue="ContactRow"
+                DataSource="@ContactsData"
+                AllowSelection="true"
+                AllowSorting="true"
+                AllowResizing="true"
+                Height="280px"
+                RowHeight="28"
+                SelectionSettingsRef="@contactSelection"
+                EditSettingsRef="@contactEditSettings"
+                NewItemFactory="CreateContactRow"
+                EnsureTrailingNewRow="true"
+                IsTrailingNewRow="IsContactEmpty"
+                AddNewRowOnLastCellExit="true"
+                CanAddNewRowOnLastCellExit="CanAppendContactRowAfter"
+                EventsRef="@contactGridEvents"
+                OnLayoutChanged="@OnContactsLayoutChangedAsync">
+            <GridColumnsBase @key="gContactsLayoutVersion">
+                <GridColumn Field="@nameof(ContactRow.ContactID)" Visible="false" IsPrimaryKey="true" AllowEditing="false" />
+                <GridColumn Field="@nameof(ContactRow.RowState)" Visible="false" AllowEditing="false" />
+                @if (HasGridLayout)
                 {
-                    <option value="@s">@s</option>
-                }
-            </select>
-        </div>
-        <div class="form-field">
-            <label>Comments</label>
-            <textarea rows="4" maxlength="4000" @bind="Comments" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
-        </div>
-    </div>
+                    foreach (var entry in GetOrderedGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                        var allowEdit = IsFieldEditable(fieldName);
 
-    <div class="panel-card">
-        <div class="form-field">
-            <label>Phone</label>
-            <input type="text" maxlength="25" @bind="Phone" @bind:event="oninput" @bind:after="MarkDirty" />
-        </div>
-        <div class="form-field">
-            <label>Fax</label>
-            <input type="text" maxlength="25" @bind="Fax" @bind:event="oninput" @bind:after="MarkDirty" />
-        </div>
-        <div class="section-title">Billing Address</div>
-        <div class="form-field">
-            <label>Address</label>
-            <textarea rows="3" maxlength="150" @bind="Address" @bind:event="oninput" @bind:after="MarkDirty"></textarea>
-        </div>
-        <div class="form-field">
-            <label>City</label>
-            <input type="text" maxlength="50" @bind="City" @bind:event="oninput" @bind:after="MarkDirty" />
-        </div>
-        <div class="form-field">
-            <label>State/Province</label>
-            <input type="text" maxlength="20" @bind="Province" @bind:event="oninput" @bind:after="MarkDirty" />
-        </div>
-        <div class="form-field">
-            <label>Postal</label>
-            <input type="text" maxlength="10" @bind="Postal" @bind:event="oninput" @bind:after="MarkDirty" />
+                        if (fieldName == "Role")
+                        {
+                            @* VB6 gContacts ColComboList(Role) = Options.ValueByName("CustomerContactRoles") *@
+                            <GridColumn Field="@nameof(ContactRow.Role)" HeaderText="@headerText" Width="@(width ?? "120px")"
+                                        AllowEditing="true" EditOptions="@RoleEditOptions"
+                                        MaxLength="@GetContactMaxLength(nameof(ContactRow.Role))" />
+                        }
+                        else if (fieldName == "SendVia")
+                        {
+                            @* VB6 gContacts ColComboList(SendVia) = "#1;Print|#3;Email|#4;Fax";
+                               the CommModeID code round-trips through SendViaText. *@
+                            <GridColumn Field="@nameof(ContactRow.SendViaText)" HeaderText="@headerText" Width="@(width ?? "90px")"
+                                        AllowEditing="true" EditOptions="@SendViaEditOptions" />
+                        }
+                        else if (fieldName == "SmsAddress")
+                        {
+                            @* VB6 gContacts ColComboList(SMSAddress) built from smscarriers (display=name, value=address) *@
+                            <GridColumn Field="@nameof(ContactRow.SmsAddress)" HeaderText="@headerText" Width="@(width ?? "160px")"
+                                        AllowEditing="true" EditOptions="@SmsCarrierOptions"
+                                        MaxLength="@GetContactMaxLength(nameof(ContactRow.SmsAddress))" />
+                        }
+                        else
+                        {
+                            <GridColumn Field="@fieldName"
+                                          HeaderText="@headerText"
+                                          Width="@width"
+                                          Type="@columnType"
+                                          TextAlign="@textAlign"
+                                          AllowEditing="@allowEdit"
+                                          MaxLength="@GetContactMaxLength(fieldName)"
+                                          ClipMode="ClipMode.Ellipsis" />
+                        }
+                    }
+                }
+                else
+                {
+                    @* Fallback: hardcoded columns matching VB6 gContacts (only when AppGridLayout has no rows) *@
+                    <GridColumn Field="@nameof(ContactRow.Role)" HeaderText="Role" Width="120px"
+                                EditOptions="@RoleEditOptions"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Role))" />
+                    <GridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="160px"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Name))" />
+                    <GridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Phone))" />
+                    <GridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Mobile" Width="120px"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Cell))" />
+                    <GridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="220px"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Email))" />
+                    <GridColumn Field="@nameof(ContactRow.SendViaText)" HeaderText="Send Via" Width="90px"
+                                EditOptions="@SendViaEditOptions" />
+                    <GridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.Fax))" />
+                    <GridColumn Field="@nameof(ContactRow.SmsAddress)" HeaderText="SMS Provider" Width="160px"
+                                EditOptions="@SmsCarrierOptions"
+                                MaxLength="@GetContactMaxLength(nameof(ContactRow.SmsAddress))" />
+                }
+            </GridColumnsBase>
+        </GridControl>
         </div>
     </div>
 </div>
 
-<div class="contacts-header">
-    <h5 style="margin:0;">Contacts</h5>
-    <div class="contacts-actions">
-        <button class="tbar-btn" @onclick="AddContact">Add</button>
-        <button class="tbar-btn danger" disabled="@(SelectedContact == null)" @onclick="DeleteContact">Delete</button>
-    </div>
-</div>
+<MessageBoxControl @ref="messageBox" />
 
-<HfGrid @ref="ContactsGrid"
-        TValue="ContactRow"
-        DataSource="@ContactsData"
-        AllowSelection="true"
-        AllowSorting="true"
-        AllowResizing="true"
-        Height="350px"
-        SelectionSettingsRef="@contactSelection"
-        EditSettingsRef="@contactEditSettings"
-        EventsRef="@contactGridEvents">
-    <HfGridColumnsBase>
-        <HfGridColumn Field="@nameof(ContactRow.ContactID)" Visible="false" IsPrimaryKey="true" />
-        <HfGridColumn Field="@nameof(ContactRow.Role)" HeaderText="Role" Width="120px">
-            <EditTemplate>
-                @{
-                    var data = (ContactRow)context;
-                    <select @bind="data.Role" @bind:after="() => MarkContactDirty(data)">
-                        <option value=""></option>
-                        @foreach (var opt in RoleOptions)
-                        {
-                            <option value="@opt.Value">@opt.Text</option>
-                        }
-                    </select>
-                }
-            </EditTemplate>
-        </HfGridColumn>
-        <HfGridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="160px" />
-        <HfGridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px" />
-        <HfGridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Cell" Width="120px" />
-        <HfGridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px" />
-        <HfGridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="220px" />
-        <HfGridColumn Field="@nameof(ContactRow.SendVia)" HeaderText="Send Via" Width="90px">
-            <Template>
-                @{
-                    var data = (ContactRow)context;
-                    <span>@GetSendViaText(data.SendVia)</span>
-                }
-            </Template>
-            <EditTemplate>
-                @{
-                    var data = (ContactRow)context;
-                    <select @bind="data.SendVia" @bind:after="() => MarkContactDirty(data)">
-                        @foreach (var opt in SendViaOptions)
-                        {
-                            <option value="@opt.Value">@opt.Text</option>
-                        }
-                    </select>
-                }
-            </EditTemplate>
-        </HfGridColumn>
-        <HfGridColumn Field="@nameof(ContactRow.SmsAddress)" HeaderText="SMS Address" Width="160px">
-            <Template>
-                @{
-                    var data = (ContactRow)context;
-                    var display = SmsCarriers.FirstOrDefault(x => x.Value == data.SmsAddress)?.Text ?? data.SmsAddress;
-                    <span>@display</span>
-                }
-            </Template>
-            <EditTemplate>
-                @{
-                    var data = (ContactRow)context;
-                    <select @bind="data.SmsAddress" @bind:after="() => MarkContactDirty(data)">
-                        <option value=""></option>
-                        @foreach (var opt in SmsCarriers)
-                        {
-                            <option value="@opt.Value">@opt.Text</option>
-                        }
-                    </select>
-                }
-            </EditTemplate>
-        </HfGridColumn>
-    </HfGridColumnsBase>
-</HfGrid>
+@* ── Pick List Modal ─────────────────────────────────── *@
+<FPickList @ref="pickList" OnSelected="OnPickListSelected" />
 
 @code {
     [Parameter] public string? CustomerId { get; set; }
 
-    private readonly DbWrapperSqlServer db = new();
-    private const int DivisionId = 1;
+    // ── Navigation (MDI shell self-host) ──────────────────────
+    [CascadingParameter(Name = "ParentNavigate")] private Action<string>? ParentNavigate { get; set; }
 
-    private bool mDirty;
+    // ── Database ──────────────────────────────────────────────
+    private int DivisionId => SessionState.DivisionID;
+
+    // ── State ─────────────────────────────────────────────────
+    private bool mDirty = false;
     private string mCustomer = "";
     private bool CustomerEditable = true;
 
+    private MessageBoxControl? messageBox;
+
+    // ── Customer Fields ───────────────────────────────────────
     private string Customer = "";
     private string Description = "";
     private string Comments = "";
@@ -221,40 +242,69 @@
     private string Phone = "";
     private string Fax = "";
     private string Status = "Active";
-
     private readonly List<string> StatusOptions = new() { "Active", "Inactive" };
 
+    // ── Contacts ──────────────────────────────────────────────
     private List<ContactRow> ContactsData = new();
     private ContactRow? SelectedContact;
     private readonly HashSet<long> DeletedContactIds = new();
 
+    // ── Lookups ───────────────────────────────────────────────
     private List<ComboItem> RoleOptions = new();
     private List<ComboItem> SmsCarriers = new();
-    private readonly List<ComboIntItem> SendViaOptions = new()
-    {
-        new ComboIntItem { Value = 1, Text = "Print" },
-        new ComboIntItem { Value = 3, Text = "Email" },
-        new ComboIntItem { Value = 4, Text = "Fax" }
-    };
 
-    private HfGrid<ContactRow>? ContactsGrid;
-    private readonly HfSelectionSettings contactSelection = new() { Type = SelectionType.Single, Mode = SelectionMode.Row, EnableToggle = true };
-    private readonly HfEditSettings contactEditSettings = new()
+    // VB6 gContacts ColComboList values in FlexKit EditOptions form; the mapped
+    // "#value;text" entries store the code and display the name.
+    private static readonly string[] SendViaEditOptions = { "Print", "Email", "Fax" };
+    private List<string> RoleEditOptions = new();
+    private List<string> SmsCarrierOptions = new();
+
+    // ── PickList ──────────────────────────────────────────────
+    private FPickList? pickList;
+
+    // ── Grid ──────────────────────────────────────────────────
+    private GridControl<ContactRow>? ContactsGrid;
+    private readonly SelectionSettings contactSelection = new() { Type = SelectionType.Single, Mode = SelectionMode.Row, EnableToggle = true };
+    private readonly EditSettings contactEditSettings = new()
     {
         AllowEditing = true,
-        AllowAdding = false,
+        AllowAdding = true,
         AllowDeleting = false,
         AllowEditOnDblClick = true,
-        ShowConfirmDialog = false
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
     };
-    private readonly HfGridEvents<ContactRow> contactGridEvents = new();
+    private readonly GridControlEvents<ContactRow> contactGridEvents = new();
 
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // VB6: IniGetGrid(Me, gContacts, , , , True) → gridname "FCustomer.gContacts",
+    // Grouped=True. Load/resolve/order/width boilerplate delegated to the shared
+    // GridLayoutPresenter; the VB6 field aliases (FirstName/ContactName→Name, etc.)
+    // are passed via the ctor alias map. The presenter resolves exact → normalized
+    // → alias → literal, matching the old switch order.
+    private readonly GridLayoutPresenter<ContactRow> _grid =
+        new("FCustomer", "gContacts", grouped: true,
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["firstname"] = nameof(ContactRow.Name),
+                ["contactname"] = nameof(ContactRow.Name),
+                ["workphone"] = nameof(ContactRow.Phone),
+                ["cellphone"] = nameof(ContactRow.Cell),
+                ["commmodeid"] = nameof(ContactRow.SendVia),
+                ["commmode"] = nameof(ContactRow.SendVia)
+            });
+    private Dictionary<string, GridLayoutColumn> gContactsLayout => _grid.Layout;
+    private bool HasGridLayout => _grid.Has;
+    private int gContactsLayoutVersion => _grid.Version;
+
+    // ── Lifecycle ─────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
         contactGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ContactRow>>(this, OnContactSelected);
         contactGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<ContactRow>>(this, OnContactDeselected);
         contactGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ContactRow>>(this, OnContactCellSaved);
 
+        await LoadGridLayoutAsync();
         await LoadLookupDataAsync();
 
         if (!string.IsNullOrWhiteSpace(CustomerId) && CustomerId != "?")
@@ -264,88 +314,137 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && string.IsNullOrWhiteSpace(mCustomer))
-        {
-            await OpenCustomerAsync();
-        }
+        return Task.CompletedTask;
     }
 
-    private async Task LoadLookupDataAsync()
+    // ── Load Grid Layout ──────────────────────────────────────
+    // VB6: IniGetGrid(Me, gContacts, , , , True)  → gridname "FCustomer.gContacts", Grouped=True.
+    // Columns are AppGridLayout-driven (DBGetGrid), rendered dynamically — never hardcoded.
+    private async Task LoadGridLayoutAsync()
     {
         try
         {
-            var carriers = await db.QueryAsync("select address,name from smscarriers order by name");
+            await _grid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+        }
+    }
+
+    // GridControl raises OnLayoutChanged when a resize/reorder/hide/group/rename
+    // finishes. The new state lives on the snapshot, not in the presenter's layout
+    // dict, so it has to be merged in before the write.
+    private async Task OnContactsLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || gContactsLayout.Count == 0) return;
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FCustomer", "gContacts", instanceKey: null,
+                gContactsLayout, snapshot, ResolveContactsSnapshotField, staticNames: false);
+
+            _grid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FCustomer gContacts layout");
+        }
+    }
+
+    // The SendVia layout column is rendered as the SendViaText GridColumn, so the
+    // snapshot reports it under that name.
+    private string ResolveContactsSnapshotField(string layoutField)
+    {
+        var field = ResolveGridField(layoutField);
+        return field == nameof(ContactRow.SendVia) ? nameof(ContactRow.SendViaText) : field;
+    }
+
+    // ── Load Lookup Data ──────────────────────────────────────
+    private async Task LoadLookupDataAsync()
+    {
+        // VB6: gContacts.ColComboList(SMSAddress) = BuildComboList(
+        //        HFApp.SqlExec("select address,name from smscarriers order by 2"), "*name,address", "address")
+        //   → display = name, value = address.
+        try
+        {
+            var carriers = await db.QueryAsync("SELECT address, name FROM smscarriers ORDER BY name");
             SmsCarriers = carriers.Select(r => new ComboItem
             {
                 Value = r["address"]?.ToString() ?? "",
                 Text = r["name"]?.ToString() ?? ""
             }).ToList();
         }
-        catch
+        catch (Exception ex)
         {
-            SmsCarriers = new List<ComboItem>();
+            SmsCarriers = new();
+            Logger.LogWarning(ex, "LoadSmsCarriers");
         }
+        SmsCarrierOptions = SmsCarriers.Select(c => $"#{c.Value};{c.Text}").ToList();
 
+        // VB6: gContacts.ColComboList(Role) = HFApp.Options.ValueByName("CustomerContactRoles").
+        // Options.ValueByName resolves the division-specific row over the global (DivisionID 0) row.
+        // Pipe-delimited list of role captions. No hardcoded fallback — match VB6 (empty option = empty combo).
         string roles = "";
         try
         {
-            roles = await db.ExecuteScalarAsync<string>("SELECT TOP 1 Value FROM AppOptions WHERE Name='CustomerContactRoles'");
+            roles = await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 OptionValue FROM AppOptions
+                  WHERE OptionName='CustomerContactRoles' AND DivisionID IN (0, @DivisionID)
+                  ORDER BY DivisionID DESC",
+                new { DivisionID = DivisionId }) ?? "";
         }
-        catch
+        catch (Exception ex)
         {
-            roles = "";
+            Logger.LogWarning(ex, "LoadCustomerContactRoles");
         }
-
-        if (string.IsNullOrWhiteSpace(roles))
-            roles = "Sales|Estimator|Accounting|Other";
 
         RoleOptions = roles.Split('|', StringSplitOptions.RemoveEmptyEntries)
                            .Select(r => r.Trim())
                            .Where(r => !string.IsNullOrWhiteSpace(r))
                            .Select(r => new ComboItem { Value = r, Text = r })
                            .ToList();
+        RoleEditOptions = RoleOptions.Select(r => r.Value).ToList();
     }
 
+    // ── Load Customer Data ────────────────────────────────────
     private async Task LoadDataAsync()
     {
-        var rows = await db.QueryAsync(
-            "select * from arcustomers where divisionid=@DivisionID and arcustomer=@Customer",
-            new { DivisionID = DivisionId, Customer = mCustomer });
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT * FROM arcustomers WHERE divisionid=@DivisionID AND arcustomer=@Customer",
+                new { DivisionID = DivisionId, Customer = mCustomer });
 
-        if (rows.Count == 0)
-        {
-            mCustomer = "";
-            Customer = "";
-            Description = "";
-            Comments = "";
-            Address = "";
-            City = "";
-            Province = "";
-            Postal = "";
-            Phone = "";
-            Fax = "";
-            Status = "Active";
-            ContactsData = new List<ContactRow>();
-            CustomerEditable = true;
+            if (rows.Count == 0)
+            {
+                ResetForm();
+            }
+            else
+            {
+                var row = rows[0];
+                Customer = row["arcustomer"]?.ToString() ?? "";
+                mCustomer = Customer;
+                Description = row["description"]?.ToString() ?? "";
+                Comments = row["comments"]?.ToString() ?? "";
+                Address = CombineAddress(row["billaddr1"]?.ToString(), row["billaddr2"]?.ToString());
+                City = row["billcity"]?.ToString() ?? "";
+                Province = row["billprovince"]?.ToString() ?? "";
+                Postal = row["billpostalcode"]?.ToString() ?? "";
+                Phone = row["phone1"]?.ToString() ?? "";
+                Fax = row["fax1"]?.ToString() ?? "";
+                Status = IsTrue(row.ContainsKey("Inactive") ? row["Inactive"] : null) ? "Inactive" : "Active";
+                CustomerEditable = false;
+                await LoadContactsAsync();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            var row = rows[0];
-            Customer = row["arcustomer"]?.ToString() ?? "";
-            mCustomer = Customer;
-            Description = row["description"]?.ToString() ?? "";
-            Comments = row["comments"]?.ToString() ?? "";
-            Address = CombineAddress(row["billaddr1"]?.ToString(), row["billaddr2"]?.ToString());
-            City = row["billcity"]?.ToString() ?? "";
-            Province = row["billprovince"]?.ToString() ?? "";
-            Postal = row["billpostalcode"]?.ToString() ?? "";
-            Phone = row["phone1"]?.ToString() ?? "";
-            Fax = row["fax1"]?.ToString() ?? "";
-            Status = IsTrue(row["Inactive"]) ? "Inactive" : "Active";
-            CustomerEditable = false;
-            await LoadContactsAsync();
+            Logger.LogError(ex, "FCustomer LoadData");
+            Notifications.Error($"Load error: {ex.Message}");
         }
 
         mDirty = false;
@@ -353,229 +452,319 @@
         StateHasChanged();
     }
 
+    private void ResetForm()
+    {
+        mCustomer = "";
+        Customer = "";
+        Description = "";
+        Comments = "";
+        Address = "";
+        City = "";
+        Province = "";
+        Postal = "";
+        Phone = "";
+        Fax = "";
+        Status = "Active";
+        ContactsData = new();
+        CustomerEditable = true;
+    }
+
+    // ── Load Contacts Grid ────────────────────────────────────
     private async Task LoadContactsAsync()
     {
-        ContactsData = new List<ContactRow>();
+        ContactsData = new();
         if (string.IsNullOrWhiteSpace(mCustomer)) return;
 
-        var rows = await db.QueryAsync(
-            "select * from contacts where contacttypeid=99 and arcustomer=@Customer order by firstname",
-            new { Customer = mCustomer });
-
-        foreach (var r in rows)
+        try
         {
-            ContactsData.Add(new ContactRow
+            var rows = await db.QueryAsync(
+                "SELECT * FROM contacts WHERE contacttypeid=99 AND arcustomer=@Customer ORDER BY firstname",
+                new { Customer = mCustomer });
+
+            foreach (var r in rows)
             {
-                ContactID = SafeLong(r["ContactID"]),
-                Role = r["Role"]?.ToString() ?? "",
-                Name = r["FirstName"]?.ToString() ?? "",
-                Phone = r["WorkPhone"]?.ToString() ?? "",
-                Cell = r["CellPhone"]?.ToString() ?? "",
-                Fax = r["Fax"]?.ToString() ?? "",
-                Email = r["Email"]?.ToString() ?? "",
-                SendVia = SafeInt(r["CommModeID"], 1),
-                SmsAddress = r["SmsAddress"]?.ToString() ?? "",
-                RowState = "CLEAN"
-            });
+                ContactsData.Add(new ContactRow
+                {
+                    ContactID = SafeLong(r.ContainsKey("ContactID") ? r["ContactID"] : null),
+                    Role = r.ContainsKey("Role") ? r["Role"]?.ToString() ?? "" : "",
+                    Name = r.ContainsKey("FirstName") ? r["FirstName"]?.ToString() ?? "" : "",
+                    Phone = r.ContainsKey("WorkPhone") ? r["WorkPhone"]?.ToString() ?? "" : "",
+                    Cell = r.ContainsKey("CellPhone") ? r["CellPhone"]?.ToString() ?? "" : "",
+                    Fax = r.ContainsKey("Fax") ? r["Fax"]?.ToString() ?? "" : "",
+                    Email = r.ContainsKey("Email") ? r["Email"]?.ToString() ?? "" : "",
+                    SendVia = SafeInt(r.ContainsKey("CommModeID") ? r["CommModeID"] : null, 1),
+                    SmsAddress = r.ContainsKey("SmsAddress") ? r["SmsAddress"]?.ToString() ?? "" : "",
+                    RowState = "CLEAN"
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FCustomer LoadContacts");
+            Notifications.Error($"Load contacts error: {ex.Message}");
         }
     }
 
-    private async Task OnOpenClick() => await OpenCustomerAsync();
-
-    private async Task OpenCustomerAsync()
+    // ── Toolbar: Open (FPickList) ─────────────────────────────
+    private async Task OnOpenClick()
     {
-        if (!await ConfirmSaveAsync()) return;
-        var input = await JSRuntime.InvokeAsync<string>("prompt", "Enter customer code:", Customer);
-        if (string.IsNullOrWhiteSpace(input)) return;
-        mCustomer = input.Trim();
-        await LoadDataAsync();
+        // VB6 Toolbar "Open": If Not SaveData(True) Then Exit Sub
+        if (!await SaveDataAsync(true)) return;
+        await OpenCustomerPickList();
     }
 
+    private async Task OpenCustomerPickList()
+    {
+        if (pickList == null) return;
+
+        // VB6 FCustomer.frm Toolbar_ButtonClick "Open":
+        //   s = "Active Customers"   & Chr(1) & "select * from Picklist_ActiveARCustomers   where divisionid=" & DivisionID & Chr(0)
+        //   s = s & "Inactive Customers" & Chr(1) & "select * from Picklist_InActiveARCustomers where divisionid=" & DivisionID
+        //   FPickList.Choose(db, "Customer", s, txtCustomer.Text, , True, , "divisionid")
+        // Two views over the VB6 picklist VIEWS; divisionid column is hidden.
+        var queries =
+            "Active Customers;SELECT * FROM Picklist_ActiveARCustomers WHERE divisionid=@DivisionID" +
+            "|Inactive Customers;SELECT * FROM Picklist_InActiveARCustomers WHERE divisionid=@DivisionID";
+
+        await pickList.Open(
+            title: "Customer",
+            queries: queries,
+            hideColumns: "divisionid",
+            defaultItem: !string.IsNullOrWhiteSpace(mCustomer) ? mCustomer : null,
+            showNew: true,
+            parameters: new Dictionary<string, object> { ["DivisionID"] = DivisionId });
+    }
+
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        if (selectedRows.Count == 0)
+        {
+            // "New" selected
+            ResetForm();
+            mDirty = false;
+            StateHasChanged();
+            return;
+        }
+
+        var firstRow = selectedRows[0];
+        var custNo = firstRow.ContainsKey("Customer") ? firstRow["Customer"]?.ToString()?.Trim() ?? "" : "";
+
+        if (string.IsNullOrWhiteSpace(custNo))
+        {
+            ResetForm();
+            mDirty = false;
+        }
+        else
+        {
+            mCustomer = custNo;
+            Customer = custNo;
+            await LoadDataAsync();
+        }
+        StateHasChanged();
+    }
+
+    // ── Toolbar: Save ─────────────────────────────────────────
     private async Task OnSaveClick() => await SaveDataAsync(false);
+
+    // Flush any in-flight in-cell Contacts edit before checking mDirty — mirrors
+    // VB6 ValidateEdit committing on focus loss. Writes the pending cell back into
+    // the ContactRow (so IsContactEmpty is false and the INSERT runs) and tears
+    // down the editor buffer so it can't survive the DataSource swap.
+    private async Task FlushPendingGridEditsAsync()
+    {
+        if (ContactsGrid != null) await ContactsGrid.EndEditAsync();
+    }
 
     private async Task<bool> SaveDataAsync(bool prompt)
     {
+        await FlushPendingGridEditsAsync();
+
+        // VB6 SaveData(prompt): if not dirty → return True (nothing to do).
         if (!mDirty) return true;
 
-        if (prompt)
+        // VB6: If prompt Then MsgBox vbYesNoCancel
+        //   vbNo     → SaveData = True (discard changes, allow caller to proceed)
+        //   vbCancel → SaveData = False (abort the caller's action)
+        //   vbYes    → fall through and persist
+        if (prompt && messageBox != null)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Customer has changed. Save these changes?");
-            if (!confirm) return true;
+            var answer = await messageBox.ShowAsync("Customer has changed.\n\nDo you want to save these changes?", "Customer", MessageBoxButtons.YesNoCancel, "question");
+            if (answer == MessageBoxResult.No) { mDirty = false; return true; }
+            if (answer == MessageBoxResult.Cancel) return false;
         }
 
         Customer = Customer?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(Customer))
-        {
-            await JSRuntime.InvokeVoidAsync("alert", "Customer is required.");
-            return false;
-        }
 
         var (addr1, addr2) = SplitAddress(Address);
         Phone = FormatPhone(Phone);
         Fax = FormatPhone(Fax);
-        var inactive = Status == "Inactive";
 
-        if (string.IsNullOrWhiteSpace(mCustomer))
+        try
         {
-            var insertSql = @"
-                INSERT arcustomers(arcustomer,description,comments,billaddr1,billaddr2,billcity,billprovince,billpostalcode,phone1,fax1,divisionid,Inactive)
-                VALUES(@Customer,@Description,@Comments,@Addr1,@Addr2,@City,@Province,@Postal,@Phone,@Fax,@DivisionID,@Inactive)";
-            await db.ExecuteAsync(insertSql, new
+            // VB6: new record when mCustomer is "" or Chr(1)
+            if (string.IsNullOrWhiteSpace(mCustomer) || mCustomer == "")
             {
-                Customer,
-                Description,
-                Comments,
-                Addr1 = addr1,
-                Addr2 = addr2,
-                City,
-                Province,
-                Postal,
-                Phone,
-                Fax,
-                DivisionID = DivisionId,
-                Inactive = inactive
-            });
-            mCustomer = Customer;
-            CustomerEditable = false;
-        }
-        else
-        {
-            var updateSql = @"
-                UPDATE arcustomers SET
-                    description=@Description,
-                    comments=@Comments,
-                    billaddr1=@Addr1,
-                    billaddr2=@Addr2,
-                    billcity=@City,
-                    billprovince=@Province,
-                    billpostalcode=@Postal,
-                    phone1=@Phone,
-                    fax1=@Fax,
-                    Inactive=@Inactive
-                WHERE arcustomer=@Customer AND divisionid=@DivisionID";
-            await db.ExecuteAsync(updateSql, new
+                // VB6: INSERT arcustomers(...) — Inactive is NOT written by this form
+                var insertSql = @"
+                    INSERT arcustomers(arcustomer,description,comments,billaddr1,billaddr2,billcity,billprovince,billpostalcode,phone1,fax1,divisionid)
+                    VALUES(@Customer,@Description,@Comments,@Addr1,@Addr2,@City,@Province,@Postal,@Phone,@Fax,@DivisionID)";
+                await db.ExecuteAsync(insertSql, new
+                {
+                    Customer,
+                    Description,
+                    Comments,
+                    Addr1 = addr1,
+                    Addr2 = addr2,
+                    City,
+                    Province,
+                    Postal,
+                    Phone,
+                    Fax,
+                    DivisionID = DivisionId
+                });
+                mCustomer = Customer;
+                CustomerEditable = false;
+            }
+            else
             {
-                Customer = mCustomer,
-                Description,
-                Comments,
-                Addr1 = addr1,
-                Addr2 = addr2,
-                City,
-                Province,
-                Postal,
-                Phone,
-                Fax,
-                Inactive = inactive,
-                DivisionID = DivisionId
-            });
-        }
+                // VB6: UPDATE arcustomers SET ... (Inactive is NOT written by this form)
+                var updateSql = @"
+                    UPDATE arcustomers SET
+                        description=@Description,
+                        comments=@Comments,
+                        BillAddr1=@Addr1,
+                        BillAddr2=@Addr2,
+                        BillCity=@City,
+                        BillProvince=@Province,
+                        BillPostalCode=@Postal,
+                        Phone1=@Phone,
+                        Fax1=@Fax
+                    WHERE ARCustomer=@Customer AND divisionid=@DivisionID";
+                await db.ExecuteAsync(updateSql, new
+                {
+                    Customer = mCustomer,
+                    Description,
+                    Comments,
+                    Addr1 = addr1,
+                    Addr2 = addr2,
+                    City,
+                    Province,
+                    Postal,
+                    Phone,
+                    Fax,
+                    DivisionID = DivisionId
+                });
+            }
 
-        await SaveContactsAsync();
-        mDirty = false;
-        StateHasChanged();
-        return true;
+            var contactsOk = await SaveContactsAsync();
+            mDirty = !contactsOk;
+            StateHasChanged();
+            return contactsOk;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FCustomer SaveData");
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase))
+                Notifications.Error($"'{Customer}' already exists. Please use a different code.");
+            else
+                Notifications.Error($"Save error: {ex.Message}");
+            return false;
+        }
     }
 
-    private async Task SaveContactsAsync()
+    private async Task<bool> SaveContactsAsync()
     {
+        var ok = true;
         var cust = string.IsNullOrWhiteSpace(mCustomer) ? Customer : mCustomer;
-        if (string.IsNullOrWhiteSpace(cust)) return;
+        if (string.IsNullOrWhiteSpace(cust)) return true;
 
-        foreach (var id in DeletedContactIds)
+        foreach (var id in DeletedContactIds.ToList())
         {
-            await db.ExecuteAsync("DELETE FROM Contacts WHERE ContactID=@Id", new { Id = id });
+            try { await db.ExecuteAsync("DELETE FROM Contacts WHERE ContactID=@Id", new { Id = id }); }
+            catch (Exception ex) { ok = false; Logger.LogWarning(ex, "Delete contact {id}", id); };
         }
         DeletedContactIds.Clear();
 
-        foreach (var row in ContactsData)
+        // Snapshot: the grid appends the trailing blank row to ContactsData
+        // while this loop awaits.
+        foreach (var row in ContactsData.ToList())
         {
             if (row.RowState != "DIRTY") continue;
-            if (IsContactEmpty(row)) { row.RowState = "CLEAN"; continue; }
+            // Only an unsaved empty row is dropped. VB6 SaveContacts has no
+            // emptiness test, so a saved contact the user blanked is UPDATEd.
+            if (row.ContactID == 0 && IsContactEmpty(row)) { row.RowState = "CLEAN"; continue; }
 
             row.Phone = FormatPhone(row.Phone);
             row.Cell = FormatPhone(row.Cell);
             row.Fax = FormatPhone(row.Fax);
 
-            if (row.ContactID == 0)
+            try
             {
-                var insertSql = @"
-                    INSERT INTO Contacts(ContactTypeID,UserID,ARCustomer,Role,FirstName,WorkPhone,CellPhone,Fax,Email,CommModeID,SmsAddress)
-                    OUTPUT INSERTED.ContactID
-                    VALUES(99,@UserID,@ARCustomer,@Role,@FirstName,@WorkPhone,@CellPhone,@Fax,@Email,@CommModeID,@SmsAddress)";
-                var newId = await db.ExecuteScalarAsync<long>(insertSql, new
+                if (row.ContactID == 0)
                 {
-                    UserID = cust,
-                    ARCustomer = cust,
-                    row.Role,
-                    FirstName = row.Name,
-                    WorkPhone = row.Phone,
-                    CellPhone = row.Cell,
-                    row.Fax,
-                    row.Email,
-                    CommModeID = row.SendVia,
-                    SmsAddress = row.SmsAddress
-                });
-                row.ContactID = newId;
+                    // VB6: INSERT INTO Contacts(ContactTypeID=99, ...)
+                    var insertSql = @"
+                        INSERT INTO Contacts(ContactTypeID,UserID,ARCustomer,Role,FirstName,WorkPhone,CellPhone,Fax,Email,CommModeID,SmsAddress)
+                        OUTPUT INSERTED.ContactID
+                        VALUES(99,@UserID,@ARCustomer,@Role,@FirstName,@WorkPhone,@CellPhone,@Fax,@Email,@CommModeID,@SmsAddress)";
+                    var newId = await db.ExecuteScalarAsync<long>(insertSql, new
+                    {
+                        UserID = cust,
+                        ARCustomer = cust,
+                        row.Role,
+                        FirstName = row.Name,
+                        WorkPhone = row.Phone,
+                        CellPhone = row.Cell,
+                        row.Fax,
+                        row.Email,
+                        // VB6 gContacts_StartEdit seeds SendVia = 1 (Print).
+                        CommModeID = row.SendVia == 0 ? 1 : row.SendVia,
+                        SmsAddress = row.SmsAddress
+                    });
+                    row.ContactID = newId;
+                }
+                else
+                {
+                    // VB6: UPDATE Contacts SET ...
+                    var updateSql = @"
+                        UPDATE Contacts SET
+                            Role=@Role,
+                            FirstName=@FirstName,
+                            WorkPhone=@WorkPhone,
+                            CellPhone=@CellPhone,
+                            Fax=@Fax,
+                            Email=@Email,
+                            CommModeID=@CommModeID,
+                            SmsAddress=@SmsAddress
+                        WHERE ContactID=@ContactID";
+                    await db.ExecuteAsync(updateSql, new
+                    {
+                        row.Role,
+                        FirstName = row.Name,
+                        WorkPhone = row.Phone,
+                        CellPhone = row.Cell,
+                        row.Fax,
+                        row.Email,
+                        CommModeID = row.SendVia,
+                        row.SmsAddress,
+                        row.ContactID
+                    });
+                }
+                row.RowState = "CLEAN";
             }
-            else
+            catch (Exception ex)
             {
-                var updateSql = @"
-                    UPDATE Contacts SET
-                        Role=@Role,
-                        FirstName=@FirstName,
-                        WorkPhone=@WorkPhone,
-                        CellPhone=@CellPhone,
-                        Fax=@Fax,
-                        Email=@Email,
-                        CommModeID=@CommModeID,
-                        SmsAddress=@SmsAddress
-                    WHERE ContactID=@ContactID";
-                await db.ExecuteAsync(updateSql, new
-                {
-                    row.Role,
-                    FirstName = row.Name,
-                    WorkPhone = row.Phone,
-                    CellPhone = row.Cell,
-                    row.Fax,
-                    row.Email,
-                    CommModeID = row.SendVia,
-                    row.SmsAddress,
-                    row.ContactID
-                });
+                ok = false;
+                Logger.LogError(ex, "FCustomer SaveContact");
+                Notifications.Error($"Save contact error: {ex.Message}");
             }
-
-            row.RowState = "CLEAN";
         }
+
+        return ok;
     }
 
-    private async Task<bool> ConfirmSaveAsync()
-    {
-        if (!mDirty) return true;
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Customer has changed. Save these changes?");
-        if (!confirm) return true;
-        return await SaveDataAsync(false);
-    }
-
-    private void AddContact()
-    {
-        ContactsData.Add(new ContactRow { SendVia = 1, RowState = "DIRTY" });
-        mDirty = true;
-    }
-
-    private async Task DeleteContact()
-    {
-        if (SelectedContact == null) return;
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Delete selected contact?");
-        if (!confirm) return;
-
-        if (SelectedContact.ContactID != 0)
-            DeletedContactIds.Add(SelectedContact.ContactID);
-
-        ContactsData.Remove(SelectedContact);
-        SelectedContact = null;
-        mDirty = true;
-    }
-
+    // ── Grid Event Handlers ───────────────────────────────────
     private void OnContactSelected(RowSelectEventArgs<ContactRow> args) => SelectedContact = args.Data;
     private void OnContactDeselected(RowSelectEventArgs<ContactRow> args) => SelectedContact = null;
 
@@ -585,18 +774,89 @@
         MarkContactDirty(args.Data);
     }
 
+    // ── Dirty Tracking ────────────────────────────────────────
     private void MarkDirty() { mDirty = true; }
-    private void MarkDirty(ChangeEventArgs _)
+
+    private void OnCustomerChanged(string? v)
     {
+        Customer = v ?? "";
         mDirty = true;
     }
 
+
     private void MarkContactDirty(ContactRow row)
     {
+        if (row == null) return;
+
+        // An unsaved row with nothing in it is the trailing blank row: never
+        // dirty, never saved (VB6 SaveContacts skips .Rows - 1).
+        if (row.ContactID == 0 && IsContactEmpty(row))
+        {
+            row.RowState = "CLEAN";
+            return;
+        }
+
         row.RowState = "DIRTY";
         mDirty = true;
     }
 
+    // ── Grid Layout Helpers (dynamic columns from AppGridLayout) ──
+    // Ordering + field-resolution (incl. the VB6 aliases) delegated to the shared
+    // GridLayoutPresenter. The column-type is computed by the form's own
+    // GetColumnTypeForField below (kept because FCustomer maps bool → CheckBox,
+    // not the presenter's generic Boolean — see drift note).
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+    {
+        foreach (var (layout, field, _, _) in _grid.GetOrdered())
+        {
+            var columnType = GetColumnTypeForField(field);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, field, columnType, textAlign);
+        }
+    }
+
+    private string ResolveGridField(string layoutField)
+        => _grid.ResolveField(layoutField);
+
+    // NOTE: intentionally diverges from GridLayoutPresenter.ColumnTypeFor — FCustomer
+    // renders bool columns as ColumnType.CheckBox (the presenter would return Boolean),
+    // so the per-row checkbox template fires. Kept local for that reason.
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_contactRowTypeMap.TryGetValue(GridLayoutPresenter.NormalizeKey(field), out var type))
+        {
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+        return ColumnType.Text;
+    }
+
+    // Minimal normalized field → CLR type map (only what GetColumnTypeForField needs,
+    // since the full reflection prop-map moved into the presenter).
+    private static readonly Dictionary<string, Type> _contactRowTypeMap =
+        typeof(ContactRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => GridLayoutPresenter.NormalizeKey(p.Name))
+            .ToDictionary(
+                g => g.Key,
+                g => Nullable.GetUnderlyingType(g.First().PropertyType) ?? g.First().PropertyType,
+                StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsFieldEditable(string field)
+    {
+        return field switch
+        {
+            "ContactID" or "RowState" => false,
+            _ => true
+        };
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    // ── Utility Functions ─────────────────────────────────────
     private static string CombineAddress(string? addr1, string? addr2)
     {
         var parts = new List<string>();
@@ -635,9 +895,6 @@
     private static int SafeInt(object? val, int def = 0) =>
         val == null || val == DBNull.Value || !int.TryParse(val.ToString(), out var i) ? def : i;
 
-    private string GetSendViaText(int value) =>
-        SendViaOptions.FirstOrDefault(x => x.Value == value)?.Text ?? value.ToString();
-
     private static bool IsContactEmpty(ContactRow row) =>
         string.IsNullOrWhiteSpace(row.Role) &&
         string.IsNullOrWhiteSpace(row.Name) &&
@@ -645,8 +902,48 @@
         string.IsNullOrWhiteSpace(row.Cell) &&
         string.IsNullOrWhiteSpace(row.Fax) &&
         string.IsNullOrWhiteSpace(row.Email) &&
-        string.IsNullOrWhiteSpace(row.SmsAddress);
+        string.IsNullOrWhiteSpace(row.SmsAddress) &&
+        row.SendVia == 0;
 
+    // ── Trailing Blank Row ────────────────────────────────────
+    // VB6 LoadContacts ends with ".AddItem """ so gContacts always carries one
+    // blank row, and gContacts_StartEdit appends the next one.
+    private static ContactRow CreateContactRow() => new() { SendVia = 0 };
+
+    private static bool CanAppendContactRowAfter(ContactRow row) => !IsContactEmpty(row);
+
+    // VB6 gContacts_KeyDown: Shift+Del drops the current row, never the
+    // trailing blank one; the delete is applied on save.
+    private void OnContactsKeyDown(KeyboardEventArgs e)
+    {
+        if (!e.ShiftKey || e.Key != "Delete") return;
+
+        var row = SelectedContact;
+        if (row == null || IsContactEmpty(row)) return;
+
+        if (row.ContactID != 0) DeletedContactIds.Add(row.ContactID);
+        ContactsData.Remove(row);
+        SelectedContact = null;
+        mDirty = true;
+    }
+
+    // VB6 gContacts_BeforeEdit .EditMaxLength per column.
+    private static readonly Dictionary<string, int> ContactMaxLengths =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [nameof(ContactRow.Name)] = 50,
+            [nameof(ContactRow.Role)] = 25,
+            [nameof(ContactRow.Phone)] = 35,
+            [nameof(ContactRow.Cell)] = 35,
+            [nameof(ContactRow.Fax)] = 35,
+            [nameof(ContactRow.Email)] = 500,
+            [nameof(ContactRow.SmsAddress)] = 50
+        };
+
+    private static int? GetContactMaxLength(string field) =>
+        !string.IsNullOrWhiteSpace(field) && ContactMaxLengths.TryGetValue(field, out var len) ? len : null;
+
+    // ── Models ────────────────────────────────────────────────
     public class ContactRow
     {
         public long ContactID { get; set; }
@@ -659,6 +956,20 @@
         public int SendVia { get; set; } = 1;
         public string SmsAddress { get; set; } = "";
         public string RowState { get; set; } = "CLEAN";
+
+        // VB6 gContacts ColComboList(SendVia) = "#1;Print|#3;Email|#4;Fax".
+        public string SendViaText
+        {
+            get => SendVia switch { 1 => "Print", 3 => "Email", 4 => "Fax", _ => "" };
+            set => SendVia = (value ?? "").Trim().ToLowerInvariant() switch
+            {
+                "print" => 1,
+                "email" => 3,
+                "fax" => 4,
+                "" => 0,
+                _ => int.TryParse(value, out var sv) ? sv : SendVia
+            };
+        }
     }
 
     public class ComboItem
@@ -667,9 +978,4 @@
         public string Text { get; set; } = "";
     }
 
-    public class ComboIntItem
-    {
-        public int Value { get; set; }
-        public string Text { get; set; } = "";
-    }
 }

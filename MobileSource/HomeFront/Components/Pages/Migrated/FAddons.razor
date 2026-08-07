@@ -1,8 +1,14 @@
-@using HomeFront.Components.Hf
+@namespace HomeFront.Components.Pages
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 @using System.Globalization
 @using System.Text
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FAddons> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer _db
 
 <div class="addons-container">
     <div class="addons-header">
@@ -14,13 +20,13 @@
     </div>
 
     <div class="addons-toolbar">
-        <HfButton CssClass="tbar-btn" OnClick="AddAddon">Add Addon</HfButton>
-        <HfButton CssClass="tbar-btn" OnClick="InsertSubTotal">Insert Subtotal</HfButton>
-        <HfButton CssClass="tbar-btn" Disabled="@(!CanDeleteSelected)" OnClick="DeleteSelected">Delete</HfButton>
-        <HfButton CssClass="tbar-btn" Disabled="@(!_dirty)" OnClick="SaveClick">Save</HfButton>
+        <ButtonControl CssClass="tbar-btn" OnClick="AddAddon">Add Addon</ButtonControl>
+        <ButtonControl CssClass="tbar-btn" OnClick="InsertSubTotal">Insert Subtotal</ButtonControl>
+        <ButtonControl CssClass="tbar-btn" Disabled="@(!CanDeleteSelected)" OnClick="DeleteSelected">Delete</ButtonControl>
+        <ButtonControl CssClass="tbar-btn" Disabled="@(!_dirty)" OnClick="SaveClick">Save</ButtonControl>
     </div>
 
-    <HfGrid @ref="GridRef"
+    <GridControl @ref="GridRef"
             TValue="AddonRow"
             DataSource="@Rows"
             AllowSelection="true"
@@ -31,189 +37,150 @@
             RowHeight="30"
             SelectionSettingsRef="@SelectionSettings"
             EventsRef="@GridEvents">
-        <HfGridColumnsBase>
-            <HfGridColumn Field="@nameof(AddonRow.Title)" HeaderText="Title" Width="220px">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(AddonRow.Title)" HeaderText="Title" Width="220px">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input class="grid-input @RowCss(row)"
-                           value="@row.Title"
-                           disabled="@IsTitleReadOnly(row)"
-                           @onchange="e => OnTitleChanged(row, e.Value?.ToString())" />
+                    <TextBoxControl Value="@row.Title"
+                                    ValueChanged="v => OnTitleChanged(row, v)"
+                                    Enabled="@(!IsTitleReadOnly(row))"
+                                    CssClass="@($"grid-input {RowCss(row)}")" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Basis)" HeaderText="Basis" Width="110px" AllowEditing="false">
+            <GridColumn Field="@nameof(AddonRow.Basis)" HeaderText="Basis" Width="110px" AllowEditing="false">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
                     <span class="@RowCss(row)">@row.Basis</span>
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.RateDisplay)" HeaderText="Rate" Width="110px">
+            <GridColumn Field="@nameof(AddonRow.RateDisplay)" HeaderText="Rate" Width="110px">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input class="grid-input @RowCss(row)"
-                           value="@row.RateDisplay"
-                           disabled="@IsRateReadOnly(row)"
-                           @onchange="e => OnRateChanged(row, e.Value?.ToString())" />
+                    <TextBoxControl Value="@row.RateDisplay"
+                                    ValueChanged="v => OnRateChanged(row, v)"
+                                    Enabled="@(!IsRateReadOnly(row))"
+                                    CssClass="@($"grid-input {RowCss(row)}")" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Amount)" HeaderText="Amount" Width="110px" TextAlign="TextAlign.Right">
+            <GridColumn Field="@nameof(AddonRow.Amount)" HeaderText="Amount" Width="110px" TextAlign="TextAlign.Right">
                 <Template>
                     @{
                         var row = (AddonRow)context;
-                        var value = row.Amount.ToString("0.##", CultureInfo.InvariantCulture);
                     }
-                    <input type="number"
-                           step="0.01"
-                           class="grid-input @RowCss(row)"
-                           value="@value"
-                           disabled="@IsAmountReadOnly(row)"
-                           @onchange="e => OnAmountChanged(row, e.Value)" />
+                    <NumericTextBoxControl TValue="double"
+                                           Value="@row.Amount"
+                                           ValueChanged="v => OnAmountChanged(row, v)"
+                                           Step="0.01m"
+                                           Format="0.##"
+                                           Enabled="@(!IsAmountReadOnly(row))"
+                                           CssClass="@($"grid-input {RowCss(row)}")" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Total)" HeaderText="Total" Width="110px" TextAlign="TextAlign.Right">
+            <GridColumn Field="@nameof(AddonRow.Total)" HeaderText="Total" Width="110px" TextAlign="TextAlign.Right">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
                     <span class="@RowCss(row)">@row.Total.ToString("N2")</span>
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.PercentOfTotal)" HeaderText="% of Total" Width="90px" TextAlign="TextAlign.Right">
+            <GridColumn Field="@nameof(AddonRow.PercentOfTotal)" HeaderText="% of Total" Width="90px" TextAlign="TextAlign.Right">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
                     <span class="@RowCss(row)">@row.PercentOfTotal.ToString("P1")</span>
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Mat)" HeaderText="Mat" Width="60px" TextAlign="TextAlign.Center">
+            <GridColumn Field="@nameof(AddonRow.Mat)" HeaderText="Mat" Width="60px" TextAlign="TextAlign.Center">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input type="checkbox"
-                           @bind="row.Mat"
-                           @bind:after="() => OnCostFlagsChanged(row)"
-                           disabled="@IsCostFlagReadOnly(row)" />
+                    <CheckBoxControl Checked="@row.Mat"
+                                     CheckedChanged="v => { row.Mat = v; OnCostFlagsChanged(row); }"
+                                     Disabled="@IsCostFlagReadOnly(row)"
+                                     StopClickPropagation="true"
+                                     StopMouseDownPropagation="true" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Lab)" HeaderText="Lab" Width="60px" TextAlign="TextAlign.Center">
+            <GridColumn Field="@nameof(AddonRow.Lab)" HeaderText="Lab" Width="60px" TextAlign="TextAlign.Center">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input type="checkbox"
-                           @bind="row.Lab"
-                           @bind:after="() => OnCostFlagsChanged(row)"
-                           disabled="@IsCostFlagReadOnly(row)" />
+                    <CheckBoxControl Checked="@row.Lab"
+                                     CheckedChanged="v => { row.Lab = v; OnCostFlagsChanged(row); }"
+                                     Disabled="@IsCostFlagReadOnly(row)"
+                                     StopClickPropagation="true"
+                                     StopMouseDownPropagation="true" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Sub)" HeaderText="Sub" Width="60px" TextAlign="TextAlign.Center">
+            <GridColumn Field="@nameof(AddonRow.Sub)" HeaderText="Sub" Width="60px" TextAlign="TextAlign.Center">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input type="checkbox"
-                           @bind="row.Sub"
-                           @bind:after="() => OnCostFlagsChanged(row)"
-                           disabled="@IsCostFlagReadOnly(row)" />
+                    <CheckBoxControl Checked="@row.Sub"
+                                     CheckedChanged="v => { row.Sub = v; OnCostFlagsChanged(row); }"
+                                     Disabled="@IsCostFlagReadOnly(row)"
+                                     StopClickPropagation="true"
+                                     StopMouseDownPropagation="true" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Oth)" HeaderText="Oth" Width="60px" TextAlign="TextAlign.Center">
+            <GridColumn Field="@nameof(AddonRow.Oth)" HeaderText="Oth" Width="60px" TextAlign="TextAlign.Center">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input type="checkbox"
-                           @bind="row.Oth"
-                           @bind:after="() => OnCostFlagsChanged(row)"
-                           disabled="@IsCostFlagReadOnly(row)" />
+                    <CheckBoxControl Checked="@row.Oth"
+                                     CheckedChanged="v => { row.Oth = v; OnCostFlagsChanged(row); }"
+                                     Disabled="@IsCostFlagReadOnly(row)"
+                                     StopClickPropagation="true"
+                                     StopMouseDownPropagation="true" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.Eq)" HeaderText="Eq" Width="60px" TextAlign="TextAlign.Center">
+            <GridColumn Field="@nameof(AddonRow.Eq)" HeaderText="Eq" Width="60px" TextAlign="TextAlign.Center">
                 <Template>
                     @{
                         var row = (AddonRow)context;
                     }
-                    <input type="checkbox"
-                           @bind="row.Eq"
-                           @bind:after="() => OnCostFlagsChanged(row)"
-                           disabled="@IsCostFlagReadOnly(row)" />
+                    <CheckBoxControl Checked="@row.Eq"
+                                     CheckedChanged="v => { row.Eq = v; OnCostFlagsChanged(row); }"
+                                     Disabled="@IsCostFlagReadOnly(row)"
+                                     StopClickPropagation="true"
+                                     StopMouseDownPropagation="true" />
                 </Template>
-            </HfGridColumn>
+            </GridColumn>
 
-            <HfGridColumn Field="@nameof(AddonRow.AddonID)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.RateType)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.Percentage)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.Rate1)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.Rate2)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.LumpSumAmt)" Visible="false" />
-            <HfGridColumn Field="@nameof(AddonRow.BaseAmount)" Visible="false" />
-        </HfGridColumnsBase>
-    </HfGrid>
+            <GridColumn Field="@nameof(AddonRow.AddonID)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.RateType)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.Percentage)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.Rate1)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.Rate2)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.LumpSumAmt)" Visible="false" />
+            <GridColumn Field="@nameof(AddonRow.BaseAmount)" Visible="false" />
+        </GridColumnsBase>
+    </GridControl>
 </div>
 
-<style>
-    .addons-container {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .addons-header h3 {
-        margin: 0;
-    }
-
-    .addons-subtitle {
-        color: #666;
-        font-size: 13px;
-    }
-
-    .addons-toolbar {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-
-    .tbar-btn {
-        padding: 6px 12px;
-        border: 1px solid #c9c9c9;
-        background: #f7f7f7;
-        border-radius: 4px;
-    }
-
-    .grid-input {
-        width: 100%;
-        border: 1px solid #c9c9c9;
-        border-radius: 3px;
-        padding: 2px 4px;
-        box-sizing: border-box;
-    }
-
-    .addon-bold {
-        font-weight: 700;
-    }
-</style>
-
 @code {
-    private readonly DbWrapperSqlServer _db = new();
-
     [Parameter] public string Job { get; set; } = "";
     [Parameter] public long AssemblyId { get; set; }
     [Parameter] public int DivisionId { get; set; } = 1;
@@ -230,9 +197,9 @@
     private double mOth;
     private double mEq;
 
-    private HfGrid<AddonRow>? GridRef;
-    private readonly HfSelectionSettings SelectionSettings = new() { Mode = SelectionMode.Row, Type = SelectionType.Single };
-    private readonly HfGridEvents<AddonRow> GridEvents = new();
+    private GridControl<AddonRow>? GridRef;
+    private readonly SelectionSettings SelectionSettings = new() { Mode = SelectionMode.Row, Type = SelectionType.Single };
+    private readonly GridControlEvents<AddonRow> GridEvents = new();
 
     private List<AddonRow> Rows { get; set; } = new();
     private AddonRow? SelectedRow;
@@ -377,7 +344,7 @@
 
         if (prompt)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "This data has changed. Do you want to save these changes?");
+            var confirm = await Dialogs.ConfirmAsync("This data has changed. Do you want to save these changes?");
             if (!confirm) return false;
         }
 

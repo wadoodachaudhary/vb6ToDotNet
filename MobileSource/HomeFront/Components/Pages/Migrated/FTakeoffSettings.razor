@@ -1,7 +1,7 @@
-```razor
 @page "/takeoff-settings"
 @page "/takeoff-settings/{Job}"
 @rendermode InteractiveServer
+@layout HFComponent
 
 @namespace HomeFront.Components.Pages
 
@@ -10,66 +10,23 @@
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FTakeoffSettings> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Takeoff Settings - HomeFront</PageTitle>
-
-<style>
-    .takeoff-settings-container {
-        max-width: 600px;
-        margin: 20px auto;
-        font-family: sans-serif;
-    }
-
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        overflow: hidden;
-        margin-bottom: 16px;
-        background: #fff;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-
-    .button-row {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 8px 0;
-    }
-
-    .btn-action {
-        padding: 6px 24px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-        min-width: 90px;
-        transition: background 0.15s;
-    }
-
-    .btn-action:hover {
-        background: #e9ecef;
-    }
-
-    .btn-action.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .btn-action.primary:hover {
-        background: #0b5ed7;
-    }
-</style>
 
 <div class="takeoff-settings-container">
     <h4 style="margin-bottom: 16px;">Takeoff Settings</h4>
 
-    <div class="grid-container">
-        <HfGrid @ref="SettingsGrid"
+    <div class="grid-container" @onkeydown="OnGridKeyDown" tabindex="0">
+        <GridControl @ref="SettingsGrid"
                 TValue="TakeoffSettingRow"
                 DataSource="@GridData"
                 AllowSelection="true"
@@ -78,60 +35,69 @@
                 Height="400px"
                 EditSettingsRef="@editSettings"
                 SelectionSettingsRef="@selectionSettings">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(TakeoffSettingRow.RowIndex)" HeaderText="" Width="1px" Visible="false" IsPrimaryKey="true" />
-                <HfGridColumn Field="@nameof(TakeoffSettingRow.Label)" HeaderText="Setting" Width="200px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(TakeoffSettingRow.Value)" HeaderText="Value" Width="250px" AllowEditing="true">
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(TakeoffSettingRow.RowIndex)" HeaderText="" Width="1px" Visible="false" IsPrimaryKey="true" />
+                <GridColumn Field="@nameof(TakeoffSettingRow.Label)" HeaderText="Setting" Width="200px" AllowEditing="false" />
+                <GridColumn Field="@nameof(TakeoffSettingRow.Value)" HeaderText="Value" Width="250px" AllowEditing="true">
                     <EditTemplate>
                         @{
                             var data = (TakeoffSettingRow)context;
-                            var comboItems = GetComboListForRow(data.RowIndex);
+                            var comboItems = GetComboSelectListForRow(data.RowIndex);
                             if (comboItems != null && comboItems.Count > 0)
                             {
-                                <select @bind="data.Value" style="width:100%; padding:4px 8px; border:1px solid #ced4da; border-radius:4px;">
-                                    <option value="">-- Select --</option>
-                                    @foreach (var item in comboItems)
-                                    {
-                                        <option value="@item">@item</option>
-                                    }
-                                </select>
+                                <DropDownListControl TValue="string" TItem="string"
+                                                     @bind-Value="data.Value"
+                                                     DataSource="@comboItems"
+                                                     Placeholder="-- Select --"
+                                                     Width="100%"
+                                                     CssClass="ts-edit-control" />
                             }
                             else
                             {
-                                <input type="text" @bind="data.Value" maxlength="50"
-                                       style="width:100%; padding:4px 8px; border:1px solid #ced4da; border-radius:4px;" />
+                                <TextBoxControl @bind-Value="data.Value"
+                                                MaxLength="50"
+                                                CssClass="ts-edit-control" />
                             }
                         }
                     </EditTemplate>
-                </HfGridColumn>
-            </HfGridColumnsBase>
-        </HfGrid>
+                </GridColumn>
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
     <div class="button-row">
-        <button class="btn-action primary" @onclick="OnOkClick">OK</button>
-        <button class="btn-action" @onclick="OnCancelClick">Cancel</button>
+        <ButtonControl BareStyle="true" CssClass="btn-action primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl BareStyle="true" CssClass="btn-action" OnClick="OnCancelClick">Cancel</ButtonControl>
     </div>
 </div>
 
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     [Parameter] public string? Job { get; set; }
 
     // Database
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // Grid
-    private HfGrid<TakeoffSettingRow>? SettingsGrid;
+// Grid
+    private GridControl<TakeoffSettingRow>? SettingsGrid;
     private List<TakeoffSettingRow> GridData = new();
 
     // Grid settings
-    private HfSelectionSettings selectionSettings = new()
+    private SelectionSettings selectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowEditing = true,
         AllowEditOnDblClick = true,
@@ -142,7 +108,6 @@
     private string mJob = "";
     private string mSettings = "";
     private string mResultSettings = "";
-    private bool mCancelled = true;
     private List<string> WBSDescriptions = new();
     private Dictionary<int, List<string>> ComboListCache = new();
 
@@ -167,7 +132,7 @@
         try
         {
             var sql = "SELECT * FROM tbljobs WHERE DivisionID = @DivisionID AND job_no = @Job";
-            var dt = db.SqlExec(sql, new { DivisionID, Job = mJob });
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID, Job = mJob });
 
             if (dt.Rows.Count > 0)
             {
@@ -189,7 +154,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadDataAsync error loading WBS: {ex.Message}");
+            Logger.LogError(ex, "LoadDataAsync error loading WBS");
+
             for (int i = 1; i <= 40; i++)
                 WBSDescriptions.Add("");
         }
@@ -246,7 +212,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"PreloadComboListsAsync error: {ex.Message}");
+            Logger.LogError(ex, "PreloadComboListsAsync error");
+
         }
     }
 
@@ -267,7 +234,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"GetComboList error for {fieldName}: {ex.Message}");
+            Logger.LogError(ex, "GetComboList error for {fieldName}");
+
         }
         return result;
     }
@@ -279,23 +247,56 @@
         return new List<string>();
     }
 
+    // DropDownListControl variant of GetComboListForRow: when the row has combo
+    // values, prepend a blank entry so the user can re-select "blank" from the
+    // list (the old <select> had an explicit <option value="">-- Select --</option>;
+    // DropDownListControl shows "-- Select --" as a placeholder for the blank value).
+    // Returns the list only when there are real options, so the EditTemplate's
+    // "comboItems.Count > 0" gate (combo vs. text box) behaves exactly as before.
+    private List<string> GetComboSelectListForRow(int rowIndex)
+    {
+        var list = GetComboListForRow(rowIndex);
+        if (list == null || list.Count == 0)
+            return new List<string>();
+
+        var withBlank = new List<string> { "" };
+        withBlank.AddRange(list);
+        return withBlank;
+    }
+
+    // VB6: gData_KeyDown — Delete key clears the selected cell value
+    private void OnGridKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Delete" && SettingsGrid != null)
+        {
+            var selected = SettingsGrid.GetSelectedRecords();
+            if (selected != null)
+            {
+                foreach (var row in selected)
+                {
+                    row.Value = "";
+                }
+                StateHasChanged();
+            }
+        }
+    }
+
     private async Task OnOkClick()
     {
         SaveData();
         if (OnSettingsResult.HasDelegate)
             await OnSettingsResult.InvokeAsync(mResultSettings);
         else
-            NavigationManager.NavigateTo("/");
+            ClosePage();
     }
 
     private async Task OnCancelClick()
     {
-        mCancelled = true;
         mResultSettings = "";
         if (OnSettingsResult.HasDelegate)
             await OnSettingsResult.InvokeAsync(null);
         else
-            NavigationManager.NavigateTo("/");
+            ClosePage();
     }
 
     private void SaveData()
@@ -317,8 +318,6 @@
         var cleaned = mResultSettings.Replace("\x01", "").Trim();
         if (string.IsNullOrWhiteSpace(cleaned))
             mResultSettings = "";
-
-        mCancelled = false;
     }
 
     /// <summary>
@@ -358,4 +357,3 @@
         public bool IsVisible { get; set; } = true;
     }
 }
-```

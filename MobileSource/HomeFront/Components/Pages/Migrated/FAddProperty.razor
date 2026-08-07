@@ -1,7 +1,13 @@
+@namespace HomeFront.Components.Pages
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
+@using Microsoft.Data.SqlClient
 @inject IJSRuntime JSRuntime
+@inject ILogger<FAddProperty> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer _db
 
-<HfDialog Visible="@Visible"
+<DialogControl Visible="@Visible"
           Header="@DialogTitle"
           Width="640px"
           IsModal="true"
@@ -11,7 +17,7 @@
         <div class="faddproperty-form">
             <div class="form-row">
                 <label>Property Name</label>
-                <HfTextBox @bind-Value="FieldName"
+                <TextBoxControl @bind-Value="FieldName"
                            @bind-Value:after="OnFieldNameChanged"
                            MaxLength="200"
                            Enabled="@FieldNameEnabled"
@@ -20,7 +26,7 @@
 
             <div class="form-row">
                 <label>Category</label>
-                <HfTextBox @bind-Value="Category"
+                <TextBoxControl @bind-Value="Category"
                            MaxLength="200"
                            Enabled="@(!IsEdit)"
                            CssClass="form-input" />
@@ -43,7 +49,7 @@
 
             <div class="form-row">
                 <label>Length</label>
-                <HfNumericTextBox TValue="int"
+                <NumericTextBoxControl TValue="int"
                                   Value="@LengthValue"
                                   ValueChanged="OnLengthChanged"
                                   Min="1"
@@ -55,7 +61,7 @@
 
             <div class="form-row">
                 <label>Selection List</label>
-                <HfTextBox @bind-Value="PickListText"
+                <TextBoxControl @bind-Value="PickListText"
                            Multiline="true"
                            Rows="6"
                            Enabled="@PickListEnabled"
@@ -64,55 +70,12 @@
         </div>
     </ChildContent>
     <FooterContent>
-        <HfButton CssClass="hf-dialog-btn hf-primary" Disabled="@(!OkEnabled)" OnClick="HandleOk">OK</HfButton>
-        <HfButton CssClass="hf-dialog-btn" OnClick="HandleCancel">Cancel</HfButton>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" Disabled="@(!OkEnabled)" OnClick="HandleOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="HandleCancel">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
-
-<style>
-    .faddproperty-form {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .form-row {
-        display: grid;
-        grid-template-columns: 140px 1fr;
-        gap: 12px;
-        align-items: center;
-    }
-
-    .form-row label {
-        font-weight: 600;
-        color: #444;
-    }
-
-    .form-input {
-        width: 100%;
-    }
-
-    .length-input {
-        width: 120px;
-    }
-
-    .radio-group {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px 16px;
-    }
-
-    .radio-item {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 14px;
-    }
-</style>
+</DialogControl>
 
 @code {
-    private readonly DbWrapperSqlServer _db = new();
-
     [Parameter] public bool Visible { get; set; }
     [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
 
@@ -324,8 +287,32 @@
             };
 
             var columnName = SqlIdentifier(FieldName.Trim());
-            await _db.ExecuteAsync($"ALTER TABLE dbo.JobCustomFields ADD {columnName} {sqlType}");
-            await _db.ExecuteAsync($"ALTER TABLE dbo.WorkticketCustomFlds ADD {columnName} {sqlType}");
+
+            // VB6 (FAddProperty.frm): the two ALTER TABLE DDL statements run on a
+            // DEDICATED, freshly-opened connection whose Application Name is tagged
+            // "HFDBUpgradeWiz" so the customer DB's schema-protection triggers
+            // whitelist legitimate DDL:
+            //     Set c = New Connection
+            //     c.Open HFApp.ConnectionString(dbHomefront) & ";App=HFDBUpgradeWiz"
+            //     c.Execute(...JobCustomFields...) : c.Execute(...WorkticketCustomFlds...)
+            //     c.Close
+            var ddlConnString = new SqlConnectionStringBuilder(_db.GetConnectionString())
+            {
+                ApplicationName = "HFDBUpgradeWiz"
+            }.ConnectionString;
+            await using (var ddlConn = new SqlConnection(ddlConnString))
+            {
+                await ddlConn.OpenAsync();
+                await using (var alterJob = new SqlCommand($"ALTER TABLE dbo.JobCustomFields ADD {columnName} {sqlType}", ddlConn))
+                {
+                    await alterJob.ExecuteNonQueryAsync();
+                }
+                await using (var alterWt = new SqlCommand($"ALTER TABLE dbo.WorkticketCustomFlds ADD {columnName} {sqlType}", ddlConn))
+                {
+                    await alterWt.ExecuteNonQueryAsync();
+                }
+            }
+
             await _db.ExecuteAsync("INSERT INTO JobCustomFieldDefs(Name,Category,PickList) VALUES(@Name,@Category,@PickList)",
                 new { Name = FieldName.Trim(), Category, PickList = list });
 
@@ -389,7 +376,7 @@ where d.name = @Name";
 
     private async Task ShowErrorAsync(string message)
     {
-        await JSRuntime.InvokeVoidAsync("alert", message);
+        Notifications.Error(message);
     }
 
     private sealed record TypeOption(int Value, string Label);

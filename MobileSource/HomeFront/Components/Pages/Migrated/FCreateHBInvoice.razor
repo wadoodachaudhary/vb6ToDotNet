@@ -1,106 +1,19 @@
-```razor
 @page "/create-hb-invoice/{Job?}"
-@rendermode InteractiveServer
-
+@namespace HomeFront.Components.Pages
 @using HomeFront.Data
 @using Microsoft.AspNetCore.Components.Forms
 @using System.Globalization
-
+@using Fx.ControlKit.Notifications
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FCreateHBInvoice> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+@layout HFComponent
 
 <PageTitle>@FormTitle - HomeFront</PageTitle>
-
-<style>
-    .invoice-page {
-        padding: 16px;
-        font-family: Arial, Helvetica, sans-serif;
-    }
-    .header-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-bottom: 12px;
-    }
-    .panel {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 12px;
-        background: #fff;
-    }
-    .form-field {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        margin-bottom: 10px;
-    }
-    .form-field label {
-        min-width: 110px;
-        text-align: right;
-        font-weight: 600;
-        font-size: 13px;
-        padding-top: 6px;
-    }
-    .form-input {
-        flex: 1;
-        padding: 5px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-    textarea.form-input {
-        resize: vertical;
-    }
-    .grid-panel {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 8px;
-        background: #fff;
-        margin-bottom: 12px;
-    }
-    .button-row {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-    }
-    .btn {
-        padding: 6px 16px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-    }
-    .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .btn-secondary { background: #6c757d; color: #fff; border-color: #6c757d; }
-    .btn-success { background: #198754; color: #fff; border-color: #198754; }
-
-    .grid-input, .grid-select {
-        width: 100%;
-        padding: 2px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-
-    .loading-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.15);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-    .loading-box {
-        background: #fff;
-        padding: 16px 24px;
-        border-radius: 6px;
-        box-shadow: 0 4px 18px rgba(0,0,0,0.2);
-        font-size: 14px;
-        font-weight: 600;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -120,7 +33,7 @@
             </div>
             <div class="form-field">
                 <label>Description</label>
-                <input class="form-input" maxlength="50" @bind="Description" />
+                <TextBoxControl class="form-input" MaxLength="50" @bind-Value="Description" />
             </div>
             <div class="form-field">
                 <label>Due Date</label>
@@ -128,109 +41,123 @@
             </div>
             <div class="form-field">
                 <label>Draw</label>
-                <InputNumber @bind-Value="DrawAmount" class="form-input" step="0.01" />
+                <NumericTextBoxControl TValue="decimal" @bind-Value="DrawAmount" CssClass="form-input" Step="0.01m" />
             </div>
             <div class="form-field">
                 <label>Terms</label>
-                <textarea class="form-input" rows="3" maxlength="50" @bind="Terms"></textarea>
+                <TextAreaControl CssClass="form-input" Rows="3" MaxLength="50" @bind-Value="Terms" />
             </div>
         </div>
         <div class="panel">
             <div class="form-field">
                 <label>Notes</label>
-                <textarea class="form-input" rows="3" maxlength="50" @bind="Notes"></textarea>
+                <TextAreaControl CssClass="form-input" Rows="3" MaxLength="50" @bind-Value="Notes" />
             </div>
             <div class="form-field">
                 <label>Scope of work</label>
-                <textarea class="form-input" rows="3" maxlength="50" @bind="ScopeOfWork"></textarea>
+                <TextAreaControl CssClass="form-input" Rows="3" MaxLength="50" @bind-Value="ScopeOfWork" />
             </div>
         </div>
     </div>
 
     <div class="grid-panel">
-        <HfGrid @ref="ContractGrid"
+        <GridControl @ref="ContractGrid"
                 TValue="ContractRow"
                 DataSource="@ContractData"
                 AllowSorting="true"
                 AllowResizing="true"
                 AllowSelection="true"
                 Height="380px">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(ContractRow.Invoice)" HeaderText="Invoice" Width="90px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(ContractRow.BillingItemID)" HeaderText="BillingItemID" Visible="false" />
-                <HfGridColumn Field="@nameof(ContractRow.Description)" HeaderText="Description" Width="280px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(ContractRow.HoldBackAmount)" HeaderText="Holdback" Width="120px" TextAlign="TextAlign.Right">
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(ContractRow.Invoice)" HeaderText="Invoice" Width="90px" AllowEditing="false" />
+                <GridColumn Field="@nameof(ContractRow.BillingItemID)" HeaderText="BillingItemID" Visible="false" />
+                <GridColumn Field="@nameof(ContractRow.Description)" HeaderText="Description" Width="280px" AllowEditing="false" />
+                <GridColumn Field="@nameof(ContractRow.HoldBackAmount)" HeaderText="Holdback" Width="120px" TextAlign="TextAlign.Right">
                     <Template>
                         @{
                             var row = (ContractRow)context;
                         }
-                        <InputNumber @bind-Value="row.HoldBackAmount" class="grid-input" step="0.01"
-                                     @bind-Value:after="() => OnHoldBackAmountChanged(row)" />
+                        <NumericTextBoxControl TValue="decimal" Value="row.HoldBackAmount"
+                                               ValueChanged="v => { row.HoldBackAmount = v; OnHoldBackAmountChanged(row); }"
+                                               CssClass="grid-input" Step="0.01m" />
                     </Template>
-                </HfGridColumn>
-                <HfGridColumn Field="@nameof(ContractRow.TaxGroup)" HeaderText="Tax Group" Width="120px">
+                </GridColumn>
+                <GridColumn Field="@nameof(ContractRow.TaxGroup)" HeaderText="Tax Group" Width="120px">
                     <Template>
                         @{
                             var row = (ContractRow)context;
                         }
-                        <select class="grid-select" @bind="row.TaxGroup" @bind:after="() => OnTaxGroupChanged(row)">
-                            <option value=""></option>
-                            @foreach (var tg in TaxGroups)
-                            {
-                                <option value="@tg.TaxGroup">@tg.TaxGroup - @tg.Description</option>
-                            }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="TaxGroupOption"
+                                             DataSource="TaxGroupOptions"
+                                             TextFieldName="Display" ValueFieldName="TaxGroup"
+                                             Value="row.TaxGroup"
+                                             ValueChanged="v => { row.TaxGroup = v ?? string.Empty; OnTaxGroupChanged(row); }"
+                                             CssClass="grid-select" Width="100%" />
                     </Template>
-                </HfGridColumn>
-                <HfGridColumn Field="@nameof(ContractRow.TaxRate)" HeaderText="Tax Rate" Width="90px" TextAlign="TextAlign.Right">
+                </GridColumn>
+                <GridColumn Field="@nameof(ContractRow.TaxRate)" HeaderText="Tax Rate" Width="90px" TextAlign="TextAlign.Right">
                     <Template>
                         @{
                             var row = (ContractRow)context;
                         }
-                        <InputNumber @bind-Value="row.TaxRate" class="grid-input" step="0.01"
-                                     @bind-Value:after="() => OnTaxRateChanged(row)" />
+                        <NumericTextBoxControl TValue="decimal" Value="row.TaxRate"
+                                               ValueChanged="v => { row.TaxRate = v; OnTaxRateChanged(row); }"
+                                               CssClass="grid-input" Step="0.01m" />
                     </Template>
-                </HfGridColumn>
-                <HfGridColumn Field="@nameof(ContractRow.Tax)" HeaderText="Tax" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(ContractRow.RevenueAccount)" HeaderText="Revenue Account" Width="140px">
+                </GridColumn>
+                <GridColumn Field="@nameof(ContractRow.Tax)" HeaderText="Tax" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                <GridColumn Field="@nameof(ContractRow.RevenueAccount)" HeaderText="Revenue Account" Width="140px">
                     <Template>
                         @{
                             var row = (ContractRow)context;
                         }
-                        <select class="grid-select" @bind="row.RevenueAccount" @bind:after="() => OnRevenueAccountChanged(row)">
-                            <option value=""></option>
-                            @foreach (var acct in Accounts)
-                            {
-                                <option value="@acct.Account">@acct.Account - @acct.Description</option>
-                            }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="AccountOption"
+                                             DataSource="AccountOptions"
+                                             TextFieldName="Display" ValueFieldName="Account"
+                                             Value="row.RevenueAccount"
+                                             ValueChanged="v => { row.RevenueAccount = v ?? string.Empty; OnRevenueAccountChanged(row); }"
+                                             CssClass="grid-select" Width="100%" />
                     </Template>
-                </HfGridColumn>
-                <HfGridColumn Field="@nameof(ContractRow.RevenueAccountDesc)" HeaderText="Account Desc" Width="220px" AllowEditing="false" />
-            </HfGridColumnsBase>
-        </HfGrid>
+                </GridColumn>
+                <GridColumn Field="@nameof(ContractRow.RevenueAccountDesc)" HeaderText="Account Desc" Width="220px" AllowEditing="false" />
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
+    @if (!string.IsNullOrWhiteSpace(ValidationMessage))
+    {
+        <div class="validation-message">@ValidationMessage</div>
+    }
+
     <div class="button-row">
-        <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-        <button class="btn btn-secondary" @onclick="OnCancelClick">Cancel</button>
-        <button class="btn btn-success" @onclick="OnSavePrintClick">Save &amp; Print</button>
+        <ButtonControl CssClass="btn btn-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="btn btn-secondary" OnClick="OnCancelClick">Cancel</ButtonControl>
+        <ButtonControl CssClass="btn btn-success" OnClick="OnSavePrintClick">Save &amp; Print</ButtonControl>
     </div>
 </div>
 
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     [Parameter] public string? Job { get; set; }
-
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<ContractRow>? ContractGrid;
-
-    private const int DivisionID = 1;
+private GridControl<ContractRow>? ContractGrid;
 
     private string HoldbackDescription = "Holdback";
     private string FormTitle => $"Create {HoldbackDescription} Invoice";
 
     private bool IsLoading;
     private bool _loaded;
+    private string ValidationMessage = "";
 
     private string mJob = "";
     private string mCustomer = "";
@@ -247,6 +174,12 @@
     private List<ContractRow> ContractData = new();
     private List<TaxGroupItem> TaxGroups = new();
     private List<AccountItem> Accounts = new();
+
+    // Pre-projected option lists for the in-grid DropDownListControls. Each list
+    // leads with a blank entry to preserve the original <option value=""></option>,
+    // and carries a pre-formatted Display string identical to the old <option> text.
+    private List<TaxGroupOption> TaxGroupOptions = new();
+    private List<AccountOption> AccountOptions = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -265,8 +198,8 @@
     private async Task LoadLookupsAsync()
     {
         var tgRows = await db.QueryAsync(
-            "SELECT TaxGroup, Description, GroupRate FROM TaxGroups WHERE DivisionID=@DivisionID ORDER BY TaxGroup",
-            new { DivisionID });
+            "SELECT TaxGroup, Description, GroupRate FROM TaxGroups WHERE DivisionID =@DivisionID ORDER BY TaxGroup",
+            new { SessionState.DivisionID });
         TaxGroups = tgRows.Select(r => new TaxGroupItem
         {
             TaxGroup = r["TaxGroup"]?.ToString() ?? "",
@@ -275,13 +208,29 @@
         }).ToList();
 
         var acctRows = await db.QueryAsync(
-            "SELECT Account, Description FROM GLAccounts WHERE DivisionID=@DivisionID ORDER BY Account",
-            new { DivisionID });
+            "SELECT Account, Description FROM GLAccounts WHERE DivisionID =@DivisionID ORDER BY Account",
+            new { SessionState.DivisionID });
         Accounts = acctRows.Select(r => new AccountItem
         {
             Account = r["Account"]?.ToString() ?? "",
             Description = r["Description"]?.ToString() ?? ""
         }).ToList();
+
+        // Projected option lists (blank entry first), display text matching the
+        // former <option> markup: "<code> - <description>".
+        TaxGroupOptions = new List<TaxGroupOption> { new() { TaxGroup = "", Display = "" } };
+        TaxGroupOptions.AddRange(TaxGroups.Select(tg => new TaxGroupOption
+        {
+            TaxGroup = tg.TaxGroup,
+            Display = $"{tg.TaxGroup} - {tg.Description}"
+        }));
+
+        AccountOptions = new List<AccountOption> { new() { Account = "", Display = "" } };
+        AccountOptions.AddRange(Accounts.Select(acct => new AccountOption
+        {
+            Account = acct.Account,
+            Display = $"{acct.Account} - {acct.Description}"
+        }));
     }
 
     private async Task LoadDataAsync()
@@ -317,7 +266,7 @@
                          'Invoice '+CAST(i.Invoice AS varchar), i.TaxGroup, i.RevenueAccount, a.Description
                 ORDER BY i.Invoice";
 
-            var rows = await db.QueryAsync(sql, new { DivisionID, Job = mJob });
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, Job = mJob });
 
             ContractData = rows.Select(r => new ContractRow
             {
@@ -390,7 +339,6 @@
     {
         if (await SaveDataAsync())
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Invoice {mInvoice} saved.");
             NavigateBack();
         }
     }
@@ -399,20 +347,22 @@
     {
         if (await SaveDataAsync())
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Invoice {mInvoice} saved. Print preview not implemented.");
+            // VB6 printed via Crystal Reports (ARInvoice.rpt) with SessionState.DivisionID and Invoice parameters.
+            // Crystal Reports printing is not available in Blazor; report integration is pending.
             NavigateBack();
         }
     }
 
     private void OnCancelClick() => NavigateBack();
 
-    private void NavigateBack() => NavigationManager.NavigateTo("/");
+    private void NavigateBack() => ClosePage();
 
     private async Task<bool> SaveDataAsync()
     {
+        ValidationMessage = "";
         if (InvoiceDate == null || string.IsNullOrWhiteSpace(Description))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Description and invoice date are required.");
+            ValidationMessage = "Description and invoice date are required.";
             return false;
         }
 
@@ -427,7 +377,7 @@
 
             mInvoice = await db.ExecuteScalarAsync<long>(insertInvoice, new
             {
-                DivisionID,
+                SessionState.DivisionID,
                 InvoiceDate,
                 Description,
                 Job = mJob,
@@ -452,7 +402,7 @@
                      @HoldBackAmount, @TaxGroup, @TaxRate, @RevenueAccount, @Tax, @HoldBackBilled)";
                 await db.ExecuteAsync(insertItem, new
                 {
-                    DivisionID,
+                    SessionState.DivisionID,
                     Invoice = mInvoice,
                     OriginalInvoice = row.Invoice,
                     BillingItemID = row.BillingItemID,
@@ -480,7 +430,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving invoice: {ex.Message}");
+            ValidationMessage = $"Error saving invoice: {ex.Message}";
             return false;
         }
     }
@@ -522,5 +472,16 @@
         public string Account { get; set; } = "";
         public string Description { get; set; } = "";
     }
+
+    private class TaxGroupOption
+    {
+        public string TaxGroup { get; set; } = "";
+        public string Display { get; set; } = "";
+    }
+
+    private class AccountOption
+    {
+        public string Account { get; set; } = "";
+        public string Display { get; set; } = "";
+    }
 }
-```

@@ -70,7 +70,8 @@
             IsTrailingNewRow="IsInlineNewRow"
             AddNewRowOnLastCellExit="true"
             CanAddNewRowOnLastCellExit="CanAppendInlineNewRowAfter"
-            EventsRef="@gridEvents">
+            EventsRef="@gridEvents"
+            OnLayoutChanged="@OnMessagesLayoutChangedAsync">
         <GridColumnsBase @key="gMessagesLayoutVersion">
             <GridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false"
                           IsPrimaryKey="true" AllowEditing="false" />
@@ -84,17 +85,17 @@
                 <Template>
                     @{
                         var row = (MessageRow)context;
-                        var priorityClass = row.Priority switch
+                        var (priorityClass, symbol) = row.Priority switch
                         {
-                            1 => "priority-high",
-                            2 => "priority-low",
-                            _ => "priority-none"
-                        };                   
+                            1 => ("priority-high", "!"),
+                            2 => ("priority-low", "⬇"),
+                            _ => ("priority-none", "")
+                        };
                     }
                     <span class="priority-cell @priorityClass"
                           @onclick="() => OnPriorityClick(row)"
                           @onclick:stopPropagation="true"
-                          title="Click to change priority">!</span>
+                          title="Click to change priority">@symbol</span>
                 </Template>
             </GridColumn>
 
@@ -173,13 +174,18 @@
                     else if (fieldName == nameof(MessageRow.SentDate)
                              || fieldName == nameof(MessageRow.ReceivedDate))
                     {
+                        @* VB6 gMessages arms a ComboList on these cells and answers the cell
+                           button with DCalendar.Popup (FJobCorrespondence.frm:515, 526): the date
+                           is typeable AND has a calendar. OpenDateCalendarOnDoubleClick is what
+                           gives the in-cell DateTextControls its calendar. *@
                         <GridColumn Field="@fieldName"
                                       HeaderText="@headerText"
                                       Width="@width"
                                       Type="@columnType"
-                                      Format="MMM d, yyyy"
+                                      Format="MM/dd/yyyy"
                                       TextAlign="@textAlign"
                                       AllowEditing="@allowEdit"
+                                      OpenDateCalendarOnDoubleClick="true"
                                       ClipMode="ClipMode.Ellipsis" />
                     }
                     else
@@ -232,11 +238,13 @@
                           AllowEditing="false" TextAlign="TextAlign.Right" />
 
             <GridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent Date" Width="120px"
-                        Type="ColumnType.Date" Format="MMM d, yyyy"
+                        Type="ColumnType.Date" Format="MM/dd/yyyy"
+                        AllowEditing="true" OpenDateCalendarOnDoubleClick="true"
                         ClipMode="ClipMode.Ellipsis" />
 
             <GridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received Date" Width="120px"
-                        Type="ColumnType.Date" Format="MMM d, yyyy"
+                        Type="ColumnType.Date" Format="MM/dd/yyyy"
+                        AllowEditing="true" OpenDateCalendarOnDoubleClick="true"
                         ClipMode="ClipMode.Ellipsis" />
 
             <GridColumn Field="@nameof(MessageRow.RowState)" Visible="false" />
@@ -574,8 +582,6 @@
         await SaveData(false);
     }
 
-
-
     // === Priority Click (cycles 0 → 1 → 2 → 0) ===
     private void OnPriorityClick(MessageRow row)
     {
@@ -589,7 +595,10 @@
             _ => 0
         };
         MarkDirty(row);
+        StateHasChanged();
     }
+
+
 
     // === Open Original Email ===
     // VB6: ShellFile(Me.hwnd, "c:\demo\files\" & ID & ".msg")
@@ -651,7 +660,8 @@
         {
             await _pickList.Open(
                 title: "Contact",
-                queries: "SELECT name FROM addressbook ORDER BY name",
+                // VB6 PickContacts (FJobCorrespondence.frm:467) hides no columns.
+                queries: "SELECT * FROM addressbook ORDER BY Name",
                 multiSelect: true
             );
         }
@@ -682,8 +692,10 @@
             {
                 if (ContactPickerTargetRow == null || selectedRows.Count == 0) return;
 
+                // Picklist rows are ExpandoObjects, so the keys carry the DB column casing.
                 var names = selectedRows
-                    .Select(r => r.TryGetValue("name", out var val) ? val?.ToString() ?? "" : "")
+                    .Select(r => r.FirstOrDefault(kv => string.Equals(kv.Key, "Name", StringComparison.OrdinalIgnoreCase))
+                                  .Value?.ToString() ?? "")
                     .Where(n => !string.IsNullOrEmpty(n))
                     .ToList();
 
@@ -873,6 +885,29 @@
         {
             Logger.LogWarning(ex, "LoadGridLayout");
 
+        }
+    }
+
+    // ── Persist Grid Layout (VB6: IniPutGrid) ─────────────────
+    // GridControl raises OnLayoutChanged when a resize/reorder/hide/rename finishes.
+    // The new widths live on the snapshot, not in the presenter's layout dict, so
+    // they have to be merged in before the save.
+    private async Task OnMessagesLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || gMessagesLayout.Count == 0) return;
+
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FJobCorrespondence", "gMessages", instanceKey: "(0)",
+                gMessagesLayout, snapshot, ResolveGridField);
+
+            _messagesGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FJobCorrespondence gMessages layout");
         }
     }
 

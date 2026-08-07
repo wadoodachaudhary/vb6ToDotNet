@@ -22,8 +22,8 @@
 
 <DialogControl Visible="@IsVisible"
           Header="@Caption"
-          Width="1000px"
-          Height="650px"
+          Width="1280px"
+          Height="400px"
           IsModal="true"
           ShowCloseIcon="true"
           ShowWindowIcon="true"
@@ -71,7 +71,7 @@
                     AllowGrouping="true"
                     HeaderContextMenuShowsColumns="true"
                     GroupColumns="@GroupColumns"
-                    Height="520px"
+                    Height="240px"
                     RowHeight="17"
                     EditSettingsRef="@EditSettings"
                     SelectionSettingsRef="@SelectionSettings"
@@ -94,18 +94,16 @@
                             }
                         </Template>
                     </GridColumn>
-                    <GridColumn Field="@nameof(AttachmentRow.WebPortals)" HeaderText="Web Portals" Width="120px" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.WebLocation)" HeaderText="Web Location" Width="180px" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Classification" Width="160px"
+                    <GridColumn Field="@nameof(AttachmentRow.WebPortals)" HeaderText="Web Portals" Width="85px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.WebLocation)" HeaderText="Web Location" Width="90px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Classification" Width="95px"
                                 EditOptions="@DocumentClassEditOptions" MaxLength="50" />
-                    <GridColumn Field="@nameof(AttachmentRow.LocationDisplay)" HeaderText="Location" Width="200px" AllowEditing="false" />
-                    @* HHM-485: Revision / Date Created / Date Attached start hidden like
-                       VB6 (frx ColHidden=-1); the header column menu can re-show them. *@
-                    <GridColumn Field="@nameof(AttachmentRow.Revision)" HeaderText="Revision" Width="90px" TextAlign="TextAlign.Right" Visible="false" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.FileSizeDisplay)" HeaderText="Size" Width="90px" TextAlign="TextAlign.Right" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.ModifiedDateDisplay)" HeaderText="Date Modified" Width="130px" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.CreatedDateDisplay)" HeaderText="Date Created" Width="130px" Visible="false" AllowEditing="false" />
-                    <GridColumn Field="@nameof(AttachmentRow.AttachedDateDisplay)" HeaderText="Date Attached" Width="130px" Visible="false" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.LocationDisplay)" HeaderText="Location" Width="170px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.Revision)" HeaderText="Revision" Width="60px" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.FileSizeDisplay)" HeaderText="Size" Width="60px" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.ModifiedDateDisplay)" HeaderText="Date Modified" Width="85px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.CreatedDateDisplay)" HeaderText="Date Created" Width="85px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(AttachmentRow.AttachedDateDisplay)" HeaderText="Date Attached" Width="85px" AllowEditing="false" />
                 </GridColumnsBase>
             </GridControl>
         </div>
@@ -130,10 +128,11 @@
         <ContextMenuItemControl Text="Cut" Disabled="true" />
         <ContextMenuItemControl Text="Copy" OnClick="CopySelectedAsync" />
         <ContextMenuItemControl Text="Paste" Disabled="true" />
+        @* Send to / Properties are Windows shell actions with no web equivalent. *@
         <ContextMenuSeparatorControl />
-        <ContextMenuItemControl Text="Send to..." OnClick="SendToSelectedAsync" />
+        <ContextMenuItemControl Text="Send to..." Disabled="true" />
         <ContextMenuSeparatorControl />
-        <ContextMenuItemControl Text="Properties..." Disabled="@(_selectedRow?.Embedded ?? true)" OnClick="ShowPropertiesAsync" />
+        <ContextMenuItemControl Text="Properties..." Disabled="true" />
         @* VB6 keeps a permanent folder row whose right-click offers Link/Insert;
            the web grid auto-selects the newly attached file, which made the
            folder actions unreachable after the first attach (HHM-629). *@
@@ -266,33 +265,29 @@
             var fileName = row["filename"]?.ToString() ?? "";
             var embedded = ToBool(row["embedded"]);
 
-            // HHM-485: render the DB columns VERBATIM like VB6 (frm:642-643) —
-            // no fallbacks. filetitle/path are computed keyed on a backslash,
-            // so a bare filename yields Name = blank and Location = the whole
-            // filename; legacy shows exactly that and QA compares side-by-side.
-            var fileTitle = row["filetitle"]?.ToString() ?? "";
-            var path = row["path"]?.ToString() ?? "";
+            // attachments.filetitle/path are computed by splitting filename on
+            // its last backslash, so a name with no directory (every browser
+            // upload — <InputFile> exposes no path) computes filetitle = "" and
+            // path = the whole name. Split in code instead: Name is always the
+            // file, Location is the directory or blank.
+            var fileTitle = SplitFileTitle(fileName, row["filetitle"]?.ToString());
+            var path = SplitFilePath(fileName, row["path"]?.ToString());
 
-            // HHM-485: VB6 fills Size/Modified/Created for EMBEDDED rows from
-            // the DB, and for linked rows only when it can stat the file
-            // (frm:626-635) — an unreachable linked file leaves all three
-            // BLANK. Mirror that: embedded rows use the stored byte length,
-            // linked rows use a server-side stat or stay empty.
-            long fileSize = 0;
-            DateTime? modified = null, created = null;
-            if (embedded)
-            {
-                fileSize = ToLong(row["filesize"]);
-                if (fileSize <= 0) fileSize = ToLong(row["imagesize"]);
-                modified = ToDate(row["modifieddate"]);
-                created = ToDate(row["createddate"]);
-            }
-            else if (File.Exists(fileName))
+            // VB6 stats the linked file to fill Size/Modified/Created
+            // (frm:626-635). The server cannot reach a client path, but the
+            // upload stores the bytes and both dates, so read the row first and
+            // only stat when the file is genuinely reachable from here.
+            long fileSize = ToLong(row["filesize"]);
+            if (fileSize <= 0) fileSize = ToLong(row["imagesize"]);
+            DateTime? modified = ToDate(row["modifieddate"]);
+            DateTime? created = ToDate(row["createddate"]);
+
+            if ((fileSize <= 0 || modified == null || created == null) && File.Exists(fileName))
             {
                 var fi = new FileInfo(fileName);
-                fileSize = fi.Length;
-                modified = fi.LastWriteTime;
-                created = fi.CreationTime;
+                if (fileSize <= 0) fileSize = fi.Length;
+                modified ??= fi.LastWriteTime;
+                created ??= fi.CreationTime;
             }
             var attached = ToDate(row["attacheddate"]);
 
@@ -505,7 +500,9 @@
                     return;
             }
 
-            var modified = file.LastModified.DateTime;
+            // IBrowserFile.LastModified is a UTC DateTimeOffset; attacheddate on the
+            // same row is GETDATE() (local), so take the local wall clock to match.
+            var modified = file.LastModified.LocalDateTime;
 
             // VB6 AddFile (frm:296-305) writes only base attachment fields.
             // FileTitle/FileSize/Path are computed on Attachments and reject
@@ -836,10 +833,22 @@
         // into the removed row's index — VSFlexGrid behavior), so the toolbar
         // never goes dead after a Remove. Mirror that instead of nulling the
         // selection: next file row at the same index, else the previous one.
+        var removedObjectId = _selectedRow.ObjectID;
+        var removedFolder = _selectedRow.Folder;
         var idx = Rows.IndexOf(_selectedRow);
         Rows.Remove(_selectedRow);
         _selectedRow = Rows.Skip(Math.Max(idx, 0)).FirstOrDefault(r => r.HasFile)
             ?? Rows.Take(Math.Max(idx, 0)).LastOrDefault(r => r.HasFile);
+
+        // A target folder always keeps its header row, empty or not — same
+        // placeholder LoadDataAsync adds. Without this the folder disappeared
+        // when its last file was removed.
+        if (_targets.Any(t => string.Equals(t.ObjectId, removedObjectId, StringComparison.OrdinalIgnoreCase))
+            && !Rows.Any(r => string.Equals(r.ObjectID, removedObjectId, StringComparison.OrdinalIgnoreCase)))
+        {
+            Rows.Add(new AttachmentRow { ObjectID = removedObjectId, Folder = removedFolder });
+        }
+
         await InvokeAsync(StateHasChanged);
     }
 
@@ -876,27 +885,6 @@
         {
             await Dialogs.AlertAsync("Unable to copy to the clipboard.");
         }
-    }
-
-    // VB6 mcFILE_SENDTO (frm:930-934) emails the attachment via HFApp.SendMail.
-    // No mail service is ported yet — platform-limited follow-up.
-    private async Task SendToSelectedAsync()
-    {
-        if (_selectedRow == null || !_selectedRow.HasFile)
-            return;
-
-        await Dialogs.AlertAsync($"Send to... — emailing '{_selectedRow.FileTitle}' is not yet available in the web client.");
-    }
-
-    // VB6 mcFILE_PROPERTIES (frm:927-928) opens the Windows file-properties
-    // dialog (enabled only for non-embedded files, frm:1310). No native shell
-    // in a Blazor Server app — platform-limited follow-up.
-    private async Task ShowPropertiesAsync()
-    {
-        if (_selectedRow == null || !_selectedRow.HasFile || _selectedRow.Embedded)
-            return;
-
-        await Dialogs.AlertAsync($"Properties for '{_selectedRow.FileTitle}' are not available in the web client.");
     }
 
     private void OnRowSelected(RowSelectEventArgs<AttachmentRow> args)
@@ -988,6 +976,22 @@
         if (band < 1000000) return $"{bytes / (double)MB:0} MB";
         return $"{bytes / (double)MB / KB:0.00} GB";
     }
+
+    private static int LastSeparator(string fileName) =>
+        Math.Max(fileName.LastIndexOf('\\'), fileName.LastIndexOf('/'));
+
+    private static string SplitFileTitle(string fileName, string? computed)
+    {
+        if (!string.IsNullOrEmpty(computed)) return computed;
+        var i = LastSeparator(fileName);
+        return i < 0 ? fileName : fileName[(i + 1)..];
+    }
+
+    // Blank for anything attached from the browser: a page is never given the
+    // local file path, so there is no directory to store. Desktop-attached rows
+    // keep their real path.
+    private static string SplitFilePath(string fileName, string? computed) =>
+        LastSeparator(fileName) < 0 ? "" : computed ?? "";
 
     public class AttachmentRow
     {

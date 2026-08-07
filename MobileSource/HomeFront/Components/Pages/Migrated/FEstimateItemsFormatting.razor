@@ -1,142 +1,21 @@
-```razor
-@page "/estimate-items-formatting"
-@rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
 
 @using System
 @using System.Collections.Generic
+@using Fx.ControlKit
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
-@inject IJSRuntime JSRuntime
+@inject ILogger<FEstimateItemsFormatting> Logger
+@inject NotificationService Notifications
 
-<PageTitle>Formatting Rules - HomeFront</PageTitle>
-
-<style>
-    .formatting-dialog {
-        max-width: 450px;
-        margin: 20px auto;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        background: #fff;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    .formatting-header {
-        padding: 8px 12px;
-        background: #f0f0f0;
-        border-bottom: 1px solid #dee2e6;
-        font-weight: 600;
-        font-size: 14px;
-        border-radius: 6px 6px 0 0;
-    }
-
-    .formatting-body {
-        padding: 10px;
-    }
-
-    .formatting-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-    }
-
-    .formatting-table th {
-        background: #e9ecef;
-        border: 1px solid #dee2e6;
-        padding: 4px 8px;
-        text-align: center;
-        font-weight: 600;
-        font-size: 12px;
-    }
-
-    .formatting-table td {
-        border: 1px solid #dee2e6;
-        padding: 4px 8px;
-        vertical-align: middle;
-    }
-
-    .formatting-table td.label-cell {
-        font-weight: 500;
-        white-space: nowrap;
-    }
-
-    .formatting-table td.style-cell select {
-        width: 100%;
-        padding: 2px 4px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-
-    .formatting-table td.color-cell {
-        text-align: center;
-        cursor: pointer;
-        min-width: 50px;
-    }
-
-    .color-swatch {
-        display: inline-block;
-        width: 32px;
-        height: 20px;
-        border: 1px solid #999;
-        border-radius: 3px;
-        cursor: pointer;
-        vertical-align: middle;
-    }
-
-    .formatting-footer {
-        padding: 10px 12px;
-        border-top: 1px solid #dee2e6;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-    }
-
-    .formatting-footer button {
-        padding: 5px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .formatting-footer button:hover {
-        background: #e8e8e8;
-    }
-
-    .formatting-footer button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .formatting-footer button.btn-primary:hover {
-        background: #0b5ed7;
-    }
-
-    .preview-cell {
-        padding: 4px 8px;
-        border-radius: 3px;
-        font-size: 13px;
-    }
-
-    /* Hidden color input */
-    .hidden-color-input {
-        position: absolute;
-        width: 0;
-        height: 0;
-        opacity: 0;
-        overflow: hidden;
-    }
-</style>
-
-<div class="formatting-dialog">
-    <div class="formatting-header">Formatting Rules</div>
-    <div class="formatting-body">
+<DialogControl Visible="@Visible"
+               Header="Formatting Rules"
+               Width="450px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="OnCancelClick">
+    <ChildContent>
         <table class="formatting-table">
             <thead>
                 <tr>
@@ -159,49 +38,42 @@
                             </span>
                         </td>
                         <td class="style-cell">
-                            <select value="@rule.FontStyle" @onchange="(e) => OnStyleChanged(index, e)">
-                                <option value="">Normal</option>
-                                <option value="Bold">Bold</option>
-                                <option value="Italic">Italic</option>
-                                <option value="Bold Italic">Bold Italic</option>
-                            </select>
+                            <DropDownListControl TValue="string" TItem="StyleOption"
+                                                 DataSource="@StyleOptions"
+                                                 ValueFieldName="Value"
+                                                 TextFieldName="Text"
+                                                 Value="@rule.FontStyle"
+                                                 ValueChanged="(v) => OnStyleChanged(index, new ChangeEventArgs { Value = v })"
+                                                 Width="100%" />
                         </td>
                         <td class="color-cell">
-                            <span class="color-swatch"
-                                  style="background-color: @rule.BackColor;"
-                                  @onclick="() => OnColorClick(index, true)"
-                                  title="Click to change background color">
-                            </span>
-                            <input type="color"
-                                   id="@($"backColor_{index}")"
-                                   class="hidden-color-input"
-                                   value="@rule.BackColor"
-                                   @onchange="(e) => OnBackColorChanged(index, e)" />
+                            <ColorPickerControl Value="@rule.BackColor"
+                                                ValueChanged="(v) => OnBackColorChanged(index, new ChangeEventArgs { Value = v })"
+                                                DropAlignRight="true" />
                         </td>
                         <td class="color-cell">
-                            <span class="color-swatch"
-                                  style="background-color: @rule.ForeColor;"
-                                  @onclick="() => OnColorClick(index, false)"
-                                  title="Click to change foreground color">
-                            </span>
-                            <input type="color"
-                                   id="@($"foreColor_{index}")"
-                                   class="hidden-color-input"
-                                   value="@rule.ForeColor"
-                                   @onchange="(e) => OnForeColorChanged(index, e)" />
+                            <ColorPickerControl Value="@rule.ForeColor"
+                                                ValueChanged="(v) => OnForeColorChanged(index, new ChangeEventArgs { Value = v })"
+                                                DropAlignRight="true" />
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
-    </div>
-    <div class="formatting-footer">
-        <button class="btn-primary" @onclick="OnOkClick">OK</button>
-        <button @onclick="OnCancelClick">Cancel</button>
-    </div>
-</div>
+    </ChildContent>
+    <FooterContent>
+        <div class="formatting-footer">
+            <ButtonControl CssClass="fx-button-primary" OnClick="OnOkClick">OK</ButtonControl>
+            <ButtonControl CssClass="fx-button-secondary" OnClick="OnCancelClick">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
 
 @code {
+    // === Visibility ===
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
     // === Parameters for Bid Rules mode ===
     [Parameter] public string Mode { get; set; } = "Purchasing"; // "Bid" or "Purchasing"
 
@@ -212,6 +84,21 @@
     // === Data ===
     private List<FormattingRule> Rules { get; set; } = new();
     private bool _initialized = false;
+
+    // === Font-style dropdown options (mirrors the original <select>: ""=Normal, Bold, Italic, Bold Italic) ===
+    private sealed class StyleOption
+    {
+        public string Value { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
+    private static readonly StyleOption[] StyleOptions =
+    {
+        new() { Value = "", Text = "Normal" },
+        new() { Value = "Bold", Text = "Bold" },
+        new() { Value = "Italic", Text = "Italic" },
+        new() { Value = "Bold Italic", Text = "Bold Italic" }
+    };
 
     // === Lifecycle ===
     protected override void OnInitialized()
@@ -268,6 +155,7 @@
             new() { Label = "Minimum Bid", FontStyle = minStyle, BackColor = NormalizeColor(minBackColor), ForeColor = NormalizeColor(minForeColor) },
             new() { Label = "Maximum Bid", FontStyle = maxStyle, BackColor = NormalizeColor(maxBackColor), ForeColor = NormalizeColor(maxForeColor) }
         };
+        Visible = true;
         StateHasChanged();
     }
 
@@ -288,6 +176,7 @@
             new() { Label = "Non-System Rate", FontStyle = nonSysRateStyle, BackColor = NormalizeColor(nonSysRateBackColor), ForeColor = NormalizeColor(nonSysRateForeColor) },
             new() { Label = "Invalid Data", FontStyle = invalidDataStyle, BackColor = NormalizeColor(invalidDataBackColor), ForeColor = NormalizeColor(invalidDataForeColor) }
         };
+        Visible = true;
         StateHasChanged();
     }
 
@@ -296,12 +185,6 @@
     {
         Rules[index].FontStyle = e.Value?.ToString() ?? "";
         StateHasChanged();
-    }
-
-    private async Task OnColorClick(int index, bool isBackColor)
-    {
-        var inputId = isBackColor ? $"backColor_{index}" : $"foreColor_{index}";
-        await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{inputId}').click()");
     }
 
     private void OnBackColorChanged(int index, ChangeEventArgs e)
@@ -324,6 +207,7 @@
 
     private async Task OnOkClick()
     {
+        await SetVisible(false);
         if (OnAccepted.HasDelegate)
         {
             await OnAccepted.InvokeAsync(Rules);
@@ -332,10 +216,17 @@
 
     private async Task OnCancelClick()
     {
+        await SetVisible(false);
         if (OnCancelled.HasDelegate)
         {
             await OnCancelled.InvokeAsync();
         }
+    }
+
+    private async Task SetVisible(bool value)
+    {
+        Visible = value;
+        await VisibleChanged.InvokeAsync(value);
     }
 
     // === Preview Style Builder ===
@@ -411,4 +302,3 @@
         public string ForeColor { get; set; } = "#000001";
     }
 }
-```

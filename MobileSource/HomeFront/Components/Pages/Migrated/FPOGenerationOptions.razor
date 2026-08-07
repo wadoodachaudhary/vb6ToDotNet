@@ -1,163 +1,41 @@
-```razor
 @namespace HomeFront.Components.Pages
 
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+
 @inject IJSRuntime JSRuntime
+@inject ILogger<FPOGenerationOptions> Logger
+@inject NotificationService Notifications
 
-<style>
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        width: 380px;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        padding: 20px;
-    }
-
-    .dialog-body .prompt-label {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-        font-size: 14px;
-        color: #333;
-    }
-
-    .dialog-body .prompt-label img {
-        width: 48px;
-        height: 48px;
-    }
-
-    .option-group {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        margin-left: 60px;
-    }
-
-    .option-group label {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 14px;
-        cursor: pointer;
-    }
-
-    .option-group input[type="radio"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .dialog-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Generation Options</span>
-                <button @onclick="OnCancel">×</button>
-            </div>
-            <div class="dialog-body">
-                <div class="prompt-label">
-                    <img src="images/32/question.ico" alt="?" onerror="this.style.display='none'" />
-                    <span>How do you want to generate these POs?</span>
-                </div>
-                <div class="option-group">
-                    <label>
-                        <input type="radio" name="poGenerationOption" value="Vendor"
-                               checked="@(SelectedOption == "Vendor")"
-                               @onchange="@(() => SelectedOption = "Vendor")" />
-                        One PO per Vendor
-                    </label>
-                    <label>
-                        <input type="radio" name="poGenerationOption" value="Job"
-                               checked="@(SelectedOption == "Job")"
-                               @onchange="@(() => SelectedOption = "Job")" />
-                        One PO per Job
-                    </label>
-                    <label>
-                        <input type="radio" name="poGenerationOption" value="Unit"
-                               checked="@(SelectedOption == "Unit")"
-                               @onchange="@(() => SelectedOption = "Unit")" />
-                        One PO per Unit
-                    </label>
-                </div>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-            </div>
+@* FlexKit DialogControl replaces the hand-rolled overlay/panel modal.
+   IsModal="false" preserves the original behavior where clicking the backdrop does nothing.
+   OnClose routes the × close icon to OnCancel so the cancel semantics (resolve _tcs with "")
+   are preserved exactly. Visible is one-way bound to IsVisible — the component drives
+   IsVisible itself via OnOkClick/OnCancel, just as the original @if did. *@
+<DialogControl Visible="IsVisible"
+               Header="Generation Options"
+               Width="380px"
+               IsModal="false"
+               ShowCloseIcon="true"
+               OnClose="OnCancel">
+    <ChildContent>
+        <div class="prompt-label">
+            <img src="images/32/question.ico" alt="?" onerror="this.style.display='none'" />
+            <span>How do you want to generate these POs?</span>
         </div>
-    </div>
-}
+        <div class="option-group">
+            <RadioControl TValue="string" Name="poGenerationOption" Value="@("Vendor")"
+                          @bind-SelectedValue="SelectedOption" Label="One PO per Vendor" />
+            <RadioControl TValue="string" Name="poGenerationOption" Value="@("Job")"
+                          @bind-SelectedValue="SelectedOption" Label="One PO per Job" />
+            <RadioControl TValue="string" Name="poGenerationOption" Value="@("Unit")"
+                          @bind-SelectedValue="SelectedOption" Label="One PO per Unit" />
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl OnClick="OnOkClick">OK</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     /// <summary>
@@ -221,4 +99,3 @@
         StateHasChanged();
     }
 }
-```

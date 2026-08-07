@@ -1,151 +1,25 @@
-```razor
 @page "/floorplans"
 @rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using System
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FFloorplans> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Floorplan Dimensions - HomeFront</PageTitle>
-
-<style>
-    .floorplans-container {
-        max-width: 970px;
-        margin: 20px auto;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    .floorplans-header {
-        font-size: 18px;
-        font-weight: 600;
-        margin-bottom: 12px;
-        color: #333;
-    }
-
-    .main-layout {
-        display: flex;
-        gap: 16px;
-        margin-bottom: 16px;
-    }
-
-    .models-panel {
-        width: 300px;
-        min-width: 200px;
-    }
-
-    .categories-panel {
-        flex: 1;
-    }
-
-    .panel-label {
-        font-weight: 700;
-        color: #800080;
-        margin-bottom: 4px;
-        font-size: 13px;
-    }
-
-    .button-bar {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 12px;
-    }
-
-    .btn-nav {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 80px;
-    }
-
-    .btn-nav:hover:not(:disabled) {
-        background: #e8e8e8;
-    }
-
-    .btn-nav:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .btn-nav.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .btn-nav.primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .context-menu-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 999;
-    }
-
-    .context-menu {
-        position: fixed;
-        z-index: 1000;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        min-width: 160px;
-        padding: 4px 0;
-    }
-
-    .context-menu button {
-        display: block;
-        width: 100%;
-        padding: 6px 16px;
-        border: none;
-        background: transparent;
-        text-align: left;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .context-menu button:hover {
-        background: #f0f0f0;
-    }
-
-    .context-menu button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        height: 100%;
-        width: 100%;
-        background-color: rgba(1, 1, 1, 0.15);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-spinner {
-        padding: 16px 32px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        font-size: 14px;
-        font-weight: 500;
-        color: #333;
-    }
-</style>
 
 <div class="floorplans-container" style="position: relative;">
     @if (IsLoading)
@@ -161,7 +35,7 @@
         @* ── Left Panel: Models Grid ──────────────────────────── *@
         <div class="models-panel">
             <div class="panel-label">Models</div>
-            <HfGrid @ref="ModelsGrid"
+            <GridControl @ref="ModelsGrid"
                     TValue="ModelRow"
                     DataSource="@ModelsData"
                     AllowSelection="true"
@@ -169,16 +43,16 @@
                     Height="440px"
                     SelectionSettingsRef="@modelsSelectionSettings"
                     EventsRef="@modelsGridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(ModelRow.ModelID)" HeaderText="ModelID" Width="1px" Visible="false" />
-                    <HfGridColumn Field="@nameof(ModelRow.Model)" HeaderText="Model" Width="280px" AllowEditing="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(ModelRow.ModelID)" HeaderText="ModelID" Width="1px" Visible="false" />
+                    <GridColumn Field="@nameof(ModelRow.Model)" HeaderText="Model" Width="280px" AllowEditing="false" />
+                </GridColumnsBase>
+            </GridControl>
         </div>
 
         @* ── Right Panel: Categories Grid ─────────────────────── *@
         <div class="categories-panel">
-            <HfGrid @ref="CategoriesGrid"
+            <GridControl @ref="CategoriesGrid"
                     TValue="CategoryRow"
                     DataSource="@CategoriesData"
                     AllowSelection="true"
@@ -188,14 +62,14 @@
                     SelectionSettingsRef="@categoriesSelectionSettings"
                     EditSettingsRef="@categoriesEditSettings"
                     EventsRef="@categoriesGridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(CategoryRow.Room)" HeaderText="Room" Width="150px" />
-                    <HfGridColumn Field="@nameof(CategoryRow.SubCategory)" HeaderText="Sub Category" Width="150px" />
-                    <HfGridColumn Field="@nameof(CategoryRow.Qty)" HeaderText="Qty" Width="80px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(CategoryRow.UOM)" HeaderText="UOM" Width="80px" />
-                    <HfGridColumn Field="@nameof(CategoryRow.RowState)" HeaderText="" Width="1px" Visible="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(CategoryRow.Room)" HeaderText="Room" Width="150px" />
+                    <GridColumn Field="@nameof(CategoryRow.SubCategory)" HeaderText="Sub Category" Width="150px" />
+                    <GridColumn Field="@nameof(CategoryRow.Qty)" HeaderText="Qty" Width="80px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(CategoryRow.UOM)" HeaderText="UOM" Width="80px" />
+                    <GridColumn Field="@nameof(CategoryRow.RowState)" HeaderText="" Width="1px" Visible="false" />
+                </GridColumnsBase>
+            </GridControl>
         </div>
     </div>
 
@@ -222,20 +96,29 @@
 }
 
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     private const string SRCFILE = "FFloorplans::";
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === UI State ===
+// === UI State ===
     private bool IsLoading = false;
     private bool mDirty = false;
     private string mModelID = "";
 
     // === Grid Refs ===
-    private HfGrid<ModelRow>? ModelsGrid;
-    private HfGrid<CategoryRow>? CategoriesGrid;
+    private GridControl<ModelRow>? ModelsGrid;
+    private GridControl<CategoryRow>? CategoriesGrid;
 
     // === Data Sources ===
     private List<ModelRow> ModelsData = new();
@@ -250,19 +133,19 @@
     private double ContextMenuY = 0;
 
     // === Grid Settings ===
-    private HfSelectionSettings modelsSelectionSettings = new()
+    private SelectionSettings modelsSelectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
 
-    private HfSelectionSettings categoriesSelectionSettings = new()
+    private SelectionSettings categoriesSelectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
 
-    private HfEditSettings categoriesEditSettings = new()
+    private EditSettings categoriesEditSettings = new()
     {
         AllowAdding = true,
         AllowEditing = true,
@@ -271,8 +154,8 @@
         ShowConfirmDialog = false
     };
 
-    private HfGridEvents<ModelRow> modelsGridEvents = new();
-    private HfGridEvents<CategoryRow> categoriesGridEvents = new();
+    private GridControlEvents<ModelRow> modelsGridEvents = new();
+    private GridControlEvents<CategoryRow> categoriesGridEvents = new();
 
     // === Dirty Property ===
     private bool Dirty
@@ -312,7 +195,7 @@
                 WHERE r.divisionid = @DivisionID
                 ORDER BY q.model";
 
-            var rows = await db.QueryAsync(sql, new { DivisionID });
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
             foreach (var row in rows)
             {
@@ -326,7 +209,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}LoadModels] Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}LoadModels]");
+
         }
         finally
         {
@@ -369,7 +253,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}LoadModel] Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}LoadModel]");
+
         }
 
         Dirty = false;
@@ -377,28 +262,28 @@
     }
 
     // === Save Data ===
-    private async Task<bool> SaveData(bool isCancel)
+    // VB6: SaveData(prompt) — prompt=True shows Yes/No/Cancel; prompt=False saves immediately.
+    // Yes=save+return true, No=discard+return true, Cancel=return false (stay).
+    private async Task<bool> SaveData(bool prompt)
     {
         if (!mDirty)
             return true;
 
-        if (!isCancel)
+        if (prompt)
         {
-            var result = await JSRuntime.InvokeAsync<string>("eval",
-                "(() => { var r = confirm('This data has changed.\\n\\nDo you want to save these changes?'); return r ? 'yes' : 'no'; })()");
+            // VB6 uses vbYesNoCancel: Yes=save, No=discard, Cancel=stay
+            var result = await Dialogs.ConfirmCancelAsync(
+                "This data has changed.\n\nDo you want to save these changes?");
 
-            if (result == "no")
-                return true;
-        }
-        else
-        {
-            // Cancel button pressed — just discard
-            return true;
+            if (result == MessageBoxResult.Cancel)
+                return false; // Stay on the form, cancel navigation
+            if (result == MessageBoxResult.No)
+                return true; // Discard changes, allow navigation
         }
 
         try
         {
-            // Delete existing records
+            // Delete existing records for this model
             var deleteSql = "DELETE roommastersubcategory WHERE roomid = @ModelID";
             await db.ExecuteAsync(deleteSql, new { ModelID = mModelID });
 
@@ -438,18 +323,20 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}SaveData]");
+
+            Notifications.Error($"Error saving data: {ex.Message}");
             return false;
         }
     }
 
     // === Event Handlers ===
+    // VB6: gModels_BeforeSelChange — SaveData(True) prompts before switching models
     private async Task OnModelSelected(RowSelectEventArgs<ModelRow> args)
     {
         if (SelectedModel != null && mDirty)
         {
-            if (!await SaveData(false))
+            if (!await SaveData(true))
                 return;
         }
 
@@ -482,21 +369,23 @@
         StateHasChanged();
     }
 
+    // VB6: cmdNav(0) = OK => SaveData(False) — save without prompting
     private async Task OnOkClick()
     {
         if (await SaveData(false))
         {
             Dirty = false;
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
     }
 
+    // VB6: cmdNav(1) = Cancel => SaveData(True) — prompt if dirty
     private async Task OnCancelClick()
     {
         if (await SaveData(true))
         {
             Dirty = false;
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
     }
 
@@ -505,7 +394,7 @@
     {
         if (key == "Delete" && shiftKey && SelectedModel != null)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            var confirm = await Dialogs.ConfirmAsync(
                 "Are you sure you want to delete the dimensions for this model?");
             if (!confirm) return;
 
@@ -531,7 +420,8 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[{SRCFILE}OnModelsKeyDown] Error: {ex.Message}");
+                Logger.LogError(ex, "[{SRCFILE}OnModelsKeyDown]");
+
             }
         }
     }
@@ -571,13 +461,13 @@
     private async Task OnAddModel()
     {
         CloseContextMenu();
-        await JSRuntime.InvokeVoidAsync("alert", "Add Model - not yet implemented");
+        Notifications.Info("Add Model - not yet implemented");
     }
 
     private async Task OnAddRoom()
     {
         CloseContextMenu();
-        await JSRuntime.InvokeVoidAsync("alert", "Add Room - not yet implemented");
+        Notifications.Info("Add Room - not yet implemented");
     }
 
     // === Helpers ===
@@ -602,4 +492,3 @@
         public string RowState { get; set; } = "";
     }
 }
-```

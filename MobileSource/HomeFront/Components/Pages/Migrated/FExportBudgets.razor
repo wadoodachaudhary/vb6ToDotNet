@@ -1,5 +1,5 @@
-```razor
 @page "/export-budgets"
+@layout HFComponent
 @rendermode InteractiveServer
 
 @namespace HomeFront.Components.Pages
@@ -9,115 +9,17 @@
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FExportBudgets> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Budget Posting Wizard - HomeFront</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 700px;
-        margin: 0 auto;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        background: #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        overflow: hidden;
-    }
-
-    .wiz-header {
-        background: linear-gradient(to right, #003366, #336699);
-        color: #fff;
-        padding: 16px 20px;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-    }
-    .wiz-header img { width: 48px; height: 48px; }
-    .wiz-header-text h3 { margin: 0; font-size: 16px; font-weight: 700; }
-    .wiz-header-text p { margin: 2px 0 0; font-size: 12px; opacity: 0.85; }
-
-    .wiz-body {
-        min-height: 280px;
-        padding: 20px 24px;
-        display: flex;
-        gap: 16px;
-    }
-    .wiz-body-icon { flex-shrink: 0; width: 48px; height: 48px; }
-    .wiz-body-content { flex: 1; }
-
-    .wiz-footer {
-        border-top: 1px solid #dee2e6;
-        padding: 10px 20px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 6px;
-        background: #f8f9fa;
-    }
-    .wiz-footer button {
-        padding: 6px 18px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 80px;
-    }
-    .wiz-footer button:hover:not(:disabled) { background: #e9ecef; }
-    .wiz-footer button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .wiz-footer button.btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .wiz-footer button.btn-primary:hover:not(:disabled) { background: #0b5ed7; }
-
-    .wiz-message { margin-bottom: 12px; font-weight: 500; }
-
-    .wiz-radio-group { margin-bottom: 8px; }
-    .wiz-radio-group label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
-
-    .wiz-checkbox-group label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
-
-    .wiz-link {
-        color: #0d6efd;
-        text-decoration: underline;
-        cursor: pointer;
-        display: block;
-        margin-bottom: 8px;
-        font-size: 13px;
-    }
-    .wiz-link:hover { color: #0a58ca; }
-
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: auto;
-        max-height: 240px;
-    }
-    .grid-container table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .grid-container th {
-        background: #f0f0f0;
-        border-bottom: 2px solid #ccc;
-        padding: 6px 8px;
-        text-align: left;
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-    .grid-container td { padding: 5px 8px; border-bottom: 1px solid #eee; }
-    .grid-container tr { cursor: pointer; }
-    .grid-container tr:hover { background: #f0f7ff; }
-    .grid-container tr.selected { background: #cce5ff; font-weight: 600; }
-
-    .loading-overlay {
-        position: absolute; inset: 0;
-        background: rgba(255,255,255,0.7);
-        display: flex; align-items: center; justify-content: center;
-        z-index: 100; font-size: 14px; font-weight: 500;
-    }
-
-    .error-message { color: #dc3545; margin-top: 8px; }
-</style>
 
 <div class="wizard-container" style="position: relative;">
     @if (IsLoading)
@@ -144,14 +46,12 @@
             {
                 <div class="wiz-message">Choose the task you would like to perform</div>
                 <div class="wiz-radio-group">
-                    <label>
-                        <input type="radio" name="taskChoice" checked="@IsPostNew" @onchange="() => SetTaskChoice(true)" />
-                        Post new budgets
-                    </label>
-                    <label>
-                        <input type="radio" name="taskChoice" checked="@(!IsPostNew)" @onchange="() => SetTaskChoice(false)" />
-                        Review a previous posting
-                    </label>
+                    <RadioControl TValue="bool" Name="taskChoice" Value="true"
+                                  @bind-SelectedValue="IsPostNew" @bind-SelectedValue:after="OnTaskChoiceChanged"
+                                  Label="Post new budgets" />
+                    <RadioControl TValue="bool" Name="taskChoice" Value="false"
+                                  @bind-SelectedValue="IsPostNew" @bind-SelectedValue:after="OnTaskChoiceChanged"
+                                  Label="Review a previous posting" />
                 </div>
             }
 
@@ -225,16 +125,12 @@
                     @if (PostFrameVisible)
                     {
                         <div class="wiz-checkbox-group">
-                            <label>
-                                <input type="checkbox" @bind="ShowBatchReport" />
-                                Show posting summary report when finished.
-                            </label>
+                            <CheckBoxControl @bind-Checked="ShowBatchReport"
+                                             Label="Show posting summary report when finished." />
                             @if (ShowTimberlineOptions)
                             {
-                                <label>
-                                    <input type="checkbox" @bind="ShowProcessingJournal" />
-                                    Show processing journal when finished.
-                                </label>
+                                <CheckBoxControl @bind-Checked="ShowProcessingJournal"
+                                                 Label="Show processing journal when finished." />
                             }
                         </div>
                     }
@@ -250,19 +146,28 @@
 
     @* ── FOOTER ─────────────────────────────────────────── *@
     <div class="wiz-footer">
-        <button @onclick="OnCancelClick">Cancel</button>
-        <button disabled="@(!CanGoBack)" @onclick="OnBackClick">&lt; Back</button>
-        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">Next &gt;</button>
-        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">Finish</button>
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoBack)" OnClick="OnBackClick">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoNext)" OnClick="OnNextClick">Next &gt;</ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!CanFinish)" OnClick="OnFinishClick">Finish</ButtonControl>
     </div>
 </div>
 
 @code {
-    // ── Database ──────────────────────────────────────────────────────────
-    private DbWrapperSqlServer db = new();
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // ── App State (would come from a shared service in production) ────────
-    private int DivisionID = 1;
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // ── Database ──────────────────────────────────────────────────────────
+// ── App State (would come from a shared service in production) ────────
     private string LoginID = "admin";
     private int AccountingSystem = 2; // 1=Timberline, 2=MasterBuilder, 3=QuickBooks, 4=Sage50, etc.
     private bool PostSummarizedBudgets = false;
@@ -299,7 +204,6 @@
 
     // Batch tracking
     private long mBatch = 0;
-    private long mCOBatch = 0;
     private string WhereClause = "";
 
     // ── Navigation Properties ─────────────────────────────────────────────
@@ -321,6 +225,10 @@
         IsPostNew = postNew;
         StateHasChanged();
     }
+
+    // RadioControl @bind-SelectedValue:after — IsPostNew is already set by the bind,
+    // so just run the side-effect SetTaskChoice did (refresh the wizard view).
+    private void OnTaskChoiceChanged() => SetTaskChoice(IsPostNew);
 
     // ── Grid Row Click ────────────────────────────────────────────────────
     private void OnGridRowClick(int rowIndex)
@@ -344,7 +252,7 @@
     private async Task OnCancelClick()
     {
         await SaveOptions();
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private async Task OnBackClick()
@@ -370,13 +278,13 @@
         if (!IsPostNew)
         {
             await SaveOptions();
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
         else
         {
             await CreateBatch();
             await SaveOptions();
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
     }
 
@@ -414,7 +322,7 @@
                 sql = $@"
                     SELECT Batch, TStmp AS Posted, UStmp AS PostedBy
                     FROM Batches
-                    WHERE (DivisionID = {DivisionID} OR ISNULL(DivisionID,0)=0)
+                    WHERE (DivisionID = {SessionState.DivisionID} OR ISNULL(SessionState.DivisionID,0)=0)
                       AND BatchType='Budget Posting'
                     ORDER BY Batch DESC";
 
@@ -431,13 +339,13 @@
                     JOIN tbljobs j ON i.Job = j.Job_No AND i.DivisionID = j.DivisionID
                     WHERE BudgetGenerated = 1
                       AND BudgetPostingBatch = 0
-                      {(DivisionID > 0 ? $"AND i.DivisionID = {DivisionID}" : "")}
+                      {(SessionState.DivisionID > 0 ? $"AND i.DivisionID = {SessionState.DivisionID}" : "")}
                     UNION
                     SELECT cb.Job, j.Description AS [Job Description]
                     FROM CancelledBudgets cb
                     JOIN tbljobs j ON cb.Job = j.Job_No AND cb.DivisionID = j.DivisionID
                     WHERE ISNULL(cb.PostBatch,0) = 0
-                      {(DivisionID > 0 ? $"AND cb.DivisionID = {DivisionID}" : "")}";
+                      {(SessionState.DivisionID > 0 ? $"AND cb.DivisionID = {SessionState.DivisionID}" : "")}";
 
                 ListDescription = "Select the budgets you would like to post.";
                 AllowMultiSelect = true;
@@ -455,8 +363,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportBudgets.LoadData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            ErrorMessage = $"Error loading data: {ex.Message}";
         }
         finally
         {
@@ -527,7 +436,7 @@
             // Create new batch
             var insertSql = $@"
                 INSERT INTO Batches(BatchType, UStmp, TStmp, DivisionID)
-                VALUES('Budget Posting', '{LoginID}', GETDATE(), {DivisionID})";
+                VALUES('Budget Posting', '{LoginID}', GETDATE(), {SessionState.DivisionID})";
             await db.ExecuteAsync(insertSql);
 
             mBatch = await db.ExecuteScalarAsync<long>("SELECT IDENT_CURRENT('Batches')");
@@ -592,9 +501,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportBudgets.CreateBatch] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             ErrorMessage = $"Error creating batch: {ex.Message}";
-            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
         }
         finally
         {
@@ -644,16 +553,18 @@
                     break;
             }
 
-            // Show summary report
+            // Show summary report (VB6 opened Crystal Report: ExportBudgetBatch.rpt with Batch/SessionState.DivisionID/PostSummaries params)
             if (ShowBatchReport)
             {
-                await JSRuntime.InvokeVoidAsync("alert",
-                    $"Budget posting batch {mBatch} completed successfully.\nPosting summary report would be displayed here.");
+                Console.WriteLine($"Budget posting batch {mBatch} completed. Report: ExportBudgetBatch.rpt, DivisionID ={SessionState.DivisionID}, PostSummarized={PostSummarizedBudgets}");
+
+                // TODO: Integrate report viewer for ExportBudgetBatch.rpt
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportBudgets.SendBatch] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             ErrorMessage = $"Error sending batch: {ex.Message}";
         }
     }
@@ -671,12 +582,32 @@
             if (PostSummarizedBudgets)
             {
                 sql = $@"
-                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS JCCostCode,
+                    SELECT c.Job, c.ChangeOrder, c.JCExtra, sc.ExternalID AS CostCode,
+                           SUM(CASE WHEN c.JCCategory=1 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct1,
+                           SUM(CASE WHEN c.JCCategory=2 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct2,
+                           SUM(CASE WHEN c.JCCategory=3 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct3,
+                           SUM(CASE WHEN c.JCCategory=4 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct4,
+                           SUM(CASE WHEN c.JCCategory=5 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct5,
+                           SUM(CASE WHEN c.JCCategory=6 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct6,
+                           SUM(CASE WHEN c.JCCategory=7 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct7,
+                           SUM(CASE WHEN c.JCCategory=8 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct8,
+                           SUM(CASE WHEN c.JCCategory=9 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END) AS ct9,
+                           SUM(c.Qty) AS Qty, 'Summarized' AS Description
+                    FROM CancelledBudgets c
+                         JOIN StandardCostCodes sc ON c.DivisionID=sc.DivisionID AND c.JCCostCode=sc.CostCode
+                    WHERE PostBatch = {mBatch}
+                    GROUP BY c.ChangeOrder, c.Job, c.JCExtra, sc.ExternalID
+                    UNION ALL
+                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS CostCode,
                            SUM(CASE WHEN JCCategory=1 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct1,
                            SUM(CASE WHEN JCCategory=2 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct2,
                            SUM(CASE WHEN JCCategory=3 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct3,
                            SUM(CASE WHEN JCCategory=4 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct4,
                            SUM(CASE WHEN JCCategory=5 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct5,
+                           SUM(CASE WHEN JCCategory=6 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct6,
+                           SUM(CASE WHEN JCCategory=7 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct7,
+                           SUM(CASE WHEN JCCategory=8 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct8,
+                           SUM(CASE WHEN JCCategory=9 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END) AS ct9,
                            SUM(BudgetQty) AS Qty, 'Summarized' AS Description
                     FROM EstimatedItems
                     WHERE BudgetPostingBatch = {mBatch}
@@ -686,10 +617,34 @@
             else
             {
                 sql = $@"
-                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS JCCostCode,
-                           BudgetPretax+ISNULL(BudgetJCTax,0) AS Amount,
-                           BudgetQty AS Qty,
-                           ISNULL(NULLIF(ItemDesc,''),'?') AS Description
+                    SELECT c.Job AS Job_No, c.ChangeOrder, c.JCExtra, sc.ExternalID AS CostCode,
+                           CASE WHEN cc.ExternalID=1 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct1,
+                           CASE WHEN cc.ExternalID=2 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct2,
+                           CASE WHEN cc.ExternalID=3 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct3,
+                           CASE WHEN cc.ExternalID=4 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct4,
+                           CASE WHEN cc.ExternalID=5 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct5,
+                           CASE WHEN cc.ExternalID=6 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct6,
+                           CASE WHEN cc.ExternalID=7 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct7,
+                           CASE WHEN cc.ExternalID=8 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct8,
+                           CASE WHEN cc.ExternalID=9 THEN c.Pretax+ISNULL(c.Tax,0) ELSE 0 END AS ct9,
+                           c.Qty, ISNULL(NULLIF(i.Description,''),'?') AS Description
+                    FROM CancelledBudgets c
+                         LEFT OUTER JOIN EstimateItems i ON c.EstItemID=i.EstItemID
+                         JOIN StandardCostCodes sc ON c.DivisionID=sc.DivisionID AND c.JCCostCode=sc.CostCode
+                         JOIN StandardCategories cc ON c.DivisionID=cc.DivisionID AND c.JCCategory=cc.Category
+                    WHERE PostBatch = {mBatch}
+                    UNION ALL
+                    SELECT Job_No, ChangeOrder, JCExtra, ExternalCostCode AS CostCode,
+                           CASE WHEN ExternalCategory=1 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct1,
+                           CASE WHEN ExternalCategory=2 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct2,
+                           CASE WHEN ExternalCategory=3 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct3,
+                           CASE WHEN ExternalCategory=4 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct4,
+                           CASE WHEN ExternalCategory=5 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct5,
+                           CASE WHEN ExternalCategory=6 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct6,
+                           CASE WHEN ExternalCategory=7 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct7,
+                           CASE WHEN ExternalCategory=8 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct8,
+                           CASE WHEN ExternalCategory=9 THEN BudgetPretax+ISNULL(BudgetJCTax,0) ELSE 0 END AS ct9,
+                           BudgetQty AS Qty, ISNULL(NULLIF(ItemDesc,''),'?') AS Description
                     FROM EstimatedItems
                     WHERE BudgetPostingBatch = {mBatch}
                     ORDER BY 1,2,3,4";
@@ -702,12 +657,13 @@
                 UPDATE EstimateItems SET BudgetPostingDate = GETDATE()
                 WHERE BudgetPostingBatch = {mBatch}");
 
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Sage 100 posting: {rows.Count} budget line(s) processed for batch {mBatch}.");
+            Console.WriteLine($"Sage 100 posting: {rows.Count} budget line(s); processed for batch {mBatch}.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SendBatchToSage100] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             // Rollback unposted items
             await db.ExecuteAsync($@"
                 UPDATE EstimateItems SET BudgetPostingBatch = 0
@@ -757,13 +713,13 @@
 
             var rows = await db.QueryAsync(sql);
 
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Sage 300 (Timberline) posting: {rows.Count} budget line(s) processed for batch {mBatch}.\n" +
-                "In production, this would generate JCE files and run the Timberline macro.");
+            Console.WriteLine($"Sage 300 posting: {rows.Count} budget line(s); processed for batch {mBatch}. JCE file generation and Timberline macro execution needed.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SendBatchToSage300] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             // Rollback
             await db.ExecuteAsync($@"UPDATE EstimateItems SET BudgetPostingBatch=0 WHERE BudgetPostingBatch={mBatch}");
             await db.ExecuteAsync($@"UPDATE CancelledBudgets SET PostBatch=0 WHERE PostBatch={mBatch}");
@@ -776,41 +732,87 @@
     {
         try
         {
+            // Ensure jobs exist in accounting
+            var missingJobsSql = $@"
+                SELECT e.ExternalJobID, e.Job_No FROM tbljobs e
+                WHERE e.DivisionID = {SessionState.DivisionID} AND ISNULL(e.ExternalJobID,'')='' AND ({WhereClause})";
+            var missingJobs = await db.QueryAsync(missingJobsSql);
+            foreach (var mj in missingJobs)
+            {
+                var jobNo = mj["Job_No"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(jobNo))
+                    await WriteJobToAccounting(jobNo);
+            }
+
             var sql = $@"
                 SELECT cc.ExternalID AS JCCostCode, cat.ExternalID AS JCCategory,
-                       SUM(e.BudgetPretax)+SUM(e.BudgetJCTax) AS Amount,
-                       e.BudgetTaxGroup, e.JCCostCodeDesc AS ItemDesc,
-                       j.ExternalJobID, e.Job_No
+                       SUM(c.Pretax)+SUM(c.Tax) AS Amount, c.TaxGroup AS BudgetTaxGroup,
+                       cc.Description AS ItemDesc, e.ExternalJobID, e.Job_No
+                FROM CancelledBudgets c
+                JOIN tbljobs e ON c.Job=e.Job_No
+                JOIN StandardCostCodes cc ON c.JCCostCode=cc.CostCode
+                JOIN StandardCategories cat ON c.JCCategory=cat.Category
+                WHERE ({WhereClause}) AND e.DivisionID = {SessionState.DivisionID}
+                  AND c.PostBatch=0 AND c.JCCostCode<>''
+                GROUP BY cc.ExternalID, cat.ExternalID, c.TaxGroup, cc.Description, e.ExternalJobID, e.Job_No
+                UNION ALL
+                SELECT e.ExternalCostCode, e.ExternalCategory,
+                       SUM(e.BudgetPretax)+SUM(e.BudgetJCTax) AS Amount, e.BudgetTaxGroup,
+                       e.JCCostCodeDesc AS ItemDesc, j.ExternalJobID, e.Job_No
                 FROM EstimatedItems e
                 JOIN tbljobs j ON e.Job_No = j.Job_No
-                JOIN StandardCostCodes cc ON e.ExternalCostCode = cc.ExternalID
-                JOIN StandardCategories cat ON e.ExternalCategory = cat.ExternalID
-                WHERE ({WhereClause}) AND e.DivisionID = {DivisionID}
+                WHERE ({WhereClause}) AND e.DivisionID = {SessionState.DivisionID}
                   AND e.BudgetPostingBatch = 0 AND e.BudgetGenerated = 1 AND e.JCCostCode <> ''
-                GROUP BY cc.ExternalID, cat.ExternalID, e.BudgetTaxGroup, e.JCCostCodeDesc, j.ExternalJobID, e.Job_No
+                GROUP BY e.ExternalCostCode, e.ExternalCategory, e.BudgetTaxGroup, e.JCCostCodeDesc, j.ExternalJobID, e.Job_No
                 ORDER BY 6, 5";
 
             var rows = await db.QueryAsync(sql);
 
-            // Mark as posted
+            // Process per-job and mark as posted (VB6 sends XML per job to QuickBooks)
+            string lastJob = "";
             foreach (var row in rows)
             {
+                var thisJob = row["ExternalJobID"]?.ToString() ?? "";
                 var jobNo = row["Job_No"]?.ToString() ?? "";
-                if (!string.IsNullOrEmpty(jobNo))
+
+                if (thisJob != lastJob && !string.IsNullOrEmpty(lastJob) && !string.IsNullOrEmpty(jobNo))
                 {
                     await db.ExecuteAsync($@"
                         UPDATE EstimateItems SET BudgetPostingBatch = {mBatch}
                         WHERE BudgetGenerated = 1 AND ISNULL(BudgetPostingBatch,0) = 0
                           AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(jobNo)}')");
+                    await db.ExecuteAsync($@"
+                        UPDATE CancelledBudgets SET PostBatch = {mBatch}
+                        WHERE ISNULL(PostBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(jobNo)}')");
+                }
+                lastJob = thisJob;
+            }
+
+            // Mark final job
+            if (!string.IsNullOrEmpty(lastJob) && rows.Count > 0)
+            {
+                var lastJobNo = rows.Last()["Job_No"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(lastJobNo))
+                {
+                    await db.ExecuteAsync($@"
+                        UPDATE EstimateItems SET BudgetPostingBatch = {mBatch}
+                        WHERE BudgetGenerated = 1 AND ISNULL(BudgetPostingBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastJobNo)}')");
+                    await db.ExecuteAsync($@"
+                        UPDATE CancelledBudgets SET PostBatch = {mBatch}
+                        WHERE ISNULL(PostBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastJobNo)}')");
                 }
             }
 
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"QuickBooks posting: {rows.Count} budget line(s) processed for batch {mBatch}.");
+            Console.WriteLine($"QuickBooks posting: {rows.Count} budget line(s); processed for batch {mBatch}.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SendBatchToQB] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             throw;
         }
     }
@@ -819,13 +821,86 @@
     {
         try
         {
-            // Similar to QB but uses online API
-            await SendBatchToQB();
-            // In production, would use QBO REST API instead of desktop SDK
+            // Ensure jobs exist in accounting
+            var missingJobsSql = $@"
+                SELECT e.ExternalJobID, e.Job_No FROM tbljobs e
+                WHERE e.DivisionID = {SessionState.DivisionID} AND ISNULL(e.ExternalJobID,'')='' AND ({WhereClause})";
+            var missingJobs = await db.QueryAsync(missingJobsSql);
+            foreach (var mj in missingJobs)
+            {
+                var jobNo = mj["Job_No"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(jobNo))
+                    await WriteJobToAccounting(jobNo);
+            }
+
+            var sql = $@"
+                SELECT cc.ExternalID AS JCCostCode, cat.ExternalID AS JCCategory,
+                       SUM(c.Pretax)+SUM(c.Tax) AS Amount, c.TaxGroup AS BudgetTaxGroup,
+                       cc.Description AS ItemDesc, e.ExternalJobID, e.Job_No
+                FROM CancelledBudgets c
+                JOIN tbljobs e ON c.Job=e.Job_No
+                JOIN StandardCostCodes cc ON c.JCCostCode=cc.CostCode
+                JOIN StandardCategories cat ON c.JCCategory=cat.Category
+                WHERE ({WhereClause}) AND e.DivisionID = {SessionState.DivisionID}
+                  AND c.PostBatch=0 AND c.JCCostCode<>''
+                GROUP BY cc.ExternalID, cat.ExternalID, c.TaxGroup, cc.Description, e.ExternalJobID, e.Job_No
+                UNION ALL
+                SELECT e.ExternalCostCode, e.ExternalCategory,
+                       SUM(e.BudgetPretax)+SUM(e.BudgetJCTax) AS Amount, e.BudgetTaxGroup,
+                       e.JCCostCodeDesc AS ItemDesc, j.ExternalJobID, e.Job_No
+                FROM EstimatedItems e
+                JOIN tbljobs j ON e.Job_No = j.Job_No
+                WHERE ({WhereClause}) AND e.DivisionID = {SessionState.DivisionID}
+                  AND e.BudgetPostingBatch = 0 AND e.BudgetGenerated = 1 AND e.JCCostCode <> ''
+                GROUP BY e.ExternalCostCode, e.ExternalCategory, e.BudgetTaxGroup, e.JCCostCodeDesc, j.ExternalJobID, e.Job_No
+                ORDER BY 6, 5";
+
+            var rows = await db.QueryAsync(sql);
+
+            // Process per-job: VB6 sends XML per job to QBO API, marks posted on success
+            string lastJob = "";
+            string lastHFJobNo = "";
+            foreach (var row in rows)
+            {
+                var thisJob = row["ExternalJobID"]?.ToString() ?? "";
+                var jobNo = row["Job_No"]?.ToString() ?? "";
+
+                if (thisJob != lastJob && !string.IsNullOrEmpty(lastJob) && !string.IsNullOrEmpty(lastHFJobNo))
+                {
+                    // In production: submit XML to QBO API, then mark posted on success
+                    await db.ExecuteAsync($@"
+                        UPDATE EstimateItems SET BudgetPostingBatch = {mBatch}
+                        WHERE BudgetGenerated = 1 AND ISNULL(BudgetPostingBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastHFJobNo)}')");
+                    await db.ExecuteAsync($@"
+                        UPDATE CancelledBudgets SET PostBatch = {mBatch}
+                        WHERE ISNULL(PostBatch,0) = 0
+                          AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastHFJobNo)}')");
+                }
+                lastJob = thisJob;
+                lastHFJobNo = jobNo;
+            }
+
+            // Mark final job
+            if (!string.IsNullOrEmpty(lastHFJobNo))
+            {
+                await db.ExecuteAsync($@"
+                    UPDATE EstimateItems SET BudgetPostingBatch = {mBatch}
+                    WHERE BudgetGenerated = 1 AND ISNULL(BudgetPostingBatch,0) = 0
+                      AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastHFJobNo)}')");
+                await db.ExecuteAsync($@"
+                    UPDATE CancelledBudgets SET PostBatch = {mBatch}
+                    WHERE ISNULL(PostBatch,0) = 0
+                      AND EstItemID IN (SELECT EstItemID FROM EstimatedItems WHERE Job_No = '{EscapeSql(lastHFJobNo)}')");
+            }
+
+            Console.WriteLine($"QBO posting: {rows.Count} budget line(s); processed for batch {mBatch}.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SendBatchToQBOnline] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             throw;
         }
     }
@@ -846,12 +921,13 @@
                 UPDATE EstimateItems SET BudgetPostingDate = GETDATE()
                 WHERE BudgetPostingBatch = {batch}");
 
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Intacct posting: {rows.Count} budget line(s) processed for batch {batch}.");
+            Console.WriteLine($"Intacct posting: {rows.Count} budget line(s); processed for batch {batch}.");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SendEstimatesToIntacct] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
             throw;
         }
     }
@@ -860,44 +936,111 @@
     {
         // Placeholder: in production, would create job in accounting system
         Console.WriteLine($"WriteJobToAccounting: {job}");
+
         return Task.CompletedTask;
     }
 
-    // ── Review Task Links ─────────────────────────────────────────────────
+    // ── Review Task Links (VB6: lblBatchTask_Click) ─────────────────────
     private async Task OnOpenPostingSummary()
     {
-        await JSRuntime.InvokeVoidAsync("alert",
-            $"Opening posting summary report for batch {mBatch}.\n" +
-            "In production, this would open a Crystal Report or equivalent.");
+        // VB6: Opens Crystal Report ExportBudgetBatch.rpt with Batch, SessionState.DivisionID, PostSummaries params
+        Console.WriteLine($"Report: ExportBudgetBatch.rpt, Batch={mBatch}, DivisionID ={SessionState.DivisionID}, PostSummarized={PostSummarizedBudgets}");
+
+        // TODO: Integrate report viewer for ExportBudgetBatch.rpt
     }
 
     private async Task OnReviewPostingFile()
     {
-        await JSRuntime.InvokeVoidAsync("alert",
-            $"Opening posting data file for batch {mBatch}.\n" +
-            "In production, this would retrieve and display the JCE file from the database.");
+        // VB6: Retrieves DataFile blob from Batches table and opens it
+        try
+        {
+            var rows = await db.QueryAsync("SELECT DataFile FROM Batches WHERE Batch = @Batch", new { Batch = mBatch });
+            if (rows.Count > 0 && rows[0].ContainsKey("DataFile") && rows[0]["DataFile"] != null)
+            {
+                Console.WriteLine($"Retrieved posting data file for batch {mBatch}.");
+
+                // TODO: Display or download the DataFile content
+            }
+            else
+            {
+                Console.WriteLine($"No data file found for batch {mBatch}.");
+
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
     }
 
     private async Task OnReviewRejectedRecords()
     {
-        await JSRuntime.InvokeVoidAsync("alert",
-            $"Opening rejected records for batch {mBatch}.\n" +
-            "In production, this would retrieve and display the reject file from the database.");
+        // VB6: Retrieves RejectFile blob from Batches table and opens it
+        try
+        {
+            var rows = await db.QueryAsync("SELECT RejectFile FROM Batches WHERE Batch = @Batch", new { Batch = mBatch });
+            if (rows.Count > 0 && rows[0].ContainsKey("RejectFile") && rows[0]["RejectFile"] != null)
+            {
+                Console.WriteLine($"Retrieved reject file for batch {mBatch}.");
+
+                // TODO: Display or download the RejectFile content
+            }
+            else
+            {
+                Console.WriteLine($"No reject file found for batch {mBatch}.");
+
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
     }
 
     private async Task OnOpenProcessingJournal()
     {
-        await JSRuntime.InvokeVoidAsync("alert",
-            $"Opening processing journal for batch {mBatch}.\n" +
-            "In production, this would retrieve and display the import print file.");
+        // VB6: Retrieves ImportPrintFile blob from Batches table and opens it via Timberline
+        try
+        {
+            var rows = await db.QueryAsync("SELECT ImportPrintFile FROM Batches WHERE Batch = @Batch", new { Batch = mBatch });
+            if (rows.Count > 0 && rows[0].ContainsKey("ImportPrintFile") && rows[0]["ImportPrintFile"] != null)
+            {
+                Console.WriteLine($"Retrieved import print file for batch {mBatch}.");
+
+                // TODO: Display or download the ImportPrintFile content
+            }
+            else
+            {
+                Console.WriteLine($"No import print file found for batch {mBatch}.");
+
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
     }
 
-    // ── Save Options ──────────────────────────────────────────────────────
-    private Task SaveOptions()
+    // ── Save Options (VB6: Form_Unload) ────────────────────────────────────
+    private async Task SaveOptions()
     {
-        // In production, persist ShowBatchReport and ShowProcessingJournal to app options
-        Console.WriteLine($"SaveOptions: ShowBatchReport={ShowBatchReport}, ShowProcessingJournal={ShowProcessingJournal}");
-        return Task.CompletedTask;
+        // VB6: HFApp.Options.Value(ShowBudgetExportReport) = chkShowBatchReport
+        //      HFApp.Options.Value(ShowBudgetProcessingJournal) = chkShowProcessingJournal
+        try
+        {
+            await db.ExecuteAsync($@"
+                UPDATE system_setup SET
+                    ShowBudgetExportReport = {(ShowBatchReport ? 1 : 0)},
+                    ShowBudgetProcessingJournal = {(ShowProcessingJournal ? 1 : 0)}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error persisting options");
+
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -906,4 +1049,3 @@
         return value?.Replace("'", "''") ?? "";
     }
 }
-```

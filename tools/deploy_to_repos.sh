@@ -247,10 +247,15 @@ if [ "$MODE" = "pull" ]; then
             [ -f "$razor" ] || continue
             [[ "$razor" == *.razor.css ]] && continue
             if ! grep -q '@namespace' "$razor"; then
-                # Insert after the closing comment block or at line 1
+                # Insert after the FIRST closing comment block, or as line 1
                 if grep -qn '───── \*@' "$razor"; then
-                    sed -i '' '/───── \*@/a\
-@namespace HomeFront.Components.Pages' "$razor"
+                    line_num=$(grep -n '───── \*@' "$razor" | head -1 | cut -d: -f1)
+                    sed -i '' "${line_num}a\\
+@namespace HomeFront.Components.Pages" "$razor"
+                else
+                    sed -i '' '1i\
+@namespace HomeFront.Components.Pages
+' "$razor"
                 fi
             fi
         done

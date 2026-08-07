@@ -1,215 +1,61 @@
-```razor
 @namespace HomeFront.Components.Pages
-@rendermode InteractiveServer
+
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
-
-<style>
-    .find-dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .find-dialog {
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-        width: 440px;
-        padding: 16px;
-        font-family: sans-serif;
-        font-size: 13px;
-    }
-
-    .find-dialog-title {
-        font-weight: 600;
-        font-size: 14px;
-        margin-bottom: 12px;
-    }
-
-    .find-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-        gap: 8px;
-    }
-
-    .find-row label {
-        min-width: 75px;
-        text-align: right;
-        font-size: 13px;
-    }
-
-    .find-row input[type="text"] {
-        flex: 1;
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 13px;
-    }
-
-    .find-row input[type="text"]:focus {
-        border-color: #86b7fe;
-        outline: 0;
-        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-
-    .find-options-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        margin-bottom: 10px;
-    }
-
-    .find-checkboxes {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-    .find-checkboxes label {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-        cursor: pointer;
-    }
-
-    .find-checkboxes input[type="checkbox"] {
-        width: 15px;
-        height: 15px;
-    }
-
-    .find-direction {
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        padding: 8px 12px;
-    }
-
-    .find-direction-title {
-        font-size: 12px;
-        font-weight: 600;
-        color: #6c757d;
-        margin-bottom: 6px;
-    }
-
-    .find-direction label {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-        cursor: pointer;
-        margin-bottom: 4px;
-    }
-
-    .find-direction input[type="radio"] {
-        width: 15px;
-        height: 15px;
-    }
-
-    .find-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        margin-left: auto;
-    }
-
-    .find-buttons button {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 90px;
-    }
-
-    .find-buttons button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .find-buttons button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .find-buttons button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .find-buttons button.btn-primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .find-not-found {
-        color: #dc3545;
-        font-size: 12px;
-        margin-top: 6px;
-        min-height: 18px;
-    }
-</style>
+@inject ILogger<FFind> Logger
+@inject NotificationService Notifications
 
 @if (Visible)
 {
-    <div class="find-dialog-overlay" @onclick="OnCancel" @onclick:stopPropagation="false">
-        <div class="find-dialog" @onclick:stopPropagation="true">
-            <div class="find-dialog-title">Find</div>
-
+    <DialogControl Visible="true" Header="Find" Width="440px" IsModal="true"
+                   CssClass="find-dialog-host" OnClose="OnCancel">
+        <ChildContent>
             <div class="find-row">
+                @* TextBoxControl commits on @onchange (blur); the original input used
+                   @bind:event="oninput" so the Find Next button enables as-you-type.
+                   Drive live updates via the pass-through @oninput handler (TextBoxControl
+                   tolerates unmatched attributes), and keep id="txtFind" + @onkeydown so
+                   focus/select-all and Enter/Escape behave exactly as before. *@
                 <label for="txtFind">Find &amp;what:</label>
-                <input id="txtFind" type="text" @bind="FindText" @bind:event="oninput"
-                       @onkeydown="OnKeyDown" @ref="findTextInput" />
+                <TextBoxControl Value="@FindText" CssClass="find-text"
+                                id="txtFind" @oninput="OnFindTextInput"
+                                @onkeydown="OnKeyDown" />
             </div>
 
             <div class="find-options-row">
-                <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+                <div class="find-options-left">
                     <div class="find-checkboxes">
-                        <label>
-                            <input type="checkbox" @bind="MatchWholeWord" disabled="@true" />
-                            Match whole word only
-                        </label>
-                        <label>
-                            <input type="checkbox" @bind="MatchCase" />
-                            Match case
-                        </label>
+                        <CheckBoxControl @bind-Checked="MatchWholeWord"
+                                         Disabled="true" Label="Match whole word only" />
+                        <CheckBoxControl @bind-Checked="MatchCase" Label="Match case" />
                     </div>
 
                     <div class="find-direction">
                         <div class="find-direction-title">Direction</div>
-                        <label>
-                            <input type="radio" name="direction" value="up"
-                                   checked="@(!SearchDown)"
-                                   @onchange="() => SearchDown = false" />
-                            Up
-                        </label>
-                        <label>
-                            <input type="radio" name="direction" value="down"
-                                   checked="@SearchDown"
-                                   @onchange="() => SearchDown = true" />
-                            Down
-                        </label>
+                        <RadioControl TValue="bool" Name="direction" Value="false"
+                                      @bind-SelectedValue="SearchDown" Label="Up" />
+                        <RadioControl TValue="bool" Name="direction" Value="true"
+                                      @bind-SelectedValue="SearchDown" Label="Down" />
                     </div>
-                </div>
-
-                <div class="find-buttons">
-                    <button class="btn-primary" disabled="@(string.IsNullOrWhiteSpace(FindText))"
-                            @onclick="OnFindNext">
-                        Find Next
-                    </button>
-                    <button @onclick="OnCancel">Cancel</button>
                 </div>
             </div>
 
             <div class="find-not-found">@NotFoundMessage</div>
-        </div>
-    </div>
+        </ChildContent>
+        <FooterContent>
+            @* Primary-action accent (was .btn-primary blue). ButtonControl renders its own
+               <button>, which FFind's scoped CSS can't reach across the dialog-footer
+               boundary, so the accent goes through the safe Style parameter (a real
+               ButtonControl param, NOT an unmatched attribute). *@
+            <ButtonControl CssClass="btn-primary" Disabled="@(string.IsNullOrWhiteSpace(FindText))"
+                           Style="@(string.IsNullOrWhiteSpace(FindText) ? "" : "background:#0d6efd;color:#fff;border-color:#0d6efd;")"
+                           OnClick="OnFindNext">
+                Find Next
+            </ButtonControl>
+            <ButtonControl OnClick="OnCancel">Cancel</ButtonControl>
+        </FooterContent>
+    </DialogControl>
 }
 
 @code {
@@ -270,7 +116,6 @@
     private bool MatchCase { get; set; } = false;
     private bool SearchDown { get; set; } = true;
     private string NotFoundMessage { get; set; } = "";
-    private ElementReference findTextInput;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -278,13 +123,25 @@
         {
             try
             {
-                await findTextInput.FocusAsync();
+                // The find text box is now a FlexKit TextBoxControl, so its @ref is the
+                // component (not a focusable ElementReference). Focus + select-all the
+                // inner <input id="txtFind"> via JS, mirroring the VB6 SelectAll on GotFocus.
+                await JSRuntime.InvokeVoidAsync("eval",
+                    "(function(){var e=document.getElementById('txtFind');if(e){e.focus();e.select();}})()");
             }
             catch
             {
                 // Element may not be rendered yet
             }
         }
+    }
+
+    // Live as-you-type binding for the find text (pass-through @oninput on TextBoxControl,
+    // replacing the original <input @bind:event="oninput">). Keeps the Find Next button's
+    // disabled state in sync with the typed text without waiting for blur.
+    private void OnFindTextInput(ChangeEventArgs e)
+    {
+        FindText = e.Value?.ToString() ?? "";
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
@@ -477,4 +334,3 @@
         public int ColIndex { get; set; }
     }
 }
-```

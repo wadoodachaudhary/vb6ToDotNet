@@ -1,59 +1,30 @@
 @page "/custom-quote"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Notifications
+@using HomeFront.Components.Pages
 @using HomeFront.Data
 @using System.Data
-@using System.Dynamic
+@using System.Globalization
 @using System.Linq
+@using System.Reflection
+@using HomeFront.Services
+@using HomeFront.Models
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FCustomQuote> Logger
+@inject NotificationService Notifications
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
+@inject IReportSeedParameters ReportSeeds
+@inject IWebHostEnvironment WebHost
 
 <PageTitle>Custom Option Quote</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-    }
-
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        min-width: 72px;
-    }
-
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-separator { width: 1px; height: 32px; background: #ced4da; margin: 0 4px; }
-
-    .content-layout { display: flex; flex-direction: column; height: calc(100vh - 140px); }
-    .grid-panel { flex: 1; min-height: 280px; }
-    .bottom-panel { display: grid; grid-template-columns: 1fr 1.2fr; gap: 12px; margin-top: 10px; }
-    .info-panel, .price-panel { border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; background: #fff; }
-    .panel-title { font-weight: 700; font-size: 12px; color: #495057; margin-bottom: 8px; text-transform: uppercase; }
-    .info-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .info-table th { text-align: right; padding: 4px 8px; color: #6c757d; width: 120px; }
-    .info-table td { padding: 4px 8px; }
-    .desc { font-size: 13px; margin-bottom: 8px; color: #333; min-height: 40px; }
-    .field-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
-    .field-row label { width: 70px; text-align: right; font-size: 12px; font-weight: 600; color: #495057; }
-    .inline { display: flex; align-items: center; gap: 6px; }
-    .price-label { margin-top: 4px; font-weight: 600; color: #0d6efd; }
-</style>
 
 <div class="toolbar-cntr">
     <button class="tbar-btn" disabled="@(!CanSave)" @onclick="OnSaveClick">
@@ -65,7 +36,7 @@
         <span class="tool-label">Preview</span>
     </button>
     <div class="tbar-separator"></div>
-    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("One Time")'>
+    <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("OneTime")'>
         <span class="tool-label">One Time</span>
     </button>
     <button class="tbar-btn" disabled="@mReadOnly" @onclick='() => OnTakeoffClick("Item")'>
@@ -84,8 +55,15 @@
 </div>
 
 <div class="content-layout">
-    <div class="grid-panel">
-        <HfGrid @ref="ItemsGrid"
+    @* ── ITEMS GRID ────────────────────────────────────────────
+       VB6 ColorizeItems (FCustomQuote.frm:1395) sets per-row fore/back/bold/italic
+       from the AppOptions Format_* values. RowCssClassSelector returns class names;
+       the DB-derived colours are surfaced as CSS custom properties on the host and
+       the scoped .cq-* classes (FCustomQuote.razor.css) consume them via var() — so
+       the colours stay DB-driven, never hardcoded. *@
+    <div class="grid-panel cq-items-host" style="@ItemsHostStyle"
+         @oncontextmenu="OnItemsContextMenu" @oncontextmenu:preventDefault="true">
+        <GridControl @ref="ItemsGrid"
                 TValue="CustomQuoteItem"
                 DataSource="@ItemsData"
                 AllowSelection="true"
@@ -96,39 +74,138 @@
                 EnableHover="true"
                 Height="100%"
                 RowHeight="34"
+                RowCssClassSelector="@GetItemRowCss"
                 SelectionSettingsRef="@selectionSettings"
                 EditSettingsRef="@editSettings"
                 EventsRef="@gridEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(CustomQuoteItem.Selected)" HeaderText="" Width="40px" Type="ColumnType.CheckBox" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.POIndex)" HeaderText="PO Index" Width="80px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.EstPhase)" HeaderText="Phase" Width="70px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.EstItem)" HeaderText="Item" Width="70px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.ItemDesc)" HeaderText="Description" Width="260px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.ItemComments)" HeaderText="Comments" Width="200px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.TakeoffQty)" HeaderText="Takeoff Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.OrderUOM)" HeaderText="Order UOM" Width="80px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.ConversionFactor)" HeaderText="Conv" Width="70px" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetQty)" HeaderText="Budget Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetRate)" HeaderText="Rate" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetPretax)" HeaderText="Pretax" Width="95px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetTax)" HeaderText="Tax" Width="80px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetVendorName)" HeaderText="Vendor" Width="200px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.JCCostCode)" HeaderText="Cost Code" Width="90px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.JCCategory)" HeaderText="Category" Width="90px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetTaxGroup)" HeaderText="Tax Group" Width="90px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.RoomLocation)" HeaderText="Room" Width="120px" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetJCTaxRate)" Visible="false" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.BudgetNJCTaxRate)" Visible="false" />
-                <HfGridColumn Field="@nameof(CustomQuoteItem.RowState)" Visible="false" />
-                @for (var i = 1; i <= 40; i++)
+            <GridColumnsBase @key="gItemsLayoutVersion">
+                <GridColumn Field="@nameof(CustomQuoteItem.RowState)" Visible="false" />
+                @if (HasGridLayout)
                 {
-                    <HfGridColumn Field="@($"WBS{i:D2}")" HeaderText="@($"WBS{i:D2}")" Visible="false" />
+                    foreach (var entry in GetOrderedGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                            : null;
+                        var format = GetFormatForField(fieldName, columnType);
+                        var allowEdit = IsFieldEditable(fieldName);
+
+                        @* ── Long-text fields: display + popup-button (VB6 FComments.Edit) ──
+                           Standard FlexKit edit-button pattern: templateless, AllowEditing=false +
+                           AlwaysShowEditButton; the "…" routes through gridEvents.OnEditButtonClick →
+                           OnGridEditButtonClick → OnEditPopupField. ClipMode.Ellipsis replaces the old
+                           truncate+title; the displayed value is the raw Field property, unchanged. *@
+                        if (_popupTextFields.Contains(fieldName))
+                        {
+                            <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width"
+                                          AllowEditing="false"
+                                          ShowEditButton="true"
+                                          AlwaysShowEditButton="true"
+                                          ClipMode="ClipMode.Ellipsis"
+                                          Visible="true" />
+                        }
+                        @* ── Lookup fields with … button (VB6 gItems_CellButtonClick) ──
+                           Standard FlexKit edit-button pattern; "…" routes through
+                           gridEvents.OnEditButtonClick → OnGridEditButtonClick → OnPickLookupField.
+                           Displayed value is the raw Field property, so it is unchanged. *@
+                        else if (_lookupPickerFields.Contains(fieldName))
+                        {
+                            <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width"
+                                          AllowEditing="false"
+                                          ShowEditButton="true"
+                                          AlwaysShowEditButton="true"
+                                          ClipMode="ClipMode.Ellipsis"
+                                          Visible="true" />
+                        }
+                        else
+                        {
+                            <GridColumn Field="@fieldName"
+                                          HeaderText="@headerText"
+                                          Width="@width"
+                                          Type="@columnType"
+                                          TextAlign="@textAlign"
+                                          Format="@format"
+                                          AllowEditing="@allowEdit"
+                                          ClipMode="ClipMode.Ellipsis"
+                                          Visible="true" />
+                        }
+                    }
                 }
-            </HfGridColumnsBase>
-        </HfGrid>
+                else
+                {
+                    @* Fallback: hardcoded columns when no AppGridLayout exists *@
+                    <GridColumn Field="@nameof(CustomQuoteItem.POIndex)" HeaderText="PO Index [gItems FALLBACK]" Width="80px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.EstPhase)" HeaderText="Phase" Width="70px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.EstItem)" HeaderText="Item" Width="70px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.ItemDesc)" HeaderText="Description" Width="260px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.TakeoffQty)" HeaderText="Takeoff Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.OrderUOM)" HeaderText="Order UOM" Width="80px" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetQty)" HeaderText="Budget Qty" Width="90px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetRate)" HeaderText="Rate" Width="90px" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetPretax)" HeaderText="Pretax" Width="95px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetTax)" HeaderText="Tax" Width="80px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetVendorName)" HeaderText="Vendor" Width="200px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.JCCostCode)" HeaderText="Cost Code" Width="90px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.JCCategory)" HeaderText="Category" Width="90px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.BudgetTaxGroup)" HeaderText="Tax Group" Width="90px"
+                                  AllowEditing="false"
+                                  ShowEditButton="true"
+                                  AlwaysShowEditButton="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.RoomLocation)" HeaderText="Room" Width="120px" />
+                    <GridColumn Field="@nameof(CustomQuoteItem.WarningMessage)" HeaderText="⚠" Width="40px" AllowEditing="false" />
+                }
+                @* WBS columns — only visible ones with custom descriptions *@
+                @foreach (var wbs in WbsColumns)
+                {
+                    <GridColumn Field="@wbs.Field" HeaderText="@wbs.Caption" Width="120px" Visible="true" />
+                }
+                <GridColumn Field="@nameof(CustomQuoteItem.BudgetJCTaxRate)" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteItem.BudgetNJCTaxRate)" Visible="false" />
+            </GridColumnsBase>
+        </GridControl>
     </div>
+
+    @* ── Selected-totals readout (VB6 gItems_SelChange + ShowTip, FCustomQuote.frm:1266) ──
+       VB6 sums BudgetPretax + BudgetJCTax across the selected row range and shows a
+       floating tooltip (Pretax / Tax / Total) whenever >1 row is selected (.Row<>.RowSel).
+       The faithful, no-JS equivalent is a live status line that appears only when a
+       multi-row selection exists; it updates off the grid's SelectionChanged event. *@
+    @if (_selCount > 1)
+    {
+        <div class="cq-seltotals" role="status" aria-live="polite">
+            <span class="cq-seltotals-count">@_selCount selected</span>
+            <span class="cq-seltotals-item"><span class="cq-seltotals-lbl">Pretax:</span> <span class="cq-seltotals-val">@_selPretax.ToString("#,##0.00")</span></span>
+            <span class="cq-seltotals-item"><span class="cq-seltotals-lbl">Tax:</span> <span class="cq-seltotals-val">@_selTax.ToString("#,##0.00")</span></span>
+            <span class="cq-seltotals-item cq-seltotals-total"><span class="cq-seltotals-lbl">Total:</span> <span class="cq-seltotals-val">@((_selPretax + _selTax).ToString("#,##0.00"))</span></span>
+        </div>
+    }
 
     <div class="bottom-panel">
         <div class="info-panel">
@@ -148,30 +225,30 @@
 
             <div class="field-row">
                 <label>Cost</label>
-                <HfNumericTextBox TValue="decimal" @bind-Value="mCost" Format="N2" Width="120px"
+                <NumericTextBoxControl TValue="decimal" @bind-Value="mCost" Format="N2" Width="120px"
                                   Enabled="@(!mReadOnly)" ValueChange="OnCostChanged" />
             </div>
             <div class="field-row">
                 <label>Markup</label>
-                <HfNumericTextBox TValue="decimal" @bind-Value="mMarkup" Format="N2" Width="120px"
+                <NumericTextBoxControl TValue="decimal" @bind-Value="mMarkup" Format="N2" Width="120px"
                                   Enabled="@(!mReadOnly)" ValueChange="OnMarkupChanged" />
             </div>
             <div class="field-row">
                 <label>Margin</label>
-                <HfNumericTextBox TValue="decimal" @bind-Value="mMargin" Format="N2" Width="120px"
+                <NumericTextBoxControl TValue="decimal" @bind-Value="mMargin" Format="N2" Width="120px"
                                   Enabled="@(!mReadOnly)" ValueChange="OnMarginChanged" />
             </div>
             <div class="field-row">
                 <label>Sell</label>
-                <HfNumericTextBox TValue="decimal" @bind-Value="mSell" Format="N2" Width="120px"
+                <NumericTextBoxControl TValue="decimal" @bind-Value="mSell" Format="N2" Width="120px"
                                   Enabled="@(!mReadOnly)" ValueChange="OnSellChanged" />
             </div>
             <div class="field-row">
                 <label>Sell Qty</label>
                 <div class="inline">
-                    <HfNumericTextBox TValue="decimal" @bind-Value="mSalesQty" Format="N2" Width="90px"
+                    <NumericTextBoxControl TValue="decimal" @bind-Value="mSalesQty" Format="N2" Width="90px"
                                       Enabled="@(!mReadOnly)" ValueChange="OnSalesQtyChanged" />
-                    <HfDropDownList TValue="string" TItem="ComboBoxItem"
+                    <DropDownListControl TValue="string" TItem="ComboBoxItem"
                                     DataSource="@UomItems"
                                     @bind-Value="mSalesUOM"
                                     TextFieldName="Text" ValueFieldName="Value"
@@ -184,6 +261,48 @@
         </div>
     </div>
 </div>
+
+@* ── Items Grid Context Menu (VB6 FCustomQuote.gItems_BeforeMouseDown:1016) ──
+   VB6 disables every action except Remove + View Files on this grid. *@
+@if (_showItemsContextMenu)
+{
+    <div class="context-menu-backdrop"
+         @onclick="CloseContextMenu"
+         @oncontextmenu="CloseContextMenu"
+         @oncontextmenu:preventDefault="true"></div>
+    <div class="context-menu" style="left:@(_contextMenuX)px;top:@(_contextMenuY)px;"
+         @onclick:stopPropagation="true">
+        <button class="context-menu-close" type="button"
+                title="Close" aria-label="Close menu"
+                @onclick="CloseContextMenu">×</button>
+        @* mcITEM_REMOVEITEMS (VB6 enables only this + View Files) *@
+        <button @onclick="OnCtxRemoveItems" disabled="@(_ctxRow == null || mReadOnly)">Remove Item(s)</button>
+        @* mcITEM_VIEWFILES *@
+        <button @onclick="OnCtxViewFiles" disabled="@(_ctxRow == null)">View Files...</button>
+    </div>
+}
+
+@* ── In-grid popup text editor (VB6 FComments.Edit) ──── *@
+@if (ShowTextEditor)
+{
+    <div class="cq-modal-backdrop">
+        <div class="cq-modal">
+            <h5>@TextEditorTitle</h5>
+            <TextAreaControl @bind-Value="TextEditorValue" Rows="10" MaxLength="@TextEditorMaxLength" CssClass="cq-textarea" />
+            <div class="cq-modal-buttons">
+                <ButtonControl OnClick="OnTextEditorOk">OK</ButtonControl>
+                <ButtonControl OnClick="OnTextEditorCancel">Cancel</ButtonControl>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Pick List Modal (VB6 FPickList.Choose) ──────────── *@
+@namespace HomeFront.Components.Pages
+<FPickList @ref="pickList" OnSelected="OnPickListSelected" />
+
+@* ── Attachments dialog (VB6 EditAttachments / View Files) ─ *@
+<FAttachments @ref="attachmentsDialog" />
 
 @code {
     [Parameter] public bool ReadOnly { get; set; }
@@ -204,11 +323,18 @@
     [Parameter] public decimal SalesQty { get; set; } = 1;
     [Parameter] public string SalesUOM { get; set; } = "";
 
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<CustomQuoteItem>? ItemsGrid;
-    private readonly HfSelectionSettings selectionSettings = new() { Mode = SelectionMode.Row, Type = SelectionType.Multiple, EnableToggle = true };
-    private HfEditSettings editSettings = new() { AllowAdding = true, AllowEditing = true, AllowDeleting = true, ShowConfirmDialog = false };
-    private readonly HfGridEvents<CustomQuoteItem> gridEvents = new();
+    // When hosted under the FMain MDI shell, navigate via ParentNavigate so the report
+    // viewer stays inside the shell; falls back to NavigationManager when standalone.
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private GridControl<CustomQuoteItem>? ItemsGrid;
+    private readonly SelectionSettings selectionSettings = new() { Mode = SelectionMode.Row, Type = SelectionType.Multiple, EnableToggle = true };
+    private EditSettings editSettings = new() { AllowAdding = true, AllowEditing = true, AllowDeleting = true, ShowConfirmDialog = false };
+    private readonly GridControlEvents<CustomQuoteItem> gridEvents = new();
+
+    private FPickList? pickList;
+    private FAttachments? attachmentsDialog;
 
     private bool mReadOnly;
     private bool mSaved;
@@ -237,6 +363,32 @@
     private List<CustomQuoteItem> ItemsData = new();
     private List<ComboBoxItem> UomItems = new();
 
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // Load/resolve/width boilerplate lives in the shared GridLayoutPresenter
+    // (Services/GridLayoutPresenter.cs); only the VB6 form/grid names stay here.
+    // gItemsLayout / HasGridLayout / gItemsLayoutVersion are thin delegations so
+    // the markup is unchanged. The keyed-then-unkeyed fallback is captured by
+    // instanceKey:"(0)"; the VB6 column aliases (Description→ItemDesc etc.) by
+    // aliases:. NOTE: GetColumnTypeForField + ConvertLayoutWidthToPx below are
+    // NOT delegated — both diverge from the presenter (see their drift flags).
+    private readonly GridLayoutPresenter<CustomQuoteItem> _itemsGrid =
+        new("FCustomQuote", "gItems", instanceKey: "(0)",
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["description"] = nameof(CustomQuoteItem.ItemDesc),
+                ["comments"] = nameof(CustomQuoteItem.ItemComments),
+                ["phase"] = nameof(CustomQuoteItem.EstPhase),
+                ["item"] = nameof(CustomQuoteItem.EstItem),
+                ["warningmessages"] = nameof(CustomQuoteItem.WarningMessage)
+            });
+
+    private Dictionary<string, GridLayoutColumn> gItemsLayout => _itemsGrid.Layout;
+    private bool HasGridLayout => _itemsGrid.Has;
+    private int gItemsLayoutVersion => _itemsGrid.Version;
+
+    // ── WBS Columns (loaded from customDescriptions) ──────────
+    private List<WbsColumnDef> WbsColumns = new();
+
     private string InfoCommunity = "";
     private string InfoCustomer = "";
     private string InfoModel = "";
@@ -245,11 +397,38 @@
 
     private bool _initialized;
 
-    private int DivisionID => 1;
-
     private bool CanSave => !mReadOnly && mDirty;
 
     private string PriceLabel => $"@ {mSell:0.00} = {(mSalesQty * mSell):$#,##0.00}";
+
+    // ── Right-click context menu (VB6 gItems_BeforeMouseDown) ──
+    private bool _showItemsContextMenu;
+    private double _contextMenuX, _contextMenuY;
+    private CustomQuoteItem? _ctxRow;
+
+    // ── Selected-totals readout (VB6 gItems_SelChange:1266) ──
+    // VB6 sums BudgetPretax + BudgetJCTax over the selected range when >1 row is selected.
+    private int _selCount;
+    private decimal _selPretax;
+    private decimal _selTax;
+
+    // ── AppOptions Format colours (VB6 ColorizeItems → HFApp.Options) ──
+    private string _fmtLtZeroFg = "#000000", _fmtLtZeroBg = "transparent";
+    private string _fmtEqZeroFg = "#000000", _fmtEqZeroBg = "transparent";
+    private string _fmtNonSysFg = "#000000", _fmtNonSysBg = "transparent";
+    private string _fmtInvalidFg = "#000000", _fmtInvalidBg = "transparent";
+    private bool _fmtLtZeroBold, _fmtLtZeroItalic;
+    private bool _fmtEqZeroBold, _fmtEqZeroItalic;
+    private bool _fmtNonSysBold, _fmtNonSysItalic;
+    private bool _fmtInvalidBold, _fmtInvalidItalic;
+    private bool _optZeroRateOnChangeVendor;
+
+    // CSS custom properties for the items-grid host; the scoped .cq-* rules read them via var().
+    private string ItemsHostStyle =>
+        $"--cq-ltzero-fg:{_fmtLtZeroFg};--cq-ltzero-bg:{_fmtLtZeroBg};" +
+        $"--cq-eqzero-fg:{_fmtEqZeroFg};--cq-eqzero-bg:{_fmtEqZeroBg};" +
+        $"--cq-nonsys-fg:{_fmtNonSysFg};--cq-nonsys-bg:{_fmtNonSysBg};" +
+        $"--cq-invalid-fg:{_fmtInvalidFg};--cq-invalid-bg:{_fmtInvalidBg};";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -257,7 +436,18 @@
         InitializeFromParameters();
         ApplyReadOnly();
         gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CustomQuoteItem>>(this, OnCellSaved);
+        // Standard FlexKit edit-button dispatch: the templateless "…" buttons on the
+        // popup-text + lookup columns raise OnEditButtonClick → OnGridEditButtonClick.
+        gridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<CustomQuoteItem>>(this, OnGridEditButtonClick);
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CustomQuoteItem>>(this, OnGridRowSelected);
+        // VB6 gItems_SelChange fires on selection-extend; SelectionChanged is the grid's
+        // documented once-per-extend hook for tracking multi-row selection in real time.
+        gridEvents.SelectionChanged = EventCallback.Factory.Create<int>(this, OnGridSelectionChanged);
+        await LoadAppOptionsAsync();
+        await LoadGridLayoutAsync();
+        await LoadWbsDescriptionsAsync();
         await LoadUomAsync();
+        await LoadMarkupFromCategoryAsync();
         await LoadInfoPanelAsync();
         await LoadDataAsync();
         CalcTotals();
@@ -292,7 +482,7 @@
 
     private void ApplyReadOnly()
     {
-        editSettings = new HfEditSettings
+        editSettings = new EditSettings
         {
             AllowAdding = !mReadOnly,
             AllowEditing = !mReadOnly,
@@ -312,6 +502,8 @@
         };
     }
 
+    // VB6 BuildQuote (FCustomQuote.frm:515): public entry used when the form is
+    // hosted as a modal from a parent. Mirrors InitializeFromParameters + loads.
     public async Task<bool> BuildQuote(bool readOnly, string attachmentId, string location, string model, string opt, string job, string customer, string community, string communityPhase, string extra, string description, long seq, string category, decimal costAmount, decimal sellAmount, decimal salesQty, string salesUom)
     {
         mReadOnly = readOnly;
@@ -319,7 +511,7 @@
         mCommunity = community;
         mCommunityPhase = communityPhase;
         mAssemblyDesc = description;
-        mSalesQty = salesQty;
+        mSalesQty = salesQty <= 0 ? 1 : salesQty;
         mSalesUOM = salesUom;
         mSeq = seq;
         mJob = (job ?? "").Replace("-", "");
@@ -334,7 +526,12 @@
         mMargin = mSell == 0 ? 0 : Math.Round((mSell - mCost) / mSell * 100, 0);
 
         ApplyReadOnly();
+        await LoadAppOptionsAsync();
+        await LoadGridLayoutAsync();
+        await LoadWbsDescriptionsAsync();
         await LoadUomAsync();
+        if (!string.IsNullOrWhiteSpace(category))
+            await LoadMarkupFromCategoryAsync(category);
         await LoadInfoPanelAsync();
         await LoadDataAsync();
         CalcTotals();
@@ -343,7 +540,7 @@
 
     private async Task LoadUomAsync()
     {
-        var rows = await db.QueryAsync("SELECT DISTINCT OrderUOM Unit FROM tblPhaseItem WHERE DivisionID=@DivisionID ORDER BY 1", new { DivisionID });
+        var rows = await db.QueryAsync("SELECT DISTINCT OrderUOM Unit FROM tblPhaseItem WHERE DivisionID =@DivisionID ORDER BY 1", new { SessionState.DivisionID });
         UomItems = rows.Select(r => new ComboBoxItem
         {
             Text = r["Unit"]?.ToString() ?? "",
@@ -351,6 +548,26 @@
         }).ToList();
         if (!string.IsNullOrWhiteSpace(mSalesUOM) && UomItems.All(u => u.Value != mSalesUOM))
             UomItems.Insert(0, new ComboBoxItem { Text = mSalesUOM, Value = mSalesUOM });
+    }
+
+    // VB6 BuildQuote (FCustomQuote.frm:550): seed Markup from tblcategories.comarkup
+    // for the option's Category, used only when there is no Cost/Sell to derive from.
+    private async Task LoadMarkupFromCategoryAsync(string? category = null)
+    {
+        var cat = category ?? Category;
+        if (string.IsNullOrWhiteSpace(cat)) return;
+        try
+        {
+            var markup = await db.ExecuteScalarAsync<decimal>(
+                "SELECT COMarkup FROM tblcategories WHERE category=@Category", new { Category = cat });
+            // VB6: If txtMarkup.Text = "0" Then txtMarkup.Text = "" — only seed when no cost/sell derivation.
+            if (mCost == 0 || mSell == 0)
+                mMarkup = markup;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadMarkupFromCategory error");
+        }
     }
 
     private async Task LoadInfoPanelAsync()
@@ -383,7 +600,7 @@ where c.customer_no=@CustomerNo";
     private async Task LoadDataAsync()
     {
         var s = @"
-select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_Name BudgetVendorName, pi.roundto, pi.rounddir, i.*
+select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_Name BudgetVendorName, pi.roundto, pi.rounddir, pi.wastepercent, i.*
   from CustomPreEstimateItems i
   left outer join tblphaseitem pi ON(pi.DivisionID = @DivisionID and i.phase=pi.phase and i.item=pi.item)
   left outer join tblVendors v   ON(i.BudgetVendor=v.Vendor_ID and v.DivisionID = @DivisionID)
@@ -392,7 +609,7 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
  where i.customerno=@CustomerNo
    and i.location=@Location
    and i.seq=@Seq";
-        var dt = db.SqlExec(s, new { DivisionID, CustomerNo = mCustomer, Location = mLocation, Seq = mSeq });
+        var dt = db.SqlExec(s, new { SessionState.DivisionID, CustomerNo = mCustomer, Location = mLocation, Seq = mSeq });
         ItemsData = new List<CustomQuoteItem>();
         foreach (DataRow row in dt.Rows)
         {
@@ -402,80 +619,257 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
                 Location = mLocation,
                 OptionID = mOptionID,
                 HFDescription = mAssemblyDesc,
-                POIndex = row["POIndex"]?.ToString() ?? "",
-                RoundTo = ToDecimal(row["RoundTo"]),
-                RoundDir = ToInt(row["RoundDir"]),
-                ConversionFactor = ToDecimal(row["ConversionFactor"]),
-                EstPhase = row["Phase"]?.ToString() ?? "",
-                EstItem = row["Item"]?.ToString() ?? "",
-                ItemDesc = row["Description"]?.ToString() ?? "",
-                ItemComments = row["Comments"]?.ToString() ?? "",
-                TakeoffQty = ToDecimal(row["TakeoffQty"]),
-                TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
-                OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+                Model = mModel,
+                POIndex = Col(row, "POIndex"),
+                RoundTo = ToDecimal(Get(row, "RoundTo")),
+                RoundDir = ToInt(Get(row, "RoundDir")),
+                WastePercent = ToDecimal(Get(row, "WastePercent")),
+                ConversionFactor = ToDecimal(Get(row, "ConversionFactor")),
+                EstPhase = Col(row, "Phase"),
+                EstItem = Col(row, "Item"),
+                ItemDesc = Col(row, "Description"),
+                ItemComments = Col(row, "Comments"),
+                TakeoffQty = ToDecimal(Get(row, "TakeoffQty")),
+                TakeoffUOM = Col(row, "TakeoffUOM"),
+                OrderUOM = Col(row, "OrderUOM"),
                 Job_No = mJob,
                 JCExtra = mExtra,
-                JCCostCode = row["JCCostCode"]?.ToString() ?? "",
-                JCCategory = row["JCCategory"]?.ToString() ?? "",
-                BudgetVendor = row["BudgetVendor"]?.ToString() ?? "",
-                BudgetQty = ToDecimal(row["BudgetQty"]),
-                BudgetRate = ToDecimal(row["BudgetRate"]),
-                BudgetPretax = ToDecimal(row["BudgetPretax"]),
-                BudgetTaxGroup = row["BudgetTaxGroup"]?.ToString() ?? "",
-                BudgetJCTax = ToDecimal(row["BudgetJCTax"]),
-                BudgetJCTaxRate = ToDecimal(row["BudgetJCTaxRate"]),
-                BudgetNJCTax = ToDecimal(row["BudgetNJCTax"]),
-                BudgetNJCTaxRate = ToDecimal(row["BudgetNJCTaxRate"]),
+                JCCostCode = Col(row, "JCCostCode"),
+                JCCategory = Col(row, "JCCategory"),
+                BudgetVendor = Col(row, "BudgetVendor"),
+                BudgetQty = ToDecimal(Get(row, "BudgetQty")),
+                BudgetRate = ToDecimal(Get(row, "BudgetRate")),
+                BudgetPretax = ToDecimal(Get(row, "BudgetPretax")),
+                BudgetTaxGroup = Col(row, "BudgetTaxGroup"),
+                BudgetJCTax = ToDecimal(Get(row, "BudgetJCTax")),
+                BudgetJCTaxRate = ToDecimal(Get(row, "BudgetJCTaxRate")),
+                BudgetNJCTax = ToDecimal(Get(row, "BudgetNJCTax")),
+                BudgetNJCTaxRate = ToDecimal(Get(row, "BudgetNJCTaxRate")),
                 Seq = mSeq,
-                Assembly = row["Assembly"]?.ToString() ?? "",
-                JCCostCodeDesc = row["JCCostCodeDesc"]?.ToString() ?? "",
-                JCCategoryDesc = row["JCCategoryDesc"]?.ToString() ?? "",
-                BudgetVendorName = row["BudgetVendorName"]?.ToString() ?? "",
-                RoomLocation = row["RoomLocation"]?.ToString() ?? "",
+                Assembly = Col(row, "Assembly"),
+                JCCostCodeDesc = Col(row, "JCCostCodeDesc"),
+                JCCategoryDesc = Col(row, "JCCategoryDesc"),
+                BudgetVendorName = Col(row, "BudgetVendorName"),
+                RoomLocation = Col(row, "RoomLocation"),
                 RowState = "CLEAN"
             };
             item.BudgetTax = item.BudgetJCTax + item.BudgetNJCTax;
             for (var i = 1; i <= 40; i++)
-                item.SetWbs(i, row[$"WBS{i:D2}"]?.ToString() ?? "");
+                item.SetWbs(i, Col(row, $"WBS{i:D2}"));
+            ColorizeItem(item);
             ItemsData.Add(item);
         }
         mDirty = false;
     }
 
-    private void OnCellSaved(CellSaveArgs<CustomQuoteItem> args)
+    private static object? Get(DataRow row, string col) =>
+        row.Table.Columns.Contains(col) ? row[col] : null;
+    private static string Col(DataRow row, string col) =>
+        row.Table.Columns.Contains(col) ? row[col]?.ToString() ?? "" : "";
+
+    // ── Grid edit committed ───────────────────────────────────
+    private async Task OnCellSaved(CellSaveArgs<CustomQuoteItem> args)
     {
         if (args.Data == null) return;
         var field = args.ColumnName ?? "";
-        RecalcRow(args.Data, field);
+        await RecalculateAfterEdit(args.Data, field);
         if (args.Data.RowState != "NEW") args.Data.RowState = "DIRTY";
         mDirty = true;
+        ColorizeItem(args.Data);
         CalcTotals();
+        StateHasChanged();
     }
 
-    private void RecalcRow(CustomQuoteItem row, string field)
+    // VB6 gItems_AfterEdit (FCustomQuote.frm:848): per-column recalc cascade.
+    private async Task RecalculateAfterEdit(CustomQuoteItem row, string field)
     {
         switch (field)
         {
+            case nameof(CustomQuoteItem.JCCategory):
+            case nameof(CustomQuoteItem.JCCategoryDesc):
+                // VB6:869 — when not budget-generated, default the tax group from
+                // dbo.Purch_GetDefaultTaxGroup and re-tax.
+                {
+                    var (tg, jc, njc) = await GetDefaultTaxGroup(row);
+                    if (tg != null)
+                    {
+                        row.BudgetTaxGroup = tg;
+                        row.BudgetJCTaxRate = (decimal)jc;
+                        row.BudgetNJCTaxRate = (decimal)njc;
+                        ReTax(row);
+                    }
+                }
+                break;
+
+            case nameof(CustomQuoteItem.BudgetVendor):
+            case nameof(CustomQuoteItem.BudgetVendorName):
+                // VB6:897 — look up the vendor's item rate; clear overridden + re-extend.
+                {
+                    var (ok, rate) = await GetVendorCost(row, row.BudgetVendor);
+                    if (ok)
+                    {
+                        row.BudgetOverridden = "False";
+                        row.BudgetRate = (decimal)rate;
+                        row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                        ReTax(row);
+                    }
+                }
+                break;
+
             case nameof(CustomQuoteItem.TakeoffQty):
-                if (row.ConversionFactor != 0)
-                    row.BudgetQty = Math.Round(row.TakeoffQty * row.ConversionFactor, 2);
+                // VB6:908 — BudgetQty = RoundTo(TakeoffQty*(100+Waste)/100*Conv, RoundTo, RoundDir)
+                row.BudgetQty = (decimal)RoundToValue(
+                    (double)row.TakeoffQty * (100 + (double)row.WastePercent) / 100 * (double)row.ConversionFactor,
+                    (double)row.RoundTo, row.RoundDir);
                 row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                ReTax(row);
                 break;
+
             case nameof(CustomQuoteItem.BudgetQty):
-            case nameof(CustomQuoteItem.BudgetRate):
+                // VB6:916 — TakeoffQty = BudgetQty / Conv; re-extend.
+                if (row.ConversionFactor != 0)
+                    row.TakeoffQty = row.BudgetQty / row.ConversionFactor;
                 row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                ReTax(row);
                 break;
+
+            case nameof(CustomQuoteItem.BudgetRate):
+                // VB6:923 — mark overridden; re-extend.
+                row.BudgetOverridden = "True";
+                row.BudgetPretax = Math.Round(row.BudgetQty * row.BudgetRate, 2);
+                ReTax(row);
+                break;
+
             case nameof(CustomQuoteItem.BudgetPretax):
-                if (row.BudgetQty != 0)
-                    row.BudgetRate = Math.Round(row.BudgetPretax / row.BudgetQty, 4);
+                // VB6:930 — back-solve rate from pretax/qty; mark overridden.
+                if (row.BudgetQty == 0) row.BudgetQty = 1;
+                row.BudgetRate = Math.Round(row.BudgetPretax / row.BudgetQty, 4);
+                row.BudgetOverridden = "True";
+                ReTax(row);
+                break;
+
+            case nameof(CustomQuoteItem.BudgetTaxGroup):
+                // VB6:938 — pull JC/NJC rates for the chosen group; re-tax.
+                {
+                    var (jc, njc) = await GetTaxGroupRates(row.BudgetTaxGroup);
+                    row.BudgetJCTaxRate = (decimal)jc;
+                    row.BudgetNJCTaxRate = (decimal)njc;
+                    ReTax(row);
+                }
+                break;
+
+            case nameof(CustomQuoteItem.BudgetJCTax):
+            case nameof(CustomQuoteItem.BudgetNJCTax):
+                // VB6:947 / :950 — total tax = JC + NJC.
+                row.BudgetTax = row.BudgetJCTax + row.BudgetNJCTax;
                 break;
         }
+    }
 
+    // Re-extend the two tax amounts + total from pretax * rate (VB6 inline pattern).
+    private static void ReTax(CustomQuoteItem row)
+    {
         row.BudgetJCTax = Math.Round(row.BudgetPretax * row.BudgetJCTaxRate / 100, 2);
         row.BudgetNJCTax = Math.Round(row.BudgetPretax * row.BudgetNJCTaxRate / 100, 2);
         row.BudgetTax = row.BudgetJCTax + row.BudgetNJCTax;
     }
 
+    // VB6 GetVendorCost (FCustomQuote.frm:1360): Purch_GetItemRate(0,0,Community,
+    //   CommunityPhase,Assembly,Model,OptionID,EstPhase,EstItem,Seq,Vendor,GETDATE(),DivID).
+    //   ⚠ live DB takes a trailing @DivisionID (13 args). Returns (true,rate) when
+    //   rate<>0 OR the ZeroRateOnChangeVendor option is on.
+    private async Task<(bool ok, double rate)> GetVendorCost(CustomQuoteItem row, string vendor)
+    {
+        if (string.IsNullOrWhiteSpace(vendor)) return (false, 0);
+        try
+        {
+            var rate = await db.ExecuteScalarAsync<double>(
+                @"SELECT dbo.Purch_GetItemRate(0, 0, @Community, @CommunityPhase, @Assembly, @Model,
+                         @OptionID, @EstPhase, @EstItem, @Seq, @Vendor, GETDATE(), @DivisionID)",
+                new
+                {
+                    Community = mCommunity ?? "",
+                    CommunityPhase = mCommunityPhase ?? "",
+                    Assembly = row.Assembly ?? "",
+                    Model = row.Model ?? "",
+                    OptionID = row.OptionID ?? "",
+                    EstPhase = row.EstPhase ?? "",
+                    EstItem = row.EstItem ?? "",
+                    Seq = (int)row.Seq,
+                    Vendor = vendor,
+                    DivisionID = SessionState.DivisionID
+                });
+            if (rate != 0 || _optZeroRateOnChangeVendor)
+                return (true, rate);
+            return (false, 0);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "GetVendorCost error");
+            return (false, 0);
+        }
+    }
+
+    // VB6 gItems_AfterEdit JCCategory branch (FCustomQuote.frm:871): SELECT * FROM
+    //   TaxGroups WHERE TaxGroup = dbo.Purch_GetDefaultTaxGroup(Job_No,Community,
+    //   CommunityPhase,Model,Assembly,EstPhase,EstItem,BudgetVendor,JCCategory,DivID).
+    //   ⚠ live DB takes a trailing @DivisionID (10 args).
+    private async Task<(string? taxGroup, double jcRate, double njcRate)> GetDefaultTaxGroup(CustomQuoteItem row)
+    {
+        try
+        {
+            var dt = db.SqlExec(
+                @"SELECT TaxGroup, JCRate, NJCRate FROM TaxGroups WHERE TaxGroup =
+                  dbo.Purch_GetDefaultTaxGroup(@Job, @Community, @CommunityPhase, @Model, @Assembly,
+                      @EstPhase, @EstItem, @Vendor, @JCCategory, @DivisionID)",
+                new
+                {
+                    Job = string.IsNullOrWhiteSpace(row.Job_No) ? mJob : row.Job_No,
+                    Community = mCommunity ?? "",
+                    CommunityPhase = mCommunityPhase ?? "",
+                    Model = row.Model ?? "",
+                    Assembly = row.Assembly ?? "",
+                    EstPhase = row.EstPhase ?? "",
+                    EstItem = row.EstItem ?? "",
+                    Vendor = row.BudgetVendor ?? "",
+                    JCCategory = row.JCCategory ?? "",
+                    DivisionID = SessionState.DivisionID
+                });
+            if (dt.Rows.Count > 0)
+            {
+                var r = dt.Rows[0];
+                return (r["TaxGroup"]?.ToString() ?? "", ToDouble(r["JCRate"]), ToDouble(r["NJCRate"]));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "GetDefaultTaxGroup error");
+        }
+        return (null, 0, 0);
+    }
+
+    // VB6 gItems_AfterEdit BudgetTaxGroup branch (FCustomQuote.frm:939):
+    //   SELECT JCRate,NJCRate FROM TaxGroups WHERE TaxGroup=<selected>.
+    private async Task<(double jcRate, double njcRate)> GetTaxGroupRates(string taxGroup)
+    {
+        if (string.IsNullOrWhiteSpace(taxGroup)) return (0, 0);
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT JCRate, NJCRate FROM TaxGroups WHERE DivisionID=@DivisionID and TaxGroup=@TaxGroup",
+                new { SessionState.DivisionID, TaxGroup = taxGroup });
+            var r = rows.FirstOrDefault();
+            if (r != null)
+                return (ToDouble(r["JCRate"]), ToDouble(r["NJCRate"]));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "GetTaxGroupRates error");
+        }
+        return (0, 0);
+    }
+
+    // ── CalcTotals (VB6 FCustomQuote.frm:1737) ────────────────
     private void CalcTotals(bool calcMargin = true, bool calcMarkup = true)
     {
         _editLock = true;
@@ -488,7 +882,7 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
         _editLock = false;
     }
 
-    private void OnCostChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnCostChanged(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (_editLock) return;
         mCost = args.Value;
@@ -496,7 +890,7 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
         mDirty = true;
     }
 
-    private void OnSellChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnSellChanged(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (_editLock) return;
         mSell = args.Value;
@@ -504,7 +898,8 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
         mDirty = true;
     }
 
-    private void OnMarkupChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    // VB6 txtMarkup_Change (FCustomQuote.frm:1786): mSell = mCost*(1+markup/100).
+    private void OnMarkupChanged(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (_editLock) return;
         _editLock = true;
@@ -515,7 +910,8 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
         _editLock = false;
     }
 
-    private void OnMarginChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    // VB6 txtMargin_Change (FCustomQuote.frm:1771): mSell = 100*mCost/(100-margin).
+    private void OnMarginChanged(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (_editLock) return;
         _editLock = true;
@@ -526,45 +922,548 @@ select cc.Description JCCostCodeDesc, cat.Description JCCategoryDesc, v.Vendor_N
         _editLock = false;
     }
 
-    private void OnSalesQtyChanged(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnSalesQtyChanged(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         mSalesQty = args.Value;
         mDirty = true;
     }
 
-    private void OnUomChanged(HfDropDownList<string, ComboBoxItem>.ChangeEventArgs<string, ComboBoxItem> args)
+    private void OnUomChanged(DropDownListControl<string, ComboBoxItem>.ChangeEventArgs<string, ComboBoxItem> args)
     {
         mSalesUOM = args.Value ?? "";
         mDirty = true;
     }
 
+    // ── ColorizeItems (VB6 FCustomQuote.frm:1395) ─────────────
+    // Detects per-row warnings + sets the ⚠ marker. The actual fore/back/bold/
+    // italic styling is applied via GetItemRowCss → the scoped .cq-* classes.
+    private void ColorizeItem(CustomQuoteItem row)
+    {
+        row.WarningMessage = RowHasWarnings(row) ? "⚠" : "";
+    }
+
+    private void ColorizeAllItems()
+    {
+        foreach (var item in ItemsData) ColorizeItem(item);
+    }
+
+    // VB6:1456-1460 — the five "not specified" checks that drive the ⚠ + invalid colour.
+    private static bool RowHasWarnings(CustomQuoteItem row)
+    {
+        if (string.IsNullOrWhiteSpace(row.POIndex)) return true;
+        if (string.IsNullOrWhiteSpace(row.JCCostCode)) return true;
+        if (string.IsNullOrWhiteSpace(row.JCCategory)) return true;
+        if (string.IsNullOrWhiteSpace(row.BudgetVendor)) return true;
+        if (string.IsNullOrWhiteSpace(row.BudgetTaxGroup)) return true;
+        return false;
+    }
+
+    // VB6 ColorizeItems precedence: LTZero → EQZero → NonSysRate(overridden) →
+    // InvalidData (warnings, applied last so it wins). Returns the matching .cq-*
+    // class names; the scoped CSS reads the DB-derived colours via var().
+    private string? GetItemRowCss(CustomQuoteItem row, int index)
+    {
+        var classes = new List<string>();
+
+        // less than zero — rate or qty < 0
+        if (row.BudgetRate < 0 || row.BudgetQty < 0)
+        {
+            classes.Add("cq-ltzero");
+            if (_fmtLtZeroBold) classes.Add("cq-ltzero-b");
+            if (_fmtLtZeroItalic) classes.Add("cq-ltzero-i");
+        }
+
+        // equal to zero — pretax = 0
+        if (row.BudgetPretax == 0)
+        {
+            classes.Add("cq-eqzero");
+            if (_fmtEqZeroBold) classes.Add("cq-eqzero-b");
+            if (_fmtEqZeroItalic) classes.Add("cq-eqzero-i");
+        }
+
+        // overridden (non-system) rate
+        if (row.BudgetOverridden == "True")
+        {
+            classes.Add("cq-nonsys");
+            if (_fmtNonSysBold) classes.Add("cq-nonsys-b");
+            if (_fmtNonSysItalic) classes.Add("cq-nonsys-i");
+        }
+
+        // invalid data (warnings) — wins last in VB6
+        if (RowHasWarnings(row))
+        {
+            classes.Add("cq-invalid");
+            if (_fmtInvalidBold) classes.Add("cq-invalid-b");
+            if (_fmtInvalidItalic) classes.Add("cq-invalid-i");
+        }
+
+        return classes.Count > 0 ? string.Join(" ", classes) : null;
+    }
+
+    // VB6 HFApp.Options(Format_*) — division-specific value wins via ORDER BY
+    // DivisionID; missing rows fall back to VB6 design-time defaults.
+    private async Task LoadAppOptionsAsync()
+    {
+        try
+        {
+            var opts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var dt = db.SqlExec(
+                "SELECT OptionName, OptionValue FROM AppOptions WHERE DivisionID IN (0, @DivisionID) ORDER BY DivisionID",
+                new { SessionState.DivisionID });
+            foreach (DataRow r in dt.Rows)
+                opts[r["OptionName"]?.ToString() ?? ""] = r["OptionValue"]?.ToString() ?? "";
+
+            string Opt(string name, string fallback) =>
+                opts.TryGetValue(name, out var v) && !string.IsNullOrEmpty(v) ? v : fallback;
+
+            (_fmtLtZeroFg, _fmtLtZeroBg, _fmtLtZeroBold, _fmtLtZeroItalic) = ReadFormat(
+                Opt("Format_QtyRateLTZero_ForeColor", "0"),
+                Opt("Format_QtyRateLTZero_BackColor", "12640511"),
+                Opt("Format_QtyRateLTZero_FontStyle", "Regular"));
+
+            (_fmtEqZeroFg, _fmtEqZeroBg, _fmtEqZeroBold, _fmtEqZeroItalic) = ReadFormat(
+                Opt("Format_QtyRateEQZero_ForeColor", "0"),
+                Opt("Format_QtyRateEQZero_BackColor", "16773869"),
+                Opt("Format_QtyRateEQZero_FontStyle", "Regular"));
+
+            (_fmtNonSysFg, _fmtNonSysBg, _fmtNonSysBold, _fmtNonSysItalic) = ReadFormat(
+                Opt("Format_NonSysRate_ForeColor", "8404992"),
+                Opt("Format_NonSysRate_BackColor", "16777215"),
+                Opt("Format_NonSysRate_FontStyle", "Bold Italic"));
+
+            (_fmtInvalidFg, _fmtInvalidBg, _fmtInvalidBold, _fmtInvalidItalic) = ReadFormat(
+                Opt("Format_InvalidData_ForeColor", "255"),
+                Opt("Format_InvalidData_BackColor", "16777215"),
+                Opt("Format_InvalidData_FontStyle", "Bold"));
+
+            _optZeroRateOnChangeVendor = OptBool(Opt("ZeroRateOnChangeVendor", "False"));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadAppOptions error");
+        }
+    }
+
+    private static bool OptBool(string v) =>
+        v == "1" || v.Equals("True", StringComparison.OrdinalIgnoreCase);
+
+    private static (string fore, string back, bool bold, bool italic) ReadFormat(
+        string foreColor, string backColor, string fontStyle)
+    {
+        var bold = fontStyle.IndexOf("Bold", StringComparison.OrdinalIgnoreCase) >= 0;
+        var italic = fontStyle.IndexOf("Italic", StringComparison.OrdinalIgnoreCase) >= 0;
+        return (BgrToHex(foreColor), BgrToHex(backColor), bold, italic);
+    }
+
+    // VB6 OLE_COLOR is a BGR long (&H00BBGGRR — low byte is Red).
+    private static string BgrToHex(string bgrValue)
+    {
+        if (!long.TryParse(bgrValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var bgr))
+            return "transparent";
+        var r = (int)(bgr & 0xFF);
+        var g = (int)((bgr >> 8) & 0xFF);
+        var b = (int)((bgr >> 16) & 0xFF);
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
+    // ═══ In-grid cell pickers (VB6 gItems_CellButtonClick:1066) ═══════════
+    private static readonly HashSet<string> _lookupPickerFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "JCExtra", "JCCostCode", "JCCostCodeDesc", "JCCategory", "JCCategoryDesc",
+        "OrderUOM", "BudgetVendor", "BudgetVendorName", "BudgetTaxGroup", "POIndex"
+    };
+
+    private static readonly HashSet<string> _popupTextFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ItemDesc", "ItemComments"
+    };
+
+    private CustomQuoteItem? _gridPickRow;
+    private string _gridPickField = "";
+    private string _pickListContext = "";
+
+    // ── Popup text editor (VB6 FComments.Edit) ────────────────
+    private bool ShowTextEditor = false;
+    private string TextEditorTitle = "";
+    private string TextEditorValue = "";
+    private int TextEditorMaxLength = 2000;
+    private CustomQuoteItem? _textEditorRow;
+    private string _textEditorField = "";
+
+    // Standard FlexKit edit-button dispatch (replaces the old per-cell native "…"
+    // buttons). Routes by column to the SAME handler the native button called:
+    // popup-text fields → OnEditPopupField (FComments.Edit), every other field →
+    // OnPickLookupField (gItems_CellButtonClick). args.Data is the clicked row.
+    // mReadOnly is still enforced inside both handlers, exactly as the native
+    // buttons' disabled="@mReadOnly" did.
+    private async Task OnGridEditButtonClick(CellEditButtonArgs<CustomQuoteItem> args)
+    {
+        if (args.Data == null) return;
+        var field = args.ColumnName ?? "";
+        if (_popupTextFields.Contains(field))
+            OnEditPopupField(args.Data, field);
+        else
+            await OnPickLookupField(args.Data, field);
+    }
+
+    private void OnEditPopupField(CustomQuoteItem row, string field)
+    {
+        if (mReadOnly) return;
+        _textEditorRow = row;
+        _textEditorField = field;
+        switch (field)
+        {
+            case "ItemDesc":
+                TextEditorTitle = "Description";
+                TextEditorValue = row.ItemDesc;
+                TextEditorMaxLength = 200;     // VB6: FComments.Edit(s, gItems, , "Description", 200)
+                break;
+            case "ItemComments":
+                TextEditorTitle = "Comments";
+                TextEditorValue = row.ItemComments;
+                TextEditorMaxLength = 2000;    // VB6: FComments.Edit(s, gItems, , , 2000)
+                break;
+        }
+        ShowTextEditor = true;
+        StateHasChanged();
+    }
+
+    private void OnTextEditorOk()
+    {
+        if (_textEditorRow != null)
+        {
+            switch (_textEditorField)
+            {
+                case "ItemDesc": _textEditorRow.ItemDesc = TextEditorValue; break;
+                case "ItemComments": _textEditorRow.ItemComments = TextEditorValue; break;
+            }
+            // VB6 calls gItems_AfterEdit after the popup edit; ItemDesc/ItemComments have no recalc.
+            mDirty = true;
+            if (_textEditorRow.RowState != "NEW") _textEditorRow.RowState = "DIRTY";
+            ColorizeItem(_textEditorRow);
+        }
+        ShowTextEditor = false;
+        _textEditorRow = null;
+        StateHasChanged();
+    }
+
+    private void OnTextEditorCancel()
+    {
+        ShowTextEditor = false;
+        _textEditorRow = null;
+    }
+
+    // VB6 gItems_CellButtonClick — open FPickList for the clicked field.
+    private async Task OnPickLookupField(CustomQuoteItem row, string field)
+    {
+        if (pickList == null || mReadOnly) return;
+        _gridPickRow = row;
+        _gridPickField = field;
+        _pickListContext = "GridCell";
+
+        switch (field)
+        {
+            case "JCExtra":
+                // VB6: select Extra,Description from jcm_master__extra where job=FormatJob(Job_No)
+                await pickList.Open("Extra",
+                    "SELECT Extra, Description FROM jcm_master__extra WHERE job = @Job",
+                    defaultItem: row.JCExtra,
+                    parameters: new Dictionary<string, object> { ["Job"] = FormatJob(string.IsNullOrWhiteSpace(row.Job_No) ? mJob : row.Job_No) });
+                break;
+
+            case "JCCostCode":
+                await pickList.Open("Cost Code",
+                    "SELECT CostCode, Description FROM StandardCostCodes WHERE DivisionID=@DivisionID",
+                    defaultItem: row.JCCostCode,
+                    parameters: DivParam());
+                break;
+            case "JCCostCodeDesc":
+                await pickList.Open("Cost Code",
+                    "SELECT Description, CostCode FROM StandardCostCodes WHERE DivisionID=@DivisionID",
+                    defaultItem: row.JCCostCodeDesc,
+                    parameters: DivParam());
+                break;
+
+            case "JCCategory":
+                await pickList.Open("Category",
+                    "SELECT Category, Description FROM StandardCategories WHERE DivisionID=@DivisionID",
+                    defaultItem: row.JCCategory,
+                    parameters: DivParam());
+                break;
+            case "JCCategoryDesc":
+                await pickList.Open("Category",
+                    "SELECT Description, Category FROM StandardCategories WHERE DivisionID=@DivisionID",
+                    defaultItem: row.JCCategoryDesc,
+                    parameters: DivParam());
+                break;
+
+            case "OrderUOM":
+                await pickList.Open("Units",
+                    "SELECT DISTINCT OrderUOM Unit FROM tblPhaseItem WHERE DivisionID=@DivisionID",
+                    defaultItem: row.OrderUOM,
+                    parameters: DivParam());
+                break;
+
+            case "BudgetVendor":
+                await pickList.Open("Vendor", BuildVendorViews(companyFirst: false),
+                    defaultItem: row.BudgetVendor,
+                    parameters: BuildVendorParams(row));
+                break;
+            case "BudgetVendorName":
+                await pickList.Open("Vendor", BuildVendorViews(companyFirst: true),
+                    defaultItem: row.BudgetVendorName,
+                    parameters: BuildVendorParams(row));
+                break;
+
+            case "BudgetTaxGroup":
+                await pickList.Open("Tax Groups",
+                    "SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID=@DivisionID",
+                    defaultItem: row.BudgetTaxGroup,
+                    parameters: DivParam());
+                break;
+
+            case "POIndex":
+                await pickList.Open("PO Index",
+                    "SELECT POIndex FROM tblPOIndex WHERE DivisionID=@DivisionID",
+                    defaultItem: row.POIndex,
+                    parameters: DivParam());
+                break;
+        }
+    }
+
+    private Dictionary<string, object> DivParam() => new() { ["DivisionID"] = SessionState.DivisionID };
+
+    // VB6 vendor picker is two views joined by Chr(0); FPickList uses '|' between
+    // views and ';' between name and SQL. companyFirst swaps the first SELECT
+    // column so the grid's first column matches the field that was clicked.
+    private string BuildVendorViews(bool companyFirst)
+    {
+        var approvedCols = companyFirst
+            ? "v.Vendor_Name Company, v.Vendor_ID Vendor, v.City, v.Phone"
+            : "v.Vendor_ID Vendor, v.Vendor_Name Company, v.City, v.Phone";
+        var allCols = companyFirst
+            ? "Vendor_Name Company, Vendor_ID Vendor, City, Phone"
+            : "Vendor_ID Vendor, Vendor_Name Company, City, Phone";
+
+        var approved =
+            $"SELECT DISTINCT {approvedCols} FROM tblVendors v " +
+            "JOIN tblVendorCost c ON (v.Vendor_ID = c.Vendor and v.DivisionID = c.DivisionID) " +
+            "WHERE v.DivisionID = @DivisionID " +
+            "AND (ISNULL(Community,'') = '' OR Community = @Community) " +
+            "AND (ISNULL(Assembly,'') = '' OR Assembly = @Assembly) " +
+            "AND Phase = @EstPhase AND Item = @EstItem";
+        var all = $"SELECT {allCols} FROM tblVendors WHERE DivisionID = @DivisionID";
+
+        return $"Approved Vendors;{approved}|All Vendors;{all}";
+    }
+
+    private Dictionary<string, object> BuildVendorParams(CustomQuoteItem row) => new()
+    {
+        ["DivisionID"] = SessionState.DivisionID,
+        ["Community"] = mCommunity ?? "",
+        ["Assembly"] = row.Assembly ?? "",
+        ["EstPhase"] = row.EstPhase ?? "",
+        ["EstItem"] = row.EstItem ?? ""
+    };
+
+    // VB6 HFApp.FormatJob — right-justify the job number to width 7 with leading spaces.
+    private static string FormatJob(string job)
+    {
+        job = (job ?? "").Trim();
+        return job.Length >= 7 ? job : job.PadLeft(7);
+    }
+
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        if (_pickListContext == "GridCell" && selectedRows.Count > 0 && _gridPickRow != null)
+            await ApplyGridCellPick(selectedRows[0]);
+        _pickListContext = "";
+        _gridPickRow = null;
+        _gridPickField = "";
+        StateHasChanged();
+    }
+
+    private async Task ApplyGridCellPick(IDictionary<string, object> picked)
+    {
+        if (_gridPickRow == null) return;
+        var item = _gridPickRow;
+        string ColV(string name) => picked.ContainsKey(name) ? picked[name]?.ToString() ?? "" : "";
+
+        switch (_gridPickField)
+        {
+            case "JCExtra":
+                item.JCExtra = ColV("Extra");
+                break;
+            case "JCCostCode":
+            case "JCCostCodeDesc":
+                item.JCCostCode = ColV("CostCode");
+                item.JCCostCodeDesc = ColV("Description");
+                break;
+            case "JCCategory":
+            case "JCCategoryDesc":
+                item.JCCategory = ColV("Category");
+                item.JCCategoryDesc = ColV("Description");
+                break;
+            case "OrderUOM":
+                item.OrderUOM = ColV("OrderUOM");
+                if (string.IsNullOrEmpty(item.OrderUOM)) item.OrderUOM = ColV("Unit");
+                break;
+            case "BudgetVendor":
+            case "BudgetVendorName":
+                item.BudgetVendor = ColV("Vendor");
+                item.BudgetVendorName = ColV("Company");
+                break;
+            case "BudgetTaxGroup":
+                item.BudgetTaxGroup = ColV("TaxGroup");
+                break;
+            case "POIndex":
+                item.POIndex = ColV("POIndex");
+                break;
+        }
+
+        // VB6 calls gItems_AfterEdit(Row, col) after every CellButtonClick → run the recalc.
+        await RecalculateAfterEdit(item, _gridPickField);
+
+        mDirty = true;
+        if (item.RowState != "NEW") item.RowState = "DIRTY";
+        ColorizeItem(item);
+        CalcTotals();
+    }
+
+    // ═══ Right-click context menu (VB6 gItems_BeforeMouseDown:1016) ═══════
+    private void OnGridRowSelected(RowSelectEventArgs<CustomQuoteItem> args)
+    {
+        if (args.Data != null) _ctxRow = args.Data;
+    }
+
+    // VB6 gItems_SelChange (FCustomQuote.frm:1266): when more than one row is selected
+    // (.Row <> .RowSel), sum BudgetPretax and BudgetJCTax across the selected range and
+    // surface Pretax / Tax / Total. VB6 shows it as a floating tooltip; the no-JS
+    // equivalent is the live status line rendered above the bottom panel.
+    private void OnGridSelectionChanged(int count)
+    {
+        if (ItemsGrid == null) { _selCount = 0; return; }
+        var selected = ItemsGrid.GetSelectedRecords().ToList();
+        _selCount = selected.Count;
+        if (_selCount > 1)
+        {
+            _selPretax = selected.Sum(i => i.BudgetPretax);
+            _selTax = selected.Sum(i => i.BudgetJCTax);
+        }
+        else
+        {
+            _selPretax = 0;
+            _selTax = 0;
+        }
+        StateHasChanged();
+    }
+
+    private void OnItemsContextMenu(MouseEventArgs e)
+    {
+        _showItemsContextMenu = true;
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+    }
+
+    private void CloseContextMenu() => _showItemsContextMenu = false;
+
+    // VB6 gItems_KeyDown Ctrl+Del (FCustomQuote.frm:1198) — remove selected row(s).
+    private void OnCtxRemoveItems()
+    {
+        CloseContextMenu();
+        if (_ctxRow == null || mReadOnly) return;
+        ItemsData.Remove(_ctxRow);
+        mDirty = true;
+        _ctxRow = null;
+        CalcTotals();
+        StateHasChanged();
+    }
+
+    // VB6 mcITEM_VIEWFILES — open the attachments window for this item.
+    private async Task OnCtxViewFiles()
+    {
+        CloseContextMenu();
+        if (_ctxRow == null || attachmentsDialog == null) return;
+        var objectId = $"CST~{mCustomer}~{mSeq}~{_ctxRow.EstPhase}~{_ctxRow.EstItem}";
+        await attachmentsDialog.ShowForm(
+            $"Attachments — {_ctxRow.EstPhase}/{_ctxRow.EstItem} ({_ctxRow.ItemDesc})",
+            (objectId, "Estimate Items"));
+    }
+
+    // ── Toolbar handlers ──────────────────────────────────────
     private async Task OnSaveClick()
     {
         if (await SaveDataAsync(false))
-            await JSRuntime.InvokeVoidAsync("alert", "Custom Quote saved.");
+            Notifications.Success("Custom Quote saved.");
     }
 
+    // VB6 Toolbar "Preview" (FCustomQuote.frm:736): loads CustomPreEstimate.rpt and sets
+    // params DivisionID / vCustomer / Seq, then PrintPreview. Migrated to the same Crystal-XML
+    // report-viewer host FQuote uses: seed the record-selection params and navigate to
+    // /report-viewer/<xml>. The report's XML (CustomPreEstimate.xml) record-selection formula
+    // is {CustomPreEstimateItems.CustomerNO}={?vcustomer} and {CustomPreEstimateItems.Seq}={?Seq};
+    // DivisionID is auto-injected by ReportWriterControl. ReportSeeds is one-shot (FRptViewer
+    // consumes + clears in OnAfterRenderAsync). VB6 doesn't gate Preview on save, but a dirty
+    // quote must be flushed first so the report reads committed CustomPreEstimateItems rows.
     private async Task OnPreviewClick()
     {
-        await JSRuntime.InvokeVoidAsync("alert", "Preview report not implemented in this demo.");
+        if (mDirty && !await SaveDataAsync(true)) return;
+
+        var xmlPath = System.IO.Path.Combine(
+            WebHost.WebRootPath ?? "wwwroot",
+            "resources", "Estimating", "Reports", "xml",
+            "CustomPreEstimate.xml");
+
+        // Seed the record-selection keys so the viewer's parameter dialog skips them
+        // (matched case-insensitively against the report's {?vcustomer} / {?Seq} params).
+        ReportSeeds.Set("vCustomer", mCustomer);
+        ReportSeeds.Set("Seq", mSeq.ToString(CultureInfo.InvariantCulture));
+
+        var route = $"/report-viewer/{Uri.EscapeDataString(xmlPath)}";
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(route);          // stays inside FMain shell
+        else
+            NavigationManager.NavigateTo(route);   // standalone fallback
     }
 
+    // VB6 Toolbar "Attachments" (FCustomQuote.frm:729): EditAttachments|<id>|Files.
     private async Task OnAttachmentsClick()
     {
-        await JSRuntime.InvokeVoidAsync("alert", $"Open attachments for ID: {mAttachmentID}");
+        if (attachmentsDialog == null) return;
+        await attachmentsDialog.ShowForm(
+            $"File Attachments - {mAssemblyDesc}",
+            (mAttachmentID, "Files"));
     }
 
-    private async Task OnTakeoffClick(string mode)
+    // VB6: Call FTakeoff.Takeoff(Me, mLocation <> olScheduleB, Mid(Button.Key, 8), 0, "",
+    //       atCustomOption, mAssemblyDesc, mCommunity, mCommunityPhase, mModel, "", "", mJob)
+    private void OnTakeoffClick(string mode)
     {
-        await JSRuntime.InvokeVoidAsync("alert", $"Takeoff ({mode}) not implemented in this demo.");
+        if (mReadOnly) return;
+        var qs = new Dictionary<string, string?>
+        {
+            ["mode"] = mode,
+            ["isChangeOrder"] = (mLocation != (int)QuoteLocation.ScheduleB).ToString().ToLower(),
+            ["assemblyType"] = "4",  // atCustomOption
+            ["description"] = mAssemblyDesc,
+            ["community"] = mCommunity,
+            ["communityPhase"] = mCommunityPhase,
+            ["model"] = mModel,
+            ["job"] = mJob
+        };
+        var queryString = string.Join("&",
+            qs.Where(kv => kv.Value != null)
+                .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value!)}"));
+        NavigationManager.NavigateTo($"/takeoff?{queryString}");
     }
 
+    // ── Save (VB6 SaveData:1476) ──────────────────────────────
     public async Task<bool> SaveDataAsync(bool prompt)
     {
         if (!mDirty) return true;
         if (prompt)
         {
-            var ok = await JSRuntime.InvokeAsync<bool>("confirm", "This data has changed. Do you want to save these changes?");
+            var ok = await Dialogs.ConfirmAsync("This data has changed. Do you want to save these changes?");
             if (!ok) return true;
         }
 
@@ -625,6 +1524,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         return p;
     }
 
+    // VB6 AddItem (FCustomQuote.frm:635): adds a takeoff-sourced row.
     public void AddItem(string assembly, string assemblyDescription, string model, string phase, string item, long sequence, string description,
                         double orderQty, string orderUom, double takeoffQty, string takeoffUom, double conversionFactor,
                         double roundTo, long roundDir, long wastePercent, string jcExtra, string jcCostCode,
@@ -642,6 +1542,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
             Location = mLocation,
             Assembly = assembly,
             HFDescription = mAssemblyDesc,
+            Model = model,
             Job_No = mJob,
             JCExtra = mExtra,
             EstPhase = phase,
@@ -655,6 +1556,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
             POIndex = poIndex,
             RoundTo = (decimal)roundTo,
             RoundDir = (int)roundDir,
+            WastePercent = (decimal)wastePercent,
             ItemComments = comments,
             TakeoffQty = (decimal)takeoffQty,
             TakeoffUOM = takeoffUom,
@@ -677,6 +1579,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         for (var i = 1; i <= 40 && i <= wbs.Length; i++)
             row.SetWbs(i, wbs[i - 1]);
 
+        ColorizeItem(row);
         ItemsData.Add(row);
         mDirty = true;
         CalcTotals();
@@ -684,6 +1587,149 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
 
     private static decimal ToDecimal(object? value) => value == null || value == DBNull.Value ? 0 : Convert.ToDecimal(value);
     private static int ToInt(object? value) => value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
+    private static double ToDouble(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        if (value is double d) return d;
+        if (value is float f) return f;
+        if (value is decimal dec) return (double)dec;
+        return double.TryParse(value.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var result) ? result : 0;
+    }
+
+    // VB6 RoundTo(value, roundTo, roundDir) — round up / down / nearest to a multiple.
+    private static double RoundToValue(double value, double roundTo, int roundDir)
+    {
+        if (roundTo <= 0) return value;
+        var quotient = value / roundTo;
+        if (Math.Abs(quotient - Math.Round(quotient)) < 1e-12) return value;
+        if (roundDir > 0) return Math.Ceiling(quotient) * roundTo;
+        if (roundDir < 0) return Math.Floor(quotient) * roundTo;
+        return Math.Round(quotient) * roundTo;
+    }
+
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        // VB6: Call IniGetGrid(Me, gItems) — gridname = "FCustomQuote.gItems.(0)".
+        // Presenter does the keyed-then-unkeyed fallback + Version bump (ctor
+        // holds the "FCustomQuote"/"gItems" names + key "(0)").
+        await _itemsGrid.LoadAsync(GridLayoutSvc);
+    }
+
+    // VB6: LoadWBSDescriptions — reads customDescriptions for WBS column headers.
+    private async Task LoadWbsDescriptionsAsync()
+    {
+        WbsColumns = new List<WbsColumnDef>();
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT Item, custom_description Description FROM customDescriptions WHERE ISNULL(custom_description,'') <> '' AND item LIKE 'WBS__' ORDER BY item",
+                new { });
+            foreach (var r in rows)
+            {
+                var field = r["Item"]?.ToString()?.Trim() ?? "";
+                var caption = r["Description"]?.ToString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(field) && !string.IsNullOrEmpty(caption))
+                    WbsColumns.Add(new WbsColumnDef { Field = field, Caption = caption });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadWbsDescriptions error");
+        }
+    }
+
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+    {
+        if (!HasGridLayout)
+            yield break;
+
+        var ordered = gItemsLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            // Skip WBS columns — they are handled separately.
+            if (layout.Field.StartsWith("WBS", StringComparison.OrdinalIgnoreCase) && layout.Field.Length == 5)
+                continue;
+
+            var resolvedField = ResolveGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    // Resolution is delegated to the presenter (ctor supplied the alias map).
+    // Behavior is identical to the old exact→switch: the presenter inserts a
+    // normalized-propmap step before the aliases, but NO CustomQuoteItem property
+    // is named Description/Comments/Phase/Item/WarningMessages, so that step always
+    // misses and the alias fires exactly as the old switch did.
+    private string ResolveGridField(string layoutField)
+        => _itemsGrid.ResolveField(layoutField);
+
+    // DRIFT FLAG: this is a hand-written field-NAME switch — wholly different from
+    // the presenter's reflection-based ColumnTypeFor (which would infer Number/
+    // Boolean from the property type). The form deliberately marks ONLY the listed
+    // fields Number and the "Selected" field CheckBox; everything else Text. Kept
+    // verbatim; GetOrderedGridLayout is therefore NOT delegated to
+    // _itemsGrid.GetOrdered().
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        return field switch
+        {
+            "TakeoffQty" or "BudgetQty" or "BudgetRate" or "BudgetPretax"
+                or "BudgetJCTax" or "BudgetNJCTax" or "BudgetTax"
+                or "BudgetJCTaxRate" or "BudgetNJCTaxRate"
+                or "ConversionFactor" or "RoundTo" or "WastePercent"
+                => ColumnType.Number,
+            "Selected" => ColumnType.CheckBox,
+            _ => ColumnType.Text
+        };
+    }
+
+    private static string? GetFormatForField(string field, ColumnType colType)
+    {
+        if (colType != ColumnType.Number) return null;
+        return field switch
+        {
+            "BudgetRate" or "ConversionFactor" => "N4",
+            "BudgetPretax" or "BudgetJCTax" or "BudgetNJCTax" or "BudgetTax" => "C2",
+            _ => "N2"
+        };
+    }
+
+    private static bool IsFieldEditable(string field)
+    {
+        return field switch
+        {
+            "RowState" or "BudgetTax" or "JCCostCodeDesc" or "JCCategoryDesc"
+                or "WarningMessage" or "Assembly" or "EstPhase" or "EstItem" => false,
+            _ => true
+        };
+    }
+
+    // DRIFT FLAG: this width formula DIFFERS from the canonical
+    // GridLayoutPresenter.WidthPx — it floors at 30px (not 32), truncates instead
+    // of Math.Round, and does NOT add the +16 padding or apply the 2000px ceiling.
+    // (GridLayoutPresenter.cs's own docstring calls out exactly this form as the
+    // one that "drifted, dropping the +16/clamp".) NOT switched to WidthPx because
+    // doing so silently widens every FCustomQuote column by 16px and changes the
+    // floor — a visible behavior change that must be a deliberate decision, not a
+    // refactor side effect. Left verbatim; flagged for a follow-up fidelity check.
+    // Width policy: single canonical twips→px (/15 + 16, clamp) — VB6 applies no width
+    // tuning (ColWidth = raw twips), so the prior Math.Max(30, /15) drift is dropped.
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    public class WbsColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string Caption { get; set; } = "";
+    }
 
     public enum QuoteLocation { ScheduleB = 0, ChangeOrder = 1, DesignCenter = 2 }
 
@@ -702,6 +1748,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         public int Location { get; set; }
         public string Assembly { get; set; } = "";
         public string HFDescription { get; set; } = "";
+        public string Model { get; set; } = "";
         public string Job_No { get; set; } = "";
         public string JCExtra { get; set; } = "";
         public string EstPhase { get; set; } = "";
@@ -711,6 +1758,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         public decimal TakeoffQty { get; set; }
         public string TakeoffUOM { get; set; } = "";
         public decimal ConversionFactor { get; set; } = 1;
+        public decimal WastePercent { get; set; }
         public string OrderUOM { get; set; } = "";
         public string OptionID { get; set; } = "";
         public decimal BudgetQty { get; set; }
@@ -724,6 +1772,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         public decimal BudgetNJCTax { get; set; }
         public decimal BudgetNJCTaxRate { get; set; }
         public decimal BudgetTax { get; set; }
+        public string BudgetOverridden { get; set; } = "False";
         public string JCCostCode { get; set; } = "";
         public string JCCostCodeDesc { get; set; } = "";
         public string JCCategory { get; set; } = "";
@@ -732,6 +1781,7 @@ VALUES(@Assembly,@CustomerNo,@Location,@OptionID,@Seq,@POIndex,@Phase,@Item,@Des
         public decimal RoundTo { get; set; }
         public int RoundDir { get; set; }
         public string RoomLocation { get; set; } = "";
+        public string WarningMessage { get; set; } = "";
 
         public string WBS01 { get; set; } = "";
         public string WBS02 { get; set; } = "";

@@ -1,221 +1,71 @@
-```razor
 @namespace HomeFront.Components.Pages
 
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 @inject IJSRuntime JSRuntime
+@inject ILogger<FEditItem> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
-<style>
-    .edit-item-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .edit-item-dialog {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        width: 500px;
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .edit-item-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .edit-item-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .edit-item-header button:hover {
-        color: #212529;
-    }
-
-    .edit-item-body {
-        padding: 16px 20px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .edit-item-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .edit-item-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .edit-item-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .edit-item-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .edit-item-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-
-    .field-row {
-        display: flex;
-        align-items: flex-start;
-        margin-bottom: 10px;
-    }
-
-    .field-row label {
-        min-width: 120px;
-        text-align: right;
-        padding-right: 10px;
-        padding-top: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        color: #495057;
-    }
-
-    .field-row input,
-    .field-row select,
-    .field-row textarea {
-        flex: 1;
-        padding: 5px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        box-sizing: border-box;
-    }
-
-    .field-row input:focus,
-    .field-row select:focus,
-    .field-row textarea:focus {
-        border-color: #86b7fe;
-        outline: 0;
-        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-</style>
-
-@if (Visible)
-{
-    <div class="edit-item-overlay" @onclick="OnCancelClick">
-        <div class="edit-item-dialog" @onclick:stopPropagation="true">
-            <div class="edit-item-header">
-                <span>Item</span>
-                <button @onclick="OnCancelClick">×</button>
+<DialogControl @bind-Visible="Visible" Header="Item" Width="500px" IsModal="true" OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="edit-item-body">
+            <div class="field-row">
+                <label>Phase</label>
+                <TextBoxControl @bind-Value="Phase" MaxLength="20" CssClass="ei-field" />
             </div>
 
-            <div class="edit-item-body">
-                <div class="field-row">
-                    <label>Phase</label>
-                    <input type="text" @bind="Phase" maxlength="20" />
-                </div>
-
-                <div class="field-row">
-                    <label>Item</label>
-                    <input type="text" @bind="POIndex" maxlength="20" />
-                </div>
-
-                <div class="field-row">
-                    <label>Description</label>
-                    <input type="text" @bind="Description" maxlength="20" />
-                </div>
-
-                <div class="field-row">
-                    <label>Notes</label>
-                    <textarea rows="5" @bind="Notes" maxlength="2000"></textarea>
-                </div>
-
-                <div class="field-row">
-                    <label>JC Cost Code</label>
-                    <select @bind="JCCostCode">
-                        <option value="">-- Select --</option>
-                        @foreach (var cc in JCCostCodeItems)
-                        {
-                            <option value="@cc.Value">@cc.Text</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="field-row">
-                    <label>JC Category</label>
-                    <select @bind="JCCategory">
-                        <option value="">-- Select --</option>
-                        @foreach (var cat in JCCategoryItems)
-                        {
-                            <option value="@cat.Value">@cat.Text</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="field-row">
-                    <label>Order unit</label>
-                    <select @bind="OrderUnit" style="max-width: 140px;">
-                        <option value="">-- Select --</option>
-                        @foreach (var u in UnitItems)
-                        {
-                            <option value="@u.Value">@u.Text</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="field-row">
-                    <label>Takeoff unit</label>
-                    <select @bind="TakeoffUnit" style="max-width: 140px;">
-                        <option value="">-- Select --</option>
-                        @foreach (var u in UnitItems)
-                        {
-                            <option value="@u.Value">@u.Text</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="field-row">
-                    <label>Conversion</label>
-                    <input type="text" @bind="Conversion" maxlength="20" style="max-width: 140px;" />
-                </div>
-
-                <div class="field-row">
-                    <label>Rounding</label>
-                    <input type="text" @bind="Rounding" maxlength="20" style="max-width: 60px;" />
-                </div>
+            <div class="field-row">
+                <label>Item</label>
+                <TextBoxControl @bind-Value="POIndex" MaxLength="20" CssClass="ei-field" />
             </div>
 
-            <div class="edit-item-footer">
-                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-                <button class="btn" @onclick="OnCancelClick">Cancel</button>
+            <div class="field-row">
+                <label>Description</label>
+                <TextBoxControl @bind-Value="Description" MaxLength="20" CssClass="ei-field" />
+            </div>
+
+            <div class="field-row">
+                <label>Notes</label>
+                <TextAreaControl @bind-Value="Notes" Rows="5" MaxLength="2000" CssClass="ei-field" />
+            </div>
+
+            <div class="field-row">
+                <label>JC Cost Code</label>
+                <DropDownListControl TValue="string" TItem="ComboItem" DataSource="@JCCostCodeItems" TextFieldName="Text" ValueFieldName="Value" @bind-Value="JCCostCode" Placeholder="-- Select --" Width="100%" />
+            </div>
+
+            <div class="field-row">
+                <label>JC Category</label>
+                <DropDownListControl TValue="string" TItem="ComboItem" DataSource="@JCCategoryItems" TextFieldName="Text" ValueFieldName="Value" @bind-Value="JCCategory" Placeholder="-- Select --" Width="100%" />
+            </div>
+
+            <div class="field-row">
+                <label>Order unit</label>
+                <DropDownListControl TValue="string" TItem="ComboItem" DataSource="@UnitItems" TextFieldName="Text" ValueFieldName="Value" @bind-Value="OrderUnit" Placeholder="-- Select --" Width="140px" />
+            </div>
+
+            <div class="field-row">
+                <label>Takeoff unit</label>
+                <DropDownListControl TValue="string" TItem="ComboItem" DataSource="@UnitItems" TextFieldName="Text" ValueFieldName="Value" @bind-Value="TakeoffUnit" Placeholder="-- Select --" Width="140px" />
+            </div>
+
+            <div class="field-row">
+                <label>Conversion</label>
+                <TextBoxControl @bind-Value="Conversion" MaxLength="20" CssClass="ei-field-sm" />
+            </div>
+
+            <div class="field-row">
+                <label>Rounding</label>
+                <TextBoxControl @bind-Value="Rounding" MaxLength="20" CssClass="ei-field-xs" />
             </div>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn btn-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -242,10 +92,8 @@
     [Parameter] public List<ComboItem> UnitItems { get; set; } = new();
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === Lifecycle ===
+    [Parameter] public int DivisionID { get; set; } = 1;
+// === Lifecycle ===
     protected override async Task OnInitializedAsync()
     {
         if (JCCostCodeItems.Count == 0)
@@ -304,7 +152,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"FEditItem.LoadLookupData error: {ex.Message}");
+            Logger.LogError(ex, "FEditItem.LoadLookupData error");
+
         }
     }
 
@@ -314,13 +163,13 @@
         // Validate required fields
         if (string.IsNullOrWhiteSpace(Phase))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Phase is required.");
+            Notifications.Error("Phase is required.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(POIndex))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Item is required.");
+            Notifications.Warning("Item is required.");
             return;
         }
 
@@ -394,4 +243,3 @@
         public string Rounding { get; set; } = "";
     }
 }
-```

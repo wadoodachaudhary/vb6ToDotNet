@@ -1,7 +1,14 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
 @page "/documents"
 @page "/documents/{ObjectId}/{ObjectDescription}"
 @rendermode InteractiveServer
+@layout HFComponent
 
 @namespace HomeFront.Components.Pages
 
@@ -10,214 +17,19 @@
 @using System.Collections.Generic
 @using System.Linq
 @using System.IO
-@using HomeFront.Components.Hf
+@using System.Web
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FDocuments> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>Documents - HomeFront</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        margin-bottom: 10px;
-        background-color: #f8f9fa;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        align-items: center;
-    }
-
-    .tbar-btn {
-        padding: 6px 12px;
-        border: 1px solid #c9c9c9;
-        background: #f7f7f7;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 2px;
-    }
-
-    .tbar-btn:hover:not(:disabled) { background: #e8e8e8; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .tbar-icon { width: 24px; height: 24px; margin-bottom: 4px; }
-    .tool-label { font-size: 12px; display: block; text-align: center; }
-    .toolbar-sep { width: 1px; height: 28px; background: #dee2e6; margin: 0 4px; }
-
-    .documents-container {
-        height: calc(100vh - 120px);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .tree-container {
-        flex: 1;
-        overflow: auto;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #fff;
-    }
-
-    /* Tree styling */
-    .doc-tree ul { list-style: none; padding-left: 18px; margin: 0; }
-    .doc-tree > ul { padding-left: 0; }
-    .doc-tree li { padding: 2px 0; }
-
-    .doc-tree .tree-node {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-        padding: 3px 8px;
-        border-radius: 3px;
-        font-size: 13px;
-        user-select: none;
-    }
-
-    .doc-tree .tree-node:hover { background-color: #e8f0fe; }
-    .doc-tree .tree-node.selected { background-color: #cce5ff; font-weight: 600; }
-
-    .doc-tree .tree-toggle {
-        width: 16px;
-        text-align: center;
-        font-size: 10px;
-        color: #666;
-        cursor: pointer;
-    }
-
-    .doc-tree .node-icon { width: 16px; height: 16px; margin-right: 4px; }
-
-    .node-root { font-weight: bold; color: #333; }
-    .node-folder { font-weight: 600; color: #555; }
-    .node-class { font-weight: 600; color: #0d6efd; }
-    .node-document { color: #333; }
-    .node-revision { color: #6c757d; font-size: 12px; }
-
-    .scanner-combo {
-        padding: 4px 8px;
-        border: 1px solid #c9c9c9;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #fff;
-        min-width: 200px;
-    }
-
-    /* Context menu */
-    .context-menu-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 999;
-    }
-
-    .context-menu {
-        position: fixed;
-        z-index: 1000;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        min-width: 180px;
-        padding: 4px 0;
-    }
-
-    .context-menu button {
-        display: block;
-        width: 100%;
-        padding: 6px 16px;
-        border: none;
-        background: transparent;
-        cursor: pointer;
-        font-size: 13px;
-        text-align: left;
-    }
-
-    .context-menu button:hover { background: #f0f0f0; }
-    .context-menu hr { margin: 4px 0; border: none; border-top: 1px solid #dee2e6; }
-
-    /* Drop zone */
-    .drop-zone {
-        border: 2px dashed #dee2e6;
-        border-radius: 4px;
-        padding: 20px;
-        text-align: center;
-        color: #6c757d;
-        margin-top: 8px;
-        transition: all 0.2s;
-    }
-
-    .drop-zone.drag-over {
-        border-color: #0d6efd;
-        background: #e8f0fe;
-        color: #0d6efd;
-    }
-
-    /* Dialog */
-    .dialog-overlay {
-        position: fixed; inset: 0; z-index: 1000;
-        background: rgba(0,0,0,0.3); display: flex;
-        align-items: center; justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff; border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-        min-width: 400px; max-width: 600px;
-        display: flex; flex-direction: column; overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 20px; font-weight: 600; font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none; border: none; font-size: 22px;
-        cursor: pointer; color: #6c757d; padding: 0 4px;
-    }
-
-    .dialog-header button:hover { color: #212529; }
-    .dialog-body { padding: 20px; }
-
-    .dialog-body textarea {
-        width: 100%; padding: 8px 10px; border: 1px solid #ced4da;
-        border-radius: 4px; font-size: 14px; box-sizing: border-box;
-    }
-
-    .dialog-footer {
-        display: flex; justify-content: flex-end; gap: 8px;
-        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover { background: #e9ecef; }
-    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
-
-    .loading-overlay {
-        position: absolute; height: 92%; width: 100%;
-        background-color: rgba(1,1,1,0.2); z-index: 10000;
-        display: flex; align-items: center; justify-content: center;
-    }
-
-    .loading-spinner {
-        padding: 20px 40px; background: #fff; border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
-        font-weight: 500; color: #333;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -252,13 +64,11 @@
 
         <div class="toolbar-sep"></div>
 
-        <select class="scanner-combo" @bind="SelectedScanner">
-            <option value="">Select Scanner...</option>
-            @foreach (var scanner in ScannerList)
-            {
-                <option value="@scanner">@scanner</option>
-            }
-        </select>
+        <DropDownListControl TValue="string" TItem="string"
+                             DataSource="@ScannerList"
+                             @bind-Value="SelectedScanner"
+                             Placeholder="Select Scanner..."
+                             CssClass="scanner-combo" Width="200px" />
     </div>
 
     <!-- Document Tree -->
@@ -303,90 +113,79 @@
 }
 
 @* Notes Edit Dialog *@
-@if (IsNotesDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="OnNotesDialogCancel">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Edit Notes</span>
-                <button @onclick="OnNotesDialogCancel">×</button>
-            </div>
-            <div class="dialog-body">
-                <textarea @bind="EditingNotes" rows="8" placeholder="Enter notes..."></textarea>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnNotesDialogOk">OK</button>
-                <button class="btn" @onclick="OnNotesDialogCancel">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<DialogControl Visible="@IsNotesDialogVisible"
+               Header="Edit Notes"
+               Width="600px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="OnNotesDialogCancel">
+    <ChildContent>
+        <TextAreaControl @bind-Value="EditingNotes" Rows="8"
+                         Placeholder="Enter notes..." CssClass="notes-textarea" />
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnNotesDialogOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnNotesDialogCancel">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @* File Upload Dialog *@
-@if (IsFileUploadDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsFileUploadDialogVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>@FileUploadDialogTitle</span>
-                <button @onclick="() => IsFileUploadDialogVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <p>Select a file to attach:</p>
-                <InputFile OnChange="OnFileSelected" />
-                @if (!string.IsNullOrEmpty(SelectedFileName))
-                {
-                    <p style="margin-top: 8px; color: #198754;">Selected: @SelectedFileName</p>
-                }
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnFileUploadConfirm" disabled="@(string.IsNullOrEmpty(SelectedFileName))">Attach</button>
-                <button class="btn" @onclick="() => IsFileUploadDialogVisible = false">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
+<DialogControl Visible="@IsFileUploadDialogVisible"
+               Header="@FileUploadDialogTitle"
+               Width="760px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="() => IsFileUploadDialogVisible = false">
+    <ChildContent>
+        <p>Select a file to attach:</p>
+        <FileBrowserControl @bind-SelectedPath="SelectedFilePath"
+                            SelectionMode="FileBrowserSelectionMode.Files"
+                            Height="360px"
+                            SelectedItemChanged="OnFileBrowserItemSelected"
+                            Title="Select a file to attach" />
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnFileUploadConfirm"
+                       Disabled="@(string.IsNullOrEmpty(SelectedFileName))">Attach</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="() => IsFileUploadDialogVisible = false">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @* Find Dialog *@
-@if (IsFindDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsFindDialogVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Find Document</span>
-                <button @onclick="() => IsFindDialogVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <div style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: 500; margin-bottom: 4px;">Search:</label>
-                    <input type="text" @bind="FindSearchText" @bind:event="oninput"
-                           placeholder="Type to search..."
-                           style="width: 100%; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px;" />
-                </div>
-                @if (FindResults.Any())
+<DialogControl Visible="@IsFindDialogVisible"
+               Header="Find Document"
+               Width="500px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="() => IsFindDialogVisible = false">
+    <ChildContent>
+        <div style="margin-bottom: 12px;">
+            <label style="display: block; font-weight: 500; margin-bottom: 4px;">Search:</label>
+            <TextBoxControl Value="@FindSearchText" @oninput="OnFindSearchInput"
+                            Placeholder="Type to search..." CssClass="find-search-input" />
+        </div>
+        @if (FindResults.Any())
+        {
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
+                @foreach (var result in FindResults)
                 {
-                    <div style="max-height: 300px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
-                        @foreach (var result in FindResults)
-                        {
-                            <div style="padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
-                                 @onclick="() => OnFindResultSelected(result)">
-                                <strong>@result.Name</strong>
-                                <span style="color: #6c757d; font-size: 12px; margin-left: 8px;">@result.DocumentClass</span>
-                            </div>
-                        }
+                    <div style="padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0;"
+                         @onclick="() => OnFindResultSelected(result)">
+                        <strong>@result.Name</strong>
+                        <span style="color: #6c757d; font-size: 12px; margin-left: 8px;">@result.DocumentClass</span>
                     </div>
                 }
-                else if (!string.IsNullOrEmpty(FindSearchText))
-                {
-                    <p style="color: #6c757d;">No results found.</p>
-                }
             </div>
-            <div class="dialog-footer">
-                <button class="btn" @onclick="() => IsFindDialogVisible = false">Close</button>
-            </div>
-        </div>
-    </div>
-}
+        }
+        else if (!string.IsNullOrEmpty(FindSearchText))
+        {
+            <p style="color: #6c757d;">No results found.</p>
+        }
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="() => IsFindDialogVisible = false">Close</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Route Parameters ===
@@ -397,9 +196,7 @@
     private const string SRCFILE = "FDocuments::";
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-
-    // === UI State ===
+// === UI State ===
     private bool IsLoading = false;
     private string SelectedScanner = "";
     private List<string> ScannerList = new();
@@ -631,8 +428,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}LoadData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading documents: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}LoadData]");
+
+            Notifications.Error($"Error loading documents: {ex.Message}");
         }
         finally
         {
@@ -739,18 +537,44 @@
         var fileName = SelectedNode.FileName;
         if (string.IsNullOrEmpty(fileName))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "No file associated with this document.");
+            Notifications.Info("No file associated with this document.");
             return;
         }
-        // In Blazor, we'd typically trigger a file download or open in new tab
-        await JSRuntime.InvokeVoidAsync("alert", $"Open file: {fileName}");
+        // Open the file in a new browser tab (equivalent to VB6 ShellFile)
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("open", fileName, "_blank");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[{SRCFILE}OnOpenClick]");
+
+            Notifications.Error($"Unable to open file: {ex.Message}");
+        }
     }
 
     private async Task OnPrintClick()
     {
         CloseContextMenu();
         if (SelectedNode == null || !HasSelectedFileNode) return;
-        await JSRuntime.InvokeVoidAsync("alert", $"Print file: {SelectedNode.FileName}");
+        var fileName = SelectedNode.FileName;
+        if (string.IsNullOrEmpty(fileName))
+        {
+            Notifications.Info("No file associated with this document.");
+            return;
+        }
+        // Open in new window and trigger print (equivalent to VB6 ShellFile with print flag)
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval",
+                $"var w = window.open('{System.Web.HttpUtility.JavaScriptStringEncode(fileName)}','_blank'); if(w) {{ w.onload = function() {{ w.print(); }}; }}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[{SRCFILE}OnPrintClick]");
+
+            Notifications.Error($"Unable to print file: {ex.Message}");
+        }
     }
 
     private async Task OnSaveAsClick()
@@ -758,7 +582,24 @@
         CloseContextMenu();
         if (SelectedNode == null || !HasSelectedFileNode) return;
         var fileName = SelectedNode.FileName ?? "";
-        await JSRuntime.InvokeVoidAsync("alert", $"Save As: {fileName}\n(File download would be triggered here)");
+        var fileTitle = SelectedNode.FileTitle ?? Path.GetFileName(fileName);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            Notifications.Info("No file associated with this document.");
+            return;
+        }
+        // Trigger a file download (equivalent to VB6 FileCopy via SaveAs dialog)
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval",
+                $"var a = document.createElement('a'); a.href = '{System.Web.HttpUtility.JavaScriptStringEncode(fileName)}'; a.download = '{System.Web.HttpUtility.JavaScriptStringEncode(fileTitle)}'; document.body.appendChild(a); a.click(); document.body.removeChild(a);");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[{SRCFILE}OnSaveAsClick]");
+
+            Notifications.Error($"Unable to save file: {ex.Message}");
+        }
     }
 
     private async Task OnDeleteClick()
@@ -772,6 +613,13 @@
     {
         FindSearchText = "";
         IsFindDialogVisible = true;
+    }
+
+    // Live-search as the user types (mirrors the old <input @bind:event="oninput">).
+    // FindResults is a computed property, so updating the text re-filters on render.
+    private void OnFindSearchInput(ChangeEventArgs e)
+    {
+        FindSearchText = e.Value?.ToString() ?? "";
     }
 
     private void OnFindResultSelected(DocumentTreeNode result)
@@ -795,11 +643,11 @@
         IsFileUploadDialogVisible = true;
     }
 
-    private void OnScanFileClick()
+    private async Task OnScanFileClick()
     {
         CloseContextMenu();
-        // Scanner functionality would require JS interop with TWAIN
-        JSRuntime.InvokeVoidAsync("alert", "Scanner functionality is not available in the web version.");
+        // TWAIN scanner hardware is not accessible from a web browser
+        Notifications.Info("Scanner functionality is not available in the web version. Please use 'Add File' to attach a scanned document.");
     }
 
     private void OnAddRevisionClick()
@@ -813,15 +661,13 @@
         IsFileUploadDialogVisible = true;
     }
 
-    // === File Upload ===
-    private void OnFileSelected(InputFileChangeEventArgs e)
+    // === File selection ===
+    private void OnFileBrowserItemSelected(FileBrowserItem? item)
     {
-        var file = e.File;
-        if (file != null)
-        {
-            SelectedFileName = file.Name;
-            // In a real implementation, we'd read the file stream and save it
-        }
+        SelectedFilePath = item?.FullPath ?? "";
+        SelectedFileName = string.IsNullOrWhiteSpace(SelectedFilePath)
+            ? ""
+            : Path.GetFileName(SelectedFilePath);
     }
 
     private async Task OnFileUploadConfirm()
@@ -842,7 +688,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            Notifications.Error($"Error: {ex.Message}");
         }
 
         IsFileUploadDialogVisible = false;
@@ -871,7 +717,7 @@
 
             if (string.IsNullOrEmpty(documentId))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Failed to create document.");
+                Notifications.Info("Failed to create document.");
                 return;
             }
 
@@ -904,7 +750,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}AddDocument] Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}AddDocument]");
+
             throw;
         }
     }
@@ -993,7 +840,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}AddRevision] Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}AddRevision]");
+
             throw;
         }
     }
@@ -1005,7 +853,7 @@
             ? $"Remove document '{node.Name}' and all its revisions?"
             : $"Remove revision '{node.Name}'?";
 
-        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMsg);
+        var confirmed = await Dialogs.ConfirmAsync(confirmMsg);
         if (!confirmed) return;
 
         try
@@ -1034,7 +882,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error removing: {ex.Message}");
+            Notifications.Error($"Error removing: {ex.Message}");
         }
     }
 
@@ -1065,7 +913,7 @@
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error saving notes: {ex.Message}");
+                Notifications.Error($"Error saving notes: {ex.Message}");
             }
         }
         IsNotesDialogVisible = false;
@@ -1077,26 +925,38 @@
     }
 
     // === Drag and Drop ===
+    // Mirrors VB6 OLEDragDrop: files dropped on a "class" node are added as new documents,
+    // files dropped on a "document" node are added as revisions.
     private void OnDragOver(DragEventArgs e)
     {
-        // Allow drop
+        if (SelectedNode != null &&
+            (SelectedNode.RowType == "class" || SelectedNode.RowType == "document"))
+        {
+            // Allow drop on class or document nodes
+        }
     }
 
     private async Task OnDrop(DragEventArgs e)
     {
         if (SelectedNode == null) return;
 
-        // In Blazor Server, drag-and-drop of files from desktop requires JS interop
-        // This is a placeholder for the VB6 OLEDragDrop functionality
+        // Blazor Server cannot directly access dropped desktop files via DragEventArgs.
+        // Redirect the user to use the file-attach dialogs which use InputFile (the supported approach).
         if (SelectedNode.RowType == "class")
         {
-            await JSRuntime.InvokeVoidAsync("alert",
-                "File drag-and-drop from desktop requires additional JS interop setup.\nPlease use the 'Add File' option instead.");
+            IsAddingRevision = false;
+            FileUploadDialogTitle = "Attach File";
+            SelectedFileName = "";
+            SelectedFilePath = "";
+            IsFileUploadDialogVisible = true;
         }
         else if (SelectedNode.RowType == "document")
         {
-            await JSRuntime.InvokeVoidAsync("alert",
-                "File drag-and-drop from desktop requires additional JS interop setup.\nPlease use the 'Add Revision' option instead.");
+            IsAddingRevision = true;
+            FileUploadDialogTitle = "Add Revision";
+            SelectedFileName = "";
+            SelectedFilePath = "";
+            IsFileUploadDialogVisible = true;
         }
     }
 
@@ -1224,4 +1084,3 @@
         public List<DocumentTreeNode> Children { get; set; } = new();
     }
 }
-```

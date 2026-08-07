@@ -1,263 +1,73 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
 @page "/edit-model-assembly-picklist"
-@rendermode InteractiveServer
 
 @namespace HomeFront.Components.Pages
 
 @using HomeFront.Data
 @using System.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject ILogger<FAssemblyPickList> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
-<style>
-    .assembly-picklist-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
 
-    .assembly-picklist-dialog {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-        width: 830px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        display: flex;
-        flex: 1;
-        overflow: hidden;
-        min-height: 400px;
-    }
-
-    .sidebar-panel {
-        width: 160px;
-        min-width: 140px;
-        border-right: 1px solid #dee2e6;
-        display: flex;
-        flex-direction: column;
-        background: #f8f9fa;
-        overflow-y: auto;
-    }
-
-    .sidebar-panel select {
-        margin: 8px;
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 12px;
-    }
-
-    .sidebar-btn {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 12px 8px;
-        border: none;
-        background: transparent;
-        cursor: pointer;
-        font-size: 12px;
-        transition: background 0.15s;
-        border-bottom: 1px solid #e9ecef;
-    }
-
-    .sidebar-btn:hover {
-        background: #e9ecef;
-    }
-
-    .sidebar-btn.active {
-        background: #cce5ff;
-        font-weight: 600;
-        color: #0d6efd;
-    }
-
-    .sidebar-btn img {
-        width: 32px;
-        height: 32px;
-        margin-bottom: 4px;
-    }
-
-    .tree-panel {
-        flex: 1;
-        overflow: auto;
-        padding: 4px;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .dialog-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-
-    .debug-label {
-        font-size: 11px;
-        color: #6c757d;
-        padding: 4px 8px;
-        cursor: pointer;
-    }
-
-    /* Tree styling */
-    .pick-tree ul {
-        list-style: none;
-        padding-left: 18px;
-        margin: 0;
-    }
-
-    .pick-tree > ul {
-        padding-left: 0;
-    }
-
-    .pick-tree li {
-        padding: 1px 0;
-    }
-
-    .pick-tree .tree-node {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-        padding: 3px 6px;
-        border-radius: 3px;
-        font-size: 13px;
-        user-select: none;
-    }
-
-    .pick-tree .tree-node:hover {
-        background-color: #e8f0fe;
-    }
-
-    .pick-tree .tree-node.selected {
-        background-color: #cce5ff;
-        font-weight: 600;
-    }
-
-    .pick-tree .tree-toggle {
-        width: 16px;
-        text-align: center;
-        font-size: 10px;
-        color: #666;
-        cursor: pointer;
-    }
-
-    .pick-tree .tree-icon {
-        width: 16px;
-        height: 16px;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="assembly-picklist-overlay" @onclick="OnCancelClick">
-        <div class="assembly-picklist-dialog" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>@DialogCaption</span>
-                <button @onclick="OnCancelClick">×</button>
-            </div>
-
-            <div class="dialog-body">
-                <!-- Sidebar -->
-                <div class="sidebar-panel">
-                    @if (DataSourceEnabled)
-                    {
-                        <select @bind="SelectedDataSourceIndex" @bind:after="OnDataSourceChanged">
-                            @for (int i = 0; i < DataSources.Count; i++)
-                            {
-                                <option value="@i">@DataSources[i]</option>
-                            }
-                        </select>
-                    }
-
-                    @foreach (var view in AvailableViews)
-                    {
-                        <button class="sidebar-btn @(view.Index == SelectedViewIndex ? "active" : "")"
-                                @onclick="() => OnViewClick(view.Index)">
-                            <img src="@view.IconPath" alt="@view.Name" onerror="this.style.display='none'" />
-                            <span>@view.Name</span>
-                        </button>
-                    }
-                </div>
-
-                <!-- Tree / Grid area -->
-                <div class="tree-panel">
-                    <div class="pick-tree">
-                        <ul>
-                            @foreach (var node in TreeNodes)
-                            {
-                                @RenderTreeNode(node)
-                            }
-                        </ul>
-                    </div>
-                </div>
-            </div>
-
-            <div class="dialog-footer">
-                @if (ShowDebug)
+<DialogControl @bind-Visible="IsVisible" Header="@DialogCaption" Width="830px"
+               CssClass="assembly-pick-dialog" OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="dialog-body">
+            <!-- Sidebar -->
+            <div class="sidebar-panel">
+                @if (DataSourceEnabled)
                 {
-                    <span class="debug-label" @onclick="OnDebugClick">Debug</span>
+                    <DropDownListControl TValue="int" TItem="DataSourceOption" DataSource="@DataSourceOptions"
+                                         ValueFieldName="Value" TextFieldName="Text"
+                                         @bind-Value="SelectedDataSourceIndex" @bind-Value:after="OnDataSourceChanged"
+                                         CssClass="sidebar-datasource" />
                 }
-                <button class="btn btn-primary" @onclick="OnOpenClick">Open</button>
-                <button class="btn" @onclick="OnCancelClick">Cancel</button>
+
+                @foreach (var view in AvailableViews)
+                {
+                    <ButtonControl BareStyle="true"
+                                   CssClass="@($"sidebar-btn {(view.Index == SelectedViewIndex ? "active" : "")}")"
+                                   OnClick="() => OnViewClick(view.Index)">
+                        <img src="@view.IconPath" alt="@view.Name" onerror="this.style.display='none'" />
+                        <span>@view.Name</span>
+                    </ButtonControl>
+                }
+            </div>
+
+            <!-- Tree / Grid area -->
+            <div class="tree-panel">
+                <div class="pick-tree">
+                    <ul>
+                        @foreach (var node in TreeNodes)
+                        {
+                            @RenderTreeNode(node)
+                        }
+                    </ul>
+                </div>
             </div>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        @if (ShowDebug)
+        {
+            <span class="debug-label" @onclick="OnDebugClick">Debug</span>
+        }
+        <ButtonControl CssClass="btn btn-primary" OnClick="OnOpenClick">Open</ButtonControl>
+        <ButtonControl CssClass="btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -276,14 +86,15 @@
     public enum AssemblyTypes { atModel = 0, atOption = 1, atGlobal = 2, atDesignCenter = 3 }
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === State ===
+// === State ===
     private bool ShowDebug = false;
     private int SelectedDataSourceIndex = 0;
     private int SelectedViewIndex = -1;
     private List<string> DataSources = new() { "Estimating", "Sales Items" };
+    // Projection of DataSources to (index, text) so DropDownListControl can bind the int index.
+    private List<DataSourceOption> DataSourceOptions =>
+        DataSources.Select((text, i) => new DataSourceOption(i, text)).ToList();
+    private sealed record DataSourceOption(int Value, string Text);
     private List<ViewDef> AllViews = new();
     private List<ViewDef> AvailableViews = new();
     private List<PickTreeNode> TreeNodes = new();
@@ -645,7 +456,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FAssemblyPickList.LoadChildNodes] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
         }
     }
 

@@ -1,1113 +1,1253 @@
-```razor
-@page "/formula-editor"
-@rendermode InteractiveServer
-
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-07-02
+   Changes     :
+     - Port of VB6 FFormulaEditor.frm (HHM-211): three panes (Variables /
+       Formulas / grouped function library), large formula editor below,
+       Test + OK + Cancel. Test = VB6 FFormulaTest (variable prompts →
+       "Formula is valid. return value: …", aggregate lookups stubbed to 0).
+     - HHM-610: Formula Test dialog — numeric-only value inputs (list
+       variables get the VB6 value combo), caption "Formula Test", window
+       icon on the dialog chrome.
+     - HHM-614: Test errors use the VB6 "Error Evaluating Formula" message
+       box (MFormulas.bas CalcFormula eh) instead of a toast.
+     - HHM-615: Formulas-pane context menu enables Insert/Rename/Edit/
+       Delete like VB6 gFormulas_MouseDown (root right-click targets the
+       current formula); New-prompt titled "Precision Builder"; New closes
+       back to the editor instead of opening the Edit Formula window.
+   ───────────────────────────────────────────────────────────────── *@
 @namespace HomeFront.Components.Pages
 
-@using System
-@using System.Data
-@using System.Collections.Generic
-@using System.Linq
-@using System.Text.RegularExpressions
+@using Fx.ControlKit
+@using Fx.ControlKit.Dialogs
+@using Fx.ControlKit.Notifications
 @using HomeFront.Data
+@using HomeFront.Models
+@inject DbWrapperSqlServer db
+@inject NotificationService Notifications
+@inject IDialogService Dialogs
+@inject ILogger<FFormulaEditor> Logger
 
-@inject IJSRuntime JSRuntime
-
-<PageTitle>Formula Editor</PageTitle>
-
-<style>
-    .formula-editor-container {
-        display: flex;
-        flex-direction: column;
-        height: calc(100vh - 120px);
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    /* Top panels area */
-    .top-panels {
-        display: flex;
-        flex: 0 0 auto;
-        min-height: 200px;
-        max-height: 40%;
-        border-bottom: 3px solid #c9c9c9;
-        resize: vertical;
-        overflow: hidden;
-    }
-
-    .panel-variables, .panel-formulas, .panel-functions {
-        overflow: auto;
-        border: 1px solid #dee2e6;
-        background: #fff;
-    }
-
-    .panel-variables {
-        flex: 1;
-        border-right: 3px solid #c9c9c9;
-        min-width: 150px;
-        resize: horizontal;
-        overflow: auto;
-    }
-
-    .panel-formulas {
-        flex: 1;
-        border-right: 3px solid #c9c9c9;
-        min-width: 150px;
-        resize: horizontal;
-        overflow: auto;
-    }
-
-    .panel-functions {
-        flex: 1;
-        min-width: 150px;
-        overflow: auto;
-    }
-
-    /* Panel items */
-    .panel-header {
-        font-weight: bold;
-        padding: 4px 8px;
-        background: #f0f0f0;
-        border-bottom: 1px solid #dee2e6;
-        position: sticky;
-        top: 0;
-        z-index: 1;
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .panel-header:hover {
-        background: #e0e0e0;
-    }
-
-    .panel-item {
-        padding: 3px 8px 3px 20px;
-        cursor: pointer;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .panel-item:hover {
-        background: #cce5ff;
-    }
-
-    .panel-item.selected {
-        background: #0d6efd;
-        color: #fff;
-    }
-
-    .group-header {
-        font-weight: bold;
-        padding: 4px 8px;
-        background: #f8f8f8;
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .group-header:hover {
-        background: #e8e8e8;
-    }
-
-    .group-header .toggle {
-        display: inline-block;
-        width: 16px;
-        text-align: center;
-        font-size: 10px;
-        color: #666;
-        margin-right: 4px;
-    }
-
-    /* Formula text area */
-    .formula-area {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .formula-area textarea {
-        flex: 1;
-        width: 100%;
-        border: none;
-        border-top: 1px solid #dee2e6;
-        padding: 8px;
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-size: 13px;
-        resize: none;
-        outline: none;
-    }
-
-    .formula-area textarea:focus {
-        box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-
-    /* Button bar */
-    .button-bar {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-        gap: 8px;
-    }
-
-    .button-bar .spacer {
-        flex: 1;
-    }
-
-    .btn-nav {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 80px;
-    }
-
-    .btn-nav:hover {
-        background: #e9ecef;
-    }
-
-    .btn-nav.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .btn-nav.primary:hover {
-        background: #0b5ed7;
-    }
-
-    /* Context menu */
-    .context-menu-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 999;
-    }
-
-    .context-menu {
-        position: fixed;
-        z-index: 1000;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        min-width: 160px;
-        padding: 4px 0;
-    }
-
-    .context-menu button {
-        display: block;
-        width: 100%;
-        padding: 6px 16px;
-        border: none;
-        background: transparent;
-        text-align: left;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .context-menu button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .context-menu button:disabled {
-        color: #adb5bd;
-        cursor: default;
-    }
-
-    .context-menu hr {
-        margin: 4px 0;
-        border: none;
-        border-top: 1px solid #dee2e6;
-    }
-
-    /* Dialog */
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        min-width: 400px;
-        max-width: 600px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        padding: 20px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .dialog-body input {
-        width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 14px;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    /* Tooltip */
-    .panel-item[title] {
-        position: relative;
-    }
-</style>
-
-<div class="formula-editor-container">
-    @* ── Top Three Panels ─────────────────────────────────── *@
-    <div class="top-panels" style="height: @(TopPanelHeight)px;">
-        @* Variables Panel *@
-        <div class="panel-variables" @oncontextmenu="OnVariablesContextMenu" @oncontextmenu:preventDefault>
-            <div class="panel-header">Variables</div>
-            @foreach (var v in VariablesList)
-            {
-                <div class="panel-item @(SelectedVariable == v ? "selected" : "")"
-                     title="@v.Help"
-                     @onclick="() => SelectVariable(v)"
-                     @ondblclick="() => InsertVariable(v)">
-                    @v.Name
-                </div>
-            }
-        </div>
-
-        @* Formulas Panel *@
-        <div class="panel-formulas" @oncontextmenu="OnFormulasContextMenu" @oncontextmenu:preventDefault>
-            <div class="panel-header">Formulas</div>
-            @foreach (var f in FormulasList)
-            {
-                <div class="panel-item @(SelectedFormula == f ? "selected" : "")"
-                     title="@f.Text"
-                     @onclick="() => SelectFormula(f)"
-                     @ondblclick="() => InsertFormula(f)">
-                    @f.Name
-                </div>
-            }
-        </div>
-
-        @* Functions Panel *@
-        <div class="panel-functions" @oncontextmenu="OnFunctionsContextMenu" @oncontextmenu:preventDefault>
-            @foreach (var group in FunctionGroups)
-            {
-                <div class="group-header" @onclick="() => ToggleFunctionGroup(group)">
-                    <span class="toggle">@(group.Expanded ? "▼" : "▶")</span>
-                    @group.Name
-                </div>
-                @if (group.Expanded)
-                {
-                    @foreach (var fn in group.Functions)
+<DialogControl Visible="@_visible"
+               Header="@_title"
+               Width="940px"
+               Height="620px"
+               Resizable="true"
+               IsModal="true"
+               ShowCloseIcon="true"
+               ShowWindowIcon="true"
+               OnClose="Cancel"
+               CssClass="ffe-dialog">
+    <ChildContent>
+        <div class="ffe-body">
+            @* Focus containment: Shift+Tab past the first control bounces back to
+               the editor instead of escaping the dialog (VB6 modal Tab cycle). *@
+            <div class="ffe-focus-sentinel" tabindex="0" @onfocus="FocusEditorAsync"></div>
+            @* ── Top: the three legacy panes. Root rows are bold and collapsible;
+               double-clicking a leaf inserts it into the formula (VB6 mc_INSERT:
+               Variables → [name], Formulas → {name}, Functions → the code text). *@
+            <div class="ffe-panes">
+                <div class="ffe-pane" tabindex="0" @ref="_paneVarsRef"
+                     @onkeydown="@(e => OnPaneKeyDownAsync(CtxPane.Variables, e))" @onkeydown:preventDefault="true">
+                    <div class="ffe-group @(KbActive(CtxPane.Variables, "g:Variables"))" @onclick="@(() => { if (_variables.Count > 0) _variablesExpanded = !_variablesExpanded; })"
+                         @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Variables, false, "", "", e))" @oncontextmenu:preventDefault="true">
+                        @if (_variables.Count > 0)
+                        {
+                            <span class="ffe-toggle">@(_variablesExpanded ? "−" : "+")</span>
+                        }
+                        <b>Variables</b>
+                    </div>
+                    @if (_variablesExpanded)
                     {
-                        <div class="panel-item @(SelectedFunction == fn ? "selected" : "")"
-                             title="@fn.Description"
-                             @onclick="() => SelectFunction(fn)"
-                             @ondblclick="() => InsertFunction(fn)">
-                            @fn.DisplayName
-                        </div>
+                        @foreach (var v in _variables)
+                        {
+                            var vv = v;
+                            <div class="ffe-leaf @(KbActive(CtxPane.Variables, "v:" + vv.Name))" title="@vv.Tooltip" @ondblclick="@(() => Insert("[" + vv.Name + "]"))"
+                                 @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Variables, true, vv.Name, "[" + vv.Name + "]", e))" @oncontextmenu:preventDefault="true">@vv.Name</div>
+                        }
                     }
+                </div>
+                <div class="ffe-pane" tabindex="0" @ref="_paneFormulasRef"
+                     @onkeydown="@(e => OnPaneKeyDownAsync(CtxPane.Formulas, e))" @onkeydown:preventDefault="true">
+                    <div class="ffe-group @(KbActive(CtxPane.Formulas, "g:Formulas"))" @onclick="@(() => { if (_formulas.Count > 0) _formulasExpanded = !_formulasExpanded; })"
+                         @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Formulas, false, "", "", e))" @oncontextmenu:preventDefault="true">
+                        @if (_formulas.Count > 0)
+                        {
+                            <span class="ffe-toggle">@(_formulasExpanded ? "−" : "+")</span>
+                        }
+                        <b>Formulas</b>
+                    </div>
+                    @if (_formulasExpanded)
+                    {
+                        @foreach (var f in _formulas)
+                        {
+                            var ff = f;
+                            <div class="ffe-leaf @(string.Equals(ff.Name, _selectedFormula, StringComparison.OrdinalIgnoreCase) ? "selected" : "") @(KbActive(CtxPane.Formulas, "f:" + ff.Name))"
+                                 title="@ff.Tooltip"
+                                 @onclick="@(() => _selectedFormula = ff.Name)"
+                                 @ondblclick="@(() => Insert("{" + ff.Name + "}"))"
+                                 @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Formulas, true, ff.Name, "{" + ff.Name + "}", e))" @oncontextmenu:preventDefault="true">@ff.Name</div>
+                        }
+                    }
+                </div>
+                <div class="ffe-pane" tabindex="0" @ref="_paneFuncsRef"
+                     @onkeydown="@(e => OnPaneKeyDownAsync(CtxPane.Functions, e))" @onkeydown:preventDefault="true">
+                    @foreach (var g in _functionGroups)
+                    {
+                        <div class="ffe-group @(KbActive(CtxPane.Functions, "g:" + g.Name))" @onclick="@(() => g.Expanded = !g.Expanded)"
+                             @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Functions, false, "", "", e))" @oncontextmenu:preventDefault="true">
+                            <span class="ffe-toggle">@(g.Expanded ? "−" : "+")</span><b>@g.Name</b>
+                        </div>
+                        @if (g.Expanded)
+                        {
+                            @foreach (var it in g.Items)
+                            {
+                                var itm = it;
+                                <div class="ffe-leaf @(KbActive(CtxPane.Functions, "fn:" + itm.Display))" title="@itm.Tooltip" @ondblclick="@(() => Insert(itm.InsertText))"
+                                     @oncontextmenu="@(e => OpenCtxMenu(CtxPane.Functions, true, itm.Display, itm.InsertText, e))" @oncontextmenu:preventDefault="true">@itm.Display</div>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+
+            @* ── Bottom: the large dedicated formula area (VB6 txtFormula). ── *@
+            <textarea class="ffe-editor" @ref="_editorRef" @bind="_text" @bind:event="oninput"
+                      spellcheck="false" wrap="off"></textarea>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-left">
+            <ButtonControl CssClass="ffe-btn" OnClick="@(_ => TestAsync())"><u>T</u>est</ButtonControl>
+        </div>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="@(_ => OkAsync())">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="@(_ => Cancel())"><u>C</u>ancel</ButtonControl>
+        </div>
+        @* Focus containment: Tab past the last button wraps to the editor. *@
+        <div class="ffe-focus-sentinel" tabindex="0" @onfocus="FocusEditorAsync"></div>
+    </FooterContent>
+</DialogControl>
+
+@* ── Formula Test — VB6 FFormulaTest: prompts a value per [variable] found in the
+   resolved formula, then evaluates. With no variables it evaluates immediately.
+   HHM-610: caption is the VB6 form caption "Formula Test" (FFormulaTest.frm:4),
+   the chrome shows a window icon (frm Icon property; calc.ico precedent from the
+   main .ffe-dialog), and values are numeric-only — VB6 gVariables_ValidateEdit
+   cancels any non-numeric edit; list-of-values variables get the VB6 value combo. *@
+<DialogControl Visible="@_testVisible"
+               Header="Formula Test"
+               Width="420px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               ShowWindowIcon="true"
+               OnClose="@(() => _testVisible = false)"
+               CssClass="ffe-test-dialog">
+    <ChildContent>
+        <div class="ffe-test-grid">
+            @foreach (var tv in _testVariables)
+            {
+                <label class="ffe-test-name" title="@tv.Tooltip">@tv.Name</label>
+                @if (tv.IsList)
+                {
+                    <DropDownListControl TValue="string" TItem="string"
+                                         @bind-Value="tv.Value"
+                                         DataSource="@tv.ListValues"
+                                         Width="120px" />
+                }
+                else
+                {
+                    <NumericTextBoxControl TValue="double"
+                                           Value="@tv.NumValue"
+                                           ValueChanged="@((double v) => tv.NumValue = v)"
+                                           CssClass="ffe-test-value" Width="120px" />
                 }
             }
         </div>
-    </div>
-
-    @* ── Formula Text Area ────────────────────────────────── *@
-    <div class="formula-area">
-        <textarea @bind="FormulaText" @bind:event="oninput" @ref="formulaTextArea"
-                  placeholder="Enter formula here..."></textarea>
-    </div>
-
-    @* ── Button Bar ───────────────────────────────────────── *@
-    <div class="button-bar">
-        <button class="btn-nav" @onclick="OnTestClick">
-            &amp;Test
-        </button>
-        <div class="spacer"></div>
-        <button class="btn-nav primary" @onclick="OnOkClick">
-            &amp;OK
-        </button>
-        <button class="btn-nav" @onclick="OnCancelClick">
-            &amp;Cancel
-        </button>
-    </div>
-</div>
-
-@* ── Context Menu ─────────────────────────────────────────── *@
-@if (IsContextMenuVisible)
-{
-    <div class="context-menu-overlay" @onclick="CloseContextMenu"></div>
-    <div class="context-menu" style="left: @(ContextMenuX)px; top: @(ContextMenuY)px;">
-        <button disabled="@(!CanInsert)" @onclick="OnContextInsert">Insert</button>
-        <hr />
-        <button disabled="@(!CanRename)" @onclick="OnContextRename">Rename</button>
-        <button disabled="@(!CanNew)" @onclick="OnContextNew">New</button>
-        <button disabled="@(!CanEdit)" @onclick="OnContextEdit">Edit</button>
-        <hr />
-        <button disabled="@(!CanDelete)" @onclick="OnContextDelete">Delete</button>
-    </div>
-}
-
-@* ── Rename Dialog ────────────────────────────────────────── *@
-@if (IsRenameDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsRenameDialogVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Rename</span>
-                <button @onclick="() => IsRenameDialogVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <label style="display:block; margin-bottom:8px; font-weight:500;">New Name:</label>
-                <input @bind="RenameText" placeholder="Enter new name..." />
-            </div>
-            <div class="dialog-footer">
-                <button class="btn-nav primary" @onclick="OnRenameConfirm">OK</button>
-                <button class="btn-nav" @onclick="() => IsRenameDialogVisible = false">Cancel</button>
-            </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="@(_ => RunTestAsync())">Test</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="@(_ => { _testVisible = false; })">Close</ButtonControl>
         </div>
-    </div>
-}
+    </FooterContent>
+</DialogControl>
 
-@* ── New Formula Dialog ───────────────────────────────────── *@
-@if (IsNewFormulaDialogVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsNewFormulaDialogVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>New Formula</span>
-                <button @onclick="() => IsNewFormulaDialogVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <label style="display:block; margin-bottom:8px; font-weight:500;">Formula Name:</label>
-                <input @bind="NewFormulaName" placeholder="Enter formula name..." />
-            </div>
-            <div class="dialog-footer">
-                <button class="btn-nav primary" @onclick="OnNewFormulaConfirm">OK</button>
-                <button class="btn-nav" @onclick="() => IsNewFormulaDialogVisible = false">Cancel</button>
-            </div>
+@* ── Right-click context menu on the Variables / Formulas / Functions panes
+   (VB6 mnuPopup: Insert / Rename / New / Edit / Delete with per-pane Enabled rules). *@
+<ContextMenuControl Visible="@_ctxVisible" X="@_ctxX" Y="@_ctxY" MinWidth="150" OnClose="@(() => _ctxVisible = false)">
+    <ContextMenuItemControl Text="Insert" Disabled="@(!CtxInsertEnabled)" OnClick="CtxInsert" />
+    <ContextMenuSeparatorControl />
+    <ContextMenuItemControl Text="Rename" Disabled="@(!CtxRenameEnabled)" OnClick="CtxRenameAsync" />
+    <ContextMenuItemControl Text="New" Disabled="@(!CtxNewEnabled)" OnClick="CtxNewAsync" />
+    <ContextMenuItemControl Text="Edit" Disabled="@(!CtxEditEnabled)" OnClick="CtxEditAsync" />
+    <ContextMenuSeparatorControl />
+    <ContextMenuItemControl Text="Delete" Disabled="@(!CtxDeleteEnabled)" OnClick="CtxDeleteAsync" />
+</ContextMenuControl>
+
+@* ── Edit a formula's body (VB6 mc_EDIT for gFormulas — opens a sub-editor and
+   writes back to formulas.text). ── *@
+<DialogControl Visible="@_editFormulaVisible"
+               Header="@($"Edit Formula - {_editFormulaName}")"
+               Width="620px"
+               Height="360px"
+               Resizable="true"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="@(() => _editFormulaVisible = false)"
+               CssClass="ffe-dialog">
+    <ChildContent>
+        <textarea class="ffe-editor" @bind="_editFormulaText" @bind:event="oninput"
+                  spellcheck="false" wrap="off"></textarea>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="@(_ => SaveFormulaBodyAsync())">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="@(_ => { _editFormulaVisible = false; })">Cancel</ButtonControl>
         </div>
-    </div>
-}
+    </FooterContent>
+</DialogControl>
 
-@* ── Sub-Formula Editor Dialog ────────────────────────────── *@
-@if (IsSubFormulaEditorVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel" style="min-width:600px; max-width:800px; max-height:90vh;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Formula Editor - @SubFormulaName</span>
-                <button @onclick="OnSubFormulaCancel">×</button>
+<DialogControl Visible="@IsVariableEditorVisible"
+               Header="Variable"
+               Width="360px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               CssClass="ffe-variable-dialog"
+               OnClose="OnVariableEditorCancel">
+    <ChildContent>
+        <div class="dialog-body ic-var-body">
+            <div class="ic-var-name-row">
+                <label class="ic-var-group-label">Name</label>
+                @if (_editingVarIsNew)
+                {
+                    <TextBoxControl @bind-Value="EditingVarName" MaxLength="50" />
+                }
+                else
+                {
+                    <TextBoxControl Value="@EditingVarName" readonly="readonly" CssClass="ic-readonly-input" />
+                }
             </div>
-            <div class="dialog-body">
-                <textarea @bind="SubFormulaText" rows="12"
-                          style="width:100%; font-family:Consolas,monospace; font-size:13px; padding:8px; border:1px solid #ced4da; border-radius:4px; resize:vertical;"
-                          placeholder="Enter formula text..."></textarea>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn-nav primary" @onclick="OnSubFormulaOk">OK</button>
-                <button class="btn-nav" @onclick="OnSubFormulaCancel">Cancel</button>
-            </div>
-        </div>
-    </div>
-}
 
-@* ── Variable Editor Dialog ───────────────────────────────── *@
-@if (IsVariableEditorVisible)
-{
-    <div class="dialog-overlay" @onclick="() => IsVariableEditorVisible = false">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>@(string.IsNullOrEmpty(EditVariableOriginalName) ? "New Variable" : "Edit Variable")</span>
-                <button @onclick="() => IsVariableEditorVisible = false">×</button>
-            </div>
-            <div class="dialog-body">
-                <div style="margin-bottom:12px;">
-                    <label style="display:block; margin-bottom:4px; font-weight:500;">Name:</label>
-                    <input @bind="EditVariableName" placeholder="Variable name" />
+            <div class="ic-var-columns">
+                <div class="ic-var-type-col">
+                    <label class="ic-var-group-label">Type</label>
+                    <div class="ic-var-radios">
+                        <RadioControl TValue="int" Name="varType" Value="0"
+                                      @bind-SelectedValue="EditingVarType" Label="Numeric" />
+                        <RadioControl TValue="int" Name="varType" Value="1"
+                                      @bind-SelectedValue="EditingVarType" Label="List of values" />
+                    </div>
                 </div>
-                <div>
-                    <label style="display:block; margin-bottom:4px; font-weight:500;">Help Text:</label>
-                    <input @bind="EditVariableHelp" placeholder="Help text" />
-                </div>
+                @if (EditingVarType == 0)
+                {
+                    <div class="ic-var-props-col">
+                        <label class="ic-var-group-label">Properties</label>
+                        <div class="ic-var-props-grid">
+                            <label>Min</label>
+                            <TextBoxControl @bind-Value="EditingVarMin" />
+                            <label>Default</label>
+                            <TextBoxControl @bind-Value="EditingVarDefault" />
+                            <label>Max</label>
+                            <TextBoxControl @bind-Value="EditingVarMax" />
+                            <label>UOM</label>
+                            <DropDownListControl TValue="string" TItem="string"
+                                                 @bind-Value="EditingVarUOM"
+                                                 Width="56px"
+                                                 DataSource="@UomOptionList" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="ic-var-props-col">
+                        <label class="ic-var-group-label">Values</label>
+                        <TextAreaControl @bind-Value="EditingVarListOfValues" Rows="5"
+                                         CssClass="ic-monospace-area" />
+                    </div>
+                }
             </div>
-            <div class="dialog-footer">
-                <button class="btn-nav primary" @onclick="OnVariableEditorOk">OK</button>
-                <button class="btn-nav" @onclick="() => IsVariableEditorVisible = false">Cancel</button>
+
+            <div class="ic-var-help">
+                <label class="ic-var-group-label">Help Notes</label>
+                <TextAreaControl @bind-Value="EditingVarHelp" Rows="4" />
             </div>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="OnVariableEditorOk">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="OnVariableEditorCancel">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
+
+@* ── Custom New Formula Dialog (VB6 Prompt replacement) ── *@
+<DialogControl Visible="@_newFormulaDialogVisible"
+               Header="Precision Builder"
+               Width="340px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               CssClass="ffe-variable-dialog"
+               OnClose="OnNewFormulaCancel">
+    <ChildContent>
+        <div class="dialog-body ic-var-body">
+            <div style="margin-bottom: 8px;">
+                <label class="ic-var-group-label" style="color: #000; font-weight: normal;">Formula name?</label>
+            </div>
+            <div>
+                <TextBoxControl @bind-Value="_newFormulaNameInput" MaxLength="50" style="width: 100%;" />
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="OnNewFormulaOk">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="OnNewFormulaCancel">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
+
+@* ── Custom Rename Dialog (VB6 Prompt replacement) ── *@
+<DialogControl Visible="@_renameDialogVisible"
+               Header="Precision Builder"
+               Width="340px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               CssClass="ffe-variable-dialog"
+               OnClose="OnRenameCancel">
+    <ChildContent>
+        <div class="dialog-body ic-var-body">
+            <div style="margin-bottom: 8px;">
+                <label class="ic-var-group-label" style="color: #000; font-weight: normal;">Rename @_renameKind '@_renameOldName' to:</label>
+            </div>
+            <div>
+                <TextBoxControl @bind-Value="_renameNewNameInput" MaxLength="50" style="width: 100%;" />
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="OnRenameOk">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="OnRenameCancel">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
+
+@* ── Custom Delete Confirmation Dialog (VB6 MsgBox replacement) ── *@
+<DialogControl Visible="@_deleteConfirmVisible"
+               Header="Precision Builder"
+               Width="340px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               CssClass="ffe-variable-dialog"
+               OnClose="OnDeleteConfirmCancel">
+    <ChildContent>
+        <div class="dialog-body ic-var-body">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 4px 0;">
+                <span class="fx-msgbox-icon fx-msgbox-icon-question" style="position: relative; flex: 0 0 32px; width: 32px; height: 32px; display: inline-block;"></span>
+                <div style="font-size: 12px; color: #000;">Are you sure you want to delete @_deleteTargetName?</div>
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <div class="ffe-footer-right">
+            <ButtonControl CssClass="ffe-btn ffe-default-btn" OnClick="OnDeleteConfirmOk">OK</ButtonControl>
+            <ButtonControl CssClass="ffe-btn" OnClick="OnDeleteConfirmCancel">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
+
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
 
 @code {
-    // === Database ===
-    private DbWrapperSqlServer db = new();
+    /// <summary>Raised with the edited formula text when the user accepts with OK.</summary>
+    [Parameter] public EventCallback<string> OnAccepted { get; set; }
 
-    // === Component Parameters (for modal-like usage) ===
-    [Parameter] public string? FormulaName { get; set; }
-    [Parameter] public string? InitialText { get; set; }
-    [Parameter] public EventCallback<string?> OnClose { get; set; }
+    private bool _visible;
+    private MessageBoxControl? _messageBox;
+    private string _title = "Formula Editor";
+    private string _text = "";
+    private bool _variablesExpanded = true;   // VB6: Variables/Formulas roots load expanded,
+    private bool _formulasExpanded = true;    // the function groups load COLLAPSED (Outline(0)).
 
-    // === State ===
-    private string FormulaText = "";
-    private bool mCancel = false;
-    private int TopPanelHeight = 250;
-    private ElementReference formulaTextArea;
+    private sealed class NamedLeaf { public string Name = ""; public string Tooltip = ""; }
+    private sealed class FunctionLeaf { public string Display = ""; public string InsertText = ""; public string Tooltip = ""; }
+    private sealed class FunctionGroup { public string Name = ""; public bool Expanded; public List<FunctionLeaf> Items = new(); }
 
-    // === Variables ===
-    private List<VariableItem> VariablesList = new();
-    private VariableItem? SelectedVariable;
+    private List<NamedLeaf> _variables = new();
+    private List<NamedLeaf> _formulas = new();
+    private readonly List<FunctionGroup> _functionGroups = BuildFunctionGroups();
 
-    // === Formulas ===
-    private List<FormulaItem> FormulasList = new();
-    private FormulaItem? SelectedFormula;
-
-    // === Functions ===
-    private List<FunctionGroup> FunctionGroups = new();
-    private FunctionEntry? SelectedFunction;
-
-    // === Context Menu ===
-    private bool IsContextMenuVisible = false;
-    private double ContextMenuX;
-    private double ContextMenuY;
-    private ContextTarget ActiveContextTarget = ContextTarget.None;
-    private bool CanInsert, CanRename, CanNew, CanEdit, CanDelete;
-
-    // === Rename Dialog ===
-    private bool IsRenameDialogVisible = false;
-    private string RenameText = "";
-    private string RenameOriginalName = "";
-    private ContextTarget RenameTarget = ContextTarget.None;
-
-    // === New Formula Dialog ===
-    private bool IsNewFormulaDialogVisible = false;
-    private string NewFormulaName = "";
-
-    // === Sub-Formula Editor ===
-    private bool IsSubFormulaEditorVisible = false;
-    private string SubFormulaName = "";
-    private string SubFormulaText = "";
-
-    // === Variable Editor ===
-    private bool IsVariableEditorVisible = false;
-    private string EditVariableName = "";
-    private string EditVariableHelp = "";
-    private string EditVariableOriginalName = "";
-
-    // === Enums ===
-    private enum ContextTarget { None, Variables, Formulas, Functions }
-
-    // === Lifecycle ===
-    protected override async Task OnInitializedAsync()
+    // ── Test dialog state ──
+    private bool _testVisible;
+    private string _resolvedForTest = "";
+    // HHM-610: numeric variables carry a double (NumericTextBoxControl rejects
+    // alphabetic input); list-of-values variables carry the picked string for
+    // the VB6 combo (MFormulas.bas LoadVariables fills Value/ListOfValues).
+    private sealed class TestVariable
     {
-        FormulaText = InitialText ?? "";
-        LoadFunctions();
-        await LoadVariablesAsync();
-        await LoadFormulasAsync();
+        public string Name = "";
+        public string Tooltip = "";
+        public bool IsList;
+        public double NumValue;                  // numeric variables
+        public string Value = "";                // list variables (picked entry)
+        public List<string> ListValues = new();  // list variables (combo options)
+    }
+    private List<TestVariable> _testVariables = new();
+
+    // ── Right-click context menu state (VB6 mnuPopup on the three panes) ──
+    private enum CtxPane { Variables, Formulas, Functions }
+    private bool _ctxVisible;
+    private double _ctxX, _ctxY;
+    private CtxPane _ctxPane;
+    private bool _ctxHasTarget;          // a concrete row the menu actions act on
+    private string _ctxName = "";        // leaf name (Variables/Formulas) / display (Functions)
+    private string _ctxInsertToken = ""; // exact text inserted by "Insert"
+
+    // HHM-615: the Formulas pane's "current row" (VB6 gFormulas.Row) — set by
+    // click/right-click on a leaf; a right-click on the "Formulas" root targets
+    // it, exactly like VB6 where the popup actions run against the grid cursor
+    // rather than the hit row (gFormulas_MouseDown enables everything).
+    private string _selectedFormula = "";
+
+    // ── Edit-formula-body sub-dialog state (VB6 mc_EDIT for gFormulas) ──
+    private bool _editFormulaVisible;
+    private string _editFormulaName = "";
+    private string _editFormulaText = "";
+
+    // ── Variable Editor dialog state ──
+    private bool IsVariableEditorVisible;
+    private bool _editingVarIsNew;
+    private string EditingVarName = "";
+    private int EditingVarType = 0; // 0 = Numeric, 1 = List of values
+    private string EditingVarMin = "0";
+    private string EditingVarMax = "9999999";
+    private string EditingVarDefault = "0";
+    private string EditingVarListOfValues = "";
+    private string EditingVarHelp = "";
+    private string EditingVarConditionName = "";
+    private string EditingVarConditionType = "";
+    private string EditingVarConditionUOM = "";
+    private string EditingVarUOM = "";
+    private List<string> _uomList = new();
+    private IEnumerable<string> UomOptionList => new[] { "" }.Concat(_uomList);
+
+    // ── Custom popup states for VB6 parity ──
+    private bool _newFormulaDialogVisible;
+    private string _newFormulaNameInput = "";
+
+    private bool _renameDialogVisible;
+    private string _renameNewNameInput = "";
+    private string _renameKind = "";
+    private string _renameOldName = "";
+
+    private bool _deleteConfirmVisible;
+    private string _deleteTargetTable = "";
+    private string _deleteTargetName = "";
+
+    // Per-pane Enabled rules (VB6 gVariables/gFormulas/gFunctions_MouseDown).
+    // Variables New/Edit require FVariable, which is NOT ported to PB, so they stay disabled.
+    // HHM-615: on the Formulas pane VB6 enables Insert/Rename/New/Edit/Delete
+    // for the whole pane (FFormulaEditor.frm:559-567) — the root right-click
+    // resolves a target row in OpenCtxMenu, so _ctxHasTarget drives Enabled.
+    private bool CtxInsertEnabled => _ctxHasTarget;
+    private bool CtxRenameEnabled => _ctxHasTarget && (_ctxPane == CtxPane.Variables || _ctxPane == CtxPane.Formulas);
+    private bool CtxNewEnabled => _ctxPane == CtxPane.Formulas || _ctxPane == CtxPane.Variables;
+    private bool CtxEditEnabled => (_ctxPane == CtxPane.Formulas || _ctxPane == CtxPane.Variables) && _ctxHasTarget;
+    private bool CtxDeleteEnabled => _ctxHasTarget && (_ctxPane == CtxPane.Variables || _ctxPane == CtxPane.Formulas);
+
+    private void OpenCtxMenu(CtxPane pane, bool isLeaf, string name, string insertToken, MouseEventArgs e)
+    {
+        _ctxPane = pane;
+
+        if (pane == CtxPane.Formulas)
+        {
+            if (isLeaf)
+            {
+                _selectedFormula = name ?? "";
+            }
+            else
+            {
+                // Root ("Formulas") right-click — act on the current row like
+                // VB6; fall back to the first formula when nothing is current.
+                var target = _formulas.FirstOrDefault(f =>
+                        string.Equals(f.Name, _selectedFormula, StringComparison.OrdinalIgnoreCase))
+                    ?? _formulas.FirstOrDefault();
+                name = target?.Name ?? "";
+                insertToken = target == null ? "" : "{" + target.Name + "}";
+                _selectedFormula = name;
+            }
+            _ctxHasTarget = !string.IsNullOrEmpty(name);
+        }
+        else
+        {
+            _ctxHasTarget = isLeaf;
+        }
+
+        _ctxName = name ?? "";
+        _ctxInsertToken = insertToken ?? "";
+        _ctxX = e.ClientX;
+        _ctxY = e.ClientY;
+        _ctxVisible = true;
     }
 
-    // === Public API for modal usage ===
-    public async Task<(bool Ok, string Text)> EditFormulaAsync(string name, string text)
+    // VB6 mc_INSERT — insert the pane token into the formula editor.
+    private void CtxInsert()
     {
-        FormulaName = name;
-        FormulaText = text;
-        mCancel = false;
-        LoadFunctions();
-        await LoadVariablesAsync();
-        await LoadFormulasAsync();
+        _ctxVisible = false;
+        if (_ctxHasTarget) Insert(_ctxInsertToken);
+    }
+
+    // VB6 mc_RENAME — EditCell + ValidateEdit: rename the variable/formula and cascade the
+    // token replacement into formulas.text, tblphaseitem.formula, tbldbassemblydetails.formula.
+    private void CtxRenameAsync()
+    {
+        _ctxVisible = false;
+        if (!_ctxHasTarget) return;
+        _renameKind = _ctxPane == CtxPane.Variables ? "variable" : "formula";
+        _renameOldName = _ctxName;
+        _renameNewNameInput = _ctxName;
+        _renameDialogVisible = true;
         StateHasChanged();
-        // In Blazor, modal behavior is handled differently; return current state
-        return (!mCancel, FormulaText);
     }
 
-    // === Button Handlers ===
-    private async Task OnOkClick()
+    private void OnRenameCancel()
     {
-        mCancel = false;
-        if (OnClose.HasDelegate)
-            await OnClose.InvokeAsync(FormulaText);
-    }
-
-    private async Task OnCancelClick()
-    {
-        mCancel = true;
-        if (OnClose.HasDelegate)
-            await OnClose.InvokeAsync(null);
-    }
-
-    private async Task OnTestClick()
-    {
-        // Placeholder for formula test functionality
-        await JSRuntime.InvokeVoidAsync("alert", "Formula Test:\n\n" + FormulaText);
-    }
-
-    // === Selection ===
-    private void SelectVariable(VariableItem v) => SelectedVariable = v;
-    private void SelectFormula(FormulaItem f) => SelectedFormula = f;
-    private void SelectFunction(FunctionEntry fn) => SelectedFunction = fn;
-
-    // === Double-click Insert ===
-    private async Task InsertVariable(VariableItem v)
-    {
-        var insertText = $"[{v.Name}]";
-        await InsertTextAtCursor(insertText);
-    }
-
-    private async Task InsertFormula(FormulaItem f)
-    {
-        var insertText = $"{{{f.Name}}}";
-        await InsertTextAtCursor(insertText);
-    }
-
-    private async Task InsertFunction(FunctionEntry fn)
-    {
-        var insertText = fn.DisplayName.Trim();
-        await InsertTextAtCursor(insertText);
-    }
-
-    private async Task InsertTextAtCursor(string text)
-    {
-        // In Blazor, we append to the formula text (cursor position management requires JS interop)
-        FormulaText += text;
+        _renameDialogVisible = false;
         StateHasChanged();
+    }
+
+    private async Task OnRenameOk()
+    {
+        _renameDialogVisible = false;
+        var newName = (_renameNewNameInput ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, _renameOldName, StringComparison.Ordinal)) return;
         try
         {
-            await formulaTextArea.FocusAsync();
-        }
-        catch { }
-    }
-
-    // === Context Menu: Variables ===
-    private void OnVariablesContextMenu(MouseEventArgs e)
-    {
-        ActiveContextTarget = ContextTarget.Variables;
-        CanInsert = true;
-        CanRename = SelectedVariable != null;
-        CanNew = true;
-        CanEdit = SelectedVariable != null;
-        CanDelete = SelectedVariable != null;
-        ShowContextMenu(e);
-    }
-
-    // === Context Menu: Formulas ===
-    private void OnFormulasContextMenu(MouseEventArgs e)
-    {
-        ActiveContextTarget = ContextTarget.Formulas;
-        CanInsert = SelectedFormula != null;
-        CanRename = SelectedFormula != null;
-        CanNew = true;
-        CanEdit = SelectedFormula != null;
-        CanDelete = SelectedFormula != null;
-        ShowContextMenu(e);
-    }
-
-    // === Context Menu: Functions ===
-    private void OnFunctionsContextMenu(MouseEventArgs e)
-    {
-        ActiveContextTarget = ContextTarget.Functions;
-        CanInsert = SelectedFunction != null;
-        CanRename = false;
-        CanNew = false;
-        CanEdit = false;
-        CanDelete = false;
-        ShowContextMenu(e);
-    }
-
-    private void ShowContextMenu(MouseEventArgs e)
-    {
-        ContextMenuX = e.ClientX;
-        ContextMenuY = e.ClientY;
-        IsContextMenuVisible = true;
-    }
-
-    private void CloseContextMenu()
-    {
-        IsContextMenuVisible = false;
-    }
-
-    // === Context Menu Actions ===
-    private async Task OnContextInsert()
-    {
-        CloseContextMenu();
-        switch (ActiveContextTarget)
-        {
-            case ContextTarget.Variables when SelectedVariable != null:
-                await InsertVariable(SelectedVariable);
-                break;
-            case ContextTarget.Formulas when SelectedFormula != null:
-                await InsertFormula(SelectedFormula);
-                break;
-            case ContextTarget.Functions when SelectedFunction != null:
-                await InsertFunction(SelectedFunction);
-                break;
-        }
-    }
-
-    private void OnContextRename()
-    {
-        CloseContextMenu();
-        RenameTarget = ActiveContextTarget;
-        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
-        {
-            RenameOriginalName = SelectedVariable.Name;
-            RenameText = SelectedVariable.Name;
-            IsRenameDialogVisible = true;
-        }
-        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
-        {
-            RenameOriginalName = SelectedFormula.Name;
-            RenameText = SelectedFormula.Name;
-            IsRenameDialogVisible = true;
-        }
-    }
-
-    private async Task OnRenameConfirm()
-    {
-        if (string.IsNullOrWhiteSpace(RenameText))
-        {
-            await JSRuntime.InvokeVoidAsync("alert", "Name cannot be empty.");
-            return;
-        }
-
-        try
-        {
-            if (RenameTarget == ContextTarget.Variables)
+            var table = _renameKind == "variable" ? "variables" : "formulas";
+            var exists = await db.ExecuteScalarAsync<int>(
+                $"select count(*) from {table} where name=@n", new { n = newName });
+            if (exists > 0)
             {
-                var sql = $"UPDATE variables SET name=@NewName WHERE name=@OldName";
-                await db.ExecuteAsync(sql, new { NewName = RenameText, OldName = RenameOriginalName });
-
-                // Update references in formulas and assembly details
-                var updateSql = $@"
-                    UPDATE formulas SET text = REPLACE(text, @OldRef, @NewRef);
-                    UPDATE tblphaseitem SET formula = REPLACE(formula, @OldRef, @NewRef);
-                    UPDATE tbldbassemblydetails SET formula = REPLACE(formula, @OldRef, @NewRef);";
-                await db.ExecuteAsync(updateSql, new
-                {
-                    OldRef = $"[{RenameOriginalName}]",
-                    NewRef = $"[{RenameText}]"
-                });
-
-                await LoadVariablesAsync();
+                if (_messageBox != null)
+                    await _messageBox.ShowAsync($"There is already a {_renameKind} named {newName}. Please specify a unique name.", "Precision Builder", Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "exclamation");
+                return;
             }
-            else if (RenameTarget == ContextTarget.Formulas)
-            {
-                var sql = $"UPDATE formulas SET name=@NewName WHERE name=@OldName";
-                await db.ExecuteAsync(sql, new { NewName = RenameText, OldName = RenameOriginalName });
+            await db.ExecuteAsync($"update {table} set name=@new where name=@old",
+                new { @new = newName, old = _renameOldName });
 
-                var updateSql = $@"
-                    UPDATE formulas SET text = REPLACE(text, @OldRef, @NewRef);
-                    UPDATE tblphaseitem SET formula = REPLACE(formula, @OldRef, @NewRef);
-                    UPDATE tbldbassemblydetails SET formula = REPLACE(formula, @OldRef, @NewRef);";
-                await db.ExecuteAsync(updateSql, new
-                {
-                    OldRef = $"{{{RenameOriginalName}}}",
-                    NewRef = $"{{{RenameText}}}"
-                });
+            // Cascade: [old]->[new] for variables, {old}->{new} for formulas.
+            var oldTok = _renameKind == "variable" ? $"[{_renameOldName}]" : "{" + _renameOldName + "}";
+            var newTok = _renameKind == "variable" ? $"[{newName}]" : "{" + newName + "}";
+            await db.ExecuteAsync("update formulas set text = replace(text,@o,@n)", new { o = oldTok, n = newTok });
+            await db.ExecuteAsync("update tblphaseitem set formula = replace(formula,@o,@n)", new { o = oldTok, n = newTok });
+            await db.ExecuteAsync("update tbldbassemblydetails set formula = replace(formula,@o,@n)", new { o = oldTok, n = newTok });
 
-                await LoadFormulasAsync();
-            }
+            if (_renameKind == "formula" &&
+                string.Equals(_selectedFormula, _renameOldName, StringComparison.OrdinalIgnoreCase))
+               _selectedFormula = newName;
+
+            await LoadListsAsync();
+            StateHasChanged();
         }
         catch (Exception ex)
         {
-            var entityType = RenameTarget == ContextTarget.Variables ? "variable" : "formula";
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"There is already a {entityType} named {RenameText}. Please specify a unique name.");
+            Logger.LogError(ex, "Formula editor rename failed");
+            Notifications.Error($"Rename failed: {ex.Message}");
         }
-
-        IsRenameDialogVisible = false;
     }
 
-    private void OnContextNew()
+    // VB6 mc_NEW (gFormulas) — InputBox("Formula name?", App.ProductName), insert a
+    // blank formula, reselect it in the list. HHM-615: the prompt is titled
+    // "Precision Builder" (InputBox parity) and, matching the shipping legacy app,
+    // accepting the name returns straight to the Formula window — it does NOT
+    // open the Edit Formula dialog (the user edits via right-click → Edit).
+    private void CtxNewAsync()
     {
-        CloseContextMenu();
-        if (ActiveContextTarget == ContextTarget.Variables)
+        _ctxVisible = false;
+        if (_ctxPane == CtxPane.Formulas)
         {
-            EditVariableOriginalName = "";
-            EditVariableName = "";
-            EditVariableHelp = "";
+            _newFormulaNameInput = "";
+            _newFormulaDialogVisible = true;
+            StateHasChanged();
+        }
+        else if (_ctxPane == CtxPane.Variables)
+        {
+            _editingVarIsNew = true;
+            EditingVarName = "";
+            EditingVarType = 0;
+            EditingVarMin = "0";
+            EditingVarMax = "9999999";
+            EditingVarDefault = "0";
+            EditingVarListOfValues = "";
+            EditingVarHelp = "";
+            EditingVarConditionName = "";
+            EditingVarConditionType = "";
+            EditingVarConditionUOM = "";
+            EditingVarUOM = "";
             IsVariableEditorVisible = true;
-        }
-        else if (ActiveContextTarget == ContextTarget.Formulas)
-        {
-            NewFormulaName = "";
-            IsNewFormulaDialogVisible = true;
+            StateHasChanged();
         }
     }
 
-    private async Task OnNewFormulaConfirm()
+    private void OnNewFormulaCancel()
     {
-        if (string.IsNullOrWhiteSpace(NewFormulaName))
+        _newFormulaDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task OnNewFormulaOk()
+    {
+        _newFormulaDialogVisible = false;
+        var name = (_newFormulaNameInput ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
         {
-            IsNewFormulaDialogVisible = false;
+            var exists = await db.ExecuteScalarAsync<int>(
+                "select count(*) from formulas where name=@n", new { n = name });
+            if (exists > 0)
+            {
+                if (_messageBox != null)
+                    await _messageBox.ShowAsync($"A formula named {name} already exists. You must specify a unique name.", "Precision Builder", Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "exclamation");
+                return;
+            }
+            await db.ExecuteAsync("insert into formulas(name) values(@n)", new { n = name });
+            await LoadListsAsync();
+            // VB6 selects the fresh row (gFormulas.Select/ShowCell).
+            _selectedFormula = name;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Formula editor new failed");
+            Notifications.Error($"New formula failed: {ex.Message}");
+        }
+    }
+
+    // VB6 mc_EDIT (gFormulas) — load the formula body into the sub-editor.
+    private async Task CtxEditAsync()
+    {
+        _ctxVisible = false;
+        if (!_ctxHasTarget) return;
+
+        if (_ctxPane == CtxPane.Formulas)
+        {
+            try
+            {
+                var rows = await db.QueryAsync("select text from formulas where name=@n", new { n = _ctxName });
+                var first = rows.FirstOrDefault();
+                _editFormulaText = first?["text"]?.ToString() ?? "";
+                _editFormulaName = _ctxName;
+                _editFormulaVisible = true;
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Formula editor edit-body load failed");
+                Notifications.Error($"Edit failed: {ex.Message}");
+            }
+        }
+        else if (_ctxPane == CtxPane.Variables)
+        {
+            try
+            {
+                _editingVarIsNew = false;
+                EditingVarName = _ctxName;
+
+                var rows = await db.QueryAsync("select * from variables where name=@n", new { n = _ctxName });
+                var rs = rows.FirstOrDefault();
+                if (rs != null)
+                {
+                    EditingVarType = Convert.ToInt32(rs["VariableType"] ?? 0);
+                    EditingVarMin = (rs["minimumvalue"] ?? "0").ToString();
+                    EditingVarMax = (rs["maximumvalue"] ?? "9999999").ToString();
+                    EditingVarDefault = (rs["defaultvalue"] ?? "0").ToString();
+                    EditingVarListOfValues = (rs["ListOfValues"] ?? "").ToString().Replace("|", "\n");
+                    EditingVarHelp = (rs["Help"] ?? "").ToString();
+                    EditingVarConditionName = (rs["Conditionname"] ?? "").ToString();
+                    EditingVarConditionType = (rs["Conditiontype"] ?? "").ToString();
+                    EditingVarConditionUOM = (rs["Conditionuom"] ?? "").ToString();
+                    EditingVarUOM = (rs["uom"] ?? "").ToString().Trim();
+                }
+                else
+                {
+                    EditingVarType = 0;
+                    EditingVarMin = "0";
+                    EditingVarMax = "9999999";
+                    EditingVarDefault = "0";
+                    EditingVarListOfValues = "";
+                    EditingVarHelp = "";
+                    EditingVarConditionName = "";
+                    EditingVarConditionType = "";
+                    EditingVarConditionUOM = "";
+                    EditingVarUOM = "";
+                }
+                IsVariableEditorVisible = true;
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Formula editor edit-variable load failed");
+                Notifications.Error($"Edit failed: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task SaveFormulaBodyAsync()
+    {
+        _editFormulaVisible = false;
+        try
+        {
+            await db.ExecuteAsync("update formulas set text=@t where name=@n",
+                new { t = NormalizeQuotes(_editFormulaText), n = _editFormulaName });
+            await LoadListsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Formula editor edit-body save failed");
+            Notifications.Error($"Save failed: {ex.Message}");
+        }
+    }
+
+    // VB6 mc_DELETE — confirm (MsgBox titled App.ProductName), delete the
+    // variable/formula, reload.
+    private void CtxDeleteAsync()
+    {
+        _ctxVisible = false;
+        if (!_ctxHasTarget) return;
+        _deleteTargetTable = _ctxPane == CtxPane.Variables ? "variables" : "formulas";
+        _deleteTargetName = _ctxName;
+        _deleteConfirmVisible = true;
+        StateHasChanged();
+    }
+
+    private void OnDeleteConfirmCancel()
+    {
+        _deleteConfirmVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task OnDeleteConfirmOk()
+    {
+        _deleteConfirmVisible = false;
+        try
+        {
+            await db.ExecuteAsync($"delete from {_deleteTargetTable} where name=@n", new { n = _deleteTargetName });
+            if (_deleteTargetTable == "formulas" &&
+                string.Equals(_selectedFormula, _deleteTargetName, StringComparison.OrdinalIgnoreCase))
+                _selectedFormula = "";
+            await LoadListsAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Formula editor delete failed");
+            Notifications.Error($"Delete failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Open the editor (VB6 <c>FFormulaEditor.EditFormula(Name, Text)</c>). The caller
+    /// receives the accepted text via <see cref="OnAccepted"/>; Cancel / ✕ discards (VB6
+    /// Form_QueryUnload sets mCancel).</summary>
+    public async Task Open(string name, string text)
+    {
+        _title = string.IsNullOrWhiteSpace(name) ? "Formula Editor" : $"Formula Editor - {name}";
+        _text = text ?? "";
+        _testVisible = false;
+        await LoadListsAsync();
+        _visible = true;
+        _focusEditorOnRender = true;
+        StateHasChanged();
+    }
+
+    private async Task LoadListsAsync()
+    {
+        try
+        {
+            // VB6 LoadVariables/LoadFormulas (FFormulaEditor.frm:906/925) — no division filter.
+            var vars = await db.QueryAsync("select name, help from variables order by name");
+            _variables = vars.Select(r => new NamedLeaf
+            {
+                Name = r["name"]?.ToString() ?? "",
+                Tooltip = r["help"]?.ToString() ?? ""
+            }).Where(v => !string.IsNullOrEmpty(v.Name)).ToList();
+
+            var fx = await db.QueryAsync("select name, text from formulas order by name");
+            _formulas = fx.Select(r => new NamedLeaf
+            {
+                Name = r["name"]?.ToString() ?? "",
+                Tooltip = r["text"]?.ToString() ?? ""
+            }).Where(f => !string.IsNullOrEmpty(f.Name)).ToList();
+
+            var uoms = await db.QueryAsync("select uom from uom order by uom");
+            _uomList = uoms.Select(r => (r["uom"]?.ToString() ?? "").Trim()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Formula editor list load failed");
+            _variables = new(); _formulas = new(); _uomList = new();
+        }
+    }
+
+    // ── Focus & keyboard navigation (owner directive 2026-08-01) ──────────
+    // VB6 opens with txtFormula focused and Tab cycles the form's own controls;
+    // the web dialog opened with focus nowhere and Tab escaped the window.
+    private ElementReference _editorRef;
+    private ElementReference _paneVarsRef;
+    private ElementReference _paneFormulasRef;
+    private ElementReference _paneFuncsRef;
+    private bool _focusEditorOnRender;
+    private readonly Dictionary<CtxPane, string> _kbKey = new();
+
+    private async Task FocusEditorAsync()
+    {
+        try { await _editorRef.FocusAsync(); } catch { /* dialog closing */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusEditorOnRender && _visible)
+        {
+            _focusEditorOnRender = false;
+            await FocusEditorAsync();
+        }
+    }
+
+    private string KbActive(CtxPane pane, string key)
+        => _kbKey.TryGetValue(pane, out var k) && string.Equals(k, key, StringComparison.Ordinal)
+            ? "kb-active" : "";
+
+    private sealed record KbEntry(string Key, Action Activate);
+
+    /// <summary>The pane's keyboard walk = its VISIBLE rows top-to-bottom
+    /// (group headers + expanded leaves), same rows the mouse sees.</summary>
+    private List<KbEntry> BuildPaneEntries(CtxPane pane)
+    {
+        var list = new List<KbEntry>();
+        switch (pane)
+        {
+            case CtxPane.Variables:
+                list.Add(new("g:Variables", () => { if (_variables.Count > 0) _variablesExpanded = !_variablesExpanded; }));
+                if (_variablesExpanded)
+                    foreach (var v in _variables)
+                    {
+                        var vv = v;
+                        list.Add(new("v:" + vv.Name, () => Insert("[" + vv.Name + "]")));
+                    }
+                break;
+            case CtxPane.Formulas:
+                list.Add(new("g:Formulas", () => { if (_formulas.Count > 0) _formulasExpanded = !_formulasExpanded; }));
+                if (_formulasExpanded)
+                    foreach (var f in _formulas)
+                    {
+                        var ff = f;
+                        list.Add(new("f:" + ff.Name, () => { _selectedFormula = ff.Name; Insert("{" + ff.Name + "}"); }));
+                    }
+                break;
+            case CtxPane.Functions:
+                foreach (var g in _functionGroups)
+                {
+                    var gg = g;
+                    list.Add(new("g:" + gg.Name, () => gg.Expanded = !gg.Expanded));
+                    if (gg.Expanded)
+                        foreach (var it in gg.Items)
+                        {
+                            var itm = it;
+                            list.Add(new("fn:" + itm.Display, () => Insert(itm.InsertText)));
+                        }
+                }
+                break;
+        }
+        return list;
+    }
+
+    /// <summary>Arrow keys walk the pane rows, Enter/Space activates (toggle a
+    /// group, insert a leaf). The pane swallows key defaults, so Tab is moved by
+    /// hand: pane → pane → editor, Shift+Tab reverses.</summary>
+    private async Task OnPaneKeyDownAsync(CtxPane pane, KeyboardEventArgs e)
+    {
+        if (e.Key == "Tab")
+        {
+            var target = pane switch
+            {
+                CtxPane.Variables => e.ShiftKey ? _editorRef : _paneFormulasRef,
+                CtxPane.Formulas => e.ShiftKey ? _paneVarsRef : _paneFuncsRef,
+                _ => e.ShiftKey ? _paneFormulasRef : _editorRef,
+            };
+            try { await target.FocusAsync(); } catch { }
             return;
         }
 
+        var entries = BuildPaneEntries(pane);
+        if (entries.Count == 0) return;
+        _kbKey.TryGetValue(pane, out var cur);
+        var idx = entries.FindIndex(en => string.Equals(en.Key, cur, StringComparison.Ordinal));
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _kbKey[pane] = entries[Math.Min(entries.Count - 1, idx + 1)].Key;
+                break;
+            case "ArrowUp":
+                _kbKey[pane] = entries[Math.Max(0, idx <= 0 ? 0 : idx - 1)].Key;
+                break;
+            case "Home":
+                _kbKey[pane] = entries[0].Key;
+                break;
+            case "End":
+                _kbKey[pane] = entries[^1].Key;
+                break;
+            case "Enter":
+            case " ":
+                if (idx >= 0) entries[idx].Activate();
+                break;
+        }
+    }
+
+    // Double-click insert. VB6 inserts at the caret (txtFormula.SelText); tracking the caret
+    // needs JS, so we append — the dominant left-to-right build flow is identical.
+    private void Insert(string token)
+    {
+        if (string.IsNullOrEmpty(token)) return;
+        _text = string.IsNullOrEmpty(_text) ? token : _text + (_text.EndsWith(" ") ? "" : " ") + token;
+    }
+
+    private async Task OkAsync()
+    {
+        _visible = false;
+        _testVisible = false;
+        await OnAccepted.InvokeAsync(NormalizeQuotes(_text));
+    }
+
+    private void Cancel()
+    {
+        _visible = false;
+        _testVisible = false;
+    }
+
+    // VB6 txtFormula_Change: curly quotes/dashes pasted from Word → plain ASCII.
+    private static string NormalizeQuotes(string s) =>
+        (s ?? "").Replace('–', '-').Replace('“', '"').Replace('”', '"').Replace('‘', '\'').Replace('’', '\'');
+
+    // ── Test (VB6 FFormulaTest.TestFormula) ────────────────────────────────────
+    private async Task TestAsync()
+    {
+        _resolvedForTest = ResolveFormula(NormalizeQuotes(_text));
+        var names = System.Text.RegularExpressions.Regex.Matches(_resolvedForTest, @"\[([^\[\]]+)\]")
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (names.Count == 0)
+        {
+            await EvaluateAndReportAsync(_resolvedForTest);
+            return;
+        }
+        // Prompt a value per variable, defaulted from the variables table (VB6
+        // MFormulas.bas LoadVariables(True,…)): numeric variables seed
+        // Val(defaultvalue) into a numeric-only box; list-of-values variables get
+        // the pipe-separated combo with the first entry preselected (HHM-610).
+        var defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var listValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var helps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            await db.ExecuteAsync("INSERT INTO formulas(name) VALUES(@Name)", new { Name = NewFormulaName });
-            await LoadFormulasAsync();
-
-            // Select the new formula and open editor
-            var newFormula = FormulasList.FirstOrDefault(f =>
-                f.Name.Equals(NewFormulaName, StringComparison.OrdinalIgnoreCase));
-            if (newFormula != null)
+            var rows = await db.QueryAsync("select name, defaultvalue, listofvalues, help from variables");
+            foreach (var r in rows)
             {
-                SelectedFormula = newFormula;
-                OpenSubFormulaEditor(newFormula);
+                var n = r["name"]?.ToString() ?? "";
+                if (n.Length == 0) continue;
+                defaults[n] = r["defaultvalue"]?.ToString() ?? "0";
+                listValues[n] = r["listofvalues"]?.ToString() ?? "";
+                helps[n] = r["help"]?.ToString() ?? "";
             }
         }
-        catch (Exception)
+        catch { }
+        _testVariables = names.Select(n =>
         {
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"A formula named {NewFormulaName} already exists. You must specify a unique name.");
-        }
-
-        IsNewFormulaDialogVisible = false;
+            var tv = new TestVariable { Name = n };
+            if (helps.TryGetValue(n, out var h)) tv.Tooltip = h;
+            if (listValues.TryGetValue(n, out var lov) && !string.IsNullOrWhiteSpace(lov))
+            {
+                // VB6 ComboList = " |" & listofvalues — a leading blank entry
+                // then the stored values; Value defaults to the first real one.
+                tv.IsList = true;
+                var opts = lov.Split('|').Select(v => v.Trim()).Where(v => v.Length > 0).ToList();
+                tv.ListValues = new List<string> { "" };
+                tv.ListValues.AddRange(opts);
+                tv.Value = opts.FirstOrDefault() ?? "";
+            }
+            else
+            {
+                tv.NumValue = defaults.TryGetValue(n, out var d) &&
+                    double.TryParse(d, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var dv) ? dv : 0;
+            }
+            return tv;
+        }).ToList();
+        _testVisible = true;
     }
 
-    private async Task OnContextEdit()
+    private async Task RunTestAsync()
     {
-        CloseContextMenu();
-        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
+        // VB6 MFormulas.bas CalcFormula: list variables substitute as a quoted
+        // string, numeric variables as Val(value).
+        var s = _resolvedForTest;
+        foreach (var tv in _testVariables.OrderByDescending(t => t.Name.Length))
         {
-            EditVariableOriginalName = SelectedVariable.Name;
-            EditVariableName = SelectedVariable.Name;
-            EditVariableHelp = SelectedVariable.Help;
-            IsVariableEditorVisible = true;
+            var replacement = tv.IsList
+                ? "\"" + tv.Value + "\""
+                : tv.NumValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            s = ReplaceCaseInsensitive(s, "[" + tv.Name + "]", replacement);
         }
-        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
+        await EvaluateAndReportAsync(s);
+    }
+
+    private async Task EvaluateAndReportAsync(string expression)
+    {
+        try
         {
-            // Load formula text from DB
-            var rows = await db.QueryAsync("SELECT text FROM formulas WHERE name=@Name",
-                new { Name = SelectedFormula.Name });
-            var text = rows.FirstOrDefault()?["text"]?.ToString() ?? "";
-            SelectedFormula.Text = text;
-            OpenSubFormulaEditor(SelectedFormula);
+            // Aggregate DB lookups (Total*/Assembly*) stub to 0 in the test — exactly VB6's
+            // FFormulaTest.GetItemTotal (frm:173-175).
+            var result = new FormulaEquation(expression).Solve();
+            if (double.IsInfinity(result) || double.IsNaN(result))
+            {
+                // VB6 CalcFormula divide-by-zero branch (MFormulas.bas:242-243).
+                if (_messageBox != null)
+                    await _messageBox.ShowAsync("Divide by zero error encountered.", "Error Evaluating Formula", Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "critical");
+                return;
+            }
+            Notifications.Success($"Formula is valid. Return value: {Math.Round(result, 3)}");
+        }
+        catch (Exception ex)
+        {
+            // HHM-614: legacy shows a message box titled "Error Evaluating
+            // Formula" whose body is the engine error, a blank line, then the
+            // evaluated expression (MFormulas.bas CalcFormula eh:238-247) —
+            // e.g. "Undefined Function: ssss" / "" / "ssss".
+            if (_messageBox != null)
+                await _messageBox.ShowAsync($"{ex.Message}\n\n{expression}", "Error Evaluating Formula", Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, "critical");
         }
     }
 
-    private void OpenSubFormulaEditor(FormulaItem formula)
+    // VB6 MFormulas.bas ResolveFormula — expand {name} from the loaded formulas list,
+    // recursively, 30-substitution circular-reference guard.
+    private string ResolveFormula(string raw)
     {
-        SubFormulaName = formula.Name;
-        SubFormulaText = formula.Text;
-        IsSubFormulaEditorVisible = true;
-    }
-
-    private async Task OnSubFormulaOk()
-    {
-        // Save the sub-formula text
-        var formula = FormulasList.FirstOrDefault(f =>
-            f.Name.Equals(SubFormulaName, StringComparison.OrdinalIgnoreCase));
-        if (formula != null)
+        var s = (raw ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        int guard = 0, open;
+        while ((open = s.IndexOf('{')) >= 0 && guard++ < 30)
         {
-            formula.Text = SubFormulaText;
-            await db.ExecuteAsync("UPDATE formulas SET text=@Text WHERE name=@Name",
-                new { Text = SubFormulaText, Name = SubFormulaName });
+            var close = s.IndexOf('}', open + 1);
+            if (close < 0) break;
+            var name = s.Substring(open + 1, close - open - 1);
+            var f = _formulas.FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (f == null) break;   // unknown name — leave for the solver to surface
+            s = s.Substring(0, open) + "(" + f.Tooltip + ")" + s.Substring(close + 1);
         }
-        IsSubFormulaEditorVisible = false;
+        return s;
     }
 
-    private void OnSubFormulaCancel()
+    private static string ReplaceCaseInsensitive(string input, string search, string replacement)
     {
-        IsSubFormulaEditorVisible = false;
+        if (string.IsNullOrEmpty(input) || string.IsNullOrEmpty(search)) return input;
+        var sb = new System.Text.StringBuilder();
+        int idx = 0;
+        while (true)
+        {
+            int found = input.IndexOf(search, idx, StringComparison.OrdinalIgnoreCase);
+            if (found < 0) { sb.Append(input, idx, input.Length - idx); break; }
+            sb.Append(input, idx, found - idx);
+            sb.Append(replacement);
+            idx = found + search.Length;
+        }
+        return sb.ToString();
+    }
+
+    // ── The VB6 function library, verbatim (FFormulaEditor.frm LoadFunctions:740-893).
+    // Display/insert text = the code column; tooltip = the description column. Groups load
+    // collapsed like VB6's Outline(0).
+    private static List<FunctionGroup> BuildFunctionGroups()
+    {
+        FunctionLeaf L(string code, string tip = "") => new()
+        {
+            Display = code.Trim(),
+            InsertText = code.Trim(),
+            Tooltip = tip
+        };
+        return new List<FunctionGroup>
+        {
+            new() { Name = "Operators", Items = new()
+            {
+                L("+"), L("-"), L("*"), L("/"),
+                L("^", "Exponent. IE: 3 squared could be expressed as 3^2"),
+                L("%", "Modulus. Returns the remainder of a division operation"),
+            }},
+            new() { Name = "Comparisons", Items = new()
+            {
+                L("="), L(">"), L("<"), L("<="), L(">="), L("<>"),
+            }},
+            new() { Name = "Numeric Functions", Items = new()
+            {
+                L("ABS ( numeric )", "A mathematical function that returns the absolute (positive) value of the specified numeric expression."),
+                L("ARCCOS ( numeric )", "A mathematical function that returns the angle, in radians, whose cosine is the specified numeric expression; also called arccosine."),
+                L("ARCSIN ( numeric )", "Returns the angle, in radians, whose sine is the specified numeric expression. This is also called arcsine."),
+                L("ARCTAN ( numeric )", "Returns the angle in radians whose tangent is a specified numeric expression. This is also called arctangent."),
+                L("AVG ( numeric , numeric [, numeric] )", "Returns the average of the 2 or 3 specified values."),
+                L("CEILING ( numeric )", "Returns the smallest integer greater than, or equal to, the specified numeric expression."),
+                L("COS ( numeric )", "Is a mathematical function that returns the trigonometric cosine of the specified angle, in radians, in the specified expression."),
+                L("COT ( numeric )", "A mathematical function that returns the trigonometric cotangent of the specified angle, in radians, in the specified numeric expression."),
+                L("DEGREES ( numeric )", "Returns the corresponding angle in degrees for an angle specified in radians."),
+                L("EXP ( numeric )", "Returns the exponential value of the specified expression."),
+                L("FLOOR ( numeric )", "Returns the largest integer less than or equal to the specified numeric expression."),
+                L("LOG ( numeric )", "Returns the natural logarithm of the specified numeric expression."),
+                L("LOG10 ( numeric )", "Returns the base-10 logarithm of the specified numeric expression."),
+                L("MAX ( numeric , numeric [, numeric] )", "Returns the maximum of the 2 or 3 specified values."),
+                L("MIN ( numeric , numeric [, numeric] )", "Returns the minimum of the 2 or 3 specified values."),
+                L("MOD ( value , divisor )", "Returns the integer remainder of value divided by divisor."),
+                L("PI ( )", "Returns the constant value of PI."),
+                L("POWER ( numeric , y )", "Returns the value of the specified expression to the specified power."),
+                L("RADIANS ( numeric )", "Returns radians when a numeric expression, in degrees, is entered."),
+                L("ROUND ( numeric , length )", "Returns a numeric value, rounded to the specified length or precision."),
+                L("ROUNDTO ( value , method , multiplier )", "Returns a numeric value, rounded to the specified length or precision using a specific method. Method = 1, 0, -1 = round up, round closest, round down."),
+                L("SIN ( numeric )", "Returns the trigonometric sine of the specified angle, in radians, and in an approximate numeric, numeric, expression."),
+                L("SQRT ( numeric )", "Returns the square root of the specified numeric value."),
+                L("SQUARE ( numeric )", "Returns the square of the specified numeric value."),
+                L("TAN ( numeric )", "Returns the tangent of the input expression."),
+                L("TRUNC( value , decimals )", "Returns value with the specified number of decimal places. If decimals is negative, value is truncated to the left of the decimal point.  TRUNC(1538.3518, 3) = 1538.3510 · TRUNC(1538.3518, 0) = 1538.0000 · TRUNC(1538.3518, -1) = 1530.0000"),
+            }},
+            new() { Name = "Text Functions", Items = new()
+            {
+                L("CHAR ( integer )", "Converts an int ASCII code to a character."),
+                L("CHARINDEX ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
+                L("INSTR ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
+                L("LEFT ( text , integer )", "Returns the left part of a character string with the specified number of characters"),
+                L("LEN ( text )", "Returns the number of characters in text, excluding trailing blanks."),
+                L("LOWER ( text )", "Returns a character expression after converting uppercase character data to lowercase."),
+                L("LTRIM ( text )", "Returns a character expression after it removes leading blanks."),
+                L("PATINDEX ( '%pattern%' , expression )", "Returns the starting position of the first occurrence of a pattern in a specified expression, or zeros if the pattern is not found, on all valid text and character data types."),
+                L("REPLACE ( text , pattern , replacement )", "Replaces all occurrences of a specified string value with another string value."),
+                L("REPLICATE ( text , integer )", "Repeats a string value a specified number of times."),
+                L("RIGHT ( text , integer )", "Returns the right part of a character string with the specified number of characters."),
+                L("RTRIM ( text )", "Returns a character string after truncating all trailing blanks."),
+                L("SPACE ( text )", "Returns a string of repeated spaces."),
+                L("STR ( numeric [ , length [ , decimals ] ] )", "Returns character data converted from numeric data."),
+                L("SUBSTRING ( text ,start , length )", "Returns part of a text string"),
+                L("UPPER ( text )", "Returns a character expression with lowercase character data converted to uppercase."),
+            }},
+            new() { Name = "Other Functions", Items = new()
+            {
+                L("PI"),
+                L("e"),
+                L("Rnd", "Returns a random number valued between 0 and 1"),
+                L("IF( expression, truevalue, falsevalue)"),
+                L("AssemblyOrderQty ( community, assembly, model, optionid, phase, item )", "Returns the total order quantity of a phase/item in an assembly."),
+                L("AssemblyTakeoffQty ( community, assembly, model, optionid, phase, item )", "Returns the total takeoff quantity of a phase/item in an assembly."),
+                L("TotalOrderQty ( poindex, costcode, phase, item )", "Returns the total order quantity of a group of items in a takeoff. All 4 parameters are filters which can be used to limit the results to a specific set of items."),
+                L("TotalTakeoffQty ( poindex, costcode, phase, item )", "Returns the total takeoff quantity of a group of items in a takeoff. All 4 parameters are filters which can be used to limit the results to a specific set of items."),
+                L("TotalCost ( poindex, costcode, phase, item )", "Returns the total cost of a group of items in a takeoff. All 4 parameters are filters which can be used to limit the results to a specific set of items."),
+            }},
+        };
+    }
+
+    private void OnVariableEditorCancel()
+    {
+        IsVariableEditorVisible = false;
+        StateHasChanged();
     }
 
     private async Task OnVariableEditorOk()
     {
-        if (string.IsNullOrWhiteSpace(EditVariableName))
+        string values;
+        if (EditingVarType == 1)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Variable name is required.");
-            return;
+            values = (EditingVarListOfValues ?? "")
+                .Replace("\r\n", "\n")
+                .Replace("\n", "|");
+
+            var stripped = values.Replace("|", "").Replace(" ", "").Trim();
+            if (string.IsNullOrEmpty(stripped))
+            {
+                Notifications.Error("You must specify at least one value.");
+                return;
+            }
         }
+        else
+        {
+            values = "";
+        }
+
+        double minV = ParseDoubleOrZero(EditingVarMin);
+        double maxV = ParseDoubleOrZero(EditingVarMax);
+        double defV = ParseDoubleOrZero(EditingVarDefault);
 
         try
         {
-            if (string.IsNullOrEmpty(EditVariableOriginalName))
+            EditingVarName = (EditingVarName ?? "").Trim();
+            if (string.IsNullOrEmpty(EditingVarName))
             {
-                // New variable
-                await db.ExecuteAsync("INSERT INTO variables(name, help) VALUES(@Name, @Help)",
-                    new { Name = EditVariableName, Help = EditVariableHelp });
+                Notifications.Info("Variable name is required.");
+                return;
             }
-            else
+
+            if (_editingVarIsNew)
             {
-                // Update existing
-                await db.ExecuteAsync("UPDATE variables SET name=@Name, help=@Help WHERE name=@OldName",
-                    new { Name = EditVariableName, Help = EditVariableHelp, OldName = EditVariableOriginalName });
+                var exists = await db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM variables WHERE Name=@Name", new { Name = EditingVarName });
+                if (exists > 0)
+                {
+                    Notifications.Error($"A variable named '{EditingVarName}' already exists.");
+                    return;
+                }
+                await db.ExecuteAsync("INSERT INTO variables(Name) VALUES(@Name)", new { Name = EditingVarName });
             }
-            await LoadVariablesAsync();
+
+            await db.ExecuteAsync(
+                @"UPDATE variables SET
+                    VariableType=@VariableType,
+                    MinimumValue=@MinimumValue,
+                    MaximumValue=@MaximumValue,
+                    DefaultValue=@DefaultValue,
+                    ListOfValues=@ListOfValues,
+                    UOM=@UOM,
+                    Help=@Help,
+                    conditionname=@ConditionName,
+                    conditiontype=@ConditionType,
+                    conditionuom=@ConditionUOM
+                  WHERE Name=@Name",
+                new
+                {
+                    Name = EditingVarName,
+                    VariableType = EditingVarType,
+                    MinimumValue = minV,
+                    MaximumValue = maxV,
+                    DefaultValue = defV,
+                    ListOfValues = values,
+                    UOM = EditingVarUOM ?? "",
+                    Help = EditingVarHelp ?? "",
+                    ConditionName = EditingVarConditionName ?? "",
+                    ConditionType = EditingVarConditionType ?? "",
+                    ConditionUOM = EditingVarConditionUOM ?? ""
+                });
+
+            IsVariableEditorVisible = false;
+            await LoadListsAsync();
+            StateHasChanged();
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving variable: {ex.Message}");
-        }
-
-        IsVariableEditorVisible = false;
-    }
-
-    private async Task OnContextDelete()
-    {
-        CloseContextMenu();
-        if (ActiveContextTarget == ContextTarget.Variables && SelectedVariable != null)
-        {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
-                $"Are you sure you want to delete {SelectedVariable.Name}?");
-            if (confirm)
-            {
-                await db.ExecuteAsync("DELETE FROM variables WHERE name=@Name",
-                    new { Name = SelectedVariable.Name });
-                SelectedVariable = null;
-                await LoadVariablesAsync();
-            }
-        }
-        else if (ActiveContextTarget == ContextTarget.Formulas && SelectedFormula != null)
-        {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
-                $"Are you sure you want to delete {SelectedFormula.Name}?");
-            if (confirm)
-            {
-                await db.ExecuteAsync("DELETE FROM formulas WHERE name=@Name",
-                    new { Name = SelectedFormula.Name });
-                SelectedFormula = null;
-                await LoadFormulasAsync();
-            }
+            Logger.LogError(ex, "OnVariableEditorOk: update failed");
+            Notifications.Error($"Could not save variable: {ex.Message}");
         }
     }
 
-    // === Function Group Toggle ===
-    private void ToggleFunctionGroup(FunctionGroup group)
+    private static double ParseDoubleOrZero(string? s)
     {
-        group.Expanded = !group.Expanded;
-    }
-
-    // === Load Variables from DB ===
-    private async Task LoadVariablesAsync()
-    {
-        try
-        {
-            var rows = await db.QueryAsync("SELECT name, help FROM variables ORDER BY name");
-            VariablesList = rows.Select(r => new VariableItem
-            {
-                Name = r["name"]?.ToString() ?? "",
-                Help = r["help"]?.ToString() ?? ""
-            }).ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"LoadVariables error: {ex.Message}");
-            VariablesList = new();
-        }
-    }
-
-    // === Load Formulas from DB ===
-    private async Task LoadFormulasAsync()
-    {
-        try
-        {
-            var rows = await db.QueryAsync("SELECT name, text FROM formulas ORDER BY name");
-            FormulasList = rows.Select(r => new FormulaItem
-            {
-                Name = r["name"]?.ToString() ?? "",
-                Text = r["text"]?.ToString() ?? ""
-            }).ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"LoadFormulas error: {ex.Message}");
-            FormulasList = new();
-        }
-    }
-
-    // === Load Functions (static definitions from VB6) ===
-    private void LoadFunctions()
-    {
-        FunctionGroups = new List<FunctionGroup>
-        {
-            new FunctionGroup
-            {
-                Name = "Operators",
-                Expanded = false,
-                Functions = new List<FunctionEntry>
-                {
-                    new("+", ""),
-                    new("-", ""),
-                    new("*", ""),
-                    new("/", ""),
-                    new("^", "Exponent. IE: 3 squared could be expressed as 3^2"),
-                    new("%", "Modulus. Returns the remainder of a division operation")
-                }
-            },
-            new FunctionGroup
-            {
-                Name = "Comparisons",
-                Expanded = false,
-                Functions = new List<FunctionEntry>
-                {
-                    new("=", ""), new(">", ""), new("<", ""),
-                    new("<=", ""), new(">=", ""), new("<>", "")
-                }
-            },
-            new FunctionGroup
-            {
-                Name = "Numeric Functions",
-                Expanded = false,
-                Functions = new List<FunctionEntry>
-                {
-                    new("ABS ( numeric )", "Returns the absolute (positive) value of the specified numeric expression."),
-                    new("ARCCOS ( numeric )", "Returns the angle, in radians, whose cosine is the specified numeric expression; also called arccosine."),
-                    new("ARCSIN ( numeric )", "Returns the angle, in radians, whose sine is the specified numeric expression. Also called arcsine."),
-                    new("ARCTAN ( numeric )", "Returns the angle in radians whose tangent is a specified numeric expression. Also called arctangent."),
-                    new("AVG ( numeric , numeric [, numeric] )", "Returns the average of the 2 or 3 specified values."),
-                    new("CEILING ( numeric )", "Returns the smallest integer greater than, or equal to, the specified numeric expression."),
-                    new("COS ( numeric )", "Returns the trigonometric cosine of the specified angle, in radians."),
-                    new("COT ( numeric )", "Returns the trigonometric cotangent of the specified angle, in radians."),
-                    new("DEGREES ( numeric )", "Returns the corresponding angle in degrees for an angle specified in radians."),
-                    new("EXP ( numeric )", "Returns the exponential value of the specified expression."),
-                    new("FLOOR ( numeric )", "Returns the largest integer less than or equal to the specified numeric expression."),
-                    new("LOG ( numeric )", "Returns the natural logarithm of the specified numeric expression."),
-                    new("LOG10 ( numeric )", "Returns the base-10 logarithm of the specified numeric expression."),
-                    new("MAX ( numeric , numeric [, numeric] )", "Returns the maximum of the 2 or 3 specified values."),
-                    new("MIN ( numeric , numeric [, numeric] )", "Returns the minimum of the 2 or 3 specified values."),
-                    new("MOD ( value , divisor )", "Returns the integer remainder of value divided by divisor."),
-                    new("PI ( )", "Returns the constant value of PI."),
-                    new("POWER ( numeric , y )", "Returns the value of the specified expression to the specified power."),
-                    new("RADIANS ( numeric )", "Returns radians when a numeric expression, in degrees, is entered."),
-                    new("ROUND ( numeric , length )", "Returns a numeric value, rounded to the specified length or precision."),
-                    new("ROUNDTO ( value , method , multiplier )", "Returns a numeric value, rounded to the specified length or precision using a specific method.\nMethod = 1, 0, -1 = round up, round closest, round down."),
-                    new("SIN ( numeric )", "Returns the trigonometric sine of the specified angle, in radians."),
-                    new("SQRT ( numeric )", "Returns the square root of the specified numeric value."),
-                    new("SQUARE ( numeric )", "Returns the square of the specified numeric value."),
-                    new("TAN ( numeric )", "Returns the tangent of the input expression."),
-                    new("TRUNC( value , decimals )", "Returns value with the specified number of decimal places.\nIf decimals is negative, value is truncated to the left of the decimal point.\n\n   TRUNC(1538.3518, 3) = 1538.3510\n   TRUNC(1538.3518, 1) = 1538.3000\n   TRUNC(1538.3518, 0) = 1538.0000\n   TRUNC(1538.3518, -1) = 1530.0000\n   TRUNC(1538.3518, -3) = 1000.0000")
-                }
-            },
-            new FunctionGroup
-            {
-                Name = "Text Functions",
-                Expanded = false,
-                Functions = new List<FunctionEntry>
-                {
-                    new("CHAR ( integer )", "Converts an int ASCII code to a character."),
-                    new("CHARINDEX ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
-                    new("INSTR ( text1 , text2 )", "Searches text2 for text1 and returns its starting position if found."),
-                    new("LEFT ( text , integer )", "Returns the left part of a character string with the specified number of characters."),
-                    new("LEN ( text )", "Returns the number of characters in text, excluding trailing blanks."),
-                    new("LOWER ( text )", "Returns a character expression after converting uppercase character data to lowercase."),
-                    new("LTRIM ( text )", "Returns a character expression after it removes leading blanks."),
-                    new("PATINDEX ( '%pattern%' , expression )", "Returns the starting position of the first occurrence of a pattern in a specified expression, or zeros if the pattern is not found."),
-                    new("REPLACE ( text , pattern , replacement )", "Replaces all occurrences of a specified string value with another string value."),
-                    new("REPLICATE ( text , integer )", "Repeats a string value a specified number of times."),
-                    new("RIGHT ( text , integer )", "Returns the right part of a character string with the specified number of characters."),
-                    new("RTRIM ( text )", "Returns a character string after truncating all trailing blanks."),
-                    new("SPACE ( text )", "Returns a string of repeated spaces."),
-                    new("STR ( numeric [ , length [ , decimals ] ] )", "Returns character data converted from numeric data."),
-                    new("SUBSTRING ( text , start , length )", "Returns part of a text string."),
-                    new("UPPER ( text )", "Returns a character expression with lowercase character data converted to uppercase.")
-                }
-            },
-            new FunctionGroup
-            {
-                Name = "Other Functions",
-                Expanded = false,
-                Functions = new List<FunctionEntry>
-                {
-                    new("PI", ""),
-                    new("e", ""),
-                    new("Rnd", "Returns a random number valued between 0 and 1"),
-                    new("IF( expression, truevalue, falsevalue)", ""),
-                    new("AssemblyOrderQty ( community, assembly, model, optionid, phase, item )", "Returns the total order quantity of a phase/item in an assembly."),
-                    new("AssemblyTakeoffQty ( community, assembly, model, optionid, phase, item )", "Returns the total takeoff quantity of a phase/item in an assembly."),
-                    new("TotalOrderQty ( poindex, costcode, phase, item )", "Returns the total order quantity of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items."),
-                    new("TotalTakeoffQty ( poindex, costcode, phase, item )", "Returns the total takeoff quantity of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items."),
-                    new("TotalCost ( poindex, costcode, phase, item )", "Returns the total cost of a group of items in a takeoff.\nAll 4 parameters are filters which can be used to limit the results to a specific set of items.")
-                }
-            }
-        };
-    }
-
-    // === Formula Text Change — replace curly quotes ===
-    private void OnFormulaTextChanged(ChangeEventArgs e)
-    {
-        var s = e.Value?.ToString() ?? "";
-        // Replace curly/smart quotes with standard ASCII equivalents
-        s = s.Replace('\u0093', '"')  // left double quote
-             .Replace('\u0094', '"')  // right double quote
-             .Replace('\u0098', '"')  // another smart quote variant
-             .Replace('\u0096', '-'); // en dash
-        FormulaText = s;
-    }
-
-    // === Models ===
-    public class VariableItem
-    {
-        public string Name { get; set; } = "";
-        public string Help { get; set; } = "";
-    }
-
-    public class FormulaItem
-    {
-        public string Name { get; set; } = "";
-        public string Text { get; set; } = "";
-    }
-
-    public class FunctionGroup
-    {
-        public string Name { get; set; } = "";
-        public bool Expanded { get; set; } = false;
-        public List<FunctionEntry> Functions { get; set; } = new();
-    }
-
-    public class FunctionEntry
-    {
-        public string DisplayName { get; set; } = "";
-        public string Description { get; set; } = "";
-
-        public FunctionEntry() { }
-        public FunctionEntry(string displayName, string description)
-        {
-            DisplayName = displayName;
-            Description = description;
-        }
+        if (string.IsNullOrWhiteSpace(s)) return 0;
+        return double.TryParse(s, System.Globalization.NumberStyles.Any,
+                               System.Globalization.CultureInfo.InvariantCulture,
+                               out var v) ? v : 0;
     }
 }
-```

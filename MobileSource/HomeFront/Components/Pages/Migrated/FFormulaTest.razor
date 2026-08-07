@@ -1,138 +1,27 @@
-```razor
-@page "/formula-test"
-@rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
 
+@using HomeFront.Models
 @using HomeFront.Data
 @using System.Data
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject DbWrapperSqlServer db
+@inject ILogger<FFormulaTest> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject IGridLayoutService GridLayoutSvc
 
 <PageTitle>Formula Test - HomeFront</PageTitle>
 
-<style>
-    .formula-test-container {
-        max-width: 600px;
-        margin: 20px auto;
-        font-family: sans-serif;
-    }
-
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: hidden;
-        margin-bottom: 12px;
-    }
-
-    .button-bar {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 8px 0;
-    }
-
-    .btn-nav {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 90px;
-    }
-
-    .btn-nav:hover {
-        background: #e9ecef;
-    }
-
-    .btn-nav.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .btn-nav.primary:hover {
-        background: #0b5ed7;
-    }
-
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        min-width: 500px;
-        max-width: 700px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        padding: 20px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .tooltip-text {
-        font-size: 12px;
-        color: #6c757d;
-        margin-top: 4px;
-        min-height: 18px;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay" @onclick="OnClose">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Formula Test</span>
-                <button @onclick="OnClose">×</button>
-            </div>
-            <div class="dialog-body">
+@* Formula Test dialog — FlexKit DialogControl (was a hand-rolled overlay+panel). Overlay-click
+   and the × icon both route through OnClose, preserving the original close path. *@
+<DialogControl Visible="IsVisible" Header="Formula Test" Width="700px" CssClass="formula-test-dialog" OnClose="OnClose">
+    <ChildContent>
                 <div class="grid-container">
-                    <HfGrid @ref="VariablesGrid"
+                    <GridControl @ref="VariablesGrid"
                             TValue="FormulaVariable"
                             DataSource="@Variables"
                             AllowSelection="true"
@@ -143,55 +32,107 @@
                             EditSettingsRef="@editSettings"
                             SelectionSettingsRef="@selectionSettings"
                             EventsRef="@gridEvents">
-                        <HfGridColumnsBase>
-                            <HfGridColumn Field="@nameof(FormulaVariable.Name)" HeaderText="Variable" Width="200px" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(FormulaVariable.Value)" HeaderText="Value" Width="120px" AllowEditing="true" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right">
-                                <EditTemplate>
-                                    @{
-                                        var data = (FormulaVariable)context;
-                                        if (!string.IsNullOrEmpty(data.ListOfValues))
-                                        {
-                                            <select @bind="data.Value" style="width:100%; padding:4px;">
-                                                @foreach (var opt in data.ListOfValues.Split('|'))
-                                                {
-                                                    var parts = opt.Split('=');
-                                                    var val = parts.Length > 1 ? parts[0].Trim() : opt.Trim();
-                                                    var display = parts.Length > 1 ? parts[1].Trim() : opt.Trim();
-                                                    <option value="@double.Parse(val)">@display</option>
+                        <GridColumnsBase @key="gVariablesGridLayoutVersion">
+                            @if (HasGridLayout)
+                            {
+                                foreach (var entry in GetOrderedGridLayout())
+                                {
+                                    var layout = entry.Layout;
+                                    var fieldName = entry.Field;
+                                    var columnType = entry.ColumnType;
+                                    var textAlign = entry.TextAlign;
+                                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                                    if (fieldName == "Value")
+                                    {
+                                        <GridColumn Field="Value" HeaderText="@headerText" Width="@(width ?? "120px")" AllowEditing="true" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right">
+                                            <EditTemplate>
+                                                @{
+                                                    var data = (FormulaVariable)context;
+                                                    if (!string.IsNullOrEmpty(data.ListOfValues))
+                                                    {
+                                                        <DropDownListControl TValue="double" TItem="ListValueItem"
+                                                                             DataSource="@ParseListOfValues(data.ListOfValues)"
+                                                                             Value="@data.Value"
+                                                                             ValueChanged="@(v => data.Value = v)"
+                                                                             TextFieldName="@nameof(ListValueItem.Display)"
+                                                                             ValueFieldName="@nameof(ListValueItem.Value)"
+                                                                             Width="100%"
+                                                                             CssClass="formula-value-editor" />
+                                                    }
+                                                    else
+                                                    {
+                                                        <NumericTextBoxControl TValue="double" @bind-Value="data.Value"
+                                                                               Step="1" Width="100%"
+                                                                               CssClass="formula-value-editor" />
+                                                    }
                                                 }
-                                            </select>
-                                        }
-                                        else
-                                        {
-                                            <input type="number" step="any" @bind="data.Value"
-                                                   min="@data.MinValue" max="@(data.MaxValue > 0 ? data.MaxValue : double.MaxValue)"
-                                                   style="width:100%; padding:4px; border:1px solid #ced4da; border-radius:4px;" />
-                                        }
+                                            </EditTemplate>
+                                        </GridColumn>
                                     }
-                                </EditTemplate>
-                            </HfGridColumn>
-                            <HfGridColumn Field="@nameof(FormulaVariable.Description)" HeaderText="Description" Width="200px" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(FormulaVariable.SortOrder)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(FormulaVariable.MinValue)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(FormulaVariable.MaxValue)" HeaderText="" Width="1px" Visible="false" />
-                            <HfGridColumn Field="@nameof(FormulaVariable.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
-                        </HfGridColumnsBase>
-                    </HfGrid>
+                                    else
+                                    {
+                                        <GridColumn Field="@fieldName"
+                                                      HeaderText="@headerText"
+                                                      Width="@width"
+                                                      Type="@columnType"
+                                                      TextAlign="@textAlign"
+                                                      AllowEditing="false"
+                                                      ClipMode="ClipMode.Ellipsis" />
+                                    }
+                                }
+                                <GridColumn Field="@nameof(FormulaVariable.SortOrder)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.MinValue)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.MaxValue)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
+                            }
+                            else
+                            {
+                                @* Fallback: hardcoded columns matching VB6 VariablesGrid *@
+                                <GridColumn Field="@nameof(FormulaVariable.Name)" HeaderText="Variable" Width="200px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.Value)" HeaderText="Value" Width="120px" AllowEditing="true" Type="ColumnType.Number" Format="N4" TextAlign="TextAlign.Right">
+                                    <EditTemplate>
+                                        @{
+                                            var data = (FormulaVariable)context;
+                                            if (!string.IsNullOrEmpty(data.ListOfValues))
+                                            {
+                                                <DropDownListControl TValue="double" TItem="ListValueItem"
+                                                                     DataSource="@ParseListOfValues(data.ListOfValues)"
+                                                                     Value="@data.Value"
+                                                                     ValueChanged="@(v => data.Value = v)"
+                                                                     TextFieldName="@nameof(ListValueItem.Display)"
+                                                                     ValueFieldName="@nameof(ListValueItem.Value)"
+                                                                     Width="100%"
+                                                                     CssClass="formula-value-editor" />
+                                            }
+                                            else
+                                            {
+                                                <NumericTextBoxControl TValue="double" @bind-Value="data.Value"
+                                                                       Step="1" Width="100%"
+                                                                       CssClass="formula-value-editor" />
+                                            }
+                                        }
+                                    </EditTemplate>
+                                </GridColumn>
+                                <GridColumn Field="@nameof(FormulaVariable.Description)" HeaderText="Description" Width="200px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.SortOrder)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.MinValue)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.MaxValue)" HeaderText="" Width="1px" Visible="false" />
+                                <GridColumn Field="@nameof(FormulaVariable.ListOfValues)" HeaderText="" Width="1px" Visible="false" />
+                            }
+                        </GridColumnsBase>
+                    </GridControl>
                 </div>
 
                 <div class="tooltip-text">@HoverTooltip</div>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn-nav primary" @onclick="OnTestClick">
-                    &amp;Test
-                </button>
-                <button class="btn-nav" @onclick="OnClose">
-                    &amp;Close
-                </button>
-            </div>
-        </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-nav primary" OnClick="OnTestClick">&amp;Test</ButtonControl>
+        <ButtonControl CssClass="btn-nav" OnClick="OnClose">&amp;Close</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -206,148 +147,256 @@
     private string HoverTooltip = "";
 
     private List<FormulaVariable> Variables = new();
-    private HfGrid<FormulaVariable>? VariablesGrid;
+    private GridControl<FormulaVariable>? VariablesGrid;
 
     // === Grid Settings ===
-    private HfSelectionSettings selectionSettings = new()
+    private SelectionSettings selectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
 
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowEditing = true,
         AllowEditOnDblClick = true,
         ShowConfirmDialog = false
     };
 
-    private HfGridEvents<FormulaVariable> gridEvents = new();
+    private GridControlEvents<FormulaVariable> gridEvents = new();
+
+    // ── Grid layout via the shared GridLayoutPresenter ─────────
+    // The load/resolve/order/width boilerplate lives in GridLayoutPresenter<TRow>;
+    // only the VB6 form/grid name strings stay here (fidelity). The members below
+    // (gVariablesGridLayout / HasGridLayout / …Version) are thin delegations, so the
+    // markup is unchanged. The keyed("(0)")-then-unkeyed two-call fallback that
+    // LoadGridLayoutAsync used is now expressed via the ctor's instanceKey.
+    private readonly GridLayoutPresenter<FormulaVariable> _variablesGrid =
+        new("FFormulaTest", "VariablesGrid", instanceKey: "(0)");
+
+    private Dictionary<string, GridLayoutColumn> gVariablesGridLayout => _variablesGrid.Layout;
+    private bool HasGridLayout => _variablesGrid.Has;
+    private int gVariablesGridLayoutVersion => _variablesGrid.Version;
 
     // === Lifecycle ===
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<FormulaVariable>>(this, OnCellSaved);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<FormulaVariable>>(this, async (CellSaveArgs<FormulaVariable> e) => await OnCellSaved(e));
+        await LoadGridLayoutAsync();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (IsVisible && !string.IsNullOrEmpty(Formula))
         {
-            TestFormula(Formula);
+            await TestFormula(Formula);
         }
     }
 
     // === Public API ===
-    public void TestFormula(string formula)
+    public async Task TestFormula(string formula)
     {
         mRawFormula = formula;
-        mResolvedFormula = ResolveFormula(mRawFormula);
+        mResolvedFormula = await ResolveFormulaAsync(mRawFormula);
         mVariableList = ParseVariables(mResolvedFormula);
         Variables.Clear();
-        LoadVariables(mVariableList);
+        await LoadVariablesAsync(mVariableList);
 
         if (Variables.Count == 0)
         {
             // No variables needed — run formula directly
-            OnTestClick();
-            CloseDialog();
+            await OnTestClick();
+            await CloseDialog();
+        }
+        else
+        {
+            IsVisible = true;
+            if (IsVisibleChanged.HasDelegate)
+                await IsVisibleChanged.InvokeAsync(true);
+            StateHasChanged();
         }
     }
 
     // === Formula Resolution ===
-    private string ResolveFormula(string rawFormula)
+    // Resolves nested {formulaname} references by querying the formulas table.
+    // Mirrors VB6 MFormulas.ResolveFormula
+    private async Task<string> ResolveFormulaAsync(string rawFormula)
     {
-        // Placeholder: In the real app, this would resolve nested formula references
-        // For now, return the formula as-is
-        return rawFormula ?? "";
+        if (string.IsNullOrWhiteSpace(rawFormula))
+            return "";
+
+        var originalFormula = rawFormula;
+        rawFormula = rawFormula.Replace("\r", " ").Replace("\n", " ").Trim();
+
+        int iterations = 0;
+        var callStack = new StringBuilder();
+
+        while (rawFormula.Contains("{"))
+        {
+            iterations++;
+            if (iterations > 30)
+            {
+                Notifications.Info($"Formula cannot be resolved.\n\n{originalFormula}\n\nCall Stack:\n{callStack}");
+                return "";
+            }
+
+            var startIdx = rawFormula.IndexOf('{');
+            var endIdx = rawFormula.IndexOf('}', startIdx);
+            if (endIdx < 0) break;
+
+            var name = rawFormula.Substring(startIdx + 1, endIdx - startIdx - 1);
+            callStack.AppendLine(name);
+
+            var rows = await db.QueryAsync(
+                "SELECT text FROM formulas WHERE name=@Name",
+                new { Name = name });
+            var row = rows.FirstOrDefault();
+            if (row == null)
+            {
+                Notifications.Info($"Unknown formula {name}");
+                return "";
+            }
+
+            var formulaText = row["text"]?.ToString() ?? "";
+            rawFormula = rawFormula.Replace("{" + name + "}", "(" + formulaText + ")");
+        }
+
+        return rawFormula;
     }
 
+    // Extracts [variablename] references from a resolved formula.
+    // Mirrors VB6 MFormulas.ParseVariables
     private string ParseVariables(string resolvedFormula)
     {
-        // Extract variable names from the formula
-        // Variables are typically identifiers that are not numeric literals or operators
-        var variables = new List<string>();
-        var knownFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "ABS", "ROUND", "MIN", "MAX", "IF", "INT", "SQRT", "SIN", "COS", "TAN",
-            "AREA", "LENGTH", "WIDTH", "QTY", "PITCH", "GETITEMTOTAL"
-        };
-
         if (string.IsNullOrWhiteSpace(resolvedFormula))
             return "";
 
-        // Simple tokenizer: find word tokens that aren't numbers or known functions
-        var token = "";
-        foreach (var ch in resolvedFormula + " ")
+        var list = new List<string>();
+        var s = resolvedFormula;
+
+        while (s.Contains("["))
         {
-            if (char.IsLetterOrDigit(ch) || ch == '_')
-            {
-                token += ch;
-            }
-            else
-            {
-                if (!string.IsNullOrEmpty(token))
-                {
-                    if (!double.TryParse(token, out _) &&
-                        !knownFunctions.Contains(token) &&
-                        !variables.Contains(token, StringComparer.OrdinalIgnoreCase))
-                    {
-                        variables.Add(token);
-                    }
-                    token = "";
-                }
-            }
+            var startIdx = s.IndexOf('[');
+            var endIdx = s.IndexOf(']', startIdx);
+            if (endIdx < 0) break;
+
+            var name = s.Substring(startIdx + 1, endIdx - startIdx - 1);
+            if (!list.Contains(name, StringComparer.OrdinalIgnoreCase))
+                list.Add(name);
+
+            // Remove this occurrence and continue scanning
+            var old = s;
+            s = s.Replace("[" + name + "]", "", StringComparison.OrdinalIgnoreCase);
+            if (s == old) break; // safety
         }
 
-        return string.Join("|", variables);
+        return string.Join("\x01", list);
     }
 
-    private void LoadVariables(string variableList)
+    // Loads variable metadata from the variables table.
+    // Mirrors VB6 MFormulas.LoadVariables
+    private async Task LoadVariablesAsync(string variableList)
     {
         if (string.IsNullOrWhiteSpace(variableList))
             return;
 
-        var vars = variableList.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var names = variableList.Split('\x01', StringSplitOptions.RemoveEmptyEntries);
         int sortOrder = 0;
-        foreach (var v in vars)
+
+        foreach (var rawName in names)
         {
-            Variables.Add(new FormulaVariable
+            var name = rawName.Trim();
+            if (string.IsNullOrEmpty(name)) continue;
+            if (Variables.Any(v => v.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var rows = await db.QueryAsync(
+                "SELECT * FROM variables WHERE name=@Name",
+                new { Name = name });
+            var rs = rows.FirstOrDefault();
+
+            var variable = new FormulaVariable { Name = name, SortOrder = sortOrder++ };
+
+            if (rs == null)
             {
-                Name = v.Trim(),
-                Value = 0,
-                Description = "",
-                SortOrder = sortOrder++,
-                MinValue = 0,
-                MaxValue = 0,
-                ListOfValues = ""
-            });
+                // Variable not defined in DB — use wide min/max defaults
+                variable.MinValue = -1E+18;
+                variable.MaxValue = 1E+18;
+            }
+            else
+            {
+                var listOfValues = (rs["listofvalues"]?.ToString() ?? "").Trim();
+                if (string.IsNullOrEmpty(listOfValues))
+                {
+                    variable.Value = double.TryParse(rs["defaultvalue"]?.ToString(), out var dv) ? dv : 0;
+                    variable.UOM = rs["uom"]?.ToString() ?? "";
+                    variable.MinValue = double.TryParse(rs["minimumvalue"]?.ToString(), out var mn) ? mn : 0;
+                    variable.MaxValue = double.TryParse(rs["maximumvalue"]?.ToString(), out var mx) ? mx : 0;
+                }
+                else
+                {
+                    // listofvalues format: "val1=label1|val2=label2|..."
+                    variable.ListOfValues = " |" + listOfValues;
+                    // Default to second item's value (first is blank spacer)
+                    var parts = variable.ListOfValues.Split('|');
+                    if (parts.Length > 1)
+                    {
+                        var valPart = parts[1].Split('=');
+                        variable.Value = double.TryParse(valPart[0].Trim(), out var lv) ? lv : 0;
+                    }
+                }
+                variable.Description = rs["help"]?.ToString() ?? "";
+            }
+
+            Variables.Add(variable);
         }
 
-        // Sort by SortOrder then by Name
         Variables = Variables.OrderBy(x => x.SortOrder).ThenBy(x => x.Name).ToList();
     }
 
     // === Formula Calculation ===
+    // Mirrors VB6 MFormulas.CalcFormula — substitutes [VariableName] with values
     private double CalcFormula(List<FormulaVariable> variables, string resolvedFormula)
     {
-        // Simple formula evaluator
-        // Replace variable names with their values, then evaluate
         var expression = resolvedFormula;
 
-        foreach (var variable in variables.OrderByDescending(v => v.Name.Length))
+        foreach (var variable in variables)
         {
-            expression = expression.Replace(variable.Name, variable.Value.ToString("G"));
+            var placeholder = "[" + variable.Name + "]";
+            if (!string.IsNullOrEmpty(variable.ListOfValues))
+            {
+                // List-of-values variables are substituted as quoted strings
+                expression = Replace(expression, placeholder,
+                    "\"" + variable.Value.ToString("G") + "\"");
+            }
+            else
+            {
+                expression = Replace(expression, placeholder,
+                    variable.Value.ToString("G"));
+            }
         }
+
+        if (string.IsNullOrWhiteSpace(expression))
+            return 0;
 
         try
         {
             return EvaluateExpression(expression);
         }
+        catch (Exception ex) when (ex.Message.Contains("Divide by zero", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception("Divide by zero error encountered.");
+        }
         catch
         {
             throw new Exception($"Could not evaluate expression: {expression}");
         }
+    }
+
+    // Case-insensitive replace helper
+    private static string Replace(string source, string oldValue, string newValue)
+    {
+        return source.Replace(oldValue, newValue, StringComparison.OrdinalIgnoreCase);
     }
 
     private double EvaluateExpression(string expression)
@@ -379,13 +428,12 @@
         try
         {
             var result = CalcFormula(Variables, mResolvedFormula);
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Formula is valid.\nReturn value: {Math.Round(result, 3)}");
+            Notifications.Info($"Formula is valid.\nReturn value: {Math.Round(result, 3)}");
+
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Formula error: {ex.Message}");
+            Notifications.Error($"Formula error: {ex.Message}");
         }
     }
 
@@ -401,29 +449,88 @@
             await IsVisibleChanged.InvokeAsync(false);
     }
 
-    private void OnCellSaved(CellSaveArgs<FormulaVariable> args)
+    // Mirrors VB6 gVariables_ValidateEdit — validates value range and rejects invalid input
+    private async Task OnCellSaved(CellSaveArgs<FormulaVariable> args)
     {
         if (args.Data == null) return;
 
         var variable = args.Data;
 
-        // Validate numeric input when no list of values
-        if (string.IsNullOrEmpty(variable.ListOfValues))
-        {
-            if (variable.MaxValue > 0 && variable.Value > variable.MaxValue)
-            {
-                _ = JSRuntime.InvokeVoidAsync("alert",
-                    $"The maximum value for {variable.Name} is '{variable.MaxValue:0}'. The number you have entered is too large.");
-                variable.Value = variable.MaxValue;
-            }
+        // When using a list-of-values, the dropdown handles validation
+        if (!string.IsNullOrEmpty(variable.ListOfValues))
+            return;
 
-            if (variable.Value < variable.MinValue)
-            {
-                _ = JSRuntime.InvokeVoidAsync("alert",
-                    $"The minimum value for {variable.Name} is '{variable.MinValue:0}'. The number you have entered is too small.");
-                variable.Value = variable.MinValue;
-            }
+        // Check max value (only enforce when MaxValue > 0, matching VB6)
+        if (variable.MaxValue > 0 && variable.Value > variable.MaxValue)
+        {
+            Notifications.Info($"The maximum value for {variable.Name} is '{variable.MaxValue:0}'. The number you have entered is too large.");
+            variable.Value = variable.MaxValue;
         }
+
+        // Check min value
+        if (variable.Value < variable.MinValue)
+        {
+            Notifications.Info($"The minimum value for {variable.Name} is '{variable.MinValue:0}'. The number you have entered is too small.");
+            variable.Value = variable.MinValue;
+        }
+    }
+
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // The keyed/unkeyed fallback + Version bump live in the presenter
+            // (its ctor was given the "FFormulaTest"/"VariablesGrid" names + instanceKey "(0)").
+            await _variablesGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // ── Grid Layout Helpers ──────────────────────────────────
+    // resolve/order/type/width all delegate to the presenter. FormulaVariable has
+    // no bool/DateTime properties, so the presenter's ColumnTypeFor (Boolean/Date/
+    // Number) and the old hand-copied GetColumnTypeForField (CheckBox/Number) yield
+    // identical results for every column on this grid.
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+        => _variablesGrid.GetOrdered();
+
+    private string ResolveGridField(string layoutField)
+        => _variablesGrid.ResolveField(layoutField);
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    // ── List-of-values dropdown support (in-grid EditTemplate) ───────────
+    // Parses a variable's ListOfValues ("val1=label1|val2=label2|...") into a
+    // DataSource for DropDownListControl. The value field is the parsed double
+    // so its ToString() matches the bound data.Value for selection highlighting
+    // (DropDownListControl matches on Value?.ToString()); the option's display
+    // is the label. Mirrors the prior raw <option value="@double.Parse(val)">.
+    private static List<ListValueItem> ParseListOfValues(string listOfValues)
+    {
+        var items = new List<ListValueItem>();
+        if (string.IsNullOrEmpty(listOfValues)) return items;
+        foreach (var opt in listOfValues.Split('|'))
+        {
+            var parts = opt.Split('=');
+            var rawVal = parts.Length > 1 ? parts[0].Trim() : opt.Trim();
+            var display = parts.Length > 1 ? parts[1].Trim() : opt.Trim();
+            var val = double.TryParse(rawVal, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0;
+            items.Add(new ListValueItem { Value = val, Display = display });
+        }
+        return items;
+    }
+
+    public class ListValueItem
+    {
+        public double Value { get; set; }
+        public string Display { get; set; } = "";
     }
 
     // === Model ===
@@ -436,6 +543,6 @@
         public double MinValue { get; set; }
         public double MaxValue { get; set; }
         public string ListOfValues { get; set; } = "";
+        public string UOM { get; set; } = "";
     }
 }
-```

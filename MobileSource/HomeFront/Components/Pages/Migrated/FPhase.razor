@@ -1,173 +1,49 @@
-```razor
-@page "/estimating-phase"
-@rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
 
 @using System
 @using System.Data
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject ILogger<FPhase> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>Estimating Phase</PageTitle>
 
-<style>
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        width: 540px;
-        max-width: 95vw;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        padding: 20px;
-    }
-
-    .dialog-body .instruction {
-        font-size: 13px;
-        color: #495057;
-        margin-bottom: 16px;
-    }
-
-    .dialog-body .form-group {
-        margin-bottom: 14px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .dialog-body .form-group label {
-        min-width: 90px;
-        text-align: right;
-        font-weight: 500;
-        font-size: 13px;
-        color: #495057;
-    }
-
-    .dialog-body .form-group input {
-        flex: 1;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        box-sizing: border-box;
-    }
-
-    .dialog-body .form-group input:focus {
-        border-color: #86b7fe;
-        outline: 0;
-        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .dialog-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel">
-            <div class="dialog-header">
-                <span>Estimating Phase</span>
-                <button @onclick="OnCancelClick">×</button>
-            </div>
-            <div class="dialog-body">
-                <div class="instruction">
-                    Enter a number and description for the new phase.
-                </div>
-                <div class="form-group">
-                    <label>Number</label>
-                    <input type="text"
-                           @bind="PhaseNumber"
-                           @bind:event="oninput"
-                           maxlength="@PhaseMaxLength"
-                           @onfocus="() => SelectAllPhase = true"
-                           placeholder="Phase number" />
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <input type="text"
-                           @bind="PhaseDescription"
-                           @bind:event="oninput"
-                           maxlength="@DescriptionMaxLength"
-                           @onfocus="() => SelectAllDescription = true"
-                           placeholder="Phase description" />
-                </div>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-                <button class="btn" @onclick="OnCancelClick">Cancel</button>
-            </div>
+<DialogControl Visible="IsVisible"
+               Header="Estimating Phase"
+               Width="540px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="instruction">
+            Enter a number and description for the new phase.
         </div>
-    </div>
-}
+        <div class="form-group">
+            <label>Number</label>
+            <TextBoxControl @bind-Value="PhaseNumber"
+                            MaxLength="PhaseMaxLength"
+                            Placeholder="Phase number"
+                            CssClass="phase-input"
+                            @onfocus="() => SelectAllPhase = true" />
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <TextBoxControl @bind-Value="PhaseDescription"
+                            MaxLength="DescriptionMaxLength"
+                            Placeholder="Phase description"
+                            CssClass="phase-input"
+                            @onfocus="() => SelectAllDescription = true" />
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     private const string SRCFILE = "FPhase::";
@@ -180,9 +56,7 @@
     [Parameter] public int DivisionID { get; set; } = 1;
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-
-    // === Form State ===
+// === Form State ===
     private string PhaseNumber { get; set; } = "";
     private string PhaseDescription { get; set; } = "";
     private int PhaseMaxLength { get; set; } = 100;
@@ -222,7 +96,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FPhase.LoadFieldSizes] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
         }
     }
 
@@ -266,7 +141,7 @@
         {
             if (string.IsNullOrWhiteSpace(PhaseNumber) || string.IsNullOrWhiteSpace(PhaseDescription))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Number and description are both required.");
+                Notifications.Success("Number and description are both required.");
                 return false;
             }
 
@@ -292,38 +167,59 @@
                 ex.Message.IndexOf("unique", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 ex.Message.IndexOf("violation of primary key", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                await JSRuntime.InvokeVoidAsync("alert",
-                    $"Phase \"{PhaseNumber.Trim()}\" has already been entered. Please specify a different value.");
+                Notifications.Info($"Phase \"{PhaseNumber.Trim()}\" has already been entered. Please specify a different value.");
+
             }
             else
             {
-                Console.WriteLine($"[{SRCFILE}SaveData] Error: {ex.Message}");
-                await JSRuntime.InvokeVoidAsync("alert", $"Error saving phase: {ex.Message}");
+                Logger.LogError(ex, "[{SRCFILE}SaveData]");
+
+                Notifications.Error($"Error saving phase: {ex.Message}");
             }
             return false;
         }
     }
 
-    // === FixGroupPhaseValue (placeholder — mirrors VB6 call) ===
+    // === FixGroupPhaseValue — full VB6 MMain.bas implementation ===
     private async Task FixGroupPhaseValue()
     {
         try
         {
-            // If the newly inserted phase is a group phase, update GroupPhaseValue for phases
-            // that don't yet have one assigned. This mirrors the VB6 FixGroupPhaseValue routine.
-            // Adjust the SQL below to match your actual business logic.
-            var sql = @"
-                UPDATE tblEstPhases
-                SET GroupPhaseValue = Phase
-                WHERE DivisionID = @DivisionID
-                  AND GroupPhaseValue IS NULL";
+            // Step 1: Assign GroupPhaseValue for non-group phases based on nearest preceding group phase
+            var sql1 = @"
+                UPDATE pp
+                SET GroupPhaseValue = gg.phase
+                FROM
+                (
+                  SELECT p.divisionid, MAX(g.sortorder) groupsort, p.phase
+                  FROM tblestphases p
+                  JOIN estgroups g ON g.divisionid = p.divisionid AND g.sortorder < p.sortorder
+                  WHERE p.groupphase = 0
+                  GROUP BY p.divisionid, p.sortorder, p.phase
+                ) x
+                JOIN tblestphases pp ON pp.divisionid = x.divisionid AND pp.phase = x.phase
+                JOIN estgroups gg ON gg.divisionid = x.divisionid AND gg.sortorder = x.groupsort
+                WHERE x.DivisionID = @DivisionID";
+            await db.ExecuteAsync(sql1, new { DivisionID });
 
-            await db.ExecuteAsync(sql, new { DivisionID = DivisionID });
+            // Step 2: Group phases point to themselves
+            var sql2 = @"
+                UPDATE tblestphases
+                SET GroupPhaseValue = Phase
+                WHERE DivisionID = @DivisionID AND GroupPhase = 1";
+            await db.ExecuteAsync(sql2, new { DivisionID });
+
+            // Step 3: Any remaining nulls get the first group phase
+            var sql3 = @"
+                UPDATE tblestphases
+                SET groupphasevalue = (SELECT MIN(phase) FROM tblestphases WHERE divisionid = @DivisionID AND groupphase = 1)
+                WHERE DivisionID = @DivisionID AND groupphasevalue IS NULL";
+            await db.ExecuteAsync(sql3, new { DivisionID });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}FixGroupPhaseValue] Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}FixGroupPhaseValue]");
+
         }
     }
 }
-```

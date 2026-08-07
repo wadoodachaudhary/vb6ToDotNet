@@ -1,4 +1,3 @@
-```razor
 @namespace HomeFront.Components.Pages
 
 @using System
@@ -6,122 +5,78 @@
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject ILogger<FDuplicateItems> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
-<style>
-    .dialog-overlay {
-        position: fixed; inset: 0; z-index: 1000;
-        background: rgba(0,0,0,0.3); display: flex;
-        align-items: center; justify-content: center;
-    }
-    .dialog-panel {
-        background: #fff; border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-        min-width: 400px; max-width: 580px;
-        display: flex; flex-direction: column; overflow: hidden;
-    }
-    .dialog-header {
-        display: flex; align-items: center; gap: 12px;
-        padding: 14px 20px; font-weight: 600; font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-    .dialog-header img { width: 32px; height: 32px; }
-    .dialog-body { padding: 20px; }
-    .dialog-footer {
-        display: flex; justify-content: center; gap: 8px;
-        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
-    }
-    .dialog-footer .btn {
-        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 14px; min-width: 100px;
-    }
-    .dialog-footer .btn:hover { background: #e9ecef; }
-    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
-    .form-field { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    .form-field label { min-width: 130px; text-align: right; font-size: 13px; }
-    .form-field input, .form-field select {
-        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-    }
-    .form-field input:focus, .form-field select:focus {
-        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
-    }
-    .form-field input:disabled { background-color: #e9ecef; }
-    .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; margin-left: 138px; font-size: 13px; }
-    .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; }
-    .sub-field { margin-left: 138px; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .sub-field label { min-width: 110px; text-align: right; font-size: 13px; color: #495057; }
-    .sub-field input {
-        width: 80px; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-    }
-    .sub-field input:disabled { background-color: #e9ecef; }
-    .sub-field label.disabled-label { color: #adb5bd; }
-    .info-text { font-size: 13px; margin-bottom: 12px; margin-left: 50px; }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel">
-            <div class="dialog-header">
-                <img src="images/32/duplicate.ico" alt="Duplicate" onerror="this.style.display='none'" />
-                <span>Duplicate Items</span>
-            </div>
-            <div class="dialog-body">
-                <div class="info-text">Make a copy of these items.</div>
-
-                <div class="form-field">
-                    <label>Phase</label>
-                    <select @bind="SelectedPhase">
-                        @foreach (var phase in PhaseItems)
-                        {
-                            <option value="@phase.Value">@phase.Text</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="checkbox-row">
-                    <input type="checkbox" id="chkRenumber" @bind="Renumber" />
-                    <label for="chkRenumber">Re-number the new items.</label>
-                </div>
-
-                <div class="sub-field">
-                    <label class="@(Renumber ? "" : "disabled-label")">Starting number</label>
-                    <input type="text" @bind="StartNumber" disabled="@(!Renumber)"
-                           style="@(Renumber ? "" : "background-color: #e9ecef;")"
-                           @onfocus="() => SelectAllText(nameof(StartNumber))" />
-                </div>
-
-                <div class="sub-field">
-                    <label class="@(Renumber ? "" : "disabled-label")">Increment By</label>
-                    <input type="text" @bind="IncrementBy" disabled="@(!Renumber)"
-                           style="@(Renumber ? "" : "background-color: #e9ecef;")"
-                           @onfocus="() => SelectAllText(nameof(IncrementBy))" />
-                </div>
-
-                <div class="checkbox-row">
-                    <input type="checkbox" id="chkChangePO" @bind="ChangePO" />
-                    <label for="chkChangePO">Change the PO index</label>
-                </div>
-
-                <div class="form-field">
-                    <label></label>
-                    <select @bind="SelectedPOIndex" disabled="@(!ChangePO)">
-                        @foreach (var po in POIndexItems)
-                        {
-                            <option value="@po.Value">@po.Text</option>
-                        }
-                    </select>
-                </div>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-                <button class="btn" @onclick="OnCancelClick">Cancel</button>
-            </div>
+<DialogControl Visible="@IsVisible"
+               Header="Duplicate Items"
+               Width="560px"
+               IsModal="false"
+               ShowCloseIcon="false">
+    <ChildContent>
+        <div class="dialog-icon-row">
+            <img src="images/32/duplicate.ico" alt="Duplicate" onerror="this.style.display='none'" />
+            <div class="info-text">Make a copy of these items.</div>
         </div>
-    </div>
-}
+
+        <div class="form-field">
+            <label>Phase</label>
+            <DropDownListControl TValue="string" TItem="ComboItem"
+                                 DataSource="@PhaseItems"
+                                 TextFieldName="Text"
+                                 ValueFieldName="Value"
+                                 @bind-Value="SelectedPhase"
+                                 Width="100%" />
+        </div>
+
+        <div class="checkbox-row">
+            <CheckBoxControl @bind-Checked="Renumber" Label="Re-number the new items." />
+        </div>
+
+        <div class="sub-field">
+            <label class="@(Renumber ? "" : "disabled-label")">Starting number</label>
+            <TextBoxControl @bind-Value="StartNumber"
+                            Enabled="@Renumber"
+                            CssClass="@(Renumber ? "sub-input" : "sub-input sub-input-disabled")"
+                            @onfocus="() => SelectAllText(nameof(StartNumber))" />
+        </div>
+
+        <div class="sub-field">
+            <label class="@(Renumber ? "" : "disabled-label")">Increment By</label>
+            <TextBoxControl @bind-Value="IncrementBy"
+                            Enabled="@Renumber"
+                            CssClass="@(Renumber ? "sub-input" : "sub-input sub-input-disabled")"
+                            @onfocus="() => SelectAllText(nameof(IncrementBy))" />
+        </div>
+
+        <div class="checkbox-row">
+            <CheckBoxControl @bind-Checked="ChangePO" Label="Change the PO index" />
+        </div>
+
+        <div class="form-field">
+            <label></label>
+            <DropDownListControl TValue="string" TItem="ComboItem"
+                                 DataSource="@POIndexItems"
+                                 TextFieldName="Text"
+                                 ValueFieldName="Value"
+                                 @bind-Value="SelectedPOIndex"
+                                 Enabled="@ChangePO"
+                                 Width="100%" />
+        </div>
+    </ChildContent>
+
+    <FooterContent>
+        <div class="dialog-footer">
+            <ButtonControl BareStyle="true" CssClass="btn btn-primary" OnClick="OnOkClick">OK</ButtonControl>
+            <ButtonControl BareStyle="true" CssClass="btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+        </div>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -131,9 +86,7 @@
     [Parameter] public int DivisionID { get; set; } = 1;
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-
-    // === Form State ===
+// === Form State ===
     private bool mCancel = true;
     private string mWhereClause = "";
 
@@ -182,13 +135,13 @@
         try
         {
             // Load PO Index
-            var poSql = @"SELECT 
-                CASE WHEN poindex = description THEN poindex 
-                     ELSE poindex + ISNULL(' ' + NULLIF(description,''),'') 
-                END AS DisplayText, 
+            var poSql = @"SELECT
+                CASE WHEN poindex = description THEN poindex
+                     ELSE poindex + ISNULL(' ' + NULLIF(description,''),'')
+                END AS DisplayText,
                 poindex AS Value
-                FROM tblpoindex 
-                WHERE DivisionID = @DivisionID 
+                FROM tblpoindex
+                WHERE DivisionID = @DivisionID
                 ORDER BY 1";
             var poRows = await db.QueryAsync(poSql, new { DivisionID });
             POIndexItems = poRows.Select(r => new ComboItem
@@ -198,11 +151,11 @@
             }).ToList();
 
             // Load Phases
-            var phaseSql = @"SELECT 
-                ISNULL(phase,'') + ' - ' + ISNULL(description,'') AS DisplayText, 
+            var phaseSql = @"SELECT
+                ISNULL(phase,'') + ' - ' + ISNULL(description,'') AS DisplayText,
                 phase AS Value
-                FROM tblestphases 
-                WHERE DivisionID = @DivisionID AND groupphase = 0 
+                FROM tblestphases
+                WHERE DivisionID = @DivisionID AND groupphase = 0
                 ORDER BY 1";
             var phaseRows = await db.QueryAsync(phaseSql, new { DivisionID });
             PhaseItems = phaseRows.Select(r => new ComboItem
@@ -219,7 +172,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"FDuplicateItems.LoadComboBoxes error: {ex.Message}");
+            Logger.LogError(ex, "FDuplicateItems.LoadComboBoxes error");
+
         }
     }
 
@@ -246,21 +200,22 @@
     // === Save Data ===
     private async Task<bool> SaveData()
     {
+        double start = 0;
+        double incr = 0;
+        int i = 0;
+        string itemFormat = "";
         try
         {
             var phase = SelectedPhase;
             var poIndex = SelectedPOIndex;
-
-            double start = 0;
-            double incr = 0;
             if (!double.TryParse(StartNumber, out start))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Starting number must be numeric.");
+                Notifications.Info("Starting number must be numeric.");
                 return false;
             }
             if (!double.TryParse(IncrementBy, out incr))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Increment must be numeric.");
+                Notifications.Warning("Increment must be numeric.");
                 return false;
             }
 
@@ -273,7 +228,7 @@
             var incrIntPart = IncrementBy.Contains('.') ? IncrementBy.Split('.')[0].Trim() : IncrementBy.Trim();
             var digits = Math.Max(startIntPart.Length, incrIntPart.Length);
 
-            var itemFormat = new string('0', digits) + (decimals < 1 ? "" : ".") + new string('0', decimals);
+            itemFormat = new string('0', digits) + (decimals < 1 ? "" : ".") + new string('0', decimals);
 
             // Build where clause for select
             var whereCondition = !string.IsNullOrEmpty(mWhereClause)
@@ -283,7 +238,7 @@
             var selectSql = $"SELECT * FROM tblPhaseItem WHERE {whereCondition} ORDER BY item";
             var rs = db.SqlExec(selectSql);
 
-            int i = 0;
+            i = 0;
             foreach (DataRow row in rs.Rows)
             {
                 string item;
@@ -306,9 +261,9 @@
                 var effectivePOIndex = ChangePO ? poIndex : (row["POIndex"]?.ToString() ?? "");
 
                 var insertSql = @"INSERT INTO tblPhaseItem(
-                    DivisionID, Phase, Item, ItemNumber, CostCategory, POIndex, PriceLink, 
-                    Description, Notes, JCCostCode, JCCategory, OrderUOM, TakeoffUOM, 
-                    ConversionFactor, Price, TaxGroup, WastePercent, RoundDir, RoundTo, 
+                    DivisionID, Phase, Item, ItemNumber, CostCategory, POIndex, PriceLink,
+                    Description, Notes, JCCostCode, JCCategory, OrderUOM, TakeoffUOM,
+                    ConversionFactor, Price, TaxGroup, WastePercent, RoundDir, RoundTo,
                     PhaseSortOrder, ItemSortOrder)
                     VALUES(
                     @DivisionID, @Phase, @Item, @ItemNumber, @CostCategory, @POIndex, @PriceLink,
@@ -350,13 +305,16 @@
         {
             if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
             {
-                await JSRuntime.InvokeVoidAsync("alert",
-                    "Precision Builder already has an item with that number. Please specify a different value.");
+                // Match VB6: show the phase/item that caused the conflict
+                var conflictPhase = SelectedPhase;
+                var conflictItem = Renumber ? (start + i * incr).ToString(itemFormat) : "";
+                Notifications.Info($"Precision Builder already has an item numbered {conflictPhase}/{conflictItem}. Please specify a different value.");
             }
             else
             {
-                Console.WriteLine($"FDuplicateItems.SaveData error: {ex.Message}");
-                await JSRuntime.InvokeVoidAsync("alert", $"Error duplicating items: {ex.Message}");
+                Logger.LogError(ex, "FDuplicateItems.SaveData error");
+
+                Notifications.Error($"Error duplicating items: {ex.Message}");
             }
             return false;
         }
@@ -365,8 +323,12 @@
     // === Validation Helpers ===
     private async Task SelectAllText(string fieldName)
     {
-        // In Blazor, selecting text on focus requires JS interop
-        // This is a placeholder - actual implementation would use JSRuntime
+        // Select all text in the focused input (equivalent to VB6 SelectAll)
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "if(document.activeElement) document.activeElement.select()");
+        }
+        catch { /* non-critical */ }
     }
 
     private decimal ToDecimalSafe(object? val)
@@ -376,4 +338,3 @@
         return decimal.TryParse(s, out var result) ? result : 0;
     }
 }
-```

@@ -1,165 +1,46 @@
-```razor
 @namespace HomeFront.Components.Pages
 
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+
 @inject IJSRuntime JSRuntime
+@inject ILogger<FPricingWorksheetLayouts> Logger
+@inject NotificationService Notifications
 
-<style>
-    .dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .dialog-panel {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        width: 544px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 14px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-
-    .dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .dialog-header button:hover {
-        color: #212529;
-    }
-
-    .dialog-body {
-        padding: 20px;
-        overflow-y: auto;
-        flex: 1;
-        display: flex;
-        gap: 16px;
-    }
-
-    .dialog-body .left-panel {
-        flex: 0 0 220px;
-    }
-
-    .dialog-body .right-panel {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .dialog-body textarea {
-        width: 100%;
-        padding: 8px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        box-sizing: border-box;
-        resize: vertical;
-        font-family: inherit;
-    }
-
-    .dialog-body textarea:focus {
-        border-color: #86b7fe;
-        outline: 0;
-        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-
-    .dialog-body .info-label {
-        font-size: 12px;
-        color: #6c757d;
-        line-height: 1.5;
-    }
-
-    .dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .dialog-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay" @onclick="OnCancelClick">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Worksheet Layouts</span>
-                <button @onclick="OnCancelClick">×</button>
+<DialogControl Visible="IsVisible"
+               VisibleChanged="OnVisibleChanged"
+               Header="Worksheet Layouts"
+               Width="544px"
+               IsModal="true"
+               ShowCloseIcon="true">
+    <ChildContent>
+        <div class="dialog-body">
+            <div class="left-panel" @onfocusin="OnTextAreaFocus">
+                <TextAreaControl @bind-Value="LayoutsText"
+                                 Rows="12"
+                                 Placeholder="Enter layout names..."
+                                 CssClass="layouts-textarea" />
             </div>
-            <div class="dialog-body">
-                <div class="left-panel">
-                    <textarea @bind="LayoutsText"
-                              @bind:event="oninput"
-                              rows="12"
-                              @onfocus="OnTextAreaFocus"
-                              placeholder="Enter layout names..."></textarea>
-                </div>
-                <div class="right-panel">
-                    <p class="info-label">
-                        These layout names will appear in the Layout dropdown on the Pricing Worksheet.
-                        Each layout saves and restores the column visibility, order, and widths of the worksheet grid.
-                    </p>
-                    <p class="info-label">
-                        When you select a layout from the dropdown, the worksheet grid will be reconfigured
-                        to match the saved column settings for that layout.
-                    </p>
-                    <p class="info-label">
-                        Enter one layout name per line.
-                    </p>
-                </div>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOkClick">OK</button>
-                <button class="btn" @onclick="OnCancelClick">Cancel</button>
+            <div class="right-panel">
+                <p class="info-label">
+                    These layout names will appear in the Layout dropdown on the Pricing Worksheet.
+                    Each layout saves and restores the column visibility, order, and widths of the worksheet grid.
+                </p>
+                <p class="info-label">
+                    When you select a layout from the dropdown, the worksheet grid will be reconfigured
+                    to match the saved column settings for that layout.
+                </p>
+                <p class="info-label">
+                    Enter one layout name per line.
+                </p>
             </div>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     /// <summary>
@@ -183,38 +64,31 @@
     [Parameter] public EventCallback<bool> OnClose { get; set; }
 
     private string LayoutsText = "";
-    private bool mCancel = false;
 
     protected override void OnParametersSet()
     {
         if (IsVisible)
         {
             LayoutsText = Layouts ?? "";
-            mCancel = false;
         }
     }
 
     /// <summary>
-    /// Programmatic way to show the dialog and get the result.
-    /// Sets Layouts and returns true if OK, false if Cancel.
+    /// Programmatic way to open the dialog (mirrors VB6 ShowForm).
+    /// In Blazor, the result comes through the OnClose callback
+    /// and the updated Layouts value via LayoutsChanged binding,
+    /// since Blazor does not support blocking modal dialogs.
     /// </summary>
-    public async Task<(bool Ok, string Layouts)> ShowFormAsync(string layouts)
+    public async Task ShowFormAsync(string layouts)
     {
         LayoutsText = layouts;
-        mCancel = false;
         IsVisible = true;
         await IsVisibleChanged.InvokeAsync(true);
         StateHasChanged();
-
-        // Note: In Blazor, modal behavior is handled via visibility binding.
-        // The caller should await OnClose to get the result.
-        // This method sets up the dialog; the result comes through OnClose.
-        return (!mCancel, LayoutsText);
     }
 
     private async Task OnOkClick()
     {
-        mCancel = false;
         Layouts = LayoutsText;
         await LayoutsChanged.InvokeAsync(Layouts);
         IsVisible = false;
@@ -224,10 +98,24 @@
 
     private async Task OnCancelClick()
     {
-        mCancel = true;
         IsVisible = false;
         await IsVisibleChanged.InvokeAsync(false);
         await OnClose.InvokeAsync(false);
+    }
+
+    // DialogControl's overlay-click / × close icon both route here; treat as Cancel
+    // (matches the original hand-rolled dialog where both invoked OnCancelClick).
+    private async Task OnVisibleChanged(bool visible)
+    {
+        if (!visible)
+        {
+            await OnCancelClick();
+        }
+        else
+        {
+            IsVisible = true;
+            await IsVisibleChanged.InvokeAsync(true);
+        }
     }
 
     private async Task OnTextAreaFocus()
@@ -235,10 +123,9 @@
         // Select all text in the textarea on focus (equivalent to VB6 SelectAll)
         await JSRuntime.InvokeVoidAsync("eval", @"
             setTimeout(() => {
-                const ta = document.querySelector('.dialog-body textarea');
+                const ta = document.querySelector('.layouts-textarea');
                 if (ta) { ta.select(); }
             }, 50);
         ");
     }
 }
-```

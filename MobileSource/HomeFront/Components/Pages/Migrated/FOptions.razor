@@ -1,70 +1,35 @@
+@namespace HomeFront.Components.Pages
 @page "/system-settings"
 @rendermode InteractiveServer
+@* HHM-621: System Settings requires an authenticated session like every
+   other admin surface — a hand-typed URL must not bypass the login. *@
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 
 @using HomeFront.Data
 @using System.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FOptions> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@using HomeFront.Models
+@using HomeFront.Components.Pages
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+@inject IGridLayoutService GridLayoutSvc
 
 <PageTitle>System Settings - HomeFront</PageTitle>
 
-<style>
-    .settings-container { display: flex; height: calc(100vh - 80px); font-family: 'MS Sans Serif', Arial, sans-serif; font-size: 13px; }
-    .toc-panel { width: 200px; min-width: 180px; border-right: 2px solid #ccc; overflow-y: auto; background: #f8f9fa; }
-    .toc-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #e0e0e0; user-select: none; }
-    .toc-item:hover { background: #e8f0fe; }
-    .toc-item.selected { background: #cce5ff; font-weight: 700; }
-    .content-panel { flex: 1; overflow-y: auto; padding: 16px; background: #fff; }
-    .section-title { font-weight: 700; color: #800080; font-size: 13px; margin-bottom: 4px; }
-    .section-divider { border-top: 1px solid #808080; border-bottom: 1px solid #fff; margin: 4px 40px 12px 0; }
-    .field-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
-    .field-label { min-width: 160px; text-align: right; font-size: 12px; color: #333; }
-    .field-label-sm { min-width: 120px; text-align: right; font-size: 12px; color: #333; }
-    .field-input { padding: 3px 6px; border: 1px solid #ced4da; border-radius: 3px; font-size: 12px; }
-    .field-input-wide { width: 280px; }
-    .field-input-med { width: 180px; }
-    .field-input-sm { width: 100px; }
-    .field-input-xs { width: 60px; }
-    .field-select { padding: 3px 6px; border: 1px solid #ced4da; border-radius: 3px; font-size: 12px; background: #fff; }
-    .field-checkbox { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; }
-    .field-checkbox input[type="checkbox"] { width: 14px; height: 14px; }
-    .field-radio { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; }
-    .field-radio input[type="radio"] { width: 14px; height: 14px; }
-    .frame-box { border: 1px solid #999; border-radius: 4px; padding: 12px; margin-bottom: 12px; background: #fafafa; }
-    .frame-title { font-weight: 600; font-size: 12px; margin-bottom: 8px; color: #333; }
-    .frame-icon { width: 32px; height: 32px; margin-right: 8px; }
-    .link-label { color: #800080; text-decoration: underline; cursor: pointer; font-size: 12px; }
-    .link-label:hover { color: #4B0082; }
-    .btn-nav { padding: 6px 24px; border: 1px solid #999; border-radius: 4px; background: #f0f0f0; cursor: pointer; font-size: 13px; }
-    .btn-nav:hover { background: #e0e0e0; }
-    .btn-action { padding: 4px 16px; border: 1px solid #999; border-radius: 3px; background: #f0f0f0; cursor: pointer; font-size: 12px; }
-    .btn-action:hover { background: #e0e0e0; }
-    .footer-bar { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 2px solid #800080; background: #f8f9fa; }
-    .grid-simple { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .grid-simple th { background: #e0e0e0; border: 1px solid #ccc; padding: 4px 8px; text-align: left; font-weight: 600; }
-    .grid-simple td { border: 1px solid #ccc; padding: 4px 8px; }
-    .grid-simple input { width: 100%; border: none; background: transparent; font-size: 12px; padding: 2px; }
-    .textarea-field { width: 100%; min-height: 80px; border: 1px solid #ced4da; border-radius: 3px; font-size: 12px; padding: 4px; resize: vertical; }
-    .subsection { margin-left: 20px; margin-bottom: 8px; }
-    .po-sample { background: #f0f0f0; border: 1px solid #ccc; padding: 4px 12px; text-align: center; font-size: 12px; margin-top: 4px; }
-    .accounting-frame { display: flex; gap: 12px; align-items: flex-start; }
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .tab-frame { display: none; }
-    .tab-frame.active { display: block; }
-</style>
-
+<div class="settings-root">
 <div class="settings-container">
     <!-- Table of Contents -->
-    <div class="toc-panel">
-        @foreach (var tab in TabItems.OrderBy(t => t.Caption))
-        {
-            var tocClass = SelectedTab == tab.Index ? "toc-item selected" : "toc-item";
-            <div class="@tocClass" @onclick="() => SelectTab(tab.Index)">
-                @tab.Caption
-            </div>
-        }
-    </div>
+    <SideNavigationControl Title="System Settings" SubHeader="Select a page"
+                           Items="@NavItems" SelectedKey="@SelectedTab"
+                           SelectedKeyChanged="OnNavSelect"
+                           Position="SideNavPosition.Left" Width="250px" />
 
     <!-- Content Panel -->
     <div class="content-panel">
@@ -79,26 +44,12 @@
 
             <div class="field-row">
                 <span class="field-label">System</span>
-                <select class="field-select field-input-wide" @bind="AccountingSystemIndex" @bind:after="OnAccountingSystemChanged">
-                    <option value="0">No accounting integration</option>
-                    <option value="1">Sage 300 Construction and Real Estate</option>
-                    <option value="2">Sage 100 Contractor</option>
-                    <option value="3">Sage 50 Accounting</option>
-                    <option value="9">Sage Intacct</option>
-                    <option value="5">QuickBooks</option>
-                    <option value="10">Quickbooks Online</option>
-                    <option value="7">Xero</option>
-                </select>
+                <DropDownListControl TValue="int" TItem="SelOpt" DataSource="@AccountingSystemOptions" ValueFieldName="Value" TextFieldName="Text" @bind-Value="AccountingSystemIndex" @bind-Value:after="OnAccountingSystemChanged" Width="280px" />
             </div>
 
             <div class="field-row">
                 <span class="field-label">Book of Account</span>
-                <select class="field-select field-input-med" @bind="BookOfAccount">
-                    @foreach (var boa in BookOfAccountList)
-                    {
-                        <option value="@boa">@boa</option>
-                    }
-                </select>
+                <DropDownListControl TValue="string" TItem="string" DataSource="@BookOfAccountList" @bind-Value="BookOfAccount" Width="180px" />
                 <span class="link-label" @onclick="OnEditBookOfAccounts">Wallet Configuration</span>
             </div>
 
@@ -109,10 +60,10 @@
                     <div class="frame-title">Sage 300 Construction and Real Estate</div>
                     <div class="accounting-frame">
                         <div>
-                            <div class="field-row"><span class="field-label-sm">Data Folder</span><input class="field-input field-input-wide" @bind="TLFolder" /></div>
-                            <div class="field-row"><span class="field-label-sm">AR Data Folder</span><input class="field-input field-input-wide" @bind="TLARFolder" /></div>
-                            <div class="field-row"><span class="field-label-sm">Security Context</span><input class="field-input field-input-med" @bind="TLUser" /></div>
-                            <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="TLPswd" /></div>
+                            <div class="field-row"><span class="field-label-sm">Data Folder</span><TextBoxControl @bind-Value="TLFolder" CssClass="field-input field-input-wide" /></div>
+                            <div class="field-row"><span class="field-label-sm">AR Data Folder</span><TextBoxControl @bind-Value="TLARFolder" CssClass="field-input field-input-wide" /></div>
+                            <div class="field-row"><span class="field-label-sm">Security Context</span><TextBoxControl @bind-Value="TLUser" CssClass="field-input field-input-med" /></div>
+                            <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="TLPswd" InputType="password" CssClass="field-input field-input-med" /></div>
                         </div>
                     </div>
                 </div>
@@ -125,32 +76,23 @@
                     <div class="frame-title">Sage 100 Contractor</div>
                     <div class="field-row">
                         <span class="field-label-sm">API Level</span>
-                        <select class="field-select field-input-xs" @bind="MBAPILevel" @bind:after="OnMBAPILevelChanged">
-                            <option value="v18">v18</option>
-                            <option value="v19">v19</option>
-                            <option value="v20">v20</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@MBAPILevelOptions" @bind-Value="MBAPILevel" @bind-Value:after="OnMBAPILevelChanged" Width="60px" />
                     </div>
                     @if (MBAPILevel == "v20")
                     {
-                        <div class="field-row"><span class="field-label-sm">Instance</span><input class="field-input field-input-wide" @bind="MBInstance" /></div>
+                        <div class="field-row"><span class="field-label-sm">Instance</span><TextBoxControl @bind-Value="MBInstance" CssClass="field-input field-input-wide" /></div>
                     }
                     else
                     {
                         <div class="field-row">
                             <span class="field-label-sm">Drive</span>
-                            <select class="field-select field-input-sm" @bind="MBDrive">
-                                @foreach (var d in DriveList)
-                                {
-                                    <option value="@d">@d</option>
-                                }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@DriveList" @bind-Value="MBDrive" Width="100px" />
                         </div>
                     }
-                    <div class="field-row"><span class="field-label-sm">Company</span><input class="field-input field-input-wide" @bind="MBCompany" /></div>
-                    <div class="field-row"><span class="field-label-sm">Security Context</span><input class="field-input field-input-med" @bind="MBUser" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="MBPswd" /></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="MBUseSubAcct" /><label>Use Job as Sub Account</label></div>
+                    <div class="field-row"><span class="field-label-sm">Company</span><TextBoxControl @bind-Value="MBCompany" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Security Context</span><TextBoxControl @bind-Value="MBUser" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="MBPswd" InputType="password" CssClass="field-input field-input-med" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="MBUseSubAcct" Label="Use Job as Sub Account" /></div>
                 </div>
             }
 
@@ -159,17 +101,12 @@
             {
                 <div class="frame-box">
                     <div class="frame-title">Sage 50 Accounting</div>
-                    <div class="field-row"><span class="field-label-sm">Company File</span><input class="field-input field-input-wide" @bind="SimplyFile" /></div>
-                    <div class="field-row"><span class="field-label-sm">Security Context</span><input class="field-input field-input-med" @bind="SimplyUser" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="SimplyPswd" /></div>
+                    <div class="field-row"><span class="field-label-sm">Company File</span><TextBoxControl @bind-Value="SimplyFile" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Security Context</span><TextBoxControl @bind-Value="SimplyUser" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="SimplyPswd" InputType="password" CssClass="field-input field-input-med" /></div>
                     <div class="field-row">
                         <span class="field-label-sm">Internal Customer</span>
-                        <select class="field-select field-input-med" @bind="SimplyInternalCustomer">
-                            @foreach (var c in SimplyInternalCustomerList)
-                            {
-                                <option value="@c.Value">@c.Text</option>
-                            }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="SelectItem" DataSource="@SimplyInternalCustomerList" ValueFieldName="Value" TextFieldName="Text" @bind-Value="SimplyInternalCustomer" Width="180px" />
                     </div>
                 </div>
             }
@@ -179,20 +116,17 @@
             {
                 <div class="frame-box">
                     <div class="frame-title">QuickBooks</div>
-                    <div class="field-row"><span class="field-label-sm">Company File</span><input class="field-input field-input-wide" @bind="QuickBooksFile" /></div>
+                    <div class="field-row"><span class="field-label-sm">Company File</span><TextBoxControl @bind-Value="QuickBooksFile" CssClass="field-input field-input-wide" /></div>
                     <div class="field-row">
                         <span class="field-label-sm">Edition</span>
-                        <select class="field-select field-input-xs" @bind="QuickBooksVersion">
-                            <option value="US">US</option>
-                            <option value="CA">CA</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@QBEditionOptions" @bind-Value="QuickBooksVersion" Width="60px" />
                     </div>
                     <div class="field-row"><span class="field-label-sm">Job Creation</span></div>
                     <div class="subsection">
-                        <div class="field-radio"><input type="radio" name="qbJobStyle" checked='@(QBJobStyle == "Simple")' @onchange='() => QBJobStyle = "Simple"' /><label>Simple - create the customer record only</label></div>
-                        <div class="field-radio"><input type="radio" name="qbJobStyle" checked='@(QBJobStyle == "Heirarchical")' @onchange='() => QBJobStyle = "Heirarchical"' /><label>Hierarchical - create customer records and sub jobs</label></div>
+                        <div class="field-radio"><RadioControl TValue="string" Name="qbJobStyle" Value="@("Simple")" @bind-SelectedValue="QBJobStyle" Label="Simple - create the customer record only" /></div>
+                        <div class="field-radio"><RadioControl TValue="string" Name="qbJobStyle" Value="@("Heirarchical")" @bind-SelectedValue="QBJobStyle" Label="Hierarchical - create customer records and sub jobs" /></div>
                     </div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="QBPostRevenueToJob" /><label>Post revenue to job</label></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="QBPostRevenueToJob" Label="Post revenue to job" /></div>
                 </div>
             }
 
@@ -203,91 +137,73 @@
                     <div class="frame-title">Quickbooks Online</div>
                     <div class="field-row">
                         <span class="field-label-sm">Edition</span>
-                        <select class="field-select field-input-xs" @bind="QBOVersion">
-                            <option value="US">US</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@QBOEditionOptions" @bind-Value="QBOVersion" Width="60px" />
                     </div>
                     <div class="field-row"><span class="field-label-sm">Job Creation</span></div>
                     <div class="subsection">
-                        <div class="field-radio"><input type="radio" name="qboJobStyle" checked='@(QBOJobStyle == "Simple")' @onchange='() => QBOJobStyle = "Simple"' /><label>Simple - create the customer record only</label></div>
-                        <div class="field-radio"><input type="radio" name="qboJobStyle" checked='@(QBOJobStyle == "Heirarchical")' @onchange='() => QBOJobStyle = "Heirarchical"' /><label>Hierarchical - create customer records and sub jobs</label></div>
+                        <div class="field-radio"><RadioControl TValue="string" Name="qboJobStyle" Value="@("Simple")" @bind-SelectedValue="QBOJobStyle" Label="Simple - create the customer record only" /></div>
+                        <div class="field-radio"><RadioControl TValue="string" Name="qboJobStyle" Value="@("Heirarchical")" @bind-SelectedValue="QBOJobStyle" Label="Hierarchical - create customer records and sub jobs" /></div>
                     </div>
                 </div>
             }
 
             @* Sage Intacct *@
+            @if (AccountingSystemIndex == 11)
+            {
+                <div class="frame-box">
+                    <div class="frame-title">D365 -- ABN</div>
+                    <div class="field-row"><span class="field-label-sm">Resource</span><TextBoxControl @bind-Value="ABNResource" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Tenant ID</span><TextBoxControl @bind-Value="ABNTenantID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Client ID</span><TextBoxControl @bind-Value="ABNClientID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Client Secret</span><TextBoxControl @bind-Value="ABNClientSecret" InputType="password" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Legal Entity</span><TextBoxControl @bind-Value="ABNLegalEntity" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">D01 Division</span><TextBoxControl @bind-Value="ABND01Division" CssClass="field-input field-input-med" /></div>
+                </div>
+            }
+
             @if (AccountingSystemIndex == 9)
             {
                 <div class="frame-box">
                     <div class="frame-title">Sage Intacct</div>
-                    <div class="field-row"><span class="field-label-sm">Company ID</span><input class="field-input field-input-wide" @bind="IntacctCompanyID" /></div>
-                    <div class="field-row"><span class="field-label-sm">User ID</span><input class="field-input field-input-med" @bind="IntacctUID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="IntacctPWD" /></div>
+                    <div class="field-row"><span class="field-label-sm">Company ID</span><TextBoxControl @bind-Value="IntacctCompanyID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">User ID</span><TextBoxControl @bind-Value="IntacctUID" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="IntacctPWD" InputType="password" CssClass="field-input field-input-med" /></div>
                     <div class="field-row">
                         <span class="field-label-sm">Entity</span>
-                        <select class="field-select field-input-med" @bind="IntacctEntity">
-                            @foreach (var e in IntacctEntityList)
-                            {
-                                <option value="@e">@e</option>
-                            }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctEntityList" @bind-Value="IntacctEntity" Width="180px" />
                     </div>
                     <div class="field-row"><span class="field-label-sm">One Time ItemID</span>
-                        <select class="field-select field-input-med" @bind="IntacctOneTimeItemID">
-                            @foreach (var i in IntacctItemList) { <option value="@i">@i</option> }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctItemList" @bind-Value="IntacctOneTimeItemID" Width="180px" />
                     </div>
                     <div class="field-row"><span class="field-label-sm">GST ItemID</span>
-                        <select class="field-select field-input-med" @bind="IntacctGstItemID">
-                            @foreach (var i in IntacctItemList) { <option value="@i">@i</option> }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctItemList" @bind-Value="IntacctGstItemID" Width="180px" />
                     </div>
-                    <div class="field-row"><span class="field-label-sm">Budget GL</span><input class="field-input field-input-med" @bind="IntacctBudgetGL" /></div>
+                    <div class="field-row"><span class="field-label-sm">Budget GL</span><TextBoxControl @bind-Value="IntacctBudgetGL" CssClass="field-input field-input-med" /></div>
                     <div class="field-row"><span class="field-label-sm">PO Reference Fld</span>
-                        <select class="field-select field-input-med" @bind="IntacctPOReferenceFld">
-                            <option value="Job Number">Job Number</option>
-                            <option value="PO Number">PO Number</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctPORefOptions" @bind-Value="IntacctPOReferenceFld" Width="180px" />
                     </div>
                     <div class="field-row"><span class="field-label-sm">Inv Reference Fld</span>
-                        <select class="field-select field-input-med" @bind="IntacctInvReferenceFld">
-                            <option value="Job Number">Job Number</option>
-                            <option value="Job Description">Job Description</option>
-                            <option value="Invoice Description">Invoice Description</option>
-                            <option value="PO Number">PO Number</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctInvRefOptions" @bind-Value="IntacctInvReferenceFld" Width="180px" />
                     </div>
                     <div style="margin-top:8px;">
                         <span style="color:#800080; font-size:12px;">Transaction Types</span>
                         <div class="field-row"><span class="field-label-sm">PO</span>
-                            <select class="field-select field-input-med" @bind="IntacctPOType">
-                                @foreach (var t in IntacctTranTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctTranTypeList" @bind-Value="IntacctPOType" Width="180px" />
                         </div>
                         <div class="field-row"><span class="field-label-sm">PO CO</span>
-                            <select class="field-select field-input-med" @bind="IntacctPOCOType">
-                                @foreach (var t in IntacctTranTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctTranTypeList" @bind-Value="IntacctPOCOType" Width="180px" />
                         </div>
                         <div class="field-row"><span class="field-label-sm">Contract</span>
-                            <select class="field-select field-input-med" @bind="IntacctSubContractType">
-                                @foreach (var t in IntacctTranTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctTranTypeList" @bind-Value="IntacctSubContractType" Width="180px" />
                         </div>
                         <div class="field-row"><span class="field-label-sm">Contract CO</span>
-                            <select class="field-select field-input-med" @bind="IntacctSubContractCOType">
-                                @foreach (var t in IntacctTranTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctTranTypeList" @bind-Value="IntacctSubContractCOType" Width="180px" />
                         </div>
                         <div class="field-row"><span class="field-label-sm">Invoice</span>
-                            <select class="field-select field-input-med" @bind="IntacctInvoiceType">
-                                @foreach (var t in IntacctTranTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctTranTypeList" @bind-Value="IntacctInvoiceType" Width="180px" />
                         </div>
                         <div class="field-row"><span class="field-label-sm">Estimate</span>
-                            <select class="field-select field-input-med" @bind="IntacctEstimateType">
-                                @foreach (var t in IntacctEstimateTypeList) { <option value="@t">@t</option> }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@IntacctEstimateTypeList" @bind-Value="IntacctEstimateType" Width="180px" />
                         </div>
                     </div>
                 </div>
@@ -298,39 +214,39 @@
                 <div>
                     <div class="section-title">PO Numbering</div>
                     <div class="section-divider"></div>
-                    <div class="field-radio"><input type="radio" name="poStyle" checked='@(PONumberingStyle == "Job")' @onchange='() => { PONumberingStyle = "Job"; UpdatePOSample(); }' /><label>Use job specific numbering.</label></div>
+                    <div class="field-radio"><RadioControl TValue="string" Name="poStyle" Value="@("Job")" @bind-SelectedValue="PONumberingStyle" @bind-SelectedValue:after="UpdatePOSample" Label="Use job specific numbering." /></div>
                     @if (PONumberingStyle == "Job")
                     {
                         <div class="field-row" style="margin-left:20px;">
                             <span class="field-label-sm">Format</span>
-                            <input class="field-input field-input-xs" @bind="POSegment1" readonly />
-                            <input class="field-input" style="width:30px;" @bind="POSegment2" @bind:after="UpdatePOSample" />
-                            <input class="field-input field-input-xs" @bind="POSegment3" @bind:after="UpdatePOSample" />
+                            <TextBoxControl @bind-Value="POSegment1" CssClass="field-input field-input-xs" readonly="readonly" />
+                            <TextBoxControl @bind-Value="POSegment2" @bind-Value:after="UpdatePOSample" CssClass="field-input" style="width:30px;" />
+                            <TextBoxControl @bind-Value="POSegment3" @bind-Value:after="UpdatePOSample" CssClass="field-input field-input-xs" />
                         </div>
                     }
-                    <div class="field-radio"><input type="radio" name="poStyle" checked='@(PONumberingStyle == "JobPOIndex")' @onchange='() => { PONumberingStyle = "JobPOIndex"; UpdatePOSample(); }' /><label>Use job and PO specific numbering.</label></div>
+                    <div class="field-radio"><RadioControl TValue="string" Name="poStyle" Value="@("JobPOIndex")" @bind-SelectedValue="PONumberingStyle" @bind-SelectedValue:after="UpdatePOSample" Label="Use job and PO specific numbering." /></div>
                     @if (PONumberingStyle == "JobPOIndex")
                     {
                         <div class="field-row" style="margin-left:20px;">
                             <span class="field-label-sm">Format</span>
-                            <input class="field-input field-input-xs" @bind="POSegment4" readonly />
-                            <input class="field-input" style="width:30px;" @bind="POSegment5" @bind:after="UpdatePOSample" />
-                            <input class="field-input field-input-xs" @bind="POSegment6" @bind:after="UpdatePOSample" />
-                            <input class="field-input" style="width:30px;" @bind="POSegment7" @bind:after="UpdatePOSample" />
-                            <input class="field-input field-input-xs" @bind="POSegment8" @bind:after="UpdatePOSample" />
+                            <TextBoxControl @bind-Value="POSegment4" CssClass="field-input field-input-xs" readonly="readonly" />
+                            <TextBoxControl @bind-Value="POSegment5" @bind-Value:after="UpdatePOSample" CssClass="field-input" style="width:30px;" />
+                            <TextBoxControl @bind-Value="POSegment6" @bind-Value:after="UpdatePOSample" CssClass="field-input field-input-xs" />
+                            <TextBoxControl @bind-Value="POSegment7" @bind-Value:after="UpdatePOSample" CssClass="field-input" style="width:30px;" />
+                            <TextBoxControl @bind-Value="POSegment8" @bind-Value:after="UpdatePOSample" CssClass="field-input field-input-xs" />
                         </div>
                     }
-                    <div class="field-radio"><input type="radio" name="poStyle" checked='@(PONumberingStyle == "Sequential")' @onchange='() => { PONumberingStyle = "Sequential"; UpdatePOSample(); }' /><label>Use sequential numbering</label></div>
+                    <div class="field-radio"><RadioControl TValue="string" Name="poStyle" Value="@("Sequential")" @bind-SelectedValue="PONumberingStyle" @bind-SelectedValue:after="UpdatePOSample" Label="Use sequential numbering" /></div>
                     @if (PONumberingStyle == "Sequential")
                     {
                         <div class="field-row" style="margin-left:20px;">
                             <span class="field-label-sm">Next Num</span>
-                            <input class="field-input field-input-sm" @bind="NextPO" readonly />
-                            <button class="btn-action" @onclick="OnChangeNextPO">Change</button>
+                            <TextBoxControl @bind-Value="NextPO" CssClass="field-input field-input-sm" readonly="readonly" />
+                            <ButtonControl CssClass="btn-action" OnClick="OnChangeNextPO">Change</ButtonControl>
                         </div>
                         <div class="field-row" style="margin-left:20px;">
                             <span class="field-label-sm">Prefix</span>
-                            <input class="field-input field-input-xs" @bind="POPrefix" maxlength="4" @bind:after="UpdatePOSample" />
+                            <TextBoxControl @bind-Value="POPrefix" CssClass="field-input field-input-xs" MaxLength="4" @bind-Value:after="UpdatePOSample" />
                         </div>
                     }
                     <div class="field-row" style="margin-left:20px;">
@@ -347,17 +263,11 @@
                         var idx = i;
                         <div class="field-row">
                             <span class="field-label-sm">@TaxGroupLabels[idx]</span>
-                            <select class="field-select field-input-sm" @bind="TaxGroups[idx]">
-                                <option value=""></option>
-                                @foreach (var tg in TaxGroupList)
-                                {
-                                    <option value="@tg">@tg</option>
-                                }
-                            </select>
+                            <DropDownListControl TValue="string" TItem="string" DataSource="@TaxGroupOptions" @bind-Value="TaxGroups[idx]" Width="100px" />
                         </div>
                     }
-                    <div class="field-checkbox"><input type="checkbox" @bind="UseTaxGroups" /><label>required</label></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="UseVarianceReporting" /><label>required</label></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseTaxGroups" Label="required" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseVarianceReporting" Label="required" /></div>
                     <div style="margin-top:8px;">
                         <span class="link-label" @onclick="OnEditCostCodes">Cost codes...</span><br />
                         <span class="link-label" @onclick="OnEditCategories">Categories...</span><br />
@@ -365,12 +275,7 @@
                     </div>
                     <div class="field-row" style="margin-top:8px;">
                         <span class="field-label-sm">Default category</span>
-                        <select class="field-select field-input-med" @bind="DefaultVarianceCategory">
-                            @foreach (var vc in VarianceCategoryList)
-                            {
-                                <option value="@vc.Value">@vc.Text</option>
-                            }
-                        </select>
+                        <DropDownListControl TValue="string" TItem="SelectItem" DataSource="@VarianceCategoryList" ValueFieldName="Value" TextFieldName="Text" @bind-Value="DefaultVarianceCategory" Width="180px" />
                     </div>
                 </div>
             </div>
@@ -383,54 +288,58 @@
         {
             <div class="section-title">Corporate Info</div>
             <div class="section-divider"></div>
-            <div class="field-row"><span class="field-label">Company Name</span><input class="field-input field-input-wide" @bind="CompanyName" maxlength="50" /></div>
-            <div class="field-row"><span class="field-label">Address</span><input class="field-input field-input-wide" @bind="CompanyAddr1" maxlength="50" /></div>
-            <div class="field-row"><span class="field-label"></span><input class="field-input field-input-wide" @bind="CompanyAddr2" maxlength="50" /></div>
+            <div class="field-row"><span class="field-label">Company Name</span><TextBoxControl @bind-Value="CompanyName" CssClass="field-input field-input-wide" MaxLength="50" /></div>
+            <div class="field-row"><span class="field-label">Address</span><TextBoxControl @bind-Value="CompanyAddr1" CssClass="field-input field-input-wide" MaxLength="50" /></div>
+            <div class="field-row"><span class="field-label"></span><TextBoxControl @bind-Value="CompanyAddr2" CssClass="field-input field-input-wide" MaxLength="50" /></div>
             <div class="field-row">
                 <span class="field-label">City/Prov</span>
-                <input class="field-input field-input-med" @bind="CompanyCity" maxlength="30" />
-                <select class="field-select field-input-xs" @bind="CompanyProvince">
-                    @foreach (var p in ProvinceList) { <option value="@p">@p</option> }
-                </select>
+                <TextBoxControl @bind-Value="CompanyCity" CssClass="field-input field-input-med" MaxLength="30" />
+                <DropDownListControl TValue="string" TItem="string" DataSource="@ProvinceList" @bind-Value="CompanyProvince" Width="60px" />
             </div>
-            <div class="field-row"><span class="field-label">Postal Code</span><input class="field-input field-input-med" @bind="CompanyPostalCode" maxlength="10" /></div>
+            <div class="field-row"><span class="field-label">Postal Code</span><TextBoxControl @bind-Value="CompanyPostalCode" CssClass="field-input field-input-med" MaxLength="10" /></div>
             <div class="field-row">
                 <span class="field-label">Country</span>
-                <select class="field-select field-input-sm" @bind="CompanyCountry" @bind:after="OnCountryChanged">
-                    @foreach (var c in CountryList) { <option value="@c">@c</option> }
-                </select>
+                <DropDownListControl TValue="string" TItem="string" DataSource="@CountryList" @bind-Value="CompanyCountry" @bind-Value:after="OnCountryChanged" Width="100px" />
             </div>
-            <div class="field-row"><span class="field-label">Contact</span><input class="field-input field-input-wide" @bind="ContactPerson" maxlength="50" /></div>
-            <div class="field-row"><span class="field-label">Phone</span><input class="field-input field-input-med" @bind="CompanyPhone" maxlength="30" /></div>
-            <div class="field-row"><span class="field-label">Fax</span><input class="field-input field-input-med" @bind="CompanyFax" maxlength="30" /></div>
-            <div class="field-row"><span class="field-label">Email Address</span><input class="field-input field-input-wide" @bind="CompanyEmail" maxlength="150" /></div>
+            <div class="field-row"><span class="field-label">Contact</span><TextBoxControl @bind-Value="ContactPerson" CssClass="field-input field-input-wide" MaxLength="50" /></div>
+            <div class="field-row"><span class="field-label">Phone</span><TextBoxControl @bind-Value="CompanyPhone" CssClass="field-input field-input-med" MaxLength="30" /></div>
+            <div class="field-row"><span class="field-label">Fax</span><TextBoxControl @bind-Value="CompanyFax" CssClass="field-input field-input-med" MaxLength="30" /></div>
+            <div class="field-row"><span class="field-label">Email Address</span><TextBoxControl @bind-Value="CompanyEmail" CssClass="field-input field-input-wide" MaxLength="150" /></div>
             <div class="field-row">
                 <span class="field-label">Builder Type</span>
-                <select class="field-select field-input-med" @bind="BuilderType">
-                    <option value="Commercial">Commercial</option>
-                    <option value="Homebuilder">Homebuilder</option>
-                </select>
+                <DropDownListControl TValue="string" TItem="string" DataSource="@BuilderTypeOptions" @bind-Value="BuilderType" Width="180px" />
             </div>
-            <div class="field-checkbox"><input type="checkbox" @bind="EnforcePasswordComplexity" /><label>Enforce password complexity</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="EnforcePasswordComplexity" Label="Enforce password complexity" /></div>
 
             <div class="section-title" style="margin-top:16px;">Divisions</div>
             <div class="section-divider"></div>
-            <table class="grid-simple">
-                <thead><tr><th>Code</th><th>Company</th><th></th></tr></thead>
-                <tbody>
-                    @foreach (var div in Divisions)
-                    {
-                        <tr>
-                            <td><input @bind="div.Code" maxlength="15" /></td>
-                            <td><input @bind="div.Company" /></td>
-                            <td><button class="btn-action" @onclick="() => OnEditDivisionCompany(div)">...</button></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <GridControl TValue="DivisionRow" DataSource="@Divisions"
+                         AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                         AllowSelection="false" AllowResizing="true" Height="180px" RowHeight="26">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(DivisionRow.Code)" HeaderText="Code" Width="120px">
+                        <Template>
+                            @{ var div = (DivisionRow)context; }
+                            <TextBoxControl @bind-Value="div.Code" MaxLength="15" style="width:100%;border:none;background:transparent;" />
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(DivisionRow.Company)" HeaderText="Company" Width="220px">
+                        <Template>
+                            @{ var div = (DivisionRow)context; }
+                            <TextBoxControl @bind-Value="div.Company" style="width:100%;border:none;background:transparent;" />
+                        </Template>
+                    </GridColumn>
+                    <GridColumn HeaderText="" Width="48px" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{ var div = (DivisionRow)context; }
+                            <ButtonControl CssClass="btn-action" OnClick="() => OnEditDivisionCompany(div)">...</ButtonControl>
+                        </Template>
+                    </GridColumn>
+                </GridColumnsBase>
+            </GridControl>
 
             <div style="margin-top:12px;">
-                <button class="btn-action" @onclick="OnSetupUserPermissions">Setup User Permissions</button>
+                <ButtonControl CssClass="btn-action" OnClick="OnSetupUserPermissions">Setup User Permissions</ButtonControl>
             </div>
         }
 
@@ -441,41 +350,50 @@
         {
             <div class="section-title">Budgeting &amp; Purchasing</div>
             <div class="section-divider"></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="PurchasingRequiresSalesApproval" /><label>Jobs require Sales approval before purchasing can begin.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="AllowForecast" @bind:after="OnAllowForecastChanged" /><label>Let me use a forecasted cost basis to refresh PO costs.</label></div>
-            <div class="field-checkbox" style="margin-left:20px;"><input type="checkbox" @bind="WarnForecast" disabled="@(!AllowForecast)" /><label>Warn me when I use a forecasted cost basis to refresh PO costs.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="CanAddContractItemsFromPurchasing" /><label>Let me add and remove contract items (model and option assemblies) on jobs.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="LetPurchaserChangeSaleQty" /><label>Let purchasers change the sale quantity.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="UseComponents" /><label>Use components in assembly definitions.</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="PurchasingRequiresSalesApproval" Label="Jobs require Sales approval before purchasing can begin." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="AllowForecast" @bind-Checked:after="OnAllowForecastChanged" Label="Let me use a forecasted cost basis to refresh PO costs." /></div>
+            <div class="field-checkbox" style="margin-left:20px;"><CheckBoxControl @bind-Checked="WarnForecast" Disabled="@(!AllowForecast)" Label="Warn me when I use a forecasted cost basis to refresh PO costs." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="CanAddContractItemsFromPurchasing" Label="Let me add and remove contract items (model and option assemblies) on jobs." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="LetPurchaserChangeSaleQty" Label="Let purchasers change the sale quantity." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseComponents" Label="Use components in assembly definitions." /></div>
 
             <div class="section-title" style="margin-top:12px;">Posting Options</div>
             <div class="section-divider"></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="PostPOQtyToAccounting" /><label>Post PO order quantity to accounting.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="PostSummarizedBudgets" /><label>Post budgets summarized by job, cost code and category.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="PostAssembliesAsSalesInvoices" /><label>Post Precision Builder job assemblies as AR estimates.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="PostJCExtraAsSubJob" /><label>Post JC Extra as sub job</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="PostPOQtyToAccounting" Label="Post PO order quantity to accounting." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="PostSummarizedBudgets" Label="Post budgets summarized by job, cost code and category." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="PostAssembliesAsSalesInvoices" Label="Post Precision Builder job assemblies as AR estimates." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="PostJCExtraAsSubJob" Label="Post JC Extra as sub job" /></div>
 
             <div class="section-title" style="margin-top:12px;">Vendor Rate Retrieval</div>
             <div class="section-divider"></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="ZeroRateOnRefreshCosts" /><label>When costs are refreshed set the item rate to zero if no value can be found.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="ZeroRateOnChangeVendor" /><label>When the vendor changes set the item rate to zero if no value can be found.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="UsePricingFromEstimating" /><label>When looking up prices don't use the item db. Use vendor pricelists only.</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="ZeroRateOnRefreshCosts" Label="When costs are refreshed set the item rate to zero if no value can be found." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="ZeroRateOnChangeVendor" Label="When the vendor changes set the item rate to zero if no value can be found." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="UsePricingFromEstimating" Label="When looking up prices don't use the item db. Use vendor pricelists only." /></div>
 
             <div class="section-title" style="margin-top:12px;">Takeoff Handling</div>
             <div class="section-divider"></div>
             <div class="field-row">
                 <span class="field-label">How do you want to handle zero quantity takeoff items?</span>
-                <select class="field-select field-input-med" @bind="ZeroQtyTakeoffMode">
-                    <option value="0">Prompt me</option>
-                    <option value="1">Always skip</option>
-                    <option value="2">Always add</option>
-                </select>
+                <DropDownListControl TValue="string" TItem="SelOpt" DataSource="@ZeroQtyTakeoffOptions" ValueFieldName="Value" TextFieldName="Text" @bind-Value="ZeroQtyTakeoffMode" Width="180px" />
             </div>
             <div style="margin-top:8px;">
                 <span>When are the alternate cost codes and categories used?</span>
-                <div class="field-radio"><input type="radio" name="altCostCodes" checked="@(!UseAltCostCodesForCO)" @onchange="() => UseAltCostCodesForCO = false" /><label>On all options</label></div>
-                <div class="field-radio"><input type="radio" name="altCostCodes" checked="@UseAltCostCodesForCO" @onchange="() => UseAltCostCodesForCO = true" /><label>Only on change orders</label></div>
+                <div class="field-radio"><RadioControl TValue="bool" Name="altCostCodes" Value="false" @bind-SelectedValue="UseAltCostCodesForCO" Label="On all options" /></div>
+                <div class="field-radio"><RadioControl TValue="bool" Name="altCostCodes" Value="true" @bind-SelectedValue="UseAltCostCodesForCO" Label="Only on change orders" /></div>
             </div>
+
+            <div class="section-title" style="margin-top:12px;">Conditional Formatting</div>
+            <div class="section-divider"></div>
+            @for (int i = 0; i < FormatRules.Length; i++)
+            {
+                var idx = i;
+                <div class="field-row">
+                    <span class="cf-sample" style="@CfSampleStyle(FormatRules[idx])">@FormatConditionLabels[idx]</span>
+                    <DropDownListControl TValue="string" TItem="string" DataSource="@FontStyleOptions" @bind-Value="FormatRules[idx].FontStyle" />
+                    <ColorPickerControl @bind-Value="FormatRules[idx].BackColor" DropUp="true" DropAlignRight="true" />
+                    <ColorPickerControl @bind-Value="FormatRules[idx].ForeColor" DropUp="true" DropAlignRight="true" />
+                </div>
+            }
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -487,25 +405,21 @@
             <div class="section-divider"></div>
             <div class="field-row">
                 <span class="field-label">System</span>
-                <select class="field-select field-input-wide" @bind="EstimatingSystemIndex">
-                    <option value="0">none</option>
-                    <option value="1">CG Visions BIM Pipeline</option>
-                    <option value="2">Sage Estimating</option>
-                </select>
+                <DropDownListControl TValue="int" TItem="SelOpt" DataSource="@EstimatingSystemOptions" ValueFieldName="Value" TextFieldName="Text" @bind-Value="EstimatingSystemIndex" Width="280px" />
             </div>
 
             @if (EstimatingSystemIndex == 1)
             {
                 <div class="frame-box">
                     <div class="frame-title">CG Visions BIM Pipeline</div>
-                    <div class="field-row"><span class="field-label-sm">Root URI</span><input class="field-input field-input-wide" @bind="CGVisionsRootURI" /></div>
-                    <div class="field-row"><span class="field-label-sm">Security Context</span><input class="field-input field-input-med" @bind="CGVisionsUID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="CGVisionsPWD" /></div>
-                    <div class="field-row"><span class="field-label-sm">Base Model Number</span><input class="field-input field-input-med" @bind="BIMBaseModelNumber" /></div>
+                    <div class="field-row"><span class="field-label-sm">Root URI</span><TextBoxControl @bind-Value="CGVisionsRootURI" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Security Context</span><TextBoxControl @bind-Value="CGVisionsUID" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="CGVisionsPWD" InputType="password" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Base Model Number</span><TextBoxControl @bind-Value="BIMBaseModelNumber" CssClass="field-input field-input-med" /></div>
                     <div class="field-row"><span class="field-label-sm">Model Style</span></div>
                     <div class="subsection">
-                        <div class="field-radio"><input type="radio" name="pipelineStyle" checked="@(!BIMCommunitySpecific)" @onchange="() => BIMCommunitySpecific = false" /><label>Global Plans and Options</label></div>
-                        <div class="field-radio"><input type="radio" name="pipelineStyle" checked="@BIMCommunitySpecific" @onchange="() => BIMCommunitySpecific = true" /><label>Community specific Plans and Options</label></div>
+                        <div class="field-radio"><RadioControl TValue="bool" Name="pipelineStyle" Value="false" @bind-SelectedValue="BIMCommunitySpecific" Label="Global Plans and Options" /></div>
+                        <div class="field-radio"><RadioControl TValue="bool" Name="pipelineStyle" Value="true" @bind-SelectedValue="BIMCommunitySpecific" Label="Community specific Plans and Options" /></div>
                     </div>
                 </div>
             }
@@ -514,41 +428,37 @@
             {
                 <div class="frame-box">
                     <div class="frame-title">Sage Estimating</div>
-                    <div class="field-row"><span class="field-label-sm">SQL Server</span><input class="field-input field-input-wide" @bind="SageSqlEstServer" /></div>
-                    <div class="field-row"><span class="field-label-sm">Database</span><input class="field-input field-input-wide" @bind="SageSqlEstDatabase" /></div>
-                    <div class="field-row"><span class="field-label-sm">Login/Password</span><input class="field-input field-input-med" @bind="SageSqlEstUser" /><input type="password" class="field-input field-input-sm" @bind="SageSqlEstPswd" /></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="SageSqlEstConsolidateItems" /><label>Consolidate items to lump sum when importing estimates.</label></div>
+                    <div class="field-row"><span class="field-label-sm">SQL Server</span><TextBoxControl @bind-Value="SageSqlEstServer" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Database</span><TextBoxControl @bind-Value="SageSqlEstDatabase" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Login/Password</span><TextBoxControl @bind-Value="SageSqlEstUser" CssClass="field-input field-input-med" /><TextBoxControl @bind-Value="SageSqlEstPswd" InputType="password" CssClass="field-input field-input-sm" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="SageSqlEstConsolidateItems" Label="Consolidate items to lump sum when importing estimates." /></div>
                 </div>
             }
 
             <div class="section-title" style="margin-top:12px;">Options</div>
             <div class="section-divider"></div>
-            <div class="field-row"><span class="field-label">Incentive Cost%</span><input class="field-input field-input-xs" @bind="IncentiveCostPercent" /></div>
-            <div class="field-row"><span class="field-label">Sales Incentives</span><input class="field-input field-input-wide" @bind="IncentiveItemDisplay" readonly /></div>
-            <div class="field-row"><span class="field-label">Land Costs</span><input class="field-input field-input-wide" @bind="LandItemDisplay" readonly /></div>
-            <div class="field-row"><span class="field-label">Select At Takeoff</span><input class="field-input field-input-wide" @bind="SelectAtTakeoffDisplay" readonly /></div>
+            <div class="field-row"><span class="field-label">Incentive Cost%</span><TextBoxControl @bind-Value="IncentiveCostPercent" CssClass="field-input field-input-xs" /></div>
+            <div class="field-row"><span class="field-label">Sales Incentives</span><TextBoxControl @bind-Value="IncentiveItemDisplay" CssClass="field-input field-input-wide" readonly="readonly" /><ButtonControl CssClass="btn-action" OnClick="() => OpenItemPicker(0)">...</ButtonControl></div>
+            <div class="field-row"><span class="field-label">Land Costs</span><TextBoxControl @bind-Value="LandItemDisplay" CssClass="field-input field-input-wide" readonly="readonly" /><ButtonControl CssClass="btn-action" OnClick="() => OpenItemPicker(1)">...</ButtonControl></div>
+            <div class="field-row"><span class="field-label">Select At Takeoff</span><TextBoxControl @bind-Value="SelectAtTakeoffDisplay" CssClass="field-input field-input-wide" readonly="readonly" /><ButtonControl CssClass="btn-action" OnClick="() => OpenItemPicker(2)">...</ButtonControl></div>
             <span class="link-label" @onclick="OnEditWBSDescriptions">Edit WBS default descriptions...</span>
 
             <div class="section-title" style="margin-top:12px;">Takeoff System</div>
             <div class="section-divider"></div>
             <div class="field-row">
                 <span class="field-label">Takeoff System</span>
-                <select class="field-select field-input-med" @bind="TakeoffSystemIndex">
-                    <option value="0">none</option>
-                    <option value="1">On-Screen Takeoff</option>
-                    <option value="2">PlanSwift</option>
-                </select>
+                <DropDownListControl TValue="int" TItem="SelOpt" DataSource="@TakeoffSystemOptions" ValueFieldName="Value" TextFieldName="Text" @bind-Value="TakeoffSystemIndex" Width="180px" />
             </div>
             @if (TakeoffSystemIndex == 1)
             {
                 <div class="frame-box">
-                    <div class="field-radio"><input type="radio" name="osType" checked="@(!OnScreenTypeSQL)" @onchange="() => OnScreenTypeSQL = false" /><label>MS Access Database</label></div>
-                    <div class="field-row"><span class="field-label-sm">File Name</span><input class="field-input field-input-wide" @bind="OnScreenMDB" /></div>
-                    <div class="field-radio"><input type="radio" name="osType" checked="@OnScreenTypeSQL" @onchange="() => OnScreenTypeSQL = true" /><label>MS SQL Server Database</label></div>
-                    <div class="field-row"><span class="field-label-sm">Server</span><input class="field-input field-input-wide" @bind="OnScreenServer" /></div>
-                    <div class="field-row"><span class="field-label-sm">Database</span><input class="field-input field-input-wide" @bind="OnScreenDatabase" /></div>
-                    <div class="field-row"><span class="field-label-sm">Login Name</span><input class="field-input field-input-med" @bind="OnScreenUID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="OnScreenPWD" /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="osType" Value="false" @bind-SelectedValue="OnScreenTypeSQL" Label="MS Access Database" /></div>
+                    <div class="field-row"><span class="field-label-sm">File Name</span><TextBoxControl @bind-Value="OnScreenMDB" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="osType" Value="true" @bind-SelectedValue="OnScreenTypeSQL" Label="MS SQL Server Database" /></div>
+                    <div class="field-row"><span class="field-label-sm">Server</span><TextBoxControl @bind-Value="OnScreenServer" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Database</span><TextBoxControl @bind-Value="OnScreenDatabase" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Login Name</span><TextBoxControl @bind-Value="OnScreenUID" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="OnScreenPWD" InputType="password" CssClass="field-input field-input-med" /></div>
                 </div>
             }
         }
@@ -562,11 +472,7 @@
             <div class="section-divider"></div>
             <div class="field-row">
                 <span class="field-label">System</span>
-                <select class="field-select field-input-med" @bind="SalesSystemIndex">
-                    <option value="0">No sales system integration</option>
-                    <option value="1">HomeFront Profit Builder</option>
-                    <option value="2">Builder 1440</option>
-                </select>
+                <DropDownListControl TValue="int" TItem="SelOpt" DataSource="@SalesSystemOptions" ValueFieldName="Value" TextFieldName="Text" @bind-Value="SalesSystemIndex" Width="180px" />
             </div>
 
             @if (SalesSystemIndex == 0)
@@ -584,14 +490,11 @@
             {
                 <div class="frame-box">
                     <div class="frame-title">HomeFront Profit Builder / CRM</div>
-                    <div class="field-row"><span class="field-label-sm">Client ID</span><input class="field-input field-input-wide" @bind="CrmClientID" /></div>
-                    <div class="field-row"><span class="field-label-sm">API Key</span><input type="password" class="field-input field-input-wide" @bind="CrmApiKey" /></div>
+                    <div class="field-row"><span class="field-label-sm">Client ID</span><TextBoxControl @bind-Value="CrmClientID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">API Key</span><TextBoxControl @bind-Value="CrmApiKey" InputType="password" CssClass="field-input field-input-wide" /></div>
                     <div class="field-row">
                         <span class="field-label-sm">Environment</span>
-                        <select class="field-select field-input-wide" @bind="CrmEnvironment">
-                            <option value="User Acceptance Testing (UAT)">User Acceptance Testing (UAT)</option>
-                            <option value="Production">Production</option>
-                        </select>
+                        <DropDownListControl TValue="string" TItem="string" DataSource="@BuildProEnvOptions" @bind-Value="CrmEnvironment" Width="280px" />
                     </div>
                 </div>
             }
@@ -600,14 +503,14 @@
             {
                 <div class="frame-box">
                     <div class="frame-title">Builder 1440</div>
-                    <div class="field-row"><span class="field-label-sm">Builder Code</span><input class="field-input field-input-med" @bind="BuilderCode" maxlength="15" /></div>
-                    <div class="field-row"><span class="field-label-sm">Administrator</span><input class="field-input field-input-med" @bind="WebAdminUser" maxlength="50" /></div>
-                    <div class="field-row"><span class="field-label-sm">Ftp Upload Path</span><input class="field-input field-input-wide" @bind="WebUploadPath" /></div>
-                    <div class="field-row"><span class="field-label-sm">Security Context</span><input class="field-input field-input-med" @bind="WebUploadUser" maxlength="50" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="WebUploadPswd" maxlength="50" /></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="AppendUOMtoOptionDesc" /><label>Append UOM to option descriptions.</label></div>
-                    <div class="field-radio"><input type="radio" name="webUpload" checked="@WebUploadByCommunity" @onchange="() => WebUploadByCommunity = true" /><label>Prompt for communities when uploading</label></div>
-                    <div class="field-radio"><input type="radio" name="webUpload" checked="@(!WebUploadByCommunity)" @onchange="() => WebUploadByCommunity = false" /><label>Prompt for divisions when uploading</label></div>
+                    <div class="field-row"><span class="field-label-sm">Builder Code</span><TextBoxControl @bind-Value="BuilderCode" CssClass="field-input field-input-med" MaxLength="15" /></div>
+                    <div class="field-row"><span class="field-label-sm">Administrator</span><TextBoxControl @bind-Value="WebAdminUser" CssClass="field-input field-input-med" MaxLength="50" /></div>
+                    <div class="field-row"><span class="field-label-sm">Ftp Upload Path</span><TextBoxControl @bind-Value="WebUploadPath" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Security Context</span><TextBoxControl @bind-Value="WebUploadUser" CssClass="field-input field-input-med" MaxLength="50" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="WebUploadPswd" InputType="password" CssClass="field-input field-input-med" MaxLength="50" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="AppendUOMtoOptionDesc" Label="Append UOM to option descriptions." /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="webUpload" Value="true" @bind-SelectedValue="WebUploadByCommunity" Label="Prompt for communities when uploading" /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="webUpload" Value="false" @bind-SelectedValue="WebUploadByCommunity" Label="Prompt for divisions when uploading" /></div>
                 </div>
             }
         }
@@ -619,13 +522,13 @@
         {
             <div class="section-title">Sales Worksheets</div>
             <div class="section-divider"></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="AdjustSelling" /><label>Calculate selling prices when costs change.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="AdjustIncentive" /><label>Calculate incentive retail when incentive cost changes.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="LockPostedSheets" /><label>Lock worksheets when they are published.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="EstimatingWorksheetsOnly" /><label>Hide marketing worksheet interface.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="MarketingWorkSheetAutoRefreshCosts" /><label>Refresh costs when a marketing worksheet opens.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="SellingPriceIncludesTax" /><label>Selling prices include GST &amp; PST less rebates.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="UseMaxVendorPricing" /><label>Use Maximum price if no vendor price found.</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="AdjustSelling" Label="Calculate selling prices when costs change." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="AdjustIncentive" Label="Calculate incentive retail when incentive cost changes." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="LockPostedSheets" Label="Lock worksheets when they are published." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="EstimatingWorksheetsOnly" Label="Hide marketing worksheet interface." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="MarketingWorkSheetAutoRefreshCosts" Label="Refresh costs when a marketing worksheet opens." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="SellingPriceIncludesTax" Label="@("Selling prices include GST & PST less rebates.")" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseMaxVendorPricing" Label="Use Maximum price if no vendor price found." /></div>
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -640,57 +543,57 @@
                     var issuedClass = NoticeTabIndex == 0 ? "btn-action btn-nav" : "btn-action";
                     var canceledClass = NoticeTabIndex == 1 ? "btn-action btn-nav" : "btn-action";
                 }
-                <button class="@issuedClass" @onclick="() => NoticeTabIndex = 0">PO Issued</button>
-                <button class="@canceledClass" @onclick="() => NoticeTabIndex = 1">PO Canceled</button>
+                <ButtonControl CssClass="@issuedClass" OnClick="() => { NoticeTabIndex = 0; }">PO Issued</ButtonControl>
+                <ButtonControl CssClass="@canceledClass" OnClick="() => { NoticeTabIndex = 1; }">PO Canceled</ButtonControl>
             </div>
             @if (NoticeTabIndex == 0)
             {
-                <div class="field-row"><span class="field-label-sm">Subject</span><input class="field-input field-input-wide" @bind="MsgSendPOSubject" /></div>
-                <textarea class="textarea-field" @bind="MsgSendPOBody" rows="6"></textarea>
+                <div class="field-row"><span class="field-label-sm">Subject</span><TextBoxControl @bind-Value="MsgSendPOSubject" CssClass="field-input field-input-wide" /></div>
+                <TextAreaControl @bind-Value="MsgSendPOBody" Rows="6" />
             }
             @if (NoticeTabIndex == 1)
             {
-                <div class="field-row"><span class="field-label-sm">Subject</span><input class="field-input field-input-wide" @bind="MsgCancelPOSubject" /></div>
-                <textarea class="textarea-field" @bind="MsgCancelPOBody" rows="6"></textarea>
+                <div class="field-row"><span class="field-label-sm">Subject</span><TextBoxControl @bind-Value="MsgCancelPOSubject" CssClass="field-input field-input-wide" /></div>
+                <TextAreaControl @bind-Value="MsgCancelPOBody" Rows="6" />
             }
-            <div class="field-checkbox"><input type="checkbox" @bind="CCPrjMgr" /><label>Always CC: the project manager</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="CCPrjMgr" Label="Always CC: the project manager" /></div>
             <span class="link-label" @onclick="OnShowReplacementParameters">Replacement Parameters</span>
 
             <div class="section-title" style="margin-top:16px;">Email Configuration</div>
             <div class="section-divider"></div>
-            <div class="field-radio"><input type="radio" name="emailProto" checked="@(EmailProtocol == 0)" @onchange="() => EmailProtocol = 0" /><label>Send using the current users Outlook account</label></div>
-            <div class="field-radio"><input type="radio" name="emailProto" checked="@(EmailProtocol == 1)" @onchange="() => EmailProtocol = 1" /><label>Send using an SMTP server</label></div>
-            <div class="field-radio"><input type="radio" name="emailProto" checked="@(EmailProtocol == 2)" @onchange="() => EmailProtocol = 2" /><label>Send using SMTP via Office 365</label></div>
+            <div class="field-radio"><RadioControl TValue="int" Name="emailProto" Value="0" @bind-SelectedValue="EmailProtocol" Label="Send using the current users Outlook account" /></div>
+            <div class="field-radio"><RadioControl TValue="int" Name="emailProto" Value="1" @bind-SelectedValue="EmailProtocol" Label="Send using an SMTP server" /></div>
+            <div class="field-radio"><RadioControl TValue="int" Name="emailProto" Value="2" @bind-SelectedValue="EmailProtocol" Label="Send using SMTP via Office 365" /></div>
 
             @if (EmailProtocol == 1)
             {
                 <div class="frame-box">
-                    <div class="field-row"><span class="field-label-sm">Server:Port</span><input class="field-input field-input-wide" @bind="SMTPServer" /></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="EmailAuthentication" /><label>Require Authentication?</label></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="EmailSSL" @bind:after="OnSSLChanged" /><label>SSL</label></div>
-                    <div class="field-checkbox"><input type="checkbox" @bind="EmailSTARTTLS" @bind:after="OnSTARTTLSChanged" /><label>STARTTLS</label></div>
-                    <div class="field-row"><span class="field-label-sm">User</span><input class="field-input field-input-med" @bind="EmailUserID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-med" @bind="EmailPwd" /></div>
+                    <div class="field-row"><span class="field-label-sm">Server:Port</span><TextBoxControl @bind-Value="SMTPServer" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="EmailAuthentication" Label="Require Authentication?" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="EmailSSL" @bind-Checked:after="OnSSLChanged" Label="SSL" /></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="EmailSTARTTLS" @bind-Checked:after="OnSTARTTLSChanged" Label="STARTTLS" /></div>
+                    <div class="field-row"><span class="field-label-sm">User</span><TextBoxControl @bind-Value="EmailUserID" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="EmailPwd" InputType="password" CssClass="field-input field-input-med" /></div>
                 </div>
             }
 
             @if (EmailProtocol == 2)
             {
                 <div class="frame-box">
-                    <div class="field-row"><span class="field-label-sm">Application ID</span><input class="field-input field-input-wide" @bind="O365AppID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Tenant ID</span><input class="field-input field-input-wide" @bind="O365TenantID" /></div>
-                    <div class="field-row"><span class="field-label-sm">Secret Value</span><input class="field-input field-input-wide" @bind="O365Secret" /></div>
-                    <div class="field-row"><span class="field-label-sm">User</span><input class="field-input field-input-med" @bind="O365User" /></div>
-                    <div class="field-row"><span class="field-label-sm">Password</span><input type="password" class="field-input field-input-sm" @bind="O365Pswd" /></div>
+                    <div class="field-row"><span class="field-label-sm">Application ID</span><TextBoxControl @bind-Value="O365AppID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Tenant ID</span><TextBoxControl @bind-Value="O365TenantID" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">Secret Value</span><TextBoxControl @bind-Value="O365Secret" CssClass="field-input field-input-wide" /></div>
+                    <div class="field-row"><span class="field-label-sm">User</span><TextBoxControl @bind-Value="O365User" CssClass="field-input field-input-med" /></div>
+                    <div class="field-row"><span class="field-label-sm">Password</span><TextBoxControl @bind-Value="O365Pswd" InputType="password" CssClass="field-input field-input-sm" /></div>
                 </div>
             }
 
             @if (EmailProtocol != 0)
             {
                 <div style="margin-top:8px;">
-                    <div class="field-radio"><input type="radio" name="sendFrom" checked="@SendFromCurrentUser" @onchange="() => SendFromCurrentUser = true" /><label>Send from the current users email address</label></div>
-                    <div class="field-radio"><input type="radio" name="sendFrom" checked="@(!SendFromCurrentUser)" @onchange="() => SendFromCurrentUser = false" /><label>Send from the corporate address</label></div>
-                    <div class="field-row"><span class="field-label-sm">Address</span><input class="field-input field-input-wide" @bind="EmailAddress" /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="sendFrom" Value="true" @bind-SelectedValue="SendFromCurrentUser" Label="Send from the current users email address" /></div>
+                    <div class="field-radio"><RadioControl TValue="bool" Name="sendFrom" Value="false" @bind-SelectedValue="SendFromCurrentUser" Label="Send from the corporate address" /></div>
+                    <div class="field-row"><span class="field-label-sm">Address</span><TextBoxControl @bind-Value="EmailAddress" CssClass="field-input field-input-wide" /></div>
                 </div>
             }
             <span class="link-label" @onclick="OnSendTestEmail">Send a test message...</span>
@@ -704,13 +607,13 @@
             <div class="two-col">
                 <div>
                     <div class="section-title">Vendor Contact Roles</div>
-                    <textarea class="textarea-field" rows="8" @bind="VendorRoles"></textarea>
+                    <TextAreaControl @bind-Value="VendorRoles" Rows="8" />
                     <div class="section-title" style="margin-top:12px;">Customer Contact Roles</div>
-                    <textarea class="textarea-field" rows="8" @bind="CustomerRoles"></textarea>
+                    <TextAreaControl @bind-Value="CustomerRoles" Rows="8" />
                 </div>
                 <div>
                     <div class="section-title">Job Contact Template</div>
-                    <textarea class="textarea-field" rows="18" @bind="JobRoles"></textarea>
+                    <TextAreaControl @bind-Value="JobRoles" Rows="18" />
                 </div>
             </div>
         }
@@ -723,10 +626,10 @@
             <div class="section-title">Import Options</div>
             <div class="section-divider"></div>
             <div>Active Vendors</div>
-            <div class="field-radio"><input type="radio" name="activeVendors" checked="@(!ManageActiveVendors)" @onchange="() => ManageActiveVendors = false" /><label>Let accounting manage which vendors are active.</label></div>
-            <div class="field-radio"><input type="radio" name="activeVendors" checked="@ManageActiveVendors" @onchange="() => ManageActiveVendors = true" /><label>I will manage which vendors are active in HomeFront.</label></div>
+            <div class="field-radio"><RadioControl TValue="bool" Name="activeVendors" Value="false" @bind-SelectedValue="ManageActiveVendors" Label="Let accounting manage which vendors are active." /></div>
+            <div class="field-radio"><RadioControl TValue="bool" Name="activeVendors" Value="true" @bind-SelectedValue="ManageActiveVendors" Label="I will manage which vendors are active in HomeFront." /></div>
             <div style="margin-top:12px;">Excluded Vendor Types - don't import these ones.</div>
-            <textarea class="textarea-field" rows="15" @bind="ExcludedVendorTypes"></textarea>
+            <TextAreaControl @bind-Value="ExcludedVendorTypes" Rows="15" />
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -736,22 +639,18 @@
         {
             <div class="section-title">Community Standards</div>
             <div class="section-divider"></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="UseCommunityStandards" /><label>Enable community standards to automatically replace items during takeoff.</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="CommunityStandardsArePhaseSpecific" /><label>Community standards are also phase specific.</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseCommunityStandards" Label="Enable community standards to automatically replace items during takeoff." /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="CommunityStandardsArePhaseSpecific" Label="Community standards are also phase specific." /></div>
             <div style="margin-top:12px;"><strong>Standard Items</strong></div>
-            <table class="grid-simple">
-                <thead><tr><th>Phase</th><th>Item</th><th>Description</th></tr></thead>
-                <tbody>
-                    @foreach (var si in StandardItems)
-                    {
-                        <tr>
-                            <td>@si.Phase</td>
-                            <td>@si.Item</td>
-                            <td>@si.Description</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <GridControl TValue="StandardItemRow" DataSource="@StandardItems"
+                         AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                         AllowSelection="false" AllowResizing="true" Height="240px" RowHeight="22">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(StandardItemRow.Phase)" HeaderText="Phase" Width="100px" />
+                    <GridColumn Field="@nameof(StandardItemRow.Item)" HeaderText="Item" Width="120px" />
+                    <GridColumn Field="@nameof(StandardItemRow.Description)" HeaderText="Description" Width="320px" />
+                </GridColumnsBase>
+            </GridControl>
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -761,25 +660,72 @@
         {
             <div class="section-title">BuildPro Settings</div>
             <div class="section-divider"></div>
-            <div class="field-row"><span class="field-label">Company Mnemonic</span><input class="field-input field-input-med" @bind="BuildProCompany" /></div>
+            <div class="field-row"><span class="field-label">Company Mnemonic</span><TextBoxControl @bind-Value="BuildProCompany" CssClass="field-input field-input-med" /></div>
             <div class="field-row">
                 <span class="field-label">Environment</span>
-                <select class="field-select field-input-wide" @bind="BuildProEnvironment">
-                    <option value="User Acceptance Testing (UAT)">User Acceptance Testing (UAT)</option>
-                    <option value="Production">Production</option>
-                </select>
+                <DropDownListControl TValue="string" TItem="string" DataSource="@BuildProEnvOptions" @bind-Value="BuildProEnvironment" CssClass="field-select field-input-wide" Width="280px" />
             </div>
-            <div class="field-row"><span class="field-label">Security Context</span><input class="field-input field-input-med" @bind="BuildProUID" /></div>
-            <div class="field-row"><span class="field-label">Password</span><input type="password" class="field-input field-input-med" @bind="BuildProPwd" /></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="BuildProSendPOsImmediately" /><label>Publish POs to BuildPro immediately upon generation</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="BuildProMultiFamily" /><label>Send shell and unit schedules for Multi family construction</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="BuildProSendPhases" /><label>Send phases to BuildPro</label></div>
-            <div class="field-checkbox"><input type="checkbox" @bind="TarionEnabled" /><label>Integrate with Tarion Warranty Services</label></div>
-            <div class="field-row"><span class="field-label">Warranty buyer type</span><input class="field-input field-input-med" @bind="BuildProWarrantyOwnerType" /></div>
-            <div class="field-row"><span class="field-label">co buyer type</span><input class="field-input field-input-med" @bind="BuildProWarrantyCoOwnerType" /></div>
+            <div class="field-row"><span class="field-label">Security Context</span><TextBoxControl @bind-Value="BuildProUID" CssClass="field-input field-input-med" /></div>
+            <div class="field-row"><span class="field-label">Password</span><TextBoxControl @bind-Value="BuildProPwd" InputType="password" CssClass="field-input field-input-med" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="EnablePreconJobs" Label="Enable Precon jobs" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="AutoApproveTBDVendorAssignments" Label="Auto-approve TBD vendor assignments" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="AllowJobReassignInBudgetsAndPOs" Label="Allow job reassignment in budgets and POs" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="BuildProMultiFamily" Label="Send shell and unit schedules for Multi family construction" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="BuildProSendPhases" Label="Send phases to BuildPro" /></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="TarionEnabled" Label="Integrate with Tarion Warranty Services" /></div>
+            <div class="field-row"><span class="field-label">Warranty buyer type</span><TextBoxControl @bind-Value="BuildProWarrantyOwnerType" CssClass="field-input field-input-med" /></div>
+            <div class="field-row"><span class="field-label">co buyer type</span><TextBoxControl @bind-Value="BuildProWarrantyCoOwnerType" CssClass="field-input field-input-med" /></div>
+            <div class="field-row"><span class="field-label">Warranty document type</span><TextBoxControl @bind-Value="BuildProWarrantyDocType" CssClass="field-input field-input-med" /></div>
 
             <div class="section-title" style="margin-top:12px;">Schedule Templates</div>
-            <textarea class="textarea-field" rows="8" @bind="ScheduleTemplates"></textarea>
+            <TextAreaControl @bind-Value="ScheduleTemplates" Rows="8" />
+
+            <div class="section-title" style="margin-top:12px;">EPO Reasons@(HasEPOReasonsLayout ? "" : " [gEPOReasons FALLBACK]")</div>
+            <div class="section-divider"></div>
+            <GridControl @ref="_epoGrid" TValue="EPOReasonRow" DataSource="@EPOReasons"
+                         AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                         AllowSelection="false" AllowResizing="true" Height="200px" RowHeight="26"
+                         OnLayoutChanged="@OnEPOReasonsLayoutChangedAsync">
+                <GridColumnsBase @key="gEPOReasonsLayoutVersion">
+                    @if (HasEPOReasonsLayout)
+                    {
+                        foreach (var entry in GetOrderedEPOLayout())
+                        {
+                            var field = entry.Field;
+                            var caption = string.IsNullOrWhiteSpace(entry.Layout.Caption) ? entry.Layout.Field : entry.Layout.Caption;
+                            var width = entry.Layout.Width.HasValue && entry.Layout.Width.Value > 0 ? $"{ConvertLayoutWidthToPx(entry.Layout.Width.Value)}px" : "180px";
+                            <GridColumn Field="@field" HeaderText="@caption" Width="@width">
+                                <Template>
+                                    @{ var row = (EPOReasonRow)context; }
+                                    @if (string.Equals(field, nameof(EPOReasonRow.Category), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <TextBoxControl @bind-Value="row.Category" @bind-Value:after="EPORowEdited" style="width:100%;border:none;background:transparent;" />
+                                    }
+                                    else
+                                    {
+                                        <TextBoxControl @bind-Value="row.ReasonCode" @bind-Value:after="EPORowEdited" style="width:100%;border:none;background:transparent;" />
+                                    }
+                                </Template>
+                            </GridColumn>
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(EPOReasonRow.ReasonCode)" HeaderText="Reason Code" Width="160px">
+                            <Template>
+                                @{ var row = (EPOReasonRow)context; }
+                                <TextBoxControl @bind-Value="row.ReasonCode" @bind-Value:after="EPORowEdited" style="width:100%;border:none;background:transparent;" />
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(EPOReasonRow.Category)" HeaderText="Category" Width="240px">
+                            <Template>
+                                @{ var row = (EPOReasonRow)context; }
+                                <TextBoxControl @bind-Value="row.Category" @bind-Value:after="EPORowEdited" style="width:100%;border:none;background:transparent;" />
+                            </Template>
+                        </GridColumn>
+                    }
+                </GridColumnsBase>
+            </GridControl>
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -790,24 +736,22 @@
             <div class="section-title">Field PO Settings</div>
             <div class="section-divider"></div>
             <div class="field-row"><span class="field-label">Default Purchasing Manager</span>
-                <select class="field-select field-input-wide" @bind="DefaultPurchasingManager">
-                    @foreach (var pm in PurchasingManagerList) { <option value="@pm.Value">@pm.Text</option> }
-                </select>
+                <DropDownListControl TValue="string" TItem="SelectItem" DataSource="@PurchasingManagerList" ValueFieldName="Value" TextFieldName="Text" @bind-Value="DefaultPurchasingManager" Width="280px" />
             </div>
-            <div class="field-row"><span class="field-label">Field PO Prefix</span><input class="field-input field-input-wide" @bind="FieldPOPrefix" maxlength="50" /></div>
+            <div class="field-row"><span class="field-label">Field PO Prefix</span><TextBoxControl @bind-Value="FieldPOPrefix" CssClass="field-input field-input-wide" MaxLength="50" /></div>
             <div style="margin-top:8px;">Fields Required on a request:</div>
             <div class="subsection">
                 @for (int i = 0; i < FieldPOFieldLabels.Length; i++)
                 {
                     var idx = i;
-                    <div class="field-checkbox"><input type="checkbox" @bind="FieldPOFields[idx]" /><label>@FieldPOFieldLabels[idx]</label></div>
+                    <div class="field-checkbox"><CheckBoxControl @bind-Checked="FieldPOFields[idx]" Label="@FieldPOFieldLabels[idx]" /></div>
                 }
             </div>
-            <div class="field-checkbox"><input type="checkbox" @bind="UseDetailedFieldPOView" /><label>Use detailed edit view for all Field PO users</label></div>
+            <div class="field-checkbox"><CheckBoxControl @bind-Checked="UseDetailedFieldPOView" Label="Use detailed edit view for all Field PO users" /></div>
 
             <div class="section-title" style="margin-top:12px;">Vendor and Customer Portals</div>
             <div class="section-divider"></div>
-            <div class="field-row"><span class="field-label">Attachments Folder</span><input class="field-input field-input-wide" @bind="WebAttachmentsFolder" /></div>
+            <div class="field-row"><span class="field-label">Attachments Folder</span><TextBoxControl @bind-Value="WebAttachmentsFolder" CssClass="field-input field-input-wide" /></div>
         }
 
         @* ═══════════════════════════════════════════════════════════════════ *@
@@ -816,22 +760,20 @@
         @if (SelectedTab == 10)
         {
             <div class="section-title" style="font-weight:700; color:#800080;">Job Properties</div>
-            <table class="grid-simple">
-                <thead><tr><th>Category</th><th>Field Name</th><th>Data Type</th></tr></thead>
-                <tbody>
-                    @foreach (var cf in CustomFields)
-                    {
-                        <tr>
-                            <td>@cf.Category</td>
-                            <td>@cf.FieldName</td>
-                            <td>@cf.DataType</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <GridControl TValue="CustomFieldRow" DataSource="@CustomFields"
+                         AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                         AllowSelection="true" AllowResizing="true" Height="240px" RowHeight="22"
+                         SelectionSettingsRef="@_rowSelect" EventsRef="@_customFieldsEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(CustomFieldRow.Category)" HeaderText="Category" Width="140px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(CustomFieldRow.FieldName)" HeaderText="Field Name" Width="160px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(CustomFieldRow.PickList)" HeaderText="Pick List" Width="240px" AllowEditing="false" />
+                </GridColumnsBase>
+            </GridControl>
             <div style="margin-top:8px;">
-                <button class="btn-action" @onclick="OnAddCustomField">Add Field</button>
-                <button class="btn-action" @onclick="OnDeleteCustomField">Delete Field</button>
+                <ButtonControl CssClass="btn-action" OnClick="OnAddCustomField">Add Field</ButtonControl>
+                <ButtonControl CssClass="btn-action" OnClick="OnEditCustomField" Disabled="@(SelectedCustomField == null)">Edit Field</ButtonControl>
+                <ButtonControl CssClass="btn-action" OnClick="OnDeleteCustomField" Disabled="@(SelectedCustomField == null)">Delete Field</ButtonControl>
             </div>
         }
 
@@ -844,40 +786,62 @@
                 <div>
                     <div class="section-title">Departments</div>
                     <div class="section-divider"></div>
-                    <table class="grid-simple">
-                        <thead><tr><th>Department Name</th></tr></thead>
-                        <tbody>
-                            @foreach (var dept in Departments)
-                            {
-                                var deptClass = SelectedDepartment == dept ? "selected" : "";
-                                <tr class="@deptClass" style="cursor:pointer;"
-                                    @onclick="() => SelectDepartment(dept)">
-                                    <td><input @bind="dept.Name" style="width:100%;border:none;background:transparent;" /></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                    <button class="btn-action" style="margin-top:4px;" @onclick="OnAddDepartment">Add</button>
-                    <button class="btn-action" @onclick="OnDeleteDepartment">Delete</button>
+                    <GridControl @ref="_deptGrid" TValue="DepartmentRow" DataSource="@Departments"
+                                 AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                                 AllowSelection="true" AllowResizing="true" Height="200px" RowHeight="26"
+                                 SelectionSettingsRef="@_rowSelect" EventsRef="@_departmentsEvents">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(DepartmentRow.Name)" HeaderText="Department Name" Width="220px">
+                                <Template>
+                                    @{ var dept = (DepartmentRow)context; }
+                                    <TextBoxControl @bind-Value="dept.Name" style="width:100%;border:none;background:transparent;" />
+                                </Template>
+                            </GridColumn>
+                        </GridColumnsBase>
+                    </GridControl>
+                    <ButtonControl CssClass="btn-action" Style="margin-top:4px;" OnClick="OnAddDepartment">Add</ButtonControl>
+                    <ButtonControl CssClass="btn-action" OnClick="OnDeleteDepartment">Delete</ButtonControl>
                 </div>
                 <div>
                     <div class="section-title">Approvers for: @(SelectedDepartment?.Name ?? "")</div>
                     <div class="section-divider"></div>
                     @if (SelectedDepartment != null)
                     {
-                        <table class="grid-simple">
-                            <thead><tr><th>PM</th><th>Supervisor</th><th>Invoice Limit</th></tr></thead>
-                            <tbody>
-                                @foreach (var a in SelectedDepartment.Approvers)
-                                {
-                                    <tr>
-                                        <td>@a.PMName</td>
-                                        <td style="text-align:center;"><input type="checkbox" @bind="a.IsSupervisor" /></td>
-                                        <td><input type="number" @bind="a.InvoiceLimit" style="width:80px;" /></td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
+                        <GridControl TValue="ApproverRow" DataSource="@SelectedDepartment.Approvers"
+                                     AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                                     AllowSelection="false" AllowResizing="true" Height="200px" RowHeight="26">
+                            <GridColumnsBase>
+                                <GridColumn Field="@nameof(ApproverRow.PMName)" HeaderText="PM" Width="160px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(ApproverRow.IsSupervisor)" HeaderText="Supervisor" Width="100px" TextAlign="TextAlign.Center">
+                                    <Template>
+                                        @{ var a = (ApproverRow)context; }
+                                        <CheckBoxControl @bind-Checked="a.IsSupervisor" />
+                                    </Template>
+                                </GridColumn>
+                                <GridColumn Field="@nameof(ApproverRow.InvoiceLimit)" HeaderText="Invoice Limit" Width="120px" TextAlign="TextAlign.Right">
+                                    <Template>
+                                        @{ var a = (ApproverRow)context; }
+                                        <NumericTextBoxControl TValue="decimal" @bind-Value="a.InvoiceLimit" Width="90px" />
+                                    </Template>
+                                </GridColumn>
+                            </GridColumnsBase>
+                        </GridControl>
+
+                        <div class="section-title" style="margin-top:12px;">GL Accounts</div>
+                        <div class="section-divider"></div>
+                        <GridControl @ref="_deptGLGrid" TValue="DeptGLRow" DataSource="@SelectedDepartment.GLAccounts"
+                                     AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                                     AllowSelection="false" AllowResizing="true" Height="160px" RowHeight="26">
+                            <GridColumnsBase>
+                                <GridColumn Field="@nameof(DeptGLRow.Account)" HeaderText="Account" Width="120px">
+                                    <Template>
+                                        @{ var gl = (DeptGLRow)context; }
+                                        <TextBoxControl @bind-Value="gl.Account" @bind-Value:after="DeptGLRowEdited" style="width:100%;border:none;background:transparent;" />
+                                    </Template>
+                                </GridColumn>
+                                <GridColumn Field="@nameof(DeptGLRow.Description)" HeaderText="Description" Width="240px" AllowEditing="false" />
+                            </GridColumnsBase>
+                        </GridControl>
                     }
                 </div>
             </div>
@@ -890,63 +854,117 @@
         {
             <div class="section-title">Document Classes</div>
             <div class="section-divider"></div>
-            <table class="grid-simple">
-                <thead><tr><th>Document Class</th><th>Vendor Visible</th><th>Customer Visible</th></tr></thead>
-                <tbody>
-                    @foreach (var dc in DocumentClasses)
-                    {
-                        <tr>
-                            <td><input @bind="dc.DocumentClass" /></td>
-                            <td style="text-align:center;"><input type="checkbox" @bind="dc.VendorVisible" /></td>
-                            <td style="text-align:center;"><input type="checkbox" @bind="dc.CustomerVisible" /></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-            <button class="btn-action" style="margin-top:4px;" @onclick="OnAddDocumentClass">Add</button>
-            <button class="btn-action" @onclick="OnDeleteDocumentClass">Delete</button>
+            <GridControl @ref="_docClassGrid" TValue="DocumentClassRow" DataSource="@DocumentClasses"
+                         AllowPaging="false" AllowSorting="false" AllowFiltering="false"
+                         AllowSelection="false" AllowResizing="true" Height="240px" RowHeight="26">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(DocumentClassRow.DocumentClass)" HeaderText="Document Class" Width="240px">
+                        <Template>
+                            @{ var dc = (DocumentClassRow)context; }
+                            <TextBoxControl @bind-Value="dc.DocumentClass" style="width:100%;border:none;background:transparent;" />
+                        </Template>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(DocumentClassRow.VendorVisible)" HeaderText="Vendor Visible" Width="120px" TextAlign="TextAlign.Center">
+                        <Template>
+                            @{ var dc = (DocumentClassRow)context; }
+                            <CheckBoxControl @bind-Checked="dc.VendorVisible" />
+                        </Template>
+                    </GridColumn>
+                </GridColumnsBase>
+            </GridControl>
+            <ButtonControl CssClass="btn-action" Style="margin-top:4px;" OnClick="OnAddDocumentClass">Add</ButtonControl>
+            <ButtonControl CssClass="btn-action" OnClick="OnDeleteDocumentClass">Delete</ButtonControl>
+            <div class="field-checkbox" style="margin-top:6px;"><CheckBoxControl @bind-Checked="UseBPDocManagment" Label="Use BuildPro Document Management" /></div>
         }
 
     </div>
 </div>
 
-<!-- Footer -->
-<div class="footer-bar">
-    <button class="btn-nav" @onclick="OnSave">OK</button>
-    <button class="btn-nav" @onclick="OnCancel">Cancel</button>
+    <!-- Footer -->
+    <div class="footer-bar">
+        <ButtonControl CssClass="btn-nav" OnClick="OnSave">OK</ButtonControl>
+        <ButtonControl CssClass="btn-nav" OnClick="OnCancel">Cancel</ButtonControl>
+    </div>
 </div>
 
-@if (ShowSaveConfirmDialog)
+@* Save-confirmation + error popups — FlexKit DialogControl (no raw overlay divs). *@
+<DialogControl @bind-Visible="ShowSaveConfirmDialog" Header="Settings Saved" Width="360px">
+    <ChildContent>
+        <div style="margin-bottom:8px;">System settings have been saved successfully.</div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-nav" OnClick="() => { ShowSaveConfirmDialog = false; }">OK</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+<DialogControl @bind-Visible="ShowErrorDialog" Header="Error" Width="360px">
+    <ChildContent>
+        <div style="margin-bottom:8px;">@ErrorMessage</div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-nav" OnClick="() => { ShowErrorDialog = false; }">OK</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@* Custom Job Property Add/Edit dialog (VB6 FAddProperty). The Job Properties tab's
+   Add/Edit buttons open this; it performs the ALTER TABLE ADD + JobCustomFieldDefs
+   INSERT/UPDATE — the sanctioned custom-field schema exception. *@
+<FAddProperty @ref="_addProperty" Visible="@_showAddProperty" VisibleChanged="OnAddPropertyVisibleChanged" />
+
+@* Item picker for the Estimating tab's Incentive / Land / Select-at-Takeoff fields (VB6 cmdChooseItem). *@
+<FPickList @ref="_itemPickList" OnSelected="OnItemPicked" />
+
+@* "Setup User Permissions" (Corporate Info tab) hosts FUserPermissions in a FlexKit modal (VB6 cmdUserSecurity, shown vbModal). *@
+@if (_showUserPermissions)
 {
-    <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;">
-        <div style="background:#fff;border:2px solid #800080;border-radius:6px;padding:24px;min-width:320px;">
-            <div style="font-weight:700;margin-bottom:12px;">Settings Saved</div>
-            <div style="margin-bottom:16px;">System settings have been saved successfully.</div>
-            <div style="text-align:right;">
-                <button class="btn-nav" @onclick="() => ShowSaveConfirmDialog = false">OK</button>
-            </div>
-        </div>
-    </div>
+    <DialogControl Visible="true" Header="User Permissions" Width="1150px" Height="80vh"
+                   OnClose="() => { _showUserPermissions = false; }">
+        <FUserPermissions IsModal="true" />
+    </DialogControl>
 }
 
-@if (ShowErrorDialog)
+@* Sales-System tab "Edit ..." links (communities / phases / series / option groups+categories)
+   → the generic FDBGrid editor hosted as a modal (VB6 lblEditList_Click → FDBGrid.ShowForm). *@
+@if (_showSalesEditModal)
 {
-    <div style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;">
-        <div style="background:#fff;border:2px solid #c00;border-radius:6px;padding:24px;min-width:320px;">
-            <div style="font-weight:700;color:#c00;margin-bottom:12px;">Error</div>
-            <div style="margin-bottom:16px;">@ErrorMessage</div>
-            <div style="text-align:right;">
-                <button class="btn-nav" @onclick="() => ShowErrorDialog = false">OK</button>
-            </div>
-        </div>
-    </div>
+    <FDBGrid IsModal="true" OnClose="OnSalesEditClosed" FormCaption="@_salesEditCaption" />
+}
+
+@* Accounting tab "Wallet Configuration" link → FDBGrid "Book of Accounts" editor as a modal
+   (VB6 lblEditList_Click Index 11 → FDBGrid.ShowForm("Book of Accounts", …, "DataSources",
+   "BookOfAccount", False, , "WalletPartyID")). FDBGrid's caption resolver builds the exact
+   VB6 SQL (incl. the Sage300/Timberline conditional columns + the post-close DataSourceID
+   GUID backfill), so we drive it by FormCaption alone. *@
+@if (_showBookOfAccountsModal)
+{
+    <FDBGrid IsModal="true" OnClose="OnBookOfAccountsClosed" FormCaption="Book of Accounts" />
+}
+
+@* Conditional-Formatting tab "Tax groups..." link → FDBGrid "Tax Groups" editor as a modal
+   (VB6 lblEditList_Click Index 2 → FDBGrid.ShowForm("Tax Groups", s, "taxgroups",
+   "divisionid,taxgroup", <ReadOnly if Timberline>, "divisionid")). VB6 passes "divisionid"
+   as the HIDDEN-columns arg (6th positional); the caption resolver instead treats it as a
+   locked column, so to stay byte-faithful we drive this instance by an explicit ShowForm(…)
+   call (one-shot in OnAfterRenderAsync) with hiddenColumns:"divisionid" and a parameterized
+   DivisionID. *@
+@if (_showTaxGroupsModal)
+{
+    <FDBGrid @ref="_taxGroupsGrid" IsModal="true" OnClose="OnTaxGroupsClosed" FormCaption="Tax Groups" />
 }
 
 @code {
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // ── UI State ──
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+// ── UI State ──
     private int SelectedTab = 1;
     private bool ShowSaveConfirmDialog;
     private bool ShowErrorDialog;
@@ -962,7 +980,7 @@
     private bool EnforcePasswordComplexity;
     private List<string> ProvinceList = new(), CountryList = new();
     private List<DivisionRow> Divisions = new();
-    private class DivisionRow { public int DivisionID; public string Code = "", Company = ""; }
+    private class DivisionRow { public int DivisionID { get; set; } public string Code { get; set; } = ""; public string Company { get; set; } = ""; }
 
     // ── Accounting ──
     private int AccountingSystemIndex;
@@ -1014,6 +1032,13 @@
     private string SageSqlEstServer = "", SageSqlEstDatabase = "", SageSqlEstUser = "", SageSqlEstPswd = "";
     private bool SageSqlEstConsolidateItems;
     private string IncentiveCostPercent = "0", IncentiveItemDisplay = "", LandItemDisplay = "", SelectAtTakeoffDisplay = "";
+    // Raw Phase/Item/Description parts behind the readonly item-picker display fields
+    // (VB6 stored these in the textbox .tag; FPickList sets them, SaveAsync writes them).
+    private string _incPhase = "", _incItem = "", _incDesc = "";
+    private string _landPhase = "", _landItem = "", _landDesc = "";
+    private string _satPhase = "", _satItem = "", _satDesc = "";
+    private int _itemPickTarget;
+    private FPickList? _itemPickList;
     private int TakeoffSystemIndex;
     private bool OnScreenTypeSQL;
     private string OnScreenMDB = "", OnScreenServer = "", OnScreenDatabase = "", OnScreenUID = "", OnScreenPWD = "";
@@ -1050,12 +1075,15 @@
     // ── Community Standards ──
     private bool UseCommunityStandards, CommunityStandardsArePhaseSpecific;
     private List<StandardItemRow> StandardItems = new();
-    private class StandardItemRow { public string Phase = "", Item = "", Description = ""; }
+    private class StandardItemRow { public string Phase { get; set; } = ""; public string Item { get; set; } = ""; public string Description { get; set; } = ""; }
 
     // ── BuildPro ──
     private string BuildProCompany = "", BuildProEnvironment = "Production", BuildProUID = "", BuildProPwd = "";
-    private bool BuildProSendPOsImmediately, BuildProMultiFamily, BuildProSendPhases = true, TarionEnabled;
-    private string BuildProWarrantyOwnerType = "", BuildProWarrantyCoOwnerType = "", ScheduleTemplates = "";
+    private bool EnablePreconJobs, AutoApproveTBDVendorAssignments, AllowJobReassignInBudgetsAndPOs, UseBPDocManagment;
+    private bool BuildProMultiFamily, BuildProSendPhases = true, TarionEnabled;
+    private string BuildProWarrantyOwnerType = "", BuildProWarrantyCoOwnerType = "", BuildProWarrantyDocType = "", ScheduleTemplates = "";
+    // D365 -- ABN accounting (App-Options)
+    private string ABNResource = "", ABNTenantID = "", ABNClientID = "", ABNClientSecret = "", ABNLegalEntity = "", ABND01Division = "";
 
     // ── Supply Chain ──
     private string DefaultPurchasingManager = "";
@@ -1068,19 +1096,62 @@
 
     // ── Custom Job Properties ──
     private List<CustomFieldRow> CustomFields = new();
-    private class CustomFieldRow { public string Category = "", FieldName = "", DataType = ""; }
+    private class CustomFieldRow { public string Category { get; set; } = ""; public string FieldName { get; set; } = ""; public string PickList { get; set; } = ""; }
 
     // ── Departments ──
     private List<DepartmentRow> Departments = new();
     private DepartmentRow? SelectedDepartment;
-    private class DepartmentRow { public int DeptID; public string Name = ""; public List<ApproverRow> Approvers = new(); }
-    private class ApproverRow { public string PM = "", PMName = ""; public bool IsSupervisor; public decimal InvoiceLimit; }
+    private class DepartmentRow { public int DeptID { get; set; } public string Name { get; set; } = ""; public List<ApproverRow> Approvers { get; set; } = new(); public List<DeptGLRow> GLAccounts { get; set; } = new(); }
+    private class ApproverRow { public string PM { get; set; } = ""; public string PMName { get; set; } = ""; public bool IsSupervisor { get; set; } public decimal InvoiceLimit { get; set; } }
+    private class DeptGLRow { public string Account { get; set; } = ""; public string Description { get; set; } = ""; }
 
     // ── Document Management ──
     private List<DocumentClassRow> DocumentClasses = new();
-    private class DocumentClassRow { public string DocumentClass = ""; public bool VendorVisible, CustomerVisible; }
+    private class DocumentClassRow { public string DocumentClass { get; set; } = ""; public bool VendorVisible { get; set; } }
+
+    // EPO Reasons (VB6 gEPOReasons): AppOptions rows optionname like 'EPOReason%'
+    // (ReasonCode = substring(name,10), Category = value). Columns are AppGridLayout-driven
+    // (VB6 IniGetGrid(Me,gEPOReasons) → gridname "FOptions.gEPOReasons").
+    private List<EPOReasonRow> EPOReasons = new();
+    private class EPOReasonRow { public string ReasonCode { get; set; } = ""; public string Category { get; set; } = ""; }
+    // EPO Reasons grid columns are AppGridLayout-driven (VB6 IniGetGrid). The
+    // load + width conversion delegate to the shared GridLayoutPresenter; the
+    // bespoke 2-column ResolveEPOField + GetOrderedEPOLayout stay local (they
+    // intentionally diverge from the presenter — see the drift notes there).
+    private readonly GridLayoutPresenter<EPOReasonRow> _epoReasonsGrid =
+        new("FOptions", "gEPOReasons");
+    private Dictionary<string, GridLayoutColumn> gEPOReasonsLayout => _epoReasonsGrid.Layout;
+    private bool HasEPOReasonsLayout => _epoReasonsGrid.Has;
+    private int gEPOReasonsLayoutVersion => _epoReasonsGrid.Version;
+    private GridControl<EPOReasonRow>? _epoGrid;
+
+    // Conditional Formatting (VB6 gFormatting): 4 conditions × {FontStyle, BackColor,
+    // ForeColor} stored as 12 Format_* AppOptions; colors stored as VB6 OLE color longs.
+    private class FormatRule { public string FontStyle { get; set; } = ""; public string BackColor { get; set; } = "#FFFFFF"; public string ForeColor { get; set; } = "#000000"; }
+    private readonly FormatRule[] FormatRules = { new(), new(), new(), new() };
+    private static readonly string[] FormatConditionKeys = { "QtyRateEQZero", "QtyRateLTZero", "NonSysRate", "InvalidData" };
+    private static readonly string[] FormatConditionLabels = { "Quantity or rate is zero", "Quantity or rate is negative", "Non-system (manually entered) rate", "Invalid data" };
+    private static readonly string[] FontStyleOptions = { "Regular", "Bold", "Italic", "Bold Italic" };
+    // Fallback colors when a Format_*_BackColor/ForeColor AppOption is unset — inferred from
+    // each condition's meaning (and back ≠ fore so the sample text stays readable).
+    private static readonly (string Back, string Fore)[] FormatDefaults =
+    {
+        ("#E8E8E8", "#000000"),  // Quantity or rate is zero            — dim grey (neutral)
+        ("#FFD6D6", "#000000"),  // Quantity or rate is negative        — pale red (warning)
+        ("#D6EFFF", "#000000"),  // Non-system (manually entered) rate  — pale blue (info)
+        ("#FF4040", "#FFFFFF"),  // Invalid data                        — red, white text (error)
+    };
 
     private class SelectItem { public string Value = "", Text = ""; }
+
+    // Grid settings/events for the FlexKit GridControl conversions: selection grids wire
+    // RowSelected; editable grids use Template-bound FlexKit controls + @ref refresh.
+    private readonly SelectionSettings _rowSelect = new() { Mode = SelectionMode.Row };
+    private readonly GridControlEvents<CustomFieldRow> _customFieldsEvents = new();
+    private readonly GridControlEvents<DepartmentRow> _departmentsEvents = new();
+    private GridControl<DocumentClassRow>? _docClassGrid;
+    private GridControl<DepartmentRow>? _deptGrid;
+    private GridControl<DeptGLRow>? _deptGLGrid;
 
     // ════════════════════════════════════════════════════════
     // Lifecycle
@@ -1088,6 +1159,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _customFieldsEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CustomFieldRow>>(this, args => { SelectedCustomField = args.Data; });
+        _departmentsEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<DepartmentRow>>(this, args => { SelectDepartment(args.Data); });
+
         TabItems = new()
         {
             new() { Index = 1, Caption = "Corporate Info" },
@@ -1112,6 +1186,14 @@
 
     private void SelectTab(int idx) => SelectedTab = idx;
 
+    // VB6 "Select a page" TOC, now the FlexKit SideNavigationControl. Map the tab defs to
+    // nav items (sorted by caption like the VB6 list) and route selection back to SelectTab.
+    private IEnumerable<SideNavigationItem> NavItems => TabItems
+        .OrderBy(t => t.Caption)
+        .Select(t => new SideNavigationItem { Key = t.Index, Text = t.Caption, IconUrl = "images/pointing_hand.png" });
+
+    private void OnNavSelect(object? key) => SelectTab(Convert.ToInt32(key));
+
     // ════════════════════════════════════════════════════════
     // Load All Data
     // ════════════════════════════════════════════════════════
@@ -1126,16 +1208,20 @@
         var pms = await db.QueryAsync("SELECT pmname, pm FROM tblprojectmanager WHERE purchaser=1");
         PurchasingManagerList = pms.Select(r => new SelectItem { Value = r["pm"]?.ToString() ?? "", Text = r["pmname"]?.ToString() ?? "" }).ToList();
 
-        var tgRows = await db.QueryAsync("SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID=@DivisionID", new { DivisionID });
+        var tgRows = await db.QueryAsync("SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID =@DivisionID", new { SessionState.DivisionID });
         TaxGroupList = tgRows.Select(r => r["TaxGroup"]?.ToString() ?? "").ToList();
-        var vcRows = await db.QueryAsync("SELECT description, category FROM standardcategories WHERE isvariance=1 AND DivisionID=@DivisionID", new { DivisionID });
+        var vcRows = await db.QueryAsync("SELECT description, category FROM standardcategories WHERE isvariance=1 AND DivisionID =@DivisionID", new { SessionState.DivisionID });
         VarianceCategoryList = vcRows.Select(r => new SelectItem { Value = r["category"]?.ToString() ?? "", Text = r["description"]?.ToString() ?? "" }).ToList();
 
-        // Load all AppOptions for this division
-        var optRows = await db.QueryAsync("SELECT OptionName, OptionValue FROM AppOptions WHERE DivisionID=@DivisionID", new { DivisionID });
-        var opts = optRows.ToDictionary(r => r["OptionName"]?.ToString() ?? "", r => r["OptionValue"]?.ToString() ?? "", StringComparer.OrdinalIgnoreCase);
+        // Load AppOptions for this division AND the global (DivisionID 0) rows — many options
+        // (e.g. the Conditional-Formatting Format_* values) live at division 0. ORDER BY so the
+        // division-specific row is applied last and overrides the global one.
+        var optRows = await db.QueryAsync("SELECT OptionName, OptionValue FROM AppOptions WHERE DivisionID IN (0, @DivisionID) ORDER BY DivisionID", new { SessionState.DivisionID });
+        var opts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in optRows)
+            opts[r["OptionName"]?.ToString() ?? ""] = r["OptionValue"]?.ToString() ?? "";
         // Load system_setup row
-        var sysRows = await db.QueryAsync("SELECT * FROM system_setup WHERE id=@DivisionID", new { DivisionID });
+        var sysRows = await db.QueryAsync("SELECT * FROM system_setup WHERE id=@DivisionID", new { SessionState.DivisionID });
         var sys = sysRows.FirstOrDefault() ?? new Dictionary<string, object>();
 
         string Opt(string n) => opts.TryGetValue(n, out var v) ? v : "";
@@ -1217,9 +1303,12 @@
         SageSqlEstUser = Opt("SageSqlEstUser"); SageSqlEstPswd = Opt("SageSqlEstPswd");
         SageSqlEstConsolidateItems = OptBool("SageSqlEstConsolidateItems");
         IncentiveCostPercent = Sys("IncentiveCostPercent"); if (string.IsNullOrEmpty(IncentiveCostPercent)) IncentiveCostPercent = "0";
-        IncentiveItemDisplay = $"{Sys("IncentivePhase")}/{Sys("IncentiveItem")} -- {Sys("IncentiveItemDescription")}";
-        LandItemDisplay = $"{Sys("LandPhase")}/{Sys("LandItem")} -- {Sys("LandItemDescription")}";
-        SelectAtTakeoffDisplay = $"{Sys("SelectAtTakeoffPhase")}/{Sys("SelectAtTakeoffItem")} -- {Sys("SelectAtTakeoffDescription")}";
+        _incPhase = Sys("IncentivePhase"); _incItem = Sys("IncentiveItem"); _incDesc = Sys("IncentiveItemDescription");
+        _landPhase = Sys("LandPhase"); _landItem = Sys("LandItem"); _landDesc = Sys("LandItemDescription");
+        _satPhase = Sys("SelectAtTakeoffPhase"); _satItem = Sys("SelectAtTakeoffItem"); _satDesc = Sys("SelectAtTakeoffDescription");
+        IncentiveItemDisplay = ItemDisplay(_incPhase, _incItem, _incDesc);
+        LandItemDisplay = ItemDisplay(_landPhase, _landItem, _landDesc);
+        SelectAtTakeoffDisplay = ItemDisplay(_satPhase, _satItem, _satDesc);
         var toSys = Opt("TakeoffSystem"); TakeoffSystemIndex = int.TryParse(toSys, out var ts) ? ts : 0;
         OnScreenTypeSQL = Opt("OnScreenType") == "SQL";
         OnScreenMDB = Opt("OnScreenMDB"); OnScreenServer = Opt("OnScreenServer");
@@ -1253,7 +1342,7 @@
         IntacctOneTimeItemID = Opt("IntacctOneTimeItemID"); IntacctGstItemID = Opt("IntacctGstItemID");
 
         // Accounting Import
-        ManageActiveVendors = OptBool("ManageActiveVendors"); ExcludedVendorTypes = Opt("ExcludedVendorTypes");
+        ManageActiveVendors = OptBool("ManageActiveVendors"); ExcludedVendorTypes = ExcludedToLines(Opt("ExcludedVendorTypes"));
 
         // Sales System
         var salesSys = Sys("SalesSystem"); SalesSystemIndex = int.TryParse(salesSys, out var ss) ? ss : 0;
@@ -1264,19 +1353,25 @@
         AppendUOMtoOptionDesc = OptBool("AppendUOMtoOptionDesc"); WebUploadByCommunity = OptBool("WebUploadByCommunity");
 
         // Roles
-        VendorRoles = Opt("VendorContactRoles"); CustomerRoles = Opt("CustomerContactRoles"); JobRoles = Opt("JobContactRoles");
+        VendorRoles = PipeToLines(Opt("VendorContactRoles")); CustomerRoles = PipeToLines(Opt("CustomerContactRoles")); JobRoles = PipeToLines(Opt("JobContactRoles"));
 
         // BuildPro
         BuildProCompany = Opt("BuildProCompanyCode");
         BuildProEnvironment = Opt("BuildProEnvironment"); if (string.IsNullOrEmpty(BuildProEnvironment)) BuildProEnvironment = "Production";
         BuildProUID = Opt("BuildProUID"); BuildProPwd = Opt("BuildProPwd");
-        BuildProSendPOsImmediately = OptBool("BuildProSendPOsImmediately");
+        ABNResource = Opt("ABN_Resource"); ABNTenantID = Opt("ABN_TenantID"); ABNClientID = Opt("ABN_ClientID");
+        ABNClientSecret = Opt("ABN_ClientSecret"); ABNLegalEntity = Opt("ABN_LegalEntity"); ABND01Division = Opt("ABN_D01Division");
+        EnablePreconJobs = Opt("EnablePreconJobs") == "true";
+        AutoApproveTBDVendorAssignments = Opt("AutoApproveTBDVendorAssignments") == "true";
+        AllowJobReassignInBudgetsAndPOs = OptBool("AllowJobReassignInBudgetsAndPOs");
+        BuildProWarrantyDocType = Opt("BuildProWarrantyDocType");
+        UseBPDocManagment = OptBool("UseBPDocManagment");
         BuildProMultiFamily = OptBool("BuildProMultiFamily");
         BuildProSendPhases = Opt("BuildProDontSendPhases") != "True";
         TarionEnabled = OptBool("EnableTarionFields");
         BuildProWarrantyOwnerType = Opt("BuildProWarrantyOwnerType");
         BuildProWarrantyCoOwnerType = Opt("BuildProWarrantyCoOwnerType");
-        ScheduleTemplates = Opt("ScheduleTemplates");
+        ScheduleTemplates = PipeToLines(Opt("ScheduleTemplates"));
 
         // Supply Chain
         DefaultPurchasingManager = Opt("DefaultPurchasingManager"); FieldPOPrefix = Opt("FieldPOPrefix");
@@ -1287,7 +1382,7 @@
         UseDetailedFieldPOView = OptBool("ViewPurchasingManagerDetailsForm"); WebAttachmentsFolder = Opt("WebAttachmentsFolder");
 
         // Book of Account
-        var boaRow = await db.QueryAsync("SELECT BookOfAccount FROM divisions WHERE DivisionID=@DivisionID", new { DivisionID });
+        var boaRow = await db.QueryAsync("SELECT BookOfAccount FROM divisions WHERE DivisionID =@DivisionID", new { SessionState.DivisionID });
         BookOfAccount = boaRow.FirstOrDefault()?["BookOfAccount"]?.ToString() ?? "";
 
         // Divisions
@@ -1296,15 +1391,17 @@
 
         // Community Standards
         var csRows = await db.QueryAsync(@"SELECT s.phase, s.item, i.description FROM communitystandarditems s
-            LEFT OUTER JOIN tblphaseitem i ON (i.phase=s.phase AND i.item=s.item) WHERE i.DivisionID=@DivisionID ORDER BY 1,2,3", new { DivisionID });
+            LEFT OUTER JOIN tblphaseitem i ON (i.phase=s.phase AND i.item=s.item) WHERE i.DivisionID=@DivisionID ORDER BY 1,2,3", new { SessionState.DivisionID });
         StandardItems = csRows.Select(r => new StandardItemRow { Phase = r["phase"]?.ToString() ?? "", Item = r["item"]?.ToString() ?? "", Description = r["description"]?.ToString() ?? "" }).ToList();
+        UseCommunityStandards = OptBool("UseCommunityStandards");
+        CommunityStandardsArePhaseSpecific = OptBool("CommunityStandardsArePhaseSpecific");
 
         // Custom Properties
-        var cfRows = await db.QueryAsync("SELECT Category, Name, DataType FROM JobCustomFieldDefs ORDER BY Category, Name");
-        CustomFields = cfRows.Select(r => new CustomFieldRow { Category = r["Category"]?.ToString() ?? "", FieldName = r["Name"]?.ToString() ?? "", DataType = r["DataType"]?.ToString() ?? "" }).ToList();
+        var cfRows = await db.QueryAsync("SELECT Category, Name, PickList FROM JobCustomFieldDefs ORDER BY Category, Name");
+        CustomFields = cfRows.Select(r => new CustomFieldRow { Category = r["Category"]?.ToString() ?? "", FieldName = r["Name"]?.ToString() ?? "", PickList = r["PickList"]?.ToString() ?? "" }).ToList();
 
         // Department Approvals
-        var deptRows = await db.QueryAsync("SELECT deptid, name FROM departments WHERE divisionid=@DivisionID ORDER BY name", new { DivisionID });
+        var deptRows = await db.QueryAsync("SELECT deptid, name FROM departments WHERE divisionid=@DivisionID ORDER BY name", new { SessionState.DivisionID });
         Departments = new();
         foreach (var dr in deptRows)
         {
@@ -1312,13 +1409,43 @@
             var aRows = await db.QueryAsync(@"SELECT p.pmname, da.pm, da.supervisor, da.invoicelimit FROM departmentapprovers da
                 JOIN tblprojectmanager p ON da.pm=p.pm WHERE da.deptid=@DeptID ORDER BY da.invoicelimit DESC", new { DeptID = dept.DeptID });
             dept.Approvers = aRows.Select(a => new ApproverRow { PM = a["pm"]?.ToString() ?? "", PMName = a["pmname"]?.ToString() ?? "", IsSupervisor = Convert.ToBoolean(a["supervisor"]), InvoiceLimit = Convert.ToDecimal(a["invoicelimit"] ?? 0) }).ToList();
+            // GL accounts for this department (VB6 gDepartmentGLs; description from glaccounts).
+            var glRows = await db.QueryAsync(@"SELECT g.account, g.description FROM departmentglaccounts dg
+                JOIN glaccounts g ON dg.account=g.account AND g.divisionid=@DivisionID WHERE dg.deptid=@DeptID ORDER BY g.account",
+                new { SessionState.DivisionID, DeptID = dept.DeptID });
+            dept.GLAccounts = glRows.Select(g => new DeptGLRow { Account = g["account"]?.ToString() ?? "", Description = g["description"]?.ToString() ?? "" }).ToList();
+            dept.GLAccounts.Add(new DeptGLRow());   // trailing blank row (VB6 auto-add)
             Departments.Add(dept);
         }
         SelectedDepartment = Departments.FirstOrDefault();
 
         // Document Classes
-        var dcRows = await db.QueryAsync("SELECT documentclass, vendorvisible, customervisible FROM dms_documentclasses ORDER BY documentclass");
-        DocumentClasses = dcRows.Select(r => new DocumentClassRow { DocumentClass = r["documentclass"]?.ToString() ?? "", VendorVisible = Convert.ToBoolean(r["vendorvisible"] ?? false), CustomerVisible = Convert.ToBoolean(r["customervisible"] ?? false) }).ToList();
+        var dcRows = await db.QueryAsync("SELECT documentclass, vendorvisible FROM dms_documentclasses ORDER BY documentclass");
+        DocumentClasses = dcRows.Select(r => new DocumentClassRow { DocumentClass = r["documentclass"]?.ToString() ?? "", VendorVisible = Convert.ToBoolean(r["vendorvisible"] ?? false) }).ToList();
+
+        // EPO Reasons — AppGridLayout columns (VB6 IniGetGrid) + AppOptions data.
+        await _epoReasonsGrid.LoadAsync(GridLayoutSvc);
+        var epoRows = await db.QueryAsync(
+            "SELECT substring(OptionName,10,9999) ReasonCode, OptionValue Category FROM appoptions WHERE divisionid=@DivisionID AND optionname like 'EPOReason%' ORDER BY OptionName",
+            new { SessionState.DivisionID });
+        EPOReasons = epoRows.Select(r => new EPOReasonRow { ReasonCode = r["ReasonCode"]?.ToString() ?? "", Category = r["Category"]?.ToString() ?? "" }).ToList();
+        EPOReasons.Add(new EPOReasonRow());   // trailing blank row (VB6 gEPOReasons auto-add)
+
+        // Conditional Formatting — 12 Format_* AppOptions (colors stored as OLE longs).
+        for (int i = 0; i < FormatConditionKeys.Length; i++)
+        {
+            var k = FormatConditionKeys[i];
+            FormatRules[i].FontStyle = Opt($"Format_{k}_FontStyle");
+            if (string.IsNullOrWhiteSpace(FormatRules[i].FontStyle)) FormatRules[i].FontStyle = "Regular";  // VB6 shows "Regular", not blank
+
+            var rawBack = Opt($"Format_{k}_BackColor");
+            var rawFore = Opt($"Format_{k}_ForeColor");
+            FormatRules[i].BackColor = string.IsNullOrWhiteSpace(rawBack) ? FormatDefaults[i].Back : OleToHex(rawBack);
+            FormatRules[i].ForeColor = string.IsNullOrWhiteSpace(rawFore) ? FormatDefaults[i].Fore : OleToHex(rawFore);
+            // Background and foreground must differ, else the sample text is invisible.
+            if (string.Equals(FormatRules[i].BackColor, FormatRules[i].ForeColor, StringComparison.OrdinalIgnoreCase))
+                FormatRules[i].ForeColor = ContrastColor(FormatRules[i].BackColor);
+        }
 
         UpdatePOSample();
     }
@@ -1333,10 +1460,10 @@
         {
             async Task SetOpt(string name, string value)
             {
-                await db.ExecuteAsync(@"IF EXISTS (SELECT 1 FROM AppOptions WHERE DivisionID=@DivisionID AND OptionName=@Name)
-                    UPDATE AppOptions SET OptionValue=@Value WHERE DivisionID=@DivisionID AND OptionName=@Name
+                await db.ExecuteAsync(@"IF EXISTS (SELECT 1 FROM AppOptions WHERE DivisionID =@DivisionID AND OptionName=@Name)
+                    UPDATE AppOptions SET OptionValue=@Value WHERE DivisionID =@DivisionID AND OptionName=@Name
                     ELSE INSERT INTO AppOptions(UID,DivisionID,OptionName,OptionValue) VALUES('',@DivisionID,@Name,@Value)",
-                    new { DivisionID, Name = name, Value = value });
+                    new { SessionState.DivisionID, Name = name, Value = value });
             }
 
             // system_setup
@@ -1347,21 +1474,36 @@
                 TaxGroupEquipment=@T3, TaxGroupOverhead=@T4, TaxGroupOther=@T5,
                 POPrefix=@POPrefix, ZeroQtyTakeoffs=@ZQT, Msg_SendPO_Subject=@MSS,
                 Msg_SendPO_Body=@MSB, Msg_CancelPO_Subject=@MCS, Msg_CancelPO_Body=@MCB,
-                MaxVendorPricing=@MVP, Estimator_Email=@EA WHERE id=@DivisionID",
+                MaxVendorPricing=@MVP, Estimator_Email=@EA,
+                IncentiveCostPercent=@ICP, AdjustSellPriceWithCosts=@ASP, LockPostedSalesWorksheets=@LPS,
+                UseEstimatingWorksheetsOnly=@UEO, MarketingWorkSheetAutoRefreshCosts=@MWAR, includetax=@IT,
+                IncentivePhase=@IncP, IncentiveItem=@IncI, IncentiveItemDescription=@IncD,
+                LandPhase=@LndP, LandItem=@LndI, LandItemDescription=@LndD,
+                SelectAtTakeoffPhase=@SatP, SelectAtTakeoffItem=@SatI, SelectAtTakeoffDescription=@SatD
+                WHERE id=@DivisionID",
                 new { CompanyName, ContactPerson, A1=CompanyAddr1, A2=CompanyAddr2,
                     City=CompanyCity, Prov=CompanyProvince, Zip=CompanyPostalCode, Country=CompanyCountry,
                     Phone=CompanyPhone, Fax=CompanyFax, Email=CompanyEmail, UseTaxGroups,
                     T0=TaxGroups[0], T1=TaxGroups[1], T2=TaxGroups[2], T3=TaxGroups[3], T4=TaxGroups[4], T5=TaxGroups[5],
                     POPrefix, ZQT=ZeroQtyTakeoffMode, MSS=MsgSendPOSubject, MSB=MsgSendPOBody,
-                    MCS=MsgCancelPOSubject, MCB=MsgCancelPOBody, MVP=UseMaxVendorPricing, EA=EmailAddress, DivisionID });
+                    MCS=MsgCancelPOSubject, MCB=MsgCancelPOBody, MVP=UseMaxVendorPricing, EA=EmailAddress,
+                    // Estimating + Sales-Pricing settings that were loaded but never written back:
+                    ICP=IncentiveCostPercent, ASP=AdjustSelling, LPS=LockPostedSheets,
+                    UEO=EstimatingWorksheetsOnly, MWAR=MarketingWorkSheetAutoRefreshCosts, IT=SellingPriceIncludesTax,
+                    IncP=_incPhase, IncI=_incItem, IncD=_incDesc,
+                    LndP=_landPhase, LndI=_landItem, LndD=_landDesc,
+                    SatP=_satPhase, SatI=_satItem, SatD=_satDesc,
+                    SessionState.DivisionID });
 
             await db.ExecuteAsync(@"UPDATE d SET address1=s.address1,address2=s.address2,city=s.city,
                 province=s.province,country=s.country,postal=s.zip,phone=s.phone,fax=s.fax
-                FROM system_setup s JOIN divisions d ON s.id=d.divisionid WHERE s.id=@DivisionID", new { DivisionID });
+                FROM system_setup s JOIN divisions d ON s.id=d.divisionid WHERE s.id=@DivisionID", new { SessionState.DivisionID });
 
             // AppOptions
             await SetOpt("BuilderType", BuilderType);
             await SetOpt("EnforcePasswordComplexity", EnforcePasswordComplexity.ToString());
+            await SetOpt("UseCommunityStandards", UseCommunityStandards.ToString());
+            await SetOpt("CommunityStandardsArePhaseSpecific", CommunityStandardsArePhaseSpecific.ToString());
             await SetOpt("UseAltCostCodesForCO", UseAltCostCodesForCO.ToString());
             await SetOpt("DefaultVarianceCategory", DefaultVarianceCategory);
             await SetOpt("UseVarianceReporting", UseVarianceReporting.ToString());
@@ -1406,7 +1548,7 @@
             await SetOpt("AppendUOMtoOptionDesc", AppendUOMtoOptionDesc.ToString());
             await SetOpt("WebUploadByCommunity", WebUploadByCommunity.ToString());
             await SetOpt("ManageActiveVendors", ManageActiveVendors.ToString());
-            await SetOpt("ExcludedVendorTypes", ExcludedVendorTypes);
+            await SetOpt("ExcludedVendorTypes", LinesToExcluded(ExcludedVendorTypes));
             await SetOpt("IntacctCompanyID", IntacctCompanyID); await SetOpt("IntacctUID", IntacctUID);
             await SetOpt("IntacctPWD", IntacctPWD); await SetOpt("IntacctEntity", IntacctEntity);
             await SetOpt("IntacctPOType", IntacctPOType); await SetOpt("IntacctPOCOType", IntacctPOCOType);
@@ -1422,17 +1564,38 @@
             await SetOpt("UseQBARByJob", QBPostRevenueToJob.ToString());
             await SetOpt("SimplyUID", SimplyUser); await SetOpt("SimplyPWD", SimplyPswd);
             await SetOpt("SimplyInternalCustomer", SimplyInternalCustomer);
-            await SetOpt("VendorContactRoles", VendorRoles); await SetOpt("CustomerContactRoles", CustomerRoles);
-            await SetOpt("JobContactRoles", JobRoles);
+            await SetOpt("VendorContactRoles", LinesToPipe(VendorRoles)); await SetOpt("CustomerContactRoles", LinesToPipe(CustomerRoles));
+            await SetOpt("JobContactRoles", LinesToPipe(JobRoles));
             await SetOpt("BuildProCompanyCode", BuildProCompany); await SetOpt("BuildProEnvironment", BuildProEnvironment);
             await SetOpt("BuildProUID", BuildProUID); await SetOpt("BuildProPwd", BuildProPwd);
-            await SetOpt("BuildProSendPOsImmediately", BuildProSendPOsImmediately.ToString());
+            await SetOpt("ABN_Resource", ABNResource); await SetOpt("ABN_TenantID", ABNTenantID); await SetOpt("ABN_ClientID", ABNClientID);
+            await SetOpt("ABN_ClientSecret", ABNClientSecret); await SetOpt("ABN_LegalEntity", ABNLegalEntity); await SetOpt("ABN_D01Division", ABND01Division);
+            await SetOpt("EnablePreconJobs", EnablePreconJobs ? "true" : "false");
+            await SetOpt("AutoApproveTBDVendorAssignments", AutoApproveTBDVendorAssignments ? "true" : "false");
+            await SetOpt("AllowJobReassignInBudgetsAndPOs", AllowJobReassignInBudgetsAndPOs.ToString());
+            await SetOpt("BuildProWarrantyDocType", BuildProWarrantyDocType);
+            await SetOpt("UseBPDocManagment", UseBPDocManagment.ToString());
             await SetOpt("BuildProMultiFamily", BuildProMultiFamily.ToString());
             await SetOpt("BuildProDontSendPhases", (!BuildProSendPhases).ToString());
             await SetOpt("EnableTarionFields", TarionEnabled.ToString());
             await SetOpt("BuildProWarrantyOwnerType", BuildProWarrantyOwnerType);
             await SetOpt("BuildProWarrantyCoOwnerType", BuildProWarrantyCoOwnerType);
-            await SetOpt("ScheduleTemplates", ScheduleTemplates);
+            await SetOpt("ScheduleTemplates", LinesToPipe(ScheduleTemplates));
+
+            // EPO Reasons — delete all then re-insert from grid rows (skip blanks). VB6 FOptions.frm:8330-8343.
+            await db.ExecuteAsync("DELETE FROM appoptions WHERE divisionid=@DivisionID AND optionname like 'EPOReason%'", new { SessionState.DivisionID });
+            foreach (var epo in EPOReasons.Where(e => !string.IsNullOrWhiteSpace(e.ReasonCode)))
+                await db.ExecuteAsync("INSERT INTO appoptions(uid,divisionid,optionname,optionvalue) VALUES('',@DivisionID,@Name,@Val)",
+                    new { SessionState.DivisionID, Name = "EPOReason" + epo.ReasonCode, Val = epo.Category });
+
+            // Conditional Formatting — write the 12 Format_* AppOptions (hex → OLE long).
+            for (int i = 0; i < FormatConditionKeys.Length; i++)
+            {
+                var k = FormatConditionKeys[i];
+                await SetOpt($"Format_{k}_FontStyle", FormatRules[i].FontStyle);
+                await SetOpt($"Format_{k}_BackColor", HexToOle(FormatRules[i].BackColor));
+                await SetOpt($"Format_{k}_ForeColor", HexToOle(FormatRules[i].ForeColor));
+            }
             await SetOpt("DefaultPurchasingManager", DefaultPurchasingManager); await SetOpt("FieldPOPrefix", FieldPOPrefix);
             await SetOpt("Detail_Description", FieldPOFields[0].ToString()); await SetOpt("Detail_Quantity", FieldPOFields[1].ToString());
             await SetOpt("Detail_Rate", FieldPOFields[2].ToString()); await SetOpt("Detail_Job", FieldPOFields[3].ToString());
@@ -1441,14 +1604,15 @@
             await SetOpt("ViewPurchasingManagerDetailsForm", UseDetailedFieldPOView.ToString());
             await SetOpt("WebAttachmentsFolder", WebAttachmentsFolder);
 
-            await db.ExecuteAsync("UPDATE divisions SET bookofaccount=@BookOfAccount WHERE divisionid=@DivisionID", new { BookOfAccount, DivisionID });
+            await db.ExecuteAsync("UPDATE divisions SET bookofaccount=@BookOfAccount WHERE divisionid=@DivisionID", new { BookOfAccount, SessionState.DivisionID });
 
             // Divisions
             foreach (var div in Divisions)
                 await db.ExecuteAsync("UPDATE divisions SET divisioncode=@Code, divisionname=@Company WHERE divisionid=@DivisionID", new { div.Code, div.Company, div.DivisionID });
 
             // Department Approvals
-            await db.ExecuteAsync("DELETE FROM departmentapprovers WHERE deptid IN (SELECT deptid FROM departments WHERE divisionid=@DivisionID)", new { DivisionID });
+            await db.ExecuteAsync("DELETE FROM departmentapprovers WHERE deptid IN (SELECT deptid FROM departments WHERE divisionid=@DivisionID)", new { SessionState.DivisionID });
+            await db.ExecuteAsync("DELETE FROM departmentglaccounts WHERE deptid IN (SELECT deptid FROM departments WHERE divisionid=@DivisionID)", new { SessionState.DivisionID });
             foreach (var dept in Departments)
             {
                 if (dept.DeptID > 0)
@@ -1457,13 +1621,16 @@
                 foreach (var a in dept.Approvers)
                     await db.ExecuteAsync("INSERT INTO departmentapprovers(deptid,pm,supervisor,invoicelimit,sortorder) VALUES(@DeptID,@PM,@S,@L,@SO)",
                         new { dept.DeptID, a.PM, S=a.IsSupervisor, L=a.InvoiceLimit, SO=so++ });
+                foreach (var gl in dept.GLAccounts.Where(g => !string.IsNullOrWhiteSpace(g.Account)))
+                    await db.ExecuteAsync("INSERT INTO departmentglaccounts(deptid,account) VALUES(@DeptID,@Account)",
+                        new { dept.DeptID, gl.Account });
             }
 
             // Document Classes
             await db.ExecuteAsync("DELETE FROM dms_documentclasses");
             foreach (var dc in DocumentClasses.Where(d => !string.IsNullOrWhiteSpace(d.DocumentClass)))
-                await db.ExecuteAsync("INSERT INTO dms_documentclasses(documentclass,vendorvisible,customervisible) VALUES(@DocumentClass,@VendorVisible,@CustomerVisible)",
-                    new { dc.DocumentClass, dc.VendorVisible, dc.CustomerVisible });
+                await db.ExecuteAsync("INSERT INTO dms_documentclasses(documentclass,vendorvisible) VALUES(@DocumentClass,@VendorVisible)",
+                    new { dc.DocumentClass, dc.VendorVisible });
 
             ShowSaveConfirmDialog = true;
         }
@@ -1474,7 +1641,7 @@
     // UI Handlers
     // ════════════════════════════════════════════════════════
 
-    private void OnCancel() => NavigationManager.NavigateTo("/");
+    private void OnCancel() => ClosePage();
     private void OnAccountingSystemChanged() { }
     private void OnMBAPILevelChanged() { }
     private void OnAllowForecastChanged() { if (!AllowForecast) WarnForecast = false; }
@@ -1498,25 +1665,344 @@
         };
     }
     private void OnChangeNextPO() { }
-    private void OnEditBookOfAccounts() { }
+
+    // ── "Wallet Configuration" / "Tax groups..." links → FDBGrid editors as modals ──
+    // (VB6 FOptions.frm lblEditList_Click: Index 11 = Book of Accounts, Index 2 = Tax Groups)
+    private bool _showBookOfAccountsModal;
+    private bool _showTaxGroupsModal;
+    private FDBGrid? _taxGroupsGrid;
+    private bool _taxGroupsShowPending;
+
+    // VB6 lblEditList_Click(11): FDBGrid.ShowForm("Book of Accounts", <Sage300-conditional SQL>,
+    // "DataSources", "BookOfAccount", False, , "WalletPartyID"). FDBGrid's caption resolver
+    // produces this exact SQL/keys/locked-column set (and the post-close DataSourceID backfill),
+    // so we just open it by FormCaption.
+    private void OnEditBookOfAccounts() => _showBookOfAccountsModal = true;
+
     private void OnEditCostCodes() { }
     private void OnEditCategories() { }
-    private void OnEditTaxGroups() { }
-    private void OnSetupUserPermissions() { }
+
+    // VB6 lblEditList_Click(2): FDBGrid.ShowForm("Tax Groups",
+    // "select divisionid,TaxGroup,Description,JCRate,NJCRate from taxgroups where DivisionID=<Div>",
+    // "taxgroups", "divisionid,taxgroup", <True if Timberline else False>, "divisionid").
+    // The 6th positional arg is HiddenColumns, so divisionid is HIDDEN (not just locked) and
+    // editing is read-only under Timberline (accounting-system code 1). We drive the grid via an
+    // explicit ShowForm(…) one-shot (OnAfterRenderAsync) to match VB6 exactly.
+    private void OnEditTaxGroups()
+    {
+        _taxGroupsShowPending = true;
+        _showTaxGroupsModal = true;
+    }
+    private bool _showUserPermissions;
+    private void OnSetupUserPermissions() => _showUserPermissions = true;
     private void OnEditDivisionCompany(DivisionRow div) { }
     private void OnEditWBSDescriptions() { }
-    private void OnEditCommunities() { }
-    private void OnEditCommunityPhases() { }
-    private void OnEditModelSeries() { }
-    private void OnEditOptionGroups() { }
-    private void OnEditOptionCategories() { }
+    // VB6 FOptions Sales-System tab "Edit ..." links → the generic FDBGrid editor
+    // (VB6 lblEditList_Click → FDBGrid.ShowForm), hosted as a modal. FDBGrid resolves
+    // each caption to its SQL/table/keys; the links only show when SalesSystemIndex==0
+    // (VB6 readOnly = ListIndex<>0), so the grid is editable.
+    private bool _showSalesEditModal;
+    private string _salesEditCaption = "";
+    private void OpenSalesEdit(string caption) { _salesEditCaption = caption; _showSalesEditModal = true; }
+    private void OnSalesEditClosed() => _showSalesEditModal = false;
+
+    // VB6 lblEditList_Click(11) tail: after the grid closes, backfill any null DataSourceIDs
+    // (handled inside FDBGrid's "Book of Accounts" resolver) then reload cboBookOfAccount from
+    // "select distinct BookOfAccount,'',0 from DataSources order by 1", preserving the current
+    // selection. We refresh BookOfAccountList the same way (it may have gained/lost accounts).
+    private async Task OnBookOfAccountsClosed()
+    {
+        _showBookOfAccountsModal = false;
+        var prev = BookOfAccount;
+        var boa = await db.QueryAsync("SELECT DISTINCT BookOfAccount FROM DataSources ORDER BY 1");
+        BookOfAccountList = boa.Select(r => r["BookOfAccount"]?.ToString() ?? "").ToList();
+        // VB6 SetComboBoxListIndex: keep the prior pick if it still exists.
+        BookOfAccount = BookOfAccountList.Contains(prev) ? prev : (BookOfAccountList.FirstOrDefault() ?? "");
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // VB6 lblEditList_Click(2) tail: after the Tax Groups grid closes,
+    // "update taxgroups set grouprate=njcrate+jcrate" so the derived rate stays consistent.
+    private async Task OnTaxGroupsClosed()
+    {
+        _showTaxGroupsModal = false;
+        _taxGroupsGrid = null;
+        try { await db.ExecuteAsync("update taxgroups set grouprate=njcrate+jcrate"); }
+        catch (Exception ex) { Logger.LogWarning(ex, "Tax Groups grouprate recompute"); }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Drive the freshly-instantiated Tax Groups FDBGrid via an explicit ShowForm(…) so the
+    // VB6 args are matched verbatim (esp. hiddenColumns:"divisionid", which the caption
+    // resolver would otherwise treat as a locked column). One-shot, mirroring FDBGrid's own
+    // nested-grid pattern.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_taxGroupsShowPending && _taxGroupsGrid != null)
+        {
+            _taxGroupsShowPending = false;
+            await _taxGroupsGrid.ShowForm(
+                formCaption: "Tax Groups",
+                sqlStatement: "select divisionid, TaxGroup, Description, JCRate, NJCRate from taxgroups where DivisionID = @DivisionID",
+                tableName: "taxgroups",
+                keyColumns: "divisionid,taxgroup",
+                readOnly: AccountingSystemIndex == 1, // asTimberline
+                hiddenColumns: "divisionid",
+                addRecords: true,
+                parameters: new Dictionary<string, object> { ["DivisionID"] = SessionState.DivisionID });
+        }
+    }
+
+    private void OnEditCommunities() => OpenSalesEdit("Communities");
+    private void OnEditCommunityPhases() => OpenSalesEdit("Community Phases");
+    private void OnEditModelSeries() => OpenSalesEdit("Series List");
+    private void OnEditOptionGroups() => OpenSalesEdit("Option Groups");
+    // "Sales Option Categories" resolves to tblcategories (VB6 FOptions Case 6). The plain
+    // "Option Categories" caption now belongs to FAssembly's OptionCategories lookup table —
+    // see the FDBGrid resolver. Displayed title stays "Option Categories".
+    private void OnEditOptionCategories() => OpenSalesEdit("Sales Option Categories");
     private void OnShowReplacementParameters() { }
     private void OnSendTestEmail() { }
-    private void OnAddCustomField() => CustomFields.Add(new CustomFieldRow());
-    private void OnDeleteCustomField() { if (CustomFields.Count > 0) CustomFields.RemoveAt(CustomFields.Count - 1); }
+    private FAddProperty? _addProperty;
+    private bool _showAddProperty;
+    private CustomFieldRow? SelectedCustomField;
+
+    // VB6 gCustomFields Add/Edit open FAddProperty, which does the ALTER TABLE ADD +
+    // JobCustomFieldDefs INSERT/UPDATE (the sanctioned custom-field schema exception).
+    private async Task OnAddCustomField() { if (_addProperty != null) await _addProperty.AddFieldAsync(); }
+    private async Task OnEditCustomField()
+    {
+        if (_addProperty != null && SelectedCustomField != null && !string.IsNullOrEmpty(SelectedCustomField.FieldName))
+            await _addProperty.EditFieldAsync(SelectedCustomField.FieldName);
+    }
+    // FAddProperty closed → reload the grid (it may have added/edited a field).
+    private async Task OnAddPropertyVisibleChanged(bool visible)
+    {
+        _showAddProperty = visible;
+        if (!visible) await ReloadCustomFieldsAsync();
+    }
+
+    // VB6 gCustomFields delete (FOptions.frm:6612-6622): unbind defaults, DROP the
+    // column from both wide tables, remove the JobCustomFieldDefs row. Per user
+    // decision this admin form follows VB6's schema-changing design — the custom-field
+    // values live in JobCustomFields.<col>, so Add adds a column and Delete drops it.
+    private async Task OnDeleteCustomField()
+    {
+        var cf = SelectedCustomField;
+        if (cf == null || string.IsNullOrEmpty(cf.FieldName)) return;
+        var ok = await Dialogs.ConfirmAsync(
+            $"Delete custom property \"{cf.FieldName}\"?\n\nThis removes the column and all of its data permanently.");
+        if (!ok) return;
+
+        var col = "[" + cf.FieldName.Replace("]", "]]") + "]";
+        try
+        {
+            try { await db.ExecuteAsync($"EXEC sp_unbindefault 'dbo.JobCustomFields.{col}'"); } catch { /* no default bound */ }
+            try { await db.ExecuteAsync($"EXEC sp_unbindefault 'dbo.WorkticketCustomFlds.{col}'"); } catch { }
+            try { await db.ExecuteAsync($"ALTER TABLE dbo.WorkticketCustomFlds DROP COLUMN {col}"); } catch { /* column may not exist here */ }
+            try { await db.ExecuteAsync($"ALTER TABLE dbo.JobCustomFields DROP COLUMN {col}"); } catch { /* leave orphan column if it can't drop */ }
+            await db.ExecuteAsync("DELETE FROM JobCustomFieldDefs WHERE Name=@Name", new { Name = cf.FieldName });
+            SelectedCustomField = null;
+            await ReloadCustomFieldsAsync();
+            Notifications.Info($"Custom property \"{cf.FieldName}\" deleted.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Delete custom property error");
+            Notifications.Error($"Could not delete property: {ex.Message}");
+        }
+    }
+
+    private async Task ReloadCustomFieldsAsync()
+    {
+        var cfRows = await db.QueryAsync("SELECT Category, Name, PickList FROM JobCustomFieldDefs ORDER BY Category, Name");
+        CustomFields = cfRows.Select(r => new CustomFieldRow { Category = r["Category"]?.ToString() ?? "", FieldName = r["Name"]?.ToString() ?? "", PickList = r["PickList"]?.ToString() ?? "" }).ToList();
+        StateHasChanged();
+    }
+
+    // === VB6 FOptions delimiter transforms (stored value ↔ one-entry-per-line textarea) ===
+    // Contact Roles + Schedule Templates: stored pipe-delimited, shown one per line
+    // (VB6 load: Replace(value, "|", vbCrLf)).
+    private static string PipeToLines(string? stored) => (stored ?? "").Replace("|", "\n");
+    // VB6 PDL(): split on newline, trim each element, strip embedded '|', drop blank lines, join with '|'.
+    private static string LinesToPipe(string? text) => string.Join("|",
+        (text ?? "").Replace("\r\n", "\n").Split('\n').Select(l => l.Trim().Replace("|", "")).Where(l => l.Length > 0));
+    // ExcludedVendorTypes: stored as a quoted SQL IN-list 'A','B','C', shown one per line
+    // (VB6 load: strip "'" then Replace(",", vbCrLf); save: wrap items as '...','...').
+    private static string ExcludedToLines(string? stored) => (stored ?? "").Replace("'", "").Replace(",", "\n");
+    private static string LinesToExcluded(string? text) => "'" + string.Join("','",
+        (text ?? "").Replace("\r\n", "\n").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0)) + "'";
+
+    // === Estimating-tab item pickers (VB6 cmdChooseItem → FPickList on tblPhaseItem) ===
+    private static string ItemDisplay(string phase, string item, string desc) => $"{phase}/{item} -- {desc}";
+    private static string PickCol(IDictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var v) && v != null ? v.ToString() ?? "" : "";
+
+    private async Task OpenItemPicker(int target)
+    {
+        _itemPickTarget = target;
+        if (_itemPickList != null)
+            await _itemPickList.Open(title: "Item",
+                queries: $"SELECT Phase,Item,Description FROM tblPhaseItem WHERE DivisionID = {SessionState.DivisionID}");
+    }
+
+    private Task OnItemPicked(List<IDictionary<string, object>> rows)
+    {
+        if (rows.Count == 0) return Task.CompletedTask;
+        var r = rows[0];
+        var p = PickCol(r, "Phase"); var i = PickCol(r, "Item"); var d = PickCol(r, "Description");
+        switch (_itemPickTarget)
+        {
+            case 0: _incPhase = p; _incItem = i; _incDesc = d; IncentiveItemDisplay = ItemDisplay(p, i, d); break;
+            case 1: _landPhase = p; _landItem = i; _landDesc = d; LandItemDisplay = ItemDisplay(p, i, d); break;
+            case 2: _satPhase = p; _satItem = i; _satDesc = d; SelectAtTakeoffDisplay = ItemDisplay(p, i, d); break;
+        }
+        return Task.CompletedTask;
+    }
+
+    // === EPO Reasons grid — AppGridLayout-driven columns + VB6 auto-add trailing row ===
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    // DRIFT (intentional — left un-delegated): ordering matches the presenter, but
+    // the field resolution uses the bespoke two-column ResolveEPOField below rather
+    // than the presenter's reflection-based ResolveField, so this iterates the
+    // layout directly. (gEPOReasonsLayout is now _epoReasonsGrid.Layout.)
+    private IEnumerable<(GridLayoutColumn Layout, string Field)> GetOrderedEPOLayout()
+    {
+        foreach (var layout in gEPOReasonsLayout.Values
+                     .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+                     .OrderBy(c => c.ColIndex ?? int.MaxValue)
+                     .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase))
+            yield return (layout, ResolveEPOField(layout.Field));
+    }
+
+    // DRIFT (intentional — left un-delegated): this is a bespoke two-column
+    // heuristic — any field whose name contains "categ" edits Category, everything
+    // else edits ReasonCode. The presenter's reflection ResolveField can't express
+    // this, so it stays local. Map an AppGridLayout field name to the EPOReasonRow
+    // property it edits.
+    private static string ResolveEPOField(string field) =>
+        field.Replace(" ", "").ToLowerInvariant().Contains("categ")
+            ? nameof(EPOReasonRow.Category) : nameof(EPOReasonRow.ReasonCode);
+
+    // The new widths live on the snapshot, not in the presenter's layout dict, so
+    // they have to be merged in before the save. ResolveEPOField is the same map the
+    // columns were rendered with, so the snapshot's field names find their layout rows.
+    private async Task OnEPOReasonsLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || gEPOReasonsLayout.Count == 0) return;
+
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FOptions", "gEPOReasons", instanceKey: null,
+                gEPOReasonsLayout, snapshot, layoutFieldResolver: ResolveEPOField, staticNames: false);
+
+            _epoReasonsGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FOptions gEPOReasons layout");
+        }
+    }
+
+    // VB6 gEPOReasons_ValidateEdit: typing into the trailing blank row appends a new one.
+    private async Task EPORowEdited()
+    {
+        var last = EPOReasons.LastOrDefault();
+        if (last != null && (!string.IsNullOrWhiteSpace(last.ReasonCode) || !string.IsNullOrWhiteSpace(last.Category)))
+        {
+            EPOReasons.Add(new EPOReasonRow());
+            if (_epoGrid != null) await _epoGrid.RefreshAsync();
+        }
+    }
+
+    // VB6 gDepartmentGLs: typing into the trailing blank GL row appends a new one.
+    private async Task DeptGLRowEdited()
+    {
+        var gls = SelectedDepartment?.GLAccounts;
+        var last = gls?.LastOrDefault();
+        if (gls != null && last != null && !string.IsNullOrWhiteSpace(last.Account))
+        {
+            gls.Add(new DeptGLRow());
+            if (_deptGLGrid != null) await _deptGLGrid.RefreshAsync();
+        }
+    }
+
+    // VB6 colors are OLE longs (R + G*256 + B*65536); ColorPickerControl uses #RRGGBB hex.
+    private static string OleToHex(string? stored)
+    {
+        var s = (stored ?? "").Trim();
+        if (s.Length >= 4 && s[0] == '#') return s;            // already hex
+        if (long.TryParse(s, out var n) && n >= 0)
+        {
+            int r = (int)(n & 0xFF), g = (int)((n >> 8) & 0xFF), b = (int)((n >> 16) & 0xFF);
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+        return "#000000";
+    }
+
+    private static string HexToOle(string? hex)
+    {
+        var s = (hex ?? "").Trim().TrimStart('#');
+        if (s.Length == 6 && int.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
+        {
+            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+            return (r + g * 256 + b * 65536).ToString();
+        }
+        return "0";
+    }
+
+    // Black or white — whichever contrasts with the given #RRGGBB (perceived luminance).
+    private static string ContrastColor(string? hexBack)
+    {
+        var s = (hexBack ?? "").Trim().TrimStart('#');
+        if (s.Length == 6 && int.TryParse(s, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
+        {
+            int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+            return (0.299 * r + 0.587 * g + 0.114 * b) > 140 ? "#000000" : "#FFFFFF";
+        }
+        return "#000000";
+    }
+
+    // Conditional-Formatting sample cell: the condition text rendered with its own back/fore
+    // colours + font style (VB6 shows the effect on a sample, so no "Back"/"Fore" text labels).
+    private static string CfSampleStyle(FormatRule r)
+    {
+        var s = $"background:{r.BackColor}; color:{r.ForeColor};";
+        if (r.FontStyle.Contains("Bold")) s += "font-weight:bold;";
+        if (r.FontStyle.Contains("Italic")) s += "font-style:italic;";
+        return s;
+    }
+
+    // === Dropdown data sources (static option lists for converted <select>s) ===
+    // SelOpt = value≠text option (e.g. value "0" → label "none"); plain string[] when value==text.
+    private sealed record SelOpt(string Value, string Text);
+    private static readonly string[] BuildProEnvOptions = { "User Acceptance Testing (UAT)", "Production" };
+    private static readonly string[] BuilderTypeOptions = { "Commercial", "Homebuilder" };
+    private static readonly SelOpt[] ZeroQtyTakeoffOptions = { new("0", "Prompt me"), new("1", "Always skip"), new("2", "Always add") };
+    private static readonly SelOpt[] EstimatingSystemOptions = { new("0", "none"), new("1", "CG Visions BIM Pipeline"), new("2", "Sage Estimating") };
+    private static readonly SelOpt[] TakeoffSystemOptions = { new("0", "none"), new("1", "On-Screen Takeoff"), new("2", "PlanSwift") };
+    private static readonly SelOpt[] SalesSystemOptions = { new("0", "No sales system integration"), new("1", "HomeFront Profit Builder"), new("2", "Builder 1440") };
+    private static readonly SelOpt[] AccountingSystemOptions =
+    {
+        new("0", "No accounting integration"), new("1", "Sage 300 Construction and Real Estate"),
+        new("2", "Sage 100 Contractor"), new("3", "Sage 50 Accounting"), new("9", "Sage Intacct"),
+        new("5", "QuickBooks"), new("10", "Quickbooks Online"), new("7", "Xero"),
+        new("11", "D365 -- ABN")
+    };
+    private static readonly string[] MBAPILevelOptions = { "v18", "v19", "v20" };
+    private static readonly string[] QBEditionOptions = { "US", "CA" };
+    private static readonly string[] QBOEditionOptions = { "US" };
+    private static readonly string[] IntacctPORefOptions = { "Job Number", "PO Number" };
+    private static readonly string[] IntacctInvRefOptions = { "Job Number", "Job Description", "Invoice Description", "PO Number" };
+    // Tax-group dropdowns include a leading blank (VB6 allows clearing the selection).
+    private IEnumerable<string> TaxGroupOptions => new[] { "" }.Concat(TaxGroupList);
     private void SelectDepartment(DepartmentRow dept) => SelectedDepartment = dept;
-    private void OnAddDepartment() { var d = new DepartmentRow { Name = "New Department" }; Departments.Add(d); SelectedDepartment = d; }
-    private void OnDeleteDepartment() { if (SelectedDepartment != null) { Departments.Remove(SelectedDepartment); SelectedDepartment = Departments.FirstOrDefault(); } }
-    private void OnAddDocumentClass() => DocumentClasses.Add(new DocumentClassRow());
-    private void OnDeleteDocumentClass() { if (DocumentClasses.Count > 0) DocumentClasses.RemoveAt(DocumentClasses.Count - 1); }
+    private async Task OnAddDepartment() { var d = new DepartmentRow { Name = "New Department" }; Departments.Add(d); SelectedDepartment = d; if (_deptGrid != null) await _deptGrid.RefreshAsync(); }
+    private async Task OnDeleteDepartment() { if (SelectedDepartment != null) { Departments.Remove(SelectedDepartment); SelectedDepartment = Departments.FirstOrDefault(); if (_deptGrid != null) await _deptGrid.RefreshAsync(); } }
+    private async Task OnAddDocumentClass() { DocumentClasses.Add(new DocumentClassRow()); if (_docClassGrid != null) await _docClassGrid.RefreshAsync(); }
+    private async Task OnDeleteDocumentClass() { if (DocumentClasses.Count > 0) { DocumentClasses.RemoveAt(DocumentClasses.Count - 1); if (_docClassGrid != null) await _docClassGrid.RefreshAsync(); } }
 }

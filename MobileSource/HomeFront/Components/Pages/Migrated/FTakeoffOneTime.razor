@@ -1,174 +1,108 @@
-```razor
 @namespace HomeFront.Components.Pages
-@rendermode InteractiveServer
 
 @using System.Data
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject ILogger<FTakeoffOneTime> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
-<style>
-    .dialog-overlay {
-        position: fixed; inset: 0; z-index: 1000;
-        background: rgba(0,0,0,0.3); display: flex;
-        align-items: center; justify-content: center;
-    }
-    .dialog-panel {
-        background: #fff; border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.2);
-        min-width: 500px; max-width: 600px;
-        display: flex; flex-direction: column; overflow: hidden;
-    }
-    .dialog-header {
-        display: flex; align-items: center; justify-content: space-between;
-        padding: 14px 20px; font-weight: 600; font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-    }
-    .dialog-header button {
-        background: none; border: none; font-size: 22px;
-        cursor: pointer; color: #6c757d; padding: 0 4px;
-    }
-    .dialog-header button:hover { color: #212529; }
-    .dialog-body { padding: 20px; overflow-y: auto; flex: 1; }
-    .dialog-body .form-group { margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-    .dialog-body .form-group label {
-        min-width: 100px; text-align: right; font-weight: 600; font-size: 13px; color: #495057;
-    }
-    .dialog-body .form-group input,
-    .dialog-body .form-group select {
-        flex: 1; padding: 5px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-        box-sizing: border-box;
-    }
-    .dialog-body .form-group input:focus,
-    .dialog-body .form-group select:focus {
-        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
-    }
-    .dialog-body .form-group input[readonly] {
-        background-color: #e9ecef;
-    }
-    .dialog-footer {
-        display: flex; justify-content: flex-end; gap: 8px;
-        padding: 12px 20px; border-top: 1px solid #dee2e6; background: #f8f9fa;
-    }
-    .dialog-footer .btn {
-        padding: 6px 20px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 14px;
-    }
-    .dialog-footer .btn:hover { background: #e9ecef; }
-    .dialog-footer .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .dialog-footer .btn-primary:hover { background: #0b5ed7; }
-    .browse-btn {
-        padding: 2px 8px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 13px;
-    }
-    .browse-btn:hover { background: #e9ecef; }
-    .dialog-image {
-        width: 48px; height: 48px; margin-right: 12px;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>One Time Takeoff - @AssemblyDescription</span>
-                <button @onclick="OnCancel">×</button>
+<DialogControl Visible="@IsVisible"
+               Header="@($"One Time Takeoff - {AssemblyDescription}")"
+               Width="600px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="OnCancel">
+    <ChildContent>
+        <div class="ot-body">
+            <div class="form-group">
+                <label>Description</label>
+                <TextBoxControl @bind-Value="txtDescription" maxlength="200" @onfocus="() => SelectAll(nameof(txtDescription))" />
             </div>
-            <div class="dialog-body">
-                <div class="form-group">
-                    <label>Description</label>
-                    <input type="text" @bind="txtDescription" maxlength="200" @onfocus="() => SelectAll(nameof(txtDescription))" />
-                </div>
-                <div class="form-group">
-                    <label>Qty/Unit</label>
-                    <input type="text" @bind="txtQty" style="width: 80px; flex: none;"
-                           @onfocus="() => SelectAll(nameof(txtQty))"
-                           @onblur="OnQtyBlur" />
-                    <select @bind="cboUOM" style="width: 100px; flex: none;">
-                        <option value="">-- UOM --</option>
-                        @foreach (var uom in UOMItems)
-                        {
-                            <option value="@uom">@uom</option>
-                        }
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Price</label>
-                    <input type="text" @bind="txtPrice" style="width: 120px; flex: none;"
-                           @onfocus="() => SelectAll(nameof(txtPrice))"
-                           @onblur="OnPriceBlur" />
-                </div>
-                <div class="form-group">
-                    <label>PO Index</label>
-                    <select @bind="cboPOIndex" @bind:after="OnPOIndexChanged">
-                        <option value="">-- Select --</option>
-                        @foreach (var po in POIndexItems)
-                        {
-                            <option value="@po.Key">@po.Display</option>
-                        }
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Cost Code</label>
-                    <input type="text" readonly value="@txtCostCodeText" style="flex: 1;" />
-                    <button class="browse-btn" @onclick="OnBrowseCostCode" title="Browse Cost Codes">🔍</button>
-                </div>
-                <div class="form-group">
-                    <label>Category</label>
-                    <select @bind="cboCategory">
-                        <option value="">-- Select --</option>
-                        @foreach (var cat in CategoryItems)
-                        {
-                            <option value="@cat.Key">@cat.Display</option>
-                        }
-                    </select>
-                </div>
+            <div class="form-group">
+                <label>Qty/Unit</label>
+                <TextBoxControl @bind-Value="txtQty" CssClass="ot-qty"
+                                @onfocus="() => SelectAll(nameof(txtQty))"
+                                @onblur="OnQtyBlur" />
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="@UOMItems"
+                                     @bind-Value="cboUOM"
+                                     Placeholder="-- UOM --"
+                                     Width="100px" />
             </div>
-            <div class="dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOK">&amp;OK</button>
-                <button class="btn" @onclick="OnCancel">&amp;Cancel</button>
+            <div class="form-group">
+                <label>Price</label>
+                <TextBoxControl @bind-Value="txtPrice" CssClass="ot-price"
+                                @onfocus="() => SelectAll(nameof(txtPrice))"
+                                @onblur="OnPriceBlur" />
+            </div>
+            <div class="form-group">
+                <label>PO Index</label>
+                <DropDownListControl TValue="string" TItem="ComboItem"
+                                     DataSource="@POIndexItems"
+                                     Value="@cboPOIndex"
+                                     ValueChanged="OnPOIndexValueChanged"
+                                     TextFieldName="Display" ValueFieldName="Key"
+                                     Placeholder="-- Select --"
+                                     Width="100%" />
+            </div>
+            <div class="form-group">
+                <label>Cost Code</label>
+                <TextBoxControl Value="@txtCostCodeText" readonly CssClass="ot-costcode" />
+                <ButtonControl CssClass="browse-btn" OnClick="OnBrowseCostCode" Title="Browse Cost Codes">🔍</ButtonControl>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <DropDownListControl TValue="string" TItem="ComboItem"
+                                     DataSource="@CategoryItems"
+                                     @bind-Value="cboCategory"
+                                     TextFieldName="Display" ValueFieldName="Key"
+                                     Placeholder="-- Select --"
+                                     Width="100%" />
             </div>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnOK">&amp;OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnCancel">&amp;Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @* Cost Code Pick List Dialog *@
-@if (IsCostCodePickerVisible)
-{
-    <div class="dialog-overlay">
-        <div class="dialog-panel" style="min-width: 450px; max-height: 70vh;" @onclick:stopPropagation="true">
-            <div class="dialog-header">
-                <span>Cost Codes</span>
-                <button @onclick="() => IsCostCodePickerVisible = false">×</button>
-            </div>
-            <div class="dialog-body" style="overflow-y: auto; max-height: 50vh;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                    <thead>
-                        <tr style="background: #f0f0f0; border-bottom: 2px solid #dee2e6;">
-                            <th style="padding: 6px 8px; text-align: left;">Cost Code</th>
-                            <th style="padding: 6px 8px; text-align: left;">Description</th>
+<DialogControl Visible="@IsCostCodePickerVisible"
+               Header="Cost Codes"
+               Width="450px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="() => IsCostCodePickerVisible = false">
+    <ChildContent>
+        <div class="ot-cc-list">
+            <table class="ot-cc-table">
+                <thead>
+                    <tr>
+                        <th>Cost Code</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var cc in CostCodePickerItems)
+                    {
+                        <tr @onclick="() => OnCostCodePicked(cc)"
+                            class="@(cc.CostCode == txtCostCodeTag ? "table-active" : "")">
+                            <td>@cc.CostCode</td>
+                            <td>@cc.Description</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var cc in CostCodePickerItems)
-                        {
-                            <tr style="cursor: pointer; border-bottom: 1px solid #eee;"
-                                @onclick="() => OnCostCodePicked(cc)"
-                                class="@(cc.CostCode == txtCostCodeTag ? "table-active" : "")">
-                                <td style="padding: 4px 8px;">@cc.CostCode</td>
-                                <td style="padding: 4px 8px;">@cc.Description</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            <div class="dialog-footer">
-                <button class="btn" @onclick="() => IsCostCodePickerVisible = false">Cancel</button>
-            </div>
+                    }
+                </tbody>
+            </table>
         </div>
-    </div>
-}
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="() => IsCostCodePickerVisible = false">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -187,9 +121,7 @@
     [Parameter] public string AccountingSystem { get; set; } = "";
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-
-    // === Form fields ===
+// === Form fields ===
     private string txtDescription = "";
     private string txtQty = "0";
     private string txtPrice = "0.00";
@@ -270,11 +202,20 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"FTakeoffOneTime.LoadFormData error: {ex.Message}");
+            Logger.LogError(ex, "FTakeoffOneTime.LoadFormData error");
+
         }
     }
 
     // === PO Index Changed ===
+    // Adapter for DropDownListControl (no @bind:after) — set the field, then run the
+    // original VB6 _Click logic. Mirrors the old `<select @bind @bind:after="OnPOIndexChanged">`.
+    private async Task OnPOIndexValueChanged(string? value)
+    {
+        cboPOIndex = value ?? "";
+        await OnPOIndexChanged();
+    }
+
     private async Task OnPOIndexChanged()
     {
         if (string.IsNullOrEmpty(cboPOIndex)) return;
@@ -297,7 +238,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"OnPOIndexChanged error: {ex.Message}");
+            Logger.LogError(ex, "OnPOIndexChanged error");
+
         }
     }
 
@@ -318,7 +260,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"OnBrowseCostCode error: {ex.Message}");
+            Logger.LogError(ex, "OnBrowseCostCode error");
+
         }
     }
 
@@ -346,9 +289,13 @@
             txtPrice = "0.00";
     }
 
-    private void SelectAll(string fieldName)
+    private async void SelectAll(string fieldName)
     {
-        // In Blazor, text selection on focus requires JS interop; this is a placeholder
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "document.activeElement?.select()");
+        }
+        catch { /* non-critical */ }
     }
 
     // === OK / Cancel ===
@@ -369,7 +316,7 @@
         // Validate
         if (string.IsNullOrWhiteSpace(txtDescription))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Description is required.");
+            Notifications.Success("Description is required.");
             return;
         }
 
@@ -394,7 +341,7 @@
             if (ccRows.Any())
                 jcCostCodeDesc = ccRows.First()["Description"]?.ToString() ?? "";
         }
-        catch { }
+        catch { /* non-critical */ }
 
         // Get category description
         string jcCategoryDesc = "";
@@ -406,7 +353,7 @@
             if (catRows.Any())
                 jcCategoryDesc = catRows.First()["Description"]?.ToString() ?? "";
         }
-        catch { }
+        catch { /* non-critical */ }
 
         // Get vendor
         string vendor = "";
@@ -423,7 +370,7 @@
                 vendorName = vendorRows.First()["Vendor_Name"]?.ToString() ?? "";
             }
         }
-        catch { }
+        catch { /* non-critical */ }
 
         // Get tax rates
         string taxGroup = "";
@@ -457,7 +404,7 @@
                 njcTaxRate = Convert.ToDouble(taxRow["NJCRate"] ?? 0);
             }
         }
-        catch { }
+        catch { /* non-critical */ }
 
         // Build result and invoke callback
         var result = new OneTimeTakeoffResult
@@ -526,4 +473,3 @@
         public string[] WBS { get; set; } = new string[41];
     }
 }
-```

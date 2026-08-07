@@ -1,6 +1,16 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Preview button wired to FRptViewer with Estimating Worksheet Detail
+     - Auto-seed Worksheet parameter for Preview report
+     - Add rewritten to VB6 multi-view FPickList
+     - Preview picks the correct one of four SalesSheet*.xml files
+     - VB6 column colors restored + missing toolbar buttons added
+   ───────────────────────────────────────────────────────────────── *@
 @page "/pricing-worksheet"
-
-@rendermode InteractiveServer
+@page "/pricing-worksheet/{WorksheetIdParam}"
 
 @namespace HomeFront.Components.Pages
 
@@ -9,297 +19,24 @@
 @using System.Dynamic
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Hf
-@using HomeFront.Components.Pages.Migrated
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FPricingWorkSheet> Logger
+@inject NotificationService Notifications
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHost
+@inject IReportSeedParameters ReportSeeds
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer Db
+@using HomeFront.Models
 @layout HFComponent
 
-<style>
-    .tabs-container {
-        margin: 20px auto;
-        font-family: sans-serif;
-    }
-
-    .task-icon-vb6 {
-        width: 2000px;
-        height: auto;
-        display: block;
-    }
-
-    .tab-buttons {
-        display: flex;
-        border-bottom: 2px solid #ddd;
-    }
-
-    .tab-buttons button {
-        padding: 12px 24px;
-        border: none;
-        background: #f0f0f0;
-        cursor: pointer;
-        font-size: 16px;
-        transition: background 0.2s;
-    }
-
-    .tab-buttons button:hover {
-        background: #e0e0e0;
-    }
-
-    .tab-buttons button.active {
-        background: #fff;
-        border-bottom: 2px solid #007bff;
-        margin-bottom: -2px;
-        color: #007bff;
-        font-weight: bold;
-    }
-
-    .tab-content {
-        padding: 20px;
-        border: 1px solid #ddd;
-        border-top: none;
-        background: #fff;
-    }
-
-    .panel {
-        text-align: center;
-    }
-
-    .panel img {
-        max-width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        margin-bottom: 10px;
-        background-color: #f8f9fa;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        align-items: center;
-    }
-
-    .toolbar-sep {
-        width: 1px;
-        height: 28px;
-        background: #dee2e6;
-        margin: 0 4px;
-    }
-
-    .tbar-btn {
-        padding: 6px 12px;
-        border: 1px solid #c9c9c9;
-        background: #f7f7f7;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-    }
-
-    .tbar-btn:hover {
-        background: #e8e8e8;
-    }
-
-    .tbar-btn:disabled {
-        opacity: 0.5;
-        cursor: default;
-    }
-
-    .tbar-btn.btn-primary {
-        background: #007bff;
-        color: white;
-        border-color: #007bff;
-    }
-
-    .tbar-btn.btn-danger {
-        background: #dc3545;
-        color: white;
-        border-color: #dc3545;
-    }
-
-    .tbar-btn.btn-success {
-        background: #28a745;
-        color: white;
-        border-color: #28a745;
-    }
-
-    .tbar-btn.btn-info {
-        background: #17a2b8;
-        color: white;
-        border-color: #17a2b8;
-    }
-
-    .tool-label {
-        font-size: 11px;
-        display: block;
-    }
-
-    .loading {
-        position: absolute;
-        height: 92%;
-        width: 100%;
-        background-color: rgba(1, 1, 1, 0.2);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-spinner {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #007bff;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        margin-right: 12px;
-    }
-
-    @@keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    /* Header Panel */
-    .header-panel {
-        background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 15px;
-        margin-bottom: 15px;
-    }
-
-    .header-section {
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 12px;
-        height: 100%;
-    }
-
-    .header-section-title {
-        font-weight: 600;
-        font-size: 12px;
-        color: #6c757d;
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 5px;
-    }
-
-    .field-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 8px;
-    }
-
-    .field-row label {
-        min-width: 120px;
-        font-size: 12px;
-        color: #495057;
-        text-align: right;
-        padding-right: 10px;
-    }
-
-    .field-row input, .field-row select {
-        flex: 1;
-    }
-
-    .readonly-field {
-        background-color: #e9ecef !important;
-        border: none !important;
-    }
-
-    /* Legend Grid */
-    .legend-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 3px;
-    }
-
-    .legend-item {
-        padding: 5px 8px;
-        text-align: center;
-        font-size: 10px;
-        border-radius: 3px;
-        font-weight: 500;
-    }
-
-    /* Column Color Classes */
-    .col-new { background-color: #DDF8FF !important; }
-    .col-published { background-color: #D5E8BC !important; }
-    .col-spec2 { background-color: #D6D3E3 !important; }
-    .col-spec3 { background-color: #AEE8EA !important; }
-    .col-spec4 { background-color: #ECE898 !important; }
-    .col-spec5 { background-color: #D1C8C1 !important; }
-    .col-spec6 { background-color: #D6C7FF !important; }
-    .col-spec7 { background-color: #D6D3E3 !important; }
-    .col-spec8 { background-color: #AEE8EA !important; }
-    .col-spec9 { background-color: #ECE898 !important; }
-    .col-spec10 { background-color: #D1C8C1 !important; }
-
-    /* Dirty row */
-    .dirty-row { background-color: #fff3cd !important; }
-
-    .page-title {
-        font-size: 18px;
-        font-weight: 600;
-        color: #333;
-        margin-bottom: 10px;
-    }
-
-    /* Grid container */
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    /* Numeric input small */
-    .small-numeric { max-width: 100px; }
-
-    body {
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 16px;
-    }
-
-    /* Export dropdown */
-    .export-dropdown {
-        position: relative;
-        display: inline-block;
-    }
-    .export-menu {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        z-index: 100;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        min-width: 140px;
-    }
-    .export-menu button {
-        display: block;
-        width: 100%;
-        padding: 8px 14px;
-        border: none;
-        background: none;
-        text-align: left;
-        font-size: 13px;
-        cursor: pointer;
-    }
-    .export-menu button:hover {
-        background: #f0f0f0;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -309,65 +46,70 @@
     </div>
 }
 
-<div class="tabs-container">
-            <!-- Toolbar -->
-            <div class="toolbar-cntr">
-                @if (WorksheetView == "Estimating" && !IsReadOnly)
-                {
-                    <button class="tbar-btn btn-primary" @onclick="OnAddClick">
-                        <span>➕</span> Add
-                    </button>
-                    <button class="tbar-btn btn-danger" disabled="@(SelectedRow == null)" @onclick="OnRemoveClick">
-                        <span>🗑</span> Remove
-                    </button>
-                    <div class="toolbar-sep"></div>
-                }
+<div class="tabs-container pricing-vb6">
+            <!-- Toolbar — VB6 (FPricingWorksheet.frm) always shows Add /
+                 Remove / Refresh Costs / Refresh Published in the layout
+                 and disables them via runtime state. POC previously HID
+                 them with @if guards which left users wondering where
+                 they went. Buttons now always render; Disabled gates the
+                 ones that need it (matches VB6 Enabled = 0). -->
+            <ToolbarControl>
+                @* VB6 parity: toolbar buttons use the same .ico glyphs as
+                   FPricingWorksheet.frm's Toolbar control (wwwroot/images/32).
+                   onerror hides a missing icon so the text label still shows. *@
+                <ToolbarButtonControl CssClass="btn-primary"
+                                      Disabled="@(WorksheetView != "Estimating" || IsReadOnly)"
+                                      OnClick="OnAddClick">
+                    <img class="spw-tbar-icon" src="images/32/Add.ico" alt="" onerror="this.style.display='none'" /> Add
+                </ToolbarButtonControl>
+                <ToolbarButtonControl CssClass="btn-danger"
+                                      Disabled="@(WorksheetView != "Estimating" || IsReadOnly || SelectedRow == null)"
+                                      OnClick="OnRemoveClick">
+                    <img class="spw-tbar-icon" src="images/32/delete.ico" alt="" onerror="this.style.display='none'" /> Remove
+                </ToolbarButtonControl>
+                <ToolbarSeparatorControl />
 
-                <button class="tbar-btn" @onclick="OnPreviewClick">
-                    <span>🖨</span> Preview
-                </button>
+                <ToolbarButtonControl OnClick="OnPreviewClick">
+                    <img class="spw-tbar-icon" src="images/32/Preview.ico" alt="" onerror="this.style.display='none'" /> Preview
+                </ToolbarButtonControl>
 
                 @if (ShowCostsButton)
                 {
-                    <button class="tbar-btn" @onclick="OnCostsClick">
-                        <span>📋</span> Costs
-                    </button>
+                    <ToolbarButtonControl OnClick="OnCostsClick">
+                        <img class="spw-tbar-icon" src="images/32/Pricebook.ico" alt="" onerror="this.style.display='none'" /> Costs
+                    </ToolbarButtonControl>
                 }
 
-                <button class="tbar-btn btn-success" disabled="@(!mDirty || IsReadOnly)" @onclick="OnSaveClick">
-                    <span>💾</span> Save
-                </button>
+                <ToolbarButtonControl CssClass="btn-success" Disabled="@(!mDirty || IsReadOnly)" OnClick="OnSaveClick">
+                    <img class="spw-tbar-icon" src="images/32/save.ico" alt="" onerror="this.style.display='none'" /> Save
+                </ToolbarButtonControl>
 
-                <button class="tbar-btn" @onclick="OnSaveAsClick">
-                    <span>💾</span> Save As
-                </button>
+                <ToolbarButtonControl OnClick="OnSaveAsClick">
+                    <img class="spw-tbar-icon" src="images/32/saveas.ico" alt="" onerror="this.style.display='none'" /> Save As
+                </ToolbarButtonControl>
 
-                @if (!IsReadOnly)
-                {
-                    <button class="tbar-btn btn-info" @onclick="OnPublishClick">
-                        <span>📤</span> Publish
-                    </button>
-                }
+                <ToolbarButtonControl CssClass="btn-info"
+                                      Disabled="@IsReadOnly"
+                                      OnClick="OnPublishClick">
+                    <img class="spw-tbar-icon" src="images/32/Publish.ico" alt="" onerror="this.style.display='none'" /> Publish
+                </ToolbarButtonControl>
 
-                <div class="toolbar-sep"></div>
+                <ToolbarSeparatorControl />
 
-                @if (!IsReadOnly)
-                {
-                    <button class="tbar-btn" @onclick="OnRefreshCostsClick">
-                        <span>🔄</span> Rfrsh Costs
-                    </button>
-                }
+                <ToolbarButtonControl Disabled="@IsReadOnly" OnClick="OnRefreshCostsClick">
+                    <img class="spw-tbar-icon" src="images/32/refresh.ico" alt="" onerror="this.style.display='none'" /> Rfrsh Costs
+                </ToolbarButtonControl>
 
-                <button class="tbar-btn" @onclick="OnRefreshPublishedClick">
-                    <span>🔄</span> Rfrsh Published
-                </button>
+                <ToolbarButtonControl OnClick="OnRefreshPublishedClick">
+                    <img class="spw-tbar-icon" src="images/32/refresh.ico" alt="" onerror="this.style.display='none'" /> Rfrsh Published
+                </ToolbarButtonControl>
 
-                <div class="toolbar-sep"></div>
+                <ToolbarSeparatorControl />
 
                 <div class="export-dropdown">
-                    <button class="tbar-btn" @onclick="ToggleExportMenu">
-                        <span>📊</span> Export ▾
-                    </button>
+                    <ToolbarButtonControl OnClick="ToggleExportMenu">
+                        <img class="spw-tbar-icon" src="images/32/export.ico" alt="" onerror="this.style.display='none'" /> Export ▾
+                    </ToolbarButtonControl>
                     @if (ShowExportMenu)
                     {
                         <div class="export-menu">
@@ -377,128 +119,106 @@
                         </div>
                     }
                 </div>
-            </div>
+            </ToolbarControl>
 
             <h4 class="page-title">@WorksheetView Worksheet @(WorksheetId > 0 ? $"(number {WorksheetId})" : "(New)") @(IsReadOnly ? " [Read Only]" : "")</h4>
 
             <!-- Header Panel -->
             <div class="header-panel">
-                <div class="row">
-                    <!-- Left: Worksheet Info -->
-                    <div class="col-md-3">
+                <div class="header-layout">
+                    <!-- Column 1 -->
+                    <div class="header-col header-col-info">
                         <div class="header-section">
-                            <div class="header-section-title">Worksheet Info</div>
                             <div class="field-row">
                                 <label>Description</label>
-                                <input type="text" @bind="WorksheetDescription" placeholder="Description" maxlength="50"
-                                       disabled="@IsReadOnly"
-                                       style="flex:1; padding:4px 8px; border:1px solid #c9c9c9; border-radius:4px;" />
+                                <TextBoxControl @bind-Value="WorksheetDescription" CssClass="field-value-wide"
+                                           Placeholder="Description" MaxLength="50"
+                                           Enabled="@(!IsReadOnly)" />
                             </div>
                             <div class="field-row">
                                 <label>Cost Basis</label>
-                                <HfDropDownList TValue="int" TItem="CostBasisItem"
+                                <DropDownListControl TValue="int" TItem="CostBasisItem"
                                                 @bind-Value="CostBasisType"
                                                 DataSource="@CostBasisList"
                                                 TextFieldName="Name" ValueFieldName="Id"
-                                                Width="150px" Enabled="@(!IsReadOnly)" />
+                                                Width="118px" Enabled="@(!IsReadOnly)" />
                             </div>
                             <div class="field-row">
                                 <label>Costs Effective</label>
-                                <input type="text" readonly value="@CostsEffectiveDate.ToString("MMM d, yyyy")"
-                                       class="readonly-field" style="flex:1; padding:4px 8px; border-radius:4px;" />
+                                <span class="field-static">@CostsEffectiveDate.ToString("MMM d, yyyy")</span>
                             </div>
                             @if (WorksheetView == "Estimating")
                             {
                                 <div class="field-row">
                                     <label>Published to Sales</label>
-                                    <input type="text" readonly value="@(SalesEffectiveDate?.ToString("MMM d, yyyy") ?? "")"
-                                           class="readonly-field" style="flex:1; padding:4px 8px; border-radius:4px;" />
+                                    <span class="field-static @(SalesEffectiveDate.HasValue ? "" : "field-static-empty")">
+                                        @(SalesEffectiveDate?.ToString("MMM d, yyyy") ?? "")
+                                    </span>
                                 </div>
                             }
                         </div>
                     </div>
 
-                    <!-- Center: Pricing Options -->
-                    <div class="col-md-3">
+                    <!-- Column 2 -->
+                    <div class="header-col header-col-options">
                         <div class="header-section">
-                            <div class="header-section-title">Pricing Options</div>
                             <div class="field-row">
-                                <label>Round prices to</label>
-                                <HfNumericTextBox TValue="decimal" @bind-Value="RoundTo" Format="N0" Min="0"
-                                                  Width="80px" Enabled="@(!IsReadOnly)"
+                                <label>Round all prices to</label>
+                                <NumericTextBoxControl TValue="decimal" @bind-Value="RoundTo" Format="N0" Min="0"
+                                                  Width="72px" Enabled="@(!IsReadOnly)"
                                                   ValueChange="OnRoundToChange" />
                             </div>
                             @if (WorksheetView == "Estimating")
                             {
                                 <div class="field-row">
-                                    <label>Incentive Cost %</label>
-                                    <HfNumericTextBox TValue="decimal" @bind-Value="IncentiveCostPercent" Format="N2"
-                                                      Min="0" Max="100" Width="80px"
+                                    <label>Incentive Cost%</label>
+                                    <NumericTextBoxControl TValue="decimal" @bind-Value="IncentiveCostPercent" Format="N2"
+                                                      Min="0" Max="100" Width="72px"
                                                       Enabled="@(IncentiveCostEnabled && !IsReadOnly)"
                                                       ValueChange="OnIncentiveCostPercentChange" />
                                 </div>
                             }
                             <div class="field-row">
                                 <label>Layout</label>
-                                <HfDropDownList TValue="string" TItem="string"
+                                <DropDownListControl TValue="string" TItem="string"
                                                 @bind-Value="SelectedLayout"
                                                 DataSource="@LayoutList"
-                                                Width="120px"
+                                                Width="114px"
                                                 ValueChange="OnLayoutChanged" />
-                            </div>
-                            <div class="field-row">
-                                <label></label>
-                                <HfCheckBox @bind-Checked="IsArchived" Label="Archive this sheet"
-                                            Disabled="@IsReadOnly" />
                             </div>
                         </div>
                     </div>
 
-                    <!-- Right-Center: Price Change -->
-                    <div class="col-md-3">
+                    <!-- Column 3 -->
+                    <div class="header-col header-col-price">
                         <div class="header-section">
                             <div class="header-section-title">Price Change</div>
                             <div class="field-row">
                                 <label>By Dollar Value</label>
-                                <HfNumericTextBox TValue="decimal" @bind-Value="DollarChange" Format="C2" Width="100px"
+                                <NumericTextBoxControl TValue="decimal" @bind-Value="DollarChange" Format="C2" Width="84px"
                                                   Enabled="@(!IsReadOnly)"
                                                   ValueChange="OnDollarPriceChange" />
                             </div>
                             <div class="field-row">
                                 <label>Percent Increase</label>
-                                <HfNumericTextBox TValue="decimal" @bind-Value="PercentIncrease" Format="N2"
-                                                  Width="100px" Enabled="@(!IsReadOnly)"
+                                <NumericTextBoxControl TValue="decimal" @bind-Value="PercentIncrease" Format="N2"
+                                                  Width="84px" Enabled="@(!IsReadOnly)"
                                                   ValueChange="OnPercentIncreaseChange" />
                             </div>
                             <div class="field-row">
                                 <label>Percent Decrease</label>
-                                <HfNumericTextBox TValue="decimal" @bind-Value="PercentDecrease" Format="N2"
-                                                  Width="100px" Enabled="@(!IsReadOnly)"
+                                <NumericTextBoxControl TValue="decimal" @bind-Value="PercentDecrease" Format="N2"
+                                                  Width="84px" Enabled="@(!IsReadOnly)"
                                                   ValueChange="OnPercentDecreaseChange" />
                             </div>
                         </div>
                     </div>
 
-                    <!-- Far Right: Legend -->
-                    <div class="col-md-3">
-                        <div class="header-section">
-                            <div class="header-section-title">Legend</div>
-                            @if (WorksheetType == WorksheetTypes.DesignCenter)
-                            {
-                                <div class="legend-grid">
-                                    @foreach (var lgItem in LegendItems)
-                                    {
-                                        <div class="legend-item @lgItem.CssClass">@lgItem.Name</div>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="legend-grid">
-                                    <div class="legend-item col-new">New</div>
-                                    <div class="legend-item col-published">Published</div>
-                                </div>
-                            }
+                    <!-- Column 4 -->
+                    <div class="header-col header-col-archive">
+                        <div class="archive-row">
+                            <CheckBoxControl @bind-Checked="IsArchived" Label="Archive this sheet"
+                                        Disabled="@IsReadOnly" />
                         </div>
                     </div>
                 </div>
@@ -506,17 +226,20 @@
 
             <!-- Main Data Grid (VB6 name: gData) -->
             <div class="grid-container">
-                <HfGrid @ref="gData" TValue="WorksheetRow" DataSource="@WorksheetData"
-                        AllowPaging="true" AllowSorting="true" AllowFiltering="true" AllowResizing="true"
+                <GridControl @ref="gData" TValue="WorksheetRow" DataSource="@WorksheetData"
+                        AllowPaging="false" AllowSorting="true" AllowFiltering="true" AllowResizing="true"
                         AllowSelection="true" EnableHover="true"
-                        Height="1450"
+                        ShowSelectionInfoBar="false"
+                        RowHeight="17"
+                        Height="@WorksheetGridHeight"
                         FilterSettingsRef="@worksheetFilterSettings"
-                        PageSettingsRef="@worksheetPageSettings"
                         SelectionSettingsRef="@worksheetSelectionSettings"
                         EditSettingsRef="@worksheetEditSettings"
+                        BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                        AllowSingleCellColumnMassEdit="true"
                         EventsRef="@worksheetEvents">
 
-                    <HfGridColumnsBase @key="gDataLayoutVersion" DebugTag="FPricingWorkSheet-gData">
+                    <GridColumnsBase @key="gDataLayoutVersion" DebugTag="FPricingWorkSheet-gData">
                         @if (gDataLayout.Count > 0)
                         {
                             @foreach (var col in GetOrderedGridLayout(gDataLayout))
@@ -532,233 +255,72 @@
 
                                 @if (IsNotesOrCommentsField(col.Field))
                                 {
-                                    <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@(width ?? "150px")"
-                                                  Visible="@visible">
-                                        <Template>
-                                            @{
-                                                var tplRow = (WorksheetRow)context;
-                                                var tplVal = col.Field.Equals("Notes", StringComparison.OrdinalIgnoreCase) ? tplRow.Notes : tplRow.Comments;
-                                            }
-                                            <span title="@tplVal">@TruncateText(tplVal, 20)</span>
-                                            <button class="tbar-btn" style="padding:2px 6px; font-size:11px;"
-                                                    @onclick="@(() => OnEditText(tplRow, col.Field))">✏️</button>
-                                        </Template>
-                                    </HfGridColumn>
+                                    @* Multi-line text (Description/Notes/Comments): the STANDARD FlexKit edit
+                                       button (AlwaysShowEditButton) opens the text dialog via OnEditButtonClick
+                                       → OnEditText. Replaces the hand-rolled span+✏️ template; the cell shows
+                                       the value (Ellipsis-clipped) and OnEditText no-ops when read-only. *@
+                                    <GridColumn Field="@col.Field" HeaderText="@headerText" Width="@(width ?? "150px")"
+                                                  AllowEditing="false"
+                                                  ShowEditButton="true" AlwaysShowEditButton="true"
+                                                  Visible="@visible"
+                                                  ClipMode="ClipMode.Ellipsis" />
+                                }
+                                else if (PickerButtonFields.Contains(col.Field))
+                                {
+                                    @* Lookup picker: the STANDARD FlexKit edit button (AlwaysShowEditButton, gated
+                                       per-row by IsCellEditable) opens FPickList via OnEditButtonClick →
+                                       OnLookupButton. Replaces the hand-rolled div/span/button template; the cell
+                                       shows the value (same raw property GetLookupDisplay returned), Ellipsis-clipped. *@
+                                    <GridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                                  Type="@colType" TextAlign="@textAlign"
+                                                  Format="@format" AllowEditing="false"
+                                                  AllowCellDragSelection="true"
+                                                  ShowEditButton="true" AlwaysShowEditButton="true"
+                                                  ShowEditButtonPredicate="@(o => IsCellEditable((WorksheetRow)o, col.Field))"
+                                                  Visible="@visible"
+                                                  ClipMode="ClipMode.Ellipsis" />
                                 }
                                 else
                                 {
-                                    <HfGridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
+                                    @* VB6 gData_BeforeEdit sets .ComboList ("|..." / "...")
+                                       on lookup columns so a "…" ComboButton appears on the
+                                       ACTIVE edit cell — not a permanent per-row button.
+                                       ShowEditButton drives that FlexKit behavior; clicking
+                                       the … raises OnEditButtonClick → OnLookupButton →
+                                       FPickList (gData_CellButtonClick parity). *@
+                                    <GridColumn Field="@col.Field" HeaderText="@headerText" Width="@width"
                                                   Type="@colType" TextAlign="@textAlign"
                                                   Format="@format" AllowEditing="@(allowEdit && !IsReadOnly)"
+                                                  ShowEditButton="@(LookupFields.Contains(col.Field) && !PickerButtonFields.Contains(col.Field))"
                                                   Visible="@visible"
                                                   ClipMode="ClipMode.Ellipsis" />
                                 }
                             }
                         }
-                        else
-                        {
-                            @* Fallback: hardcoded columns when no DB layout available *@
-                            <!-- Identity Columns -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.Community)" HeaderText="@CommunityLabel" Width="100px"
-                                          IsPrimaryKey="true" AllowEditing="false" Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.CommunityPhase)"
-                                          HeaderText="@(CommunityLabel + " Phase")" Width="90px" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Model)" HeaderText="Model" Width="100px"
-                                          AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Assembly)" HeaderText="Assembly" Width="120px"
-                                          AllowEditing="false" />
-
-                            @if (WorksheetView == "Estimating")
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.ModelDescription)" HeaderText="Model Desc"
-                                              Width="150px" AllowEditing="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.Elevation)" HeaderText="Elevation" Width="90px"
-                                              AllowEditing="false" Visible="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.OptionID)" HeaderText="Option" Width="100px"
-                                              AllowEditing="false" Visible="false" />
-                            }
-
-                            <HfGridColumn Field="@nameof(WorksheetRow.Description)" HeaderText="Description" Width="200px" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Category)" HeaderText="Category" Width="90px" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.CategoryDesc)" HeaderText="Category Desc" Width="120px"
-                                          AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.IncludedOption)" HeaderText="Included" Width="80px"
-                                          Type="ColumnType.CheckBox" AllowEditing="@(!IsReadOnly)" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Inactive)" HeaderText="Inactive" Width="75px"
-                                          Type="ColumnType.CheckBox" AllowEditing="@(!IsReadOnly)" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.ReadyToPublish)" HeaderText="Ready" Width="70px"
-                                          Type="ColumnType.CheckBox" Visible="false" />
-
-                            <HfGridColumn Field="@nameof(WorksheetRow.Series)" HeaderText="Series" Width="90px"
-                                          Visible="false" />
-
-                            <!-- Dimensions -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.FloorArea)" HeaderText="Floor Area" Width="90px"
-                                          Format="N0" TextAlign="TextAlign.Right" Visible="false" />
-                            @if (WorksheetView == "Estimating")
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.Bedrooms)" HeaderText="Beds" Width="60px"
-                                              Format="N0" TextAlign="TextAlign.Right" Visible="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.Bathrooms)" HeaderText="Baths" Width="60px"
-                                              Format="N1" TextAlign="TextAlign.Right" Visible="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.Style)" HeaderText="Style" Width="80px"
-                                              Visible="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.ConstCutOff)" HeaderText="Const Cutoff" Width="100px"
-                                              Format="C0" TextAlign="TextAlign.Right" Visible="false" />
-                            }
-
-                            <!-- Costs -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.LandCost)" HeaderText="Land Cost" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" Visible="false" />
-                            @if (WorksheetView == "Estimating")
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.ConstructionCost)" HeaderText="Const Cost"
-                                              Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                              Visible="false" />
-                                <HfGridColumn Field="@nameof(WorksheetRow.IncentiveCost)" HeaderText="Incent Cost"
-                                              Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                              Visible="false" />
-                            }
-                            <HfGridColumn Field="@nameof(WorksheetRow.Cost)" HeaderText="Total Cost" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.CostPerFt)" HeaderText="Cost/SqFt" Width="90px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-
-                            <!-- New Pricing (Primary Spec) -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.Pretax)" HeaderText="Pretax" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Tax)" HeaderText="Tax" Width="80px" Format="C2"
-                                          TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Total)" HeaderText="Total" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Profit)" HeaderText="Profit" Width="90px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Markup)" HeaderText="Markup %" Width="85px"
-                                          Format="N2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Margin)" HeaderText="Margin %" Width="85px"
-                                          Format="N2" TextAlign="TextAlign.Right" />
-
-                            @if (WorksheetView == "Estimating")
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.InSpec)" HeaderText="In Spec" Width="70px"
-                                              Type="ColumnType.CheckBox" Visible="false" />
-                            }
-
-                            <HfGridColumn Field="@nameof(WorksheetRow.IncentiveRetail)" HeaderText="Incent Retail"
-                                          Width="100px" Format="C2" TextAlign="TextAlign.Right" Visible="false" />
-
-                            <!-- Change Order Pricing -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.COPretax)" HeaderText="CO Pretax" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.COTax)" HeaderText="CO Tax" Width="80px" Format="C2"
-                                          TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.COTotal)" HeaderText="CO Total" Width="100px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.COMarkup)" HeaderText="CO Markup %" Width="95px"
-                                          Format="N2" TextAlign="TextAlign.Right" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.COMargin)" HeaderText="CO Margin %" Width="95px"
-                                          Format="N2" TextAlign="TextAlign.Right" Visible="false" />
-
-                            <!-- Published Pricing -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedPretax)" HeaderText="Pub Pretax"
-                                          Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedTax)" HeaderText="Pub Tax" Width="80px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedPrice)" HeaderText="Pub Price"
-                                          Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedProfit)" HeaderText="Pub Profit"
-                                          Width="95px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedMarkup)" HeaderText="Pub Markup %"
-                                          Width="100px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedMargin)" HeaderText="Pub Margin %"
-                                          Width="100px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedCOPrice)" HeaderText="Pub CO Price"
-                                          Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.PublishedIncentive)" HeaderText="Pub Incentive"
-                                          Width="100px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="false"
-                                          Visible="false" />
-
-                            <HfGridColumn Field="@nameof(WorksheetRow.PricePerFt)" HeaderText="Price/SqFt" Width="90px"
-                                          Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.RoundTo)" HeaderText="Round To" Width="80px"
-                                          Format="N0" TextAlign="TextAlign.Right" />
-
-                            <!-- Additional Fields -->
-                            <HfGridColumn Field="@nameof(WorksheetRow.AssemblyUOM)" HeaderText="UOM" Width="70px"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Color)" HeaderText="Color" Width="90px"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Location)" HeaderText="Location" Width="90px"
-                                          Visible="false" />
-                            <HfGridColumn Field="@nameof(WorksheetRow.Qty)" HeaderText="Qty" Width="60px" Format="N0"
-                                          TextAlign="TextAlign.Right" Visible="false" />
-
-                            @if (WorksheetView == "Estimating")
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.Notes)" HeaderText="Notes" Width="150px">
-                                    <Template>
-                                        @{
-                                            var notesRow = (WorksheetRow)context;
-                                        }
-                                        <span title="@notesRow.Notes">@TruncateText(notesRow.Notes, 20)</span>
-                                        <button class="tbar-btn" style="padding:2px 6px; font-size:11px;"
-                                                @onclick="@(() => OnEditText(notesRow, "Notes"))">✏️</button>
-                                    </Template>
-                                </HfGridColumn>
-                                <HfGridColumn Field="@nameof(WorksheetRow.Comments)" HeaderText="Comments" Width="150px">
-                                    <Template>
-                                        @{
-                                            var commentsRow = (WorksheetRow)context;
-                                        }
-                                        <span title="@commentsRow.Comments">@TruncateText(commentsRow.Comments, 20)</span>
-                                        <button class="tbar-btn" style="padding:2px 6px; font-size:11px;"
-                                                @onclick="@(() => OnEditText(commentsRow, "Comments"))">✏️</button>
-                                    </Template>
-                                </HfGridColumn>
-                                <HfGridColumn Field="@nameof(WorksheetRow.JCExtra)" HeaderText="JC Extra" Width="90px"
-                                              Visible="false" />
-                            }
-
-                            @if (ShowIncludeTax)
-                            {
-                                <HfGridColumn Field="@nameof(WorksheetRow.IncludeTax)" HeaderText="Tax Incl" Width="75px"
-                                              Type="ColumnType.CheckBox" />
-                            }
-
-                            <HfGridColumn Field="@nameof(WorksheetRow.RowState)" Visible="false" />
-                        }
-                    </HfGridColumnsBase>
-                </HfGrid>
+                    </GridColumnsBase>
+                </GridControl>
            </div>
 </div>
 
 <!-- Text Edit Dialog -->
-<HfDialog @bind-Visible="IsTextDialogVisible" Width="550px" Header="@TextDialogTitle"
+<DialogControl @bind-Visible="IsTextDialogVisible" Width="550px" Header="@TextDialogTitle"
           IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
     <ChildContent>
-        <textarea @bind="EditingText" rows="6" placeholder="Enter text..."
-                  style="width:100%; padding:8px; border:1px solid #c9c9c9; border-radius:4px; resize:vertical;"></textarea>
+        <TextAreaControl @bind-Value="EditingText" Rows="6" Placeholder="Enter text..." CssClass="dialog-textarea" />
     </ChildContent>
     <FooterContent>
-        <button class="tbar-btn btn-primary" @onclick="OnTextDialogOk">OK</button>
-        <button class="tbar-btn" @onclick="@(() => IsTextDialogVisible = false)">Cancel</button>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnTextDialogOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="@(() => IsTextDialogVisible = false)">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
+</DialogControl>
 
 <!-- Add Assembly Dialog -->
-<HfDialog @bind-Visible="IsAddDialogVisible" Width="600px" Header="Add Assembly to Worksheet"
+<DialogControl @bind-Visible="IsAddDialogVisible" Width="600px" Header="Add Assembly to Worksheet"
           IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
     <ChildContent>
         <div class="mb-3">
             <label class="form-label">@CommunityLabel:</label>
-            <HfDropDownList TValue="string" TItem="CommunityItem"
+            <DropDownListControl TValue="string" TItem="CommunityItem"
                             @bind-Value="AddCommunity"
                             DataSource="@CommunityList"
                             TextFieldName="Description" ValueFieldName="Area"
@@ -766,7 +328,7 @@
         </div>
         <div class="mb-3">
             <label class="form-label">Model:</label>
-            <HfDropDownList TValue="string" TItem="ModelItem"
+            <DropDownListControl TValue="string" TItem="ModelItem"
                             @bind-Value="AddModel"
                             DataSource="@ModelList"
                             TextFieldName="Description" ValueFieldName="Model"
@@ -775,7 +337,7 @@
         </div>
         <div class="mb-3">
             <label class="form-label">Assembly:</label>
-            <HfDropDownList TValue="string" TItem="AssemblyItem"
+            <DropDownListControl TValue="string" TItem="AssemblyItem"
                             @bind-Value="AddAssemblyValue"
                             DataSource="@AssemblyList"
                             TextFieldName="Description" ValueFieldName="Assembly"
@@ -783,51 +345,100 @@
         </div>
     </ChildContent>
     <FooterContent>
-        <button class="tbar-btn btn-primary" @onclick="OnAddAssemblyConfirm">Add</button>
-        <button class="tbar-btn" @onclick="@(() => IsAddDialogVisible = false)">Cancel</button>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnAddAssemblyConfirm">Add</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="@(() => IsAddDialogVisible = false)">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
+</DialogControl>
 
 <!-- SaveAs Dialog -->
-<HfDialog @bind-Visible="IsSaveAsDialogVisible" Width="450px" Header="Save Worksheet As"
+<DialogControl @bind-Visible="IsSaveAsDialogVisible" Width="450px" Header="Save Worksheet As"
           IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
     <ChildContent>
         <div class="mb-3">
             <label class="form-label">New Description:</label>
-            <input type="text" @bind="SaveAsDescription" maxlength="50" placeholder="New worksheet name"
-                   style="width:100%; padding:6px 10px; border:1px solid #c9c9c9; border-radius:4px;" />
+            <TextBoxControl @bind-Value="SaveAsDescription" MaxLength="50" Placeholder="New worksheet name" CssClass="dialog-input" />
         </div>
     </ChildContent>
     <FooterContent>
-        <button class="tbar-btn btn-primary" @onclick="OnSaveAsConfirm">Save</button>
-        <button class="tbar-btn" @onclick="@(() => IsSaveAsDialogVisible = false)">Cancel</button>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnSaveAsConfirm">Save</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="@(() => IsSaveAsDialogVisible = false)">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
+</DialogControl>
 
 @* ── Pick List (VB6: FMain → FPickList.Choose before opening FPricingWorksheet) ─── *@
 <FPickList @ref="pickList" OnSelected="OnPickListSelected" OnCancel="OnPickListCancelled" />
 
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    // VB6 MDI child title: FlexKit MdiHost provides a per-pane "SetPageTitle"
+    // Action<string> cascade (MdiHost.razor:33). Calling it renames THIS worksheet's
+    // tab so each open worksheet shows its own id -- distinct tabs, and you can tell
+    // which worksheet a tab holds.
+    [CascadingParameter(Name = "SetPageTitle")]
+    private Action<string>? SetPageTitle { get; set; }
+
+    /// <summary>Rename this MDI tab to reflect the current worksheet. Saved sheets
+    /// show "Pricing Worksheet {id}"; an unsaved sheet shows "(New)".</summary>
+    private void UpdateWindowTitle()
+    {
+        var title = WorksheetId > 0
+            ? $"Pricing Worksheet {WorksheetId}"
+            : "Pricing Worksheet (New)";
+        SetPageTitle?.Invoke(title);
+    }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     // === Route Parameters ===
     [Parameter] public int WorksheetId { get; set; } = 80;
     [Parameter] public string ViewMode { get; set; } = "Estimating";
 
-    // === Database ===
-    private DbWrapperSqlServer db = new DbWrapperSqlServer();
-    private int activeTab = 1;
+    // MDI multi-window route param (VB6 "Set f = New FPricingWorksheet").
+    // A bare /pricing-worksheet opens a fresh window that prompts the worksheet
+    // picklist; once a worksheet is chosen (or saved-as), SyncWorksheetRouteState()
+    // publishes /pricing-worksheet/{id} so the tab gets a unique MDI key and
+    // re-opening the SAME worksheet re-focuses its existing tab instead of
+    // duplicating. Mirrors FAssembly's /edit-model-assembly + SyncAssemblyRouteState.
+    // REQUIRES the matching FMain.InferParameterName arm
+    //   "/pricing-worksheet" => "WorksheetIdParam"
+    // in BOTH apps' FMain — without it FMain infers the default "Id" param,
+    // which this page doesn't have, and the circuit crashes on render.
+    [Parameter] public string? WorksheetIdParam { get; set; }
+
+    // === Database ===    private int activeTab = 1;
 
     // === UI State ===
     private bool IsLoading = false;
     private bool mDirty = false;
     private bool IsReadOnly = false;
     private bool ShowExportMenu = false;
-    private HfGrid<WorksheetRow>? gData;
+    private GridControl<WorksheetRow>? gData;
     private FPickList? pickList;
     private string _pickListContext = "";
 
-    // === Grid Layout (IniGetGrid pattern) ===
-    private Dictionary<string, MMain.GridLayoutColumn> gDataLayout = new(StringComparer.OrdinalIgnoreCase);
-    private int gDataLayoutVersion = 0;
+    // === Grid Layout (IniGetGrid pattern) — via the shared GridLayoutPresenter ===
+    // The load/width boilerplate lives in GridLayoutPresenter<WorksheetRow>; only the
+    // VB6 form/grid NAME strings stay here (fidelity, passed to the ctor). The members
+    // gDataLayout / gDataLayoutVersion below are now thin delegations onto the presenter,
+    // so the markup and the rest of this file are unchanged. This grid's runtime-dynamic
+    // instanceKey (WorksheetView+SelectedLayout), its hand-built BuildDefaultGridLayout
+    // empty-result fallback (NOT the service default-user layout), its hashset-driven
+    // GetColumnTypeForField (bool→CheckBox, no reflection), and its dict-parameter
+    // GetOrderedGridLayout (no Hidden filter) remain form-specific and are KEPT verbatim
+    // below — they are intentionally NOT the presenter's reflection equivalents.
+    private readonly GridLayoutPresenter<WorksheetRow> _g = new(FormName, GridName);
+
+    private Dictionary<string, GridLayoutColumn> gDataLayout => _g.Layout;
+    private int gDataLayoutVersion => _g.Version;
 
     // === Worksheet Properties ===
     private string WorksheetView = "Estimating";
@@ -848,7 +459,11 @@
     private bool ShowCostsButton = true;
     private bool IncentiveCostEnabled = true;
     private bool MaxVendorPricing = false;
-    private int DivisionID = 1;
+    // VB6 HFApp.Options(LockPostedSalesWorksheets): when ON, a worksheet that has
+    // been published to sales (SalesEffectiveDate set) becomes read-only. Default
+    // OFF (VB6 default) so published worksheets stay editable. Wire to the real
+    // app-options load when SPW gains an options service.
+    private bool LockPostedSalesWorksheets = false;
     private decimal TaxRate = 0;
 
     // === Data Sources ===
@@ -859,6 +474,8 @@
     private List<CommunityItem> CommunityList = new();
     private List<ModelItem> ModelList = new();
     private List<AssemblyItem> AssemblyList = new();
+    // VB6 gData_CellButtonClick "Category" picker source (tblCategories).
+    private List<CategoryItem> CategoryList = new();
 
     // === Selection ===
     private WorksheetRow? SelectedRow;
@@ -877,21 +494,31 @@
     private string SaveAsDescription = "";
 
     // === Grid Settings ===
-    private readonly HfFilterSettings worksheetFilterSettings = new() { Type = FilterType.FilterBar };
-    private readonly HfPageSettings worksheetPageSettings = new() { PageSize = 50 };
-    private readonly HfSelectionSettings worksheetSelectionSettings = new()
+    private readonly FilterSettings worksheetFilterSettings = new() { Type = FilterType.FilterBar };
+    // VB6 grid fills all remaining form height (no pager). Subtract the
+    // toolbar + header-panel + page chrome (~320px) from the viewport so the
+    // grid's own vertical scrollbar handles overflow instead of a pager.
+    private const string WorksheetGridHeight = "calc(100vh - 320px)";
+    // VB6 gData edits ONE cell at a time, selected by mouse click/drag
+    // (not a whole row like FAssembly gItems). Mirror FTakeoff: cell-level
+    // selection, multi-select with toggle so a drag across several rows in
+    // one column fans an edit out to all of them (VB6 .Row To .RowSel loop).
+    private readonly SelectionSettings worksheetSelectionSettings = new()
     {
-        Type = SelectionType.Single,
-        Mode = SelectionMode.Row
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Cell,
+        EnableToggle = true
     };
-    private readonly HfEditSettings worksheetEditSettings = new()
+    private readonly EditSettings worksheetEditSettings = new()
     {
         AllowAdding = true,
         AllowEditing = true,
         AllowDeleting = true,
-        ShowConfirmDialog = true
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
     };
-    private readonly HfGridEvents<WorksheetRow> worksheetEvents = new();
+    private readonly GridControlEvents<WorksheetRow> worksheetEvents = new();
 
     // === Column classification sets (VB6 NewColumns, PublishedColumns) ===
     private static readonly HashSet<string> NumericFields = new(StringComparer.OrdinalIgnoreCase)
@@ -906,7 +533,7 @@
 
     private static readonly HashSet<string> CurrencyFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "LandCost", "ConstructionCost", "IncentiveCost", "IncentiveRetail", "Cost",
+        "LandCost", "ConstructionCost", "IncentiveCost", "Cost",
         "Pretax", "Tax", "Total", "Profit", "COPretax", "COTax", "COTotal",
         "CostPerFt", "PricePerFt", "ConstCutOff",
         "PublishedPretax", "PublishedTax", "PublishedPrice", "PublishedProfit",
@@ -915,7 +542,11 @@
 
     private static readonly HashSet<string> PercentFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Markup", "Margin", "COMarkup", "COMargin", "PublishedMarkup", "PublishedMargin"
+        "Markup", "Margin", "COMarkup", "COMargin", "PublishedMarkup", "PublishedMargin",
+        // The editable "Incentive" column (IncentiveRetail) is a rate/number, not a
+        // dollar amount — display it as a plain N2 number (no "$"), same family as
+        // Markup/Margin. User directive 2026-05-31. IncentiveCost stays currency.
+        "IncentiveRetail"
     };
 
     private static readonly HashSet<string> CheckboxFields = new(StringComparer.OrdinalIgnoreCase)
@@ -931,6 +562,76 @@
         "PublishedPretax", "PublishedTax", "PublishedPrice", "PublishedProfit",
         "PublishedMarkup", "PublishedMargin", "PublishedCOPrice", "PublishedIncentive",
         "RowState"
+    };
+
+    // ── Editable column map (VB6 gData_BeforeEdit parity) ───────────────
+    // VB6 decides editability per (column, row AssemblyType). The four sets
+    // below mirror the Select Case in gData_BeforeEdit:
+    //   • AlwaysEditable      — editable on every row regardless of type
+    //   • NonModelEditable    — VB6 `Cancel = t = atModel`  (edit when NOT a Model row)
+    //   • ModelOnlyEditable   — VB6 `Cancel = t <> atModel` (edit ONLY on Model rows)
+    //   • DesignCenterOnly    — VB6 `Cancel = t <> atDesignCenter`
+    // Anything not in a set is read-only (VB6 `Case Else: Cancel = True`).
+    private static readonly HashSet<string> AlwaysEditableFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Community", "CommunityDesc", "CommunityPhase", "Color", "AssemblyUOM",
+        "Comments", "Notes", "Description",
+        "Profit", "Margin", "Markup", "RoundTo", "IncludeTax",
+        "Pretax", "Total", "IncludedOption", "Qty", "Inactive"
+    };
+    private static readonly HashSet<string> NonModelEditableFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Location", "Category", "CategoryDesc", "ConstCutOff", "JCExtra",
+        "COPretax", "COTotal", "COMargin", "COMarkup"
+    };
+    private static readonly HashSet<string> ModelOnlyEditableFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "FloorArea", "Style", "Bedrooms", "Bathrooms", "IncentiveRetail", "LandCost"
+    };
+    private static readonly HashSet<string> DesignCenterOnlyFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "InSpec"
+    };
+
+    // Columns whose cell editor is a FlexKit dropdown rather than the grid's
+    // built-in text box (VB6 ComboList / picklist). Limited to the four with
+    // loaded lookup lists (CommunityList / CategoryList) — Community &
+    // CommunityDesc share the community picker, Category & CategoryDesc share
+    // the category picker, each setting both code + description on pick (VB6
+    // gData_CellButtonClick parity). Location / ConstCutOff / Style /
+    // AssemblyUOM remain editable via the built-in text editor for now.
+    // VB6 gData_CellButtonClick columns: each shows a "…" button that opens
+    // FPickList. ConstCutOff/Style are intentionally NOT here — ConstCutOff is
+    // a decimal in the model (VB6 stored a Job_Status string in it; treating it
+    // as a free-numeric batch-edit cell avoids a type mismatch) and VB6's Style
+    // picker passes an empty query. Everything here resolves to a string column.
+    private static readonly HashSet<string> LookupFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Location", "Community", "CommunityDesc", "CommunityPhase",
+        "Category", "CategoryDesc", "Series", "AssemblyUOM"
+    };
+    private static readonly HashSet<string> PickerButtonFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CommunityDesc", "CategoryDesc", "Category"
+    };
+    private static readonly HashSet<string> MultiLineEditFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Description", "Notes", "Comments"
+    };
+
+    // ── Zero-suppression (VB6 parity) ───────────────────────────────────
+    // The VB6 MSFlexGrid uses the "#,###.##" mask on its computed/read-only
+    // money columns (see FPricingWorksheet.frx) — the "#" placeholder renders
+    // a 0 / NULL value as a BLANK cell, not "$0.00". These are the columns
+    // that should blank-on-zero. Editable inputs (Incentive*, Pretax, Markup,
+    // Margin, Qty, RoundTo, etc.) keep showing 0 so the user can see and edit
+    // the value — matching ScreenShot1 where the Incentive column shows ".00".
+    private static readonly HashSet<string> BlankOnZeroFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Cost", "Tax", "Total", "Profit", "COTax", "COTotal", "ConstructionCost",
+        "CostPerFt", "PricePerFt",
+        "PublishedPretax", "PublishedTax", "PublishedPrice", "PublishedProfit",
+        "PublishedMarkup", "PublishedMargin", "PublishedCOPrice", "PublishedIncentive"
     };
 
     // === Enums ===
@@ -953,15 +654,30 @@
         worksheetEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<WorksheetRow>>(this, OnRowSelected);
         worksheetEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<WorksheetRow>>(this, OnRowDeselected);
         worksheetEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<WorksheetRow>>(this, OnCellSaved);
+        worksheetEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<WorksheetRow>>(this, OnCellEditStart);
+        worksheetEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<WorksheetRow>>(this, OnGridEditButtonClick);
         worksheetEvents.QueryCellInfo = EventCallback.Factory.Create<QueryCellInfoEventArgs<WorksheetRow>>(this, OnQueryCellInfo);
 
         WorksheetId = 0;
         WorksheetView = ViewMode ?? "Estimating";
         InitializeCostBasis();
+        await LoadCostBasisForecastsAsync();   // VB6 MMain.LoadCostTypes — append Forecast 1..12
         InitializeLegend();
         await LoadLookupDataAsync();
         await LoadGridLayouts();
-        // Don't load data yet — wait for user to pick a worksheet from the picklist
+
+        // MDI deep-link: FMain hands a re-focused / restored window the
+        // /pricing-worksheet/{id} route. When an id is supplied, open THAT
+        // worksheet directly and skip the picklist (parity with FAssembly
+        // opening /edit-model-assembly/{Id}). A bare /pricing-worksheet (no id)
+        // falls through to the picklist in OnAfterRenderAsync.
+        if (int.TryParse(WorksheetIdParam, out var deepLinkId) && deepLinkId > 0)
+        {
+            WorksheetId = deepLinkId;
+            _pickListShown = true;          // suppress the auto-picklist
+            await LoadDataAsync();
+        }
+        // Otherwise don't load data yet — wait for the picklist pick.
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -973,20 +689,163 @@
         }
     }
 
+    /// <summary>VB6-parity MDI window keying (mirror of FAssembly's
+    /// SyncAssemblyRouteState). Publishes /pricing-worksheet/{WorksheetId} to
+    /// FMain so each open worksheet owns a distinct MDI window: a second
+    /// "Sales Pricing Worksheet" menu open spawns a fresh window (the bare route
+    /// is in FMain._alwaysFreshRoutes) with its own picklist, while re-opening
+    /// THIS worksheet re-focuses this tab. WorksheetId == 0 (not yet chosen) is
+    /// left untouched so the picklist window keeps the bare route.</summary>
+    private void SyncWorksheetRouteState()
+    {
+        UpdateWindowTitle();
+        if (WorksheetId <= 0) return;
+        var target = $"/pricing-worksheet/{WorksheetId}";
+        if (ParentNavigate != null)
+        {
+            ParentNavigate(target);
+        }
+        else
+        {
+            var current = new Uri(NavigationManager.Uri).PathAndQuery;
+            if (!string.Equals(current, target, StringComparison.Ordinal))
+                NavigationManager.NavigateTo(target, replace: true);
+        }
+    }
+
     // === Grid Layout Loading (IniGetGrid pattern — VB6: Call IniGetGrid(Me, gData, , , mWorksheetView & cboLayouts.Text)) ===
     private const string FormName = "FPricingWorkSheet";
     private const string GridName = "gData";
 
     private async Task LoadGridLayouts()
     {
+        // instanceKey is runtime-dynamic (WorksheetView + the chosen Layout) — VB6
+        // IniGetGrid(Me, gData, , , mWorksheetView & cboLayouts.Text). The two
+        // candidates reproduce the EXACT prior calls byte-for-byte: the presenter
+        // builds the AppGridLayout tag from form+grid+gridIndex(0)+instanceKey, so
+        //   1. (GridName, 0, instanceKey) → tag "FPricingWorkSheet.gData.{view}{layout}"
+        //   2. (GridName, 0, null)        → tag "FPricingWorkSheet.gData"  (the VB6 (0) fallback)
         var instanceKey = WorksheetView + SelectedLayout;
-        gDataLayout = await MMain.IniGetGridAsync(FormName, GridName, 0, instanceKey: instanceKey);
-        if (gDataLayout.Count == 0)
-            gDataLayout = await MMain.IniGetGridAsync(FormName, GridName, 0);
-        gDataLayoutVersion++;
+        await _g.LoadAsync(GridLayoutSvc,
+            (GridName, 0, instanceKey),
+            (GridName, 0, (string?)null));
+
+        // VB6 parity: the MSFlexGrid is defined at design time with a fixed
+        // column set, and IniGetGrid only OVERLAYS the user's saved
+        // width/order/hidden from AppGridLayout on top of that base. When no
+        // AppGridLayout rows exist for FPricingWorkSheet.gData (the common
+        // case — they were never seeded), fall back to the canonical
+        // design-time column set built in code so the grid still renders with
+        // its editable cells + lookup buttons. Without this, the page used to
+        // drop into a dead hard-coded <GridColumn> branch that had no edit
+        // gating and no … pickers — i.e. "nothing editable". This is exactly
+        // what SetLayout is for (a hand-built default, NOT the service's
+        // default-user layout). SetLayout bumps Version, as LoadAsync already did.
+        if (!_g.Has)
+            _g.SetLayout(BuildDefaultGridLayout());
     }
 
-    private IEnumerable<MMain.GridLayoutColumn> GetOrderedGridLayout(Dictionary<string, MMain.GridLayoutColumn> layoutDict)
+    // KEPT VERBATIM (not a presenter equivalent): the presenter's empty-result
+    // fallback is the service default-user layout; this form's fallback is instead
+    // the full VB6 design-time column set, fed in via _g.SetLayout above.
+    /// <summary>Canonical VB6 design-time column set for gData (mirrors the
+    /// column list FPricingWorksheet.frm declares + VisibleColumns()).
+    /// Used only when AppGridLayout has no saved rows. Width is stored in the
+    /// same twips unit AppGridLayout uses, so <see cref="ConvertLayoutWidthToPx"/>
+    /// renders the intended pixel widths. Hidden mirrors the VB6
+    /// VisibleColumns() filter for the current WorksheetView. Editability and
+    /// lookup-button behavior come from the VB6-parity field sets
+    /// (GetAllowEditForField / LookupFields / IsCellEditable), NOT from here —
+    /// exactly as FAssembly drives gItems through ApplyVB6EditableColumnGates.</summary>
+    private Dictionary<string, GridLayoutColumn> BuildDefaultGridLayout()
+    {
+        var est = WorksheetView == "Estimating";
+        // (Field, Caption, px, Hidden) — order = VB6 design-time column order.
+        // px is converted to the AppGridLayout twips unit below.
+        var defs = new List<(string Field, string Caption, int Px, bool Hidden)>
+        {
+            ("Community",        CommunityLabel,               100, true),
+            ("CommunityPhase",   CommunityLabel + " Phase",     90, true),
+            ("Model",            "Model",                      100, false),
+            ("Assembly",         "Assembly",                   120, false),
+            ("ModelDescription", "Model Desc",                 150, !est),
+            ("Elevation",        "Elevation",                   90, true),
+            ("OptionID",         "Option",                     100, true),
+            ("Description",      "Description",                200, false),
+            ("Category",         "Category",                    90, false),
+            ("CategoryDesc",     "Category Desc",              120, false),
+            ("IncludedOption",   "Included",                    80, false),
+            ("Inactive",         "Inactive",                    75, false),
+            ("ReadyToPublish",   "Ready",                       70, true),
+            ("Series",           "Series",                      90, true),
+            ("FloorArea",        "Floor Area",                  90, true),
+            ("Bedrooms",         "Beds",                        60, true),
+            ("Bathrooms",        "Baths",                       60, true),
+            ("Style",            "Style",                       80, true),
+            ("ConstCutOff",      "Const Cutoff",               100, true),
+            ("LandCost",         "Land Cost",                  100, true),
+            ("ConstructionCost", "Const Cost",                 100, true),
+            ("IncentiveCost",    "Incent Cost",                100, true),
+            ("Cost",             "Total Cost",                 100, false),
+            ("CostPerFt",        "Cost/SqFt",                   90, false),
+            ("Pretax",           "Pretax",                     100, false),
+            ("Tax",              "Tax",                         80, false),
+            ("Total",            "Total",                      100, false),
+            ("Profit",           "Profit",                      90, false),
+            ("Markup",           "Markup %",                    85, false),
+            ("Margin",           "Margin %",                    85, false),
+            ("InSpec",           "In Spec",                     70, true),
+            ("IncentiveRetail",  "Incent Retail",              100, true),
+            ("COPretax",         "CO Pretax",                  100, false),
+            ("COTax",            "CO Tax",                      80, false),
+            ("COTotal",          "CO Total",                   100, false),
+            ("COMarkup",         "CO Markup %",                 95, false),
+            ("COMargin",         "CO Margin %",                 95, true),
+            ("PublishedPretax",  "Pub Pretax",                 100, true),
+            ("PublishedTax",     "Pub Tax",                     80, true),
+            ("PublishedPrice",   "Pub Price",                  100, true),
+            ("PublishedProfit",  "Pub Profit",                  95, true),
+            ("PublishedMarkup",  "Pub Markup %",               100, true),
+            ("PublishedMargin",  "Pub Margin %",               100, true),
+            ("PublishedCOPrice", "Pub CO Price",               100, true),
+            ("PublishedIncentive","Pub Incentive",             100, true),
+            ("PricePerFt",       "Price/SqFt",                  90, false),
+            ("RoundTo",          "Round To",                    80, false),
+            ("AssemblyUOM",      "UOM",                         70, true),
+            ("Color",            "Color",                       90, true),
+            ("Location",         "Location",                    90, true),
+            ("Qty",              "Qty",                         60, true),
+            ("Notes",            "Notes",                      150, !est),
+            ("Comments",         "Comments",                   150, !est),
+            ("JCExtra",          "JC Extra",                    90, true),
+            ("IncludeTax",       "Tax Incl",                    75, !ShowIncludeTax),
+        };
+
+        var dict = new Dictionary<string, GridLayoutColumn>(StringComparer.OrdinalIgnoreCase);
+        var colIndex = 0;
+        foreach (var (field, caption, px, hidden) in defs)
+        {
+            dict[field] = new GridLayoutColumn
+            {
+                Field = field,
+                Caption = caption,
+                Width = (px - 16) * 15,   // px → AppGridLayout twips (inverse of ConvertLayoutWidthToPx)
+                Hidden = hidden,
+                ColIndex = colIndex++,
+                Grouped = false,
+                IsEditable = GetAllowEditForField(field),
+            };
+        }
+        return dict;
+    }
+
+    // KEPT VERBATIM (not _g.GetOrdered): different signature — takes the layout
+    // dict as a PARAMETER (also called on the hidden-field probe in
+    // ResolveLookupTargetsAsync) — and DOES NOT filter Hidden (the markup's
+    // Visible="@(!col.Hidden)" does that, after deciding picker/notes/plain by
+    // field). The presenter's GetOrdered filters Hidden + resolves field/type/align,
+    // which would drop the hidden columns this method must still surface.
+    private IEnumerable<GridLayoutColumn> GetOrderedGridLayout(Dictionary<string, GridLayoutColumn> layoutDict)
     {
         return layoutDict.Values
             .Where(c => !string.IsNullOrWhiteSpace(c.Field))
@@ -994,16 +853,18 @@
             .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase);
     }
 
+    // twips → px is the single canonical GridLayoutPresenter.WidthPx now
+    // (was a hand-copied /15 +16 clamp — identical formula). BuildDefaultGridLayout's
+    // inverse (px-16)*15 still round-trips this exactly.
     private static int ConvertLayoutWidthToPx(double layoutWidth)
-    {
-        if (layoutWidth <= 0) return 0;
-        var px = (int)Math.Round(layoutWidth / 15.0);
-        px += 16;
-        if (px < 32) px = 32;
-        if (px > 2000) px = 2000;
-        return px;
-    }
+        => GridLayoutPresenter.WidthPx(layoutWidth);
 
+    // KEPT VERBATIM (not _g.ColumnTypeFor): driven by the CheckboxFields /
+    // NumericFields HASHSETS, NOT reflection on WorksheetRow. The presenter infers
+    // the type from the property's CLR type — which here would mis-type columns
+    // (e.g. ConstCutOff is a decimal property but VB6 stored a string in it, and
+    // several bool-ish flags aren't in CheckboxFields). The hashsets are the
+    // VB6-faithful source of truth, so this stays.
     private ColumnType GetColumnTypeForField(string field)
     {
         if (CheckboxFields.Contains(field)) return ColumnType.CheckBox;
@@ -1019,6 +880,16 @@
 
     private string? GetFormatForField(string field)
     {
+        // VB6 blank-on-zero columns use a 3-section custom mask whose third
+        // (zero) section is empty, so 0 / NULL renders as a blank cell.
+        //   section 1 = positive, section 2 = negative, section 3 = zero("")
+        if (BlankOnZeroFields.Contains(field))
+        {
+            if (CurrencyFields.Contains(field)) return "$#,##0.00;($#,##0.00);";
+            if (PercentFields.Contains(field)) return "#,##0.00;-#,##0.00;";
+            return "#,##0.00;-#,##0.00;";
+        }
+
         if (CurrencyFields.Contains(field)) return "C2";
         if (PercentFields.Contains(field)) return "N2";
         if (field.Equals("FloorArea", StringComparison.OrdinalIgnoreCase) || field.Equals("Bedrooms", StringComparison.OrdinalIgnoreCase))
@@ -1029,26 +900,117 @@
         return null;
     }
 
+    /// <summary>Column-level editability: true when the field is editable on
+    /// AT LEAST ONE assembly type. Lets the column participate in editing; the
+    /// per-row gate in <see cref="OnCellEditStart"/> then vetoes the specific
+    /// (row, column) combinations VB6 would block. Multi-line columns return
+    /// false here so they never open the grid's inline text box — their ✏️
+    /// button opens the MultiLineEditControl instead.</summary>
     private bool GetAllowEditForField(string field)
     {
-        return !ReadOnlyFields.Contains(field);
+        if (MultiLineEditFields.Contains(field)) return false;
+        return AlwaysEditableFields.Contains(field)
+            || NonModelEditableFields.Contains(field)
+            || ModelOnlyEditableFields.Contains(field)
+            || DesignCenterOnlyFields.Contains(field);
+    }
+
+    /// <summary>Per-(row, column) editability — the VB6 gData_BeforeEdit gate.
+    /// Decides whether a cell on THIS row (with its AssemblyType) may edit.
+    /// AssemblyType is compared by its raw int (VB6 MMain.AssemblyTypes:
+    /// atModel=0, atOption=2, atGlobal=3, atDesignCenter=4) so the page has no
+    /// dependency on a specific AssemblyTypes enum declaration.</summary>
+    private const int AssemblyTypeModel = 0;
+    private const int AssemblyTypeDesignCenter = 4;
+
+    private bool IsCellEditable(WorksheetRow row, string field)
+    {
+        if (IsReadOnly) return false;
+        var t = row.AssemblyType;
+        if (AlwaysEditableFields.Contains(field)) return true;
+        if (NonModelEditableFields.Contains(field)) return t != AssemblyTypeModel;
+        if (ModelOnlyEditableFields.Contains(field)) return t == AssemblyTypeModel;
+        if (DesignCenterOnlyFields.Contains(field)) return t == AssemblyTypeDesignCenter;
+        return false;
+    }
+
+    /// <summary>Wired to the grid's OnCellEdit (raised just before a cell
+    /// enters edit mode). Cancels the edit for (row, column) pairs VB6 blocks
+    /// — the inline port of gData_BeforeEdit's per-type Select Case.</summary>
+    private void OnCellEditStart(CellEditArgs<WorksheetRow> args)
+    {
+        if (args.Data == null) return;
+        if (!IsCellEditable(args.Data, args.ColumnName ?? ""))
+            args.Cancel = true;
     }
 
     private bool IsNotesOrCommentsField(string field)
     {
-        return field.Equals("Notes", StringComparison.OrdinalIgnoreCase) ||
-               field.Equals("Comments", StringComparison.OrdinalIgnoreCase);
+        return MultiLineEditFields.Contains(field);
+    }
+
+    /// <summary>Returns the current value of a multi-line column
+    /// (Description / Notes / Comments) for the ✏️ editor dialog.</summary>
+    private static string GetMultiLineValue(WorksheetRow row, string field)
+    {
+        if (field.Equals("Notes", StringComparison.OrdinalIgnoreCase)) return row.Notes;
+        if (field.Equals("Description", StringComparison.OrdinalIgnoreCase)) return row.Description;
+        return row.Comments;
     }
 
     // === Initialization ===
     private void InitializeCostBasis()
     {
+        // VB6 parity: MMain.LoadCostTypes seeds the cboCostBasis combo with
+        // these six fixed cost periods (Id = ListIndex, persisted as
+        // tblSalesSheetMaster.CostBasisType). Forecast 1..12 names are then
+        // appended from CustomDescriptions in LoadCostBasisForecastsAsync.
         CostBasisList = new List<CostBasisItem>
         {
-            new() { Id = 0, Name = "Estimated Cost" },
-            new() { Id = 1, Name = "Actual Cost" },
-            new() { Id = 2, Name = "Budget Cost" }
+            new() { Id = 0, Name = "Current" },
+            new() { Id = 1, Name = "Next 1" },
+            new() { Id = 2, Name = "Next 2" },
+            new() { Id = 3, Name = "Last 1" },
+            new() { Id = 4, Name = "Last 2" },
+            new() { Id = 5, Name = "Last 3" },
         };
+    }
+
+    /// <summary>VB6 parity (MMain.LoadCostTypes): append the Forecast 1..12
+    /// cost periods to the Cost Basis combo, using each forecast's custom
+    /// label from CustomDescriptions when one exists (else "Forecast N").
+    /// These follow the six fixed periods, so their Ids continue at 6.</summary>
+    private async Task LoadCostBasisForecastsAsync()
+    {
+        try
+        {
+            var rows = await Db.QueryAsync(@"
+                SELECT Item, MAX(Custom_Description) AS Label
+                FROM CustomDescriptions
+                WHERE Item LIKE 'Forecast%'
+                GROUP BY Item");
+            // Map the DB rows by their numeric suffix so we can emit them in
+            // order (Forecast1..Forecast12) regardless of GROUP BY ordering.
+            var labels = new Dictionary<int, string>();
+            foreach (var r in rows)
+            {
+                var item = r["Item"]?.ToString() ?? "";
+                if (item.Length > 8 && int.TryParse(item.AsSpan(8), out var n))
+                {
+                    var custom = r["Label"]?.ToString();
+                    labels[n] = string.IsNullOrWhiteSpace(custom) ? $"Forecast {n}" : custom;
+                }
+            }
+            for (int n = 1; n <= 12; n++)
+            {
+                var name = labels.TryGetValue(n, out var lbl) ? lbl : $"Forecast {n}";
+                CostBasisList.Add(new CostBasisItem { Id = 5 + n, Name = name });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load Forecast cost-basis labels; using fixed periods only");
+        }
     }
 
     private void InitializeLegend()
@@ -1070,15 +1032,26 @@
         try
         {
             // Communities
-            var comms = await db.QueryAsync("SELECT Area, Description FROM tblLocality WHERE ISNULL(Inactive,0)=0 ORDER BY Description");
+            var comms = await Db.QueryAsync("SELECT Area, Description FROM tblLocality WHERE ISNULL(Inactive,0)=0 ORDER BY Description");
             CommunityList = comms.Select(r => new CommunityItem
             {
                 Area = r["Area"]?.ToString() ?? "",
                 Description = r["Description"]?.ToString() ?? ""
             }).ToList();
 
+            // Categories (VB6 gData_CellButtonClick "Category" picklist source).
+            var cats = await Db.QueryAsync("SELECT Category, Description, ISNULL(COMarkup,0) AS COMarkup FROM tblCategories ORDER BY Category");
+            CategoryList = cats.Select(r => new CategoryItem
+            {
+                Category = r["Category"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                COMarkup = decimal.TryParse(r["COMarkup"]?.ToString(), out var cm) ? cm : 0m
+            }).ToList();
+
             // Models
-            var models = await db.QueryAsync($"SELECT DISTINCT Model, Description FROM tblDBAssemblyMaster WHERE DivisionID={DivisionID} ORDER BY Model");
+            var models = await Db.QueryAsync(
+                "SELECT DISTINCT Model, Description FROM tblDBAssemblyMaster WHERE DivisionID = @DivisionID ORDER BY Model",
+                new { DivisionID = SessionState.DivisionID });
             ModelList = models.Select(r => new ModelItem
             {
                 Model = r["Model"]?.ToString() ?? "",
@@ -1086,18 +1059,18 @@
             }).ToList();
 
             // Custom labels
-            var label = await db.ExecuteScalarAsync<string>("SELECT ISNULL(NULLIF(custom_description,''),'Community') FROM customdescriptions WHERE item='Community'");
+            var label = await Db.ExecuteScalarAsync<string>("SELECT ISNULL(NULLIF(custom_description,''),'Community') FROM customdescriptions WHERE item='Community'");
             if (!string.IsNullOrEmpty(label)) CommunityLabel = label;
 
             // Include tax setting and tax rate
-            var taxSetting = await db.ExecuteScalarAsync<string>($"SELECT ISNULL(IncludeTax,0) FROM system_setup WHERE id={DivisionID}");
+            var taxSetting = await Db.ExecuteScalarAsync<string>($"SELECT ISNULL(IncludeTax,0) FROM system_setup WHERE id={SessionState.DivisionID}");
             ShowIncludeTax = taxSetting == "True" || taxSetting == "1";
 
-            var taxRateStr = await db.ExecuteScalarAsync<string>($"SELECT ISNULL(TaxRate,0) FROM system_setup WHERE id={DivisionID}");
+            var taxRateStr = await Db.ExecuteScalarAsync<string>($"SELECT ISNULL(NetTaxRate,0) as TaxRate FROM system_setup WHERE id={SessionState.DivisionID}");
             if (decimal.TryParse(taxRateStr, out var tr)) TaxRate = tr / 100m;
 
             // MaxVendorPricing
-            var mvpStr = await db.ExecuteScalarAsync<string>($"SELECT TOP 1 ISNULL(MaxVendorPricing,0) FROM system_setup WHERE id={DivisionID}");
+            var mvpStr = await Db.ExecuteScalarAsync<string>($"SELECT TOP 1 ISNULL(MaxVendorPricing,0) FROM system_setup WHERE id={SessionState.DivisionID}");
             MaxVendorPricing = mvpStr == "True" || mvpStr == "1";
 
             // Assembly costs button visibility (VB6: Options(RecordSalesSheetCosts))
@@ -1106,7 +1079,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadLookupDataAsync error: {ex.Message}");
+            Logger.LogError(ex, "LoadLookupDataAsync error");
+
         }
     }
 
@@ -1119,7 +1093,9 @@
         try
         {
             // Load master
-            var masterRows = await db.QueryAsync($"SELECT * FROM tblSalesSheetMaster WHERE Worksheet={WorksheetId}");
+            var masterRows = await Db.QueryAsync(
+                "SELECT * FROM tblSalesSheetMaster WHERE Worksheet=@WorksheetId",
+                new { WorksheetId });
             if (masterRows.Any())
             {
                 var m = masterRows.First();
@@ -1135,8 +1111,15 @@
                     SalesEffectiveDate = Convert.ToDateTime(m["SalesEffectiveDate"]);
             }
 
-            // VB6: ReadOnly when SalesEffectiveDate is set (worksheet has been published)
-            IsReadOnly = SalesEffectiveDate.HasValue;
+            // VB6 (FPricingWorksheet.frm:1093):
+            //   ReadOnly = Trim(txtSalesEffectiveDate.Text) <> "" AND HFApp.Options(LockPostedSalesWorksheets)
+            // A published worksheet (SalesEffectiveDate set) is read-only ONLY when the
+            // LockPostedSalesWorksheets app option is also enabled. The earlier port
+            // dropped the option gate, so EVERY published worksheet became fully
+            // read-only — which is why no cell was editable. Default the option OFF
+            // (VB6 default) so published sheets stay editable unless a future options
+            // load flips LockPostedSalesWorksheets on.
+            IsReadOnly = SalesEffectiveDate.HasValue && LockPostedSalesWorksheets;
 
             // Load details
             var sql = $@"
@@ -1149,7 +1132,7 @@
                 LEFT JOIN distinctmodelsByDivision dm ON dm.DivisionID = m.DivisionID AND d.Model = dm.Model
                 WHERE d.Worksheet = {WorksheetId}
                 ORDER BY d.Model, d.Assembly";
-            var rows = await db.QueryAsync(sql);
+            var rows = await Db.QueryAsync(sql);
             WorksheetData = rows.Select(r => MapRowFromDb(r)).ToList();
 
             // Calculate derived fields for all rows
@@ -1160,8 +1143,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadDataAsync error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading worksheet: {ex.Message}");
+            Logger.LogError(ex, "LoadDataAsync error");
+
+            Notifications.Error($"Error loading worksheet: {ex.Message}");
         }
         finally
         {
@@ -1266,6 +1250,16 @@
                 CalcMarkup(row, calcProfit: true, calcMarkup: true);
                 break;
 
+            case "incentiveretail":
+                // VB6 gData_MYValidateEdit Case "IncentiveRetail" (FPricingWorksheet.frm):
+                // the typed retail drives the derived IncentiveCost; that rolls into
+                // total Cost, and pricing (Profit/Markup/Margin) recomputes off the new
+                // Cost with Pretax held. IncentiveRetail itself is left exactly as typed.
+                row.IncentiveCost = row.IncentiveRetail * IncentiveCostPercent / 100m;
+                row.Cost = row.ConstructionCost + row.LandCost + row.IncentiveCost;
+                CalcMarkup(row, calcProfit: true, calcMarkup: true, calcMargin: true);
+                break;
+
             case "copretax":
                 row.COTax = row.IncludeTax ? row.COPretax * TaxRate : 0;
                 row.COTotal = row.COPretax + row.COTax;
@@ -1290,10 +1284,12 @@
                 break;
         }
 
-        // IncentiveRetail = IncentiveCost * (1 + Markup/100)
-        if (row.IncentiveCost > 0 && row.Markup > 0)
-            row.IncentiveRetail = row.IncentiveCost * (1 + row.Markup / 100m);
-
+        // NOTE: do NOT recompute IncentiveRetail here. VB6 treats IncentiveRetail
+        // as a user-entered STORED column; the derivation runs the OTHER way
+        // (IncentiveCost = IncentiveRetail * IncentiveCostPercent/100, handled in
+        // the "incentiveretail" case above and txtIncentiveCostPercent_Validate).
+        // The old line here (IncentiveRetail = IncentiveCost*(1+Markup/100)) was
+        // invented and overwrote the value the user just typed on every CalcData.
         CalculateDerivedFields(row);
     }
 
@@ -1332,7 +1328,7 @@
     }
 
     // === VB6 Price Change Handlers ===
-    private void OnDollarPriceChange(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnDollarPriceChange(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (DollarChange == 0) return;
         foreach (var row in WorksheetData.Where(r => !r.Inactive))
@@ -1346,7 +1342,7 @@
         StateHasChanged();
     }
 
-    private void OnPercentIncreaseChange(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnPercentIncreaseChange(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (PercentIncrease == 0) return;
         foreach (var row in WorksheetData.Where(r => !r.Inactive))
@@ -1360,7 +1356,7 @@
         StateHasChanged();
     }
 
-    private void OnPercentDecreaseChange(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnPercentDecreaseChange(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (PercentDecrease == 0) return;
         foreach (var row in WorksheetData.Where(r => !r.Inactive))
@@ -1375,7 +1371,7 @@
     }
 
     // VB6: txtIncentiveCostPercent_Validate
-    private void OnIncentiveCostPercentChange(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnIncentiveCostPercentChange(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         foreach (var row in WorksheetData.Where(r => !r.Inactive))
         {
@@ -1389,7 +1385,7 @@
     }
 
     // VB6: txtRoundTo_Validate
-    private void OnRoundToChange(HfNumericTextBox<decimal>.NumericChangeEventArgs<decimal> args)
+    private void OnRoundToChange(NumericTextBoxControl<decimal>.NumericChangeEventArgs<decimal> args)
     {
         if (RoundTo <= 0) return;
         foreach (var row in WorksheetData.Where(r => !r.Inactive))
@@ -1418,7 +1414,7 @@
         try
         {
             // Update master
-            await db.ExecuteAsync($@"
+            await Db.ExecuteAsync($@"
                 UPDATE tblSalesSheetMaster SET
                     Description=@Description, CostBasisType=@CostBasisType,
                     IncentiveCostPercent=@IncentiveCostPercent, Inactive=@Inactive
@@ -1428,7 +1424,7 @@
             // Update dirty details
             foreach (var row in WorksheetData.Where(r => r.RowState == "DIRTY"))
             {
-                await db.ExecuteAsync($@"
+                await Db.ExecuteAsync($@"
                     UPDATE tblSalesSheetDetails SET
                         Description=@Description, Notes=@Notes, Comments=@Comments, Category=@Category,
                         Series=@Series, Style=@Style, FloorArea=@FloorArea, Bedrooms=@Bedrooms, Bathrooms=@Bathrooms,
@@ -1449,12 +1445,12 @@
                 row.RowState = "CLEAN";
             }
             mDirty = false;
-            await JSRuntime.InvokeVoidAsync("alert", "Worksheet saved successfully.");
+            Notifications.Info("Worksheet saved successfully.");
             return true;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Notifications.Error($"Error saving: {ex.Message}");
             return false;
         }
         finally
@@ -1473,7 +1469,7 @@
             var key = $"{row.Community}|{row.CommunityPhase}|{row.Model}|{row.Series}|{row.OptionID}|{row.Assembly}";
             if (!seen.Add(key))
             {
-                JSRuntime.InvokeVoidAsync("alert", $"Duplicate assembly found: {row.Assembly} in model {row.Model}");
+                _ = Dialogs.AlertAsync($"Duplicate assembly found: {row.Assembly} in model {row.Model}");
                 return false;
             }
         }
@@ -1501,7 +1497,7 @@
                 AND RecordLocked=1 AND l.KeyRecord=CAST(m.Worksheet AS VARCHAR))
             WHERE ISNULL(m.inactive,0)=0
               AND m.WorksheetType=0
-              AND m.DivisionID = {DivisionID}";
+              AND m.DivisionID = {SessionState.DivisionID}";
 
         var archivedQuery = $@"
             SELECT m.Worksheet, m.Description,
@@ -1513,7 +1509,7 @@
                 AND RecordLocked=1 AND l.KeyRecord=CAST(m.Worksheet AS VARCHAR))
             WHERE ISNULL(m.inactive,0)=1
               AND m.WorksheetType=0
-              AND m.DivisionID = {DivisionID}";
+              AND m.DivisionID = {SessionState.DivisionID}";
 
         var queries = $"Worksheets;{worksheetsQuery}|Archived Sheets;{archivedQuery}";
 
@@ -1526,33 +1522,250 @@
             showNew: true);
     }
 
+    /// <summary>VB6 AddAssembly calls SaveData(False) before computing costs.
+    /// Persist the master row for an unsaved sheet so it gets a real Worksheet
+    /// number (Purch_GetAssemblySalesSheetCost keys off @SalesSheet). Idempotent:
+    /// no-op once WorksheetId &gt; 0.</summary>
+    private async Task EnsureWorksheetSavedAsync()
+    {
+        if (WorksheetId > 0) return;
+        var newId = await Db.ExecuteScalarAsync<int>($@"
+            INSERT INTO tblSalesSheetMaster (Description, DivisionID, WorksheetType, CostBasisType,
+                IncentiveCostPercent, CostsEffectiveDate, Inactive)
+            OUTPUT INSERTED.Worksheet
+            VALUES (@Desc, {SessionState.DivisionID}, {(int)WorksheetType}, {CostBasisType},
+                {IncentiveCostPercent}, GETDATE(), 0)",
+            new { Desc = string.IsNullOrEmpty(WorksheetDescription) ? "New Worksheet" : WorksheetDescription });
+        WorksheetId = newId;
+        SyncWorksheetRouteState();
+    }
+
+    /// <summary>VB6 RefreshCosts: run Purch_GetAssemblySalesSheetCost (an action proc
+    /// that UPDATEs the cost columns on tblSalesSheetDetails for this Cost Basis),
+    /// then re-read Cost/LandCost/IncentiveCost/ConstructionCost/Pretax back into the
+    /// row. Safe no-op when the sheet isn't saved yet.</summary>
+    private async Task RefreshRowCostAsync(WorksheetRow row)
+    {
+        if (WorksheetId <= 0) return;
+        var p = new
+        {
+            WS = WorksheetId, A = row.Assembly ?? "", M = row.Model ?? "",
+            O = row.OptionID ?? "", C = row.Community ?? "", P = row.CommunityPhase ?? ""
+        };
+        await Db.ExecuteAsync(
+            "EXEC dbo.Purch_GetAssemblySalesSheetCost @SalesSheet=@WS, @Assembly=@A, @Model=@M, @OptionID=@O, @Community=@C, @CommunityPhase=@P",
+            p);
+        var costRows = await Db.QueryAsync(
+            @"SELECT TOP 1 Cost, LandCost, IncentiveCost, ConstructionCost, Pretax
+              FROM tblSalesSheetDetails
+              WHERE Worksheet=@WS AND Community=@C AND ISNULL(CommunityPhase,'')=@P
+                AND Assembly=@A AND Model=@M AND ISNULL(OptionID,'')=@O", p);
+        if (costRows.Any())
+        {
+            var cr = costRows.First();
+            row.Cost             = SafeDecimal(cr["Cost"]);
+            row.LandCost         = SafeDecimal(cr["LandCost"]);
+            row.IncentiveCost    = SafeDecimal(cr["IncentiveCost"]);
+            row.ConstructionCost = SafeDecimal(cr["ConstructionCost"]);
+            row.Pretax           = SafeDecimal(cr["Pretax"]);
+        }
+    }
+
+    /// <summary>VB6 FPricingWorksheet.frm LoadData else-branch (lines 1079-1086):
+    /// start a brand-new sheet. Description "New Worksheet", Cost Basis = Current
+    /// (cboCostBasis.ListIndex 0), Incentive Cost% from HFApp.Options(IncentiveCostPercent)
+    /// (Options.cls built-in default 55). No saved row exists to load.</summary>
+    private async Task InitializeNewWorksheet()
+    {
+        WorksheetId = 0;
+        WorksheetDescription = "New Worksheet";
+        CostBasisType = 0;                 // VB6 cboCostBasis.ListIndex = 0 -> "Current"
+        RoundTo = 0;
+        IsArchived = false;
+        IncentiveCostPercent = await GetIncentiveCostPercentDefaultAsync();
+        WorksheetData.Clear();
+        mDirty = false;
+        UpdateWindowTitle();
+        StateHasChanged();
+    }
+
+    /// <summary>VB6 HFApp.Options(IncentiveCostPercent): read the division's
+    /// IncentiveCostPercent app-option (appoptions table). Options.cls initializes the
+    /// option to 55, so 55 is the value when no override row exists -- the genuine VB6
+    /// default, not a masking fallback. Mirrors the RecordSalesSheetCosts read.</summary>
+    private async Task<decimal> GetIncentiveCostPercentDefaultAsync()
+    {
+        try
+        {
+            var raw = await Db.ExecuteScalarAsync<string>(
+                $@"SELECT TOP 1 optionvalue FROM appoptions
+                   WHERE DivisionID = {SessionState.DivisionID}
+                     AND optionname = 'IncentiveCostPercent'");
+            if (decimal.TryParse(raw, out var pct)) return pct;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't read IncentiveCostPercent AppOption -- using VB6 default 55");
+        }
+        return 55m;
+    }
+
     private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
     {
-        if (_pickListContext == "OpenWorksheet" && selectedRows.Count > 0)
+        // VB6 gData_CellButtonClick result: apply the chosen lookup row to the
+        // target cells, then we're done (no further picklist chaining).
+        if (_pickListContext == "Lookup")
         {
-            var row = selectedRows[0];
-            var worksheetStr = row.ContainsKey("Worksheet") ? row["Worksheet"]?.ToString() ?? "" : "";
-            if (int.TryParse(worksheetStr, out var worksheetNum) && worksheetNum > 0)
+            _pickListContext = "";
+            if (selectedRows.Count > 0)
+                ApplyLookupPick(selectedRows[0]);
+            else
+            {
+                _lookupRow = null;
+                _lookupField = "";
+                _lookupTargets.Clear();
+            }
+            return;
+        }
+
+        if (_pickListContext == "AddAssembly")
+        {
+            // VB6 (line 4239): iView = AssemblyPL.SelectedView; If IsIn(iView, 2, 4, 6)
+            //   → community-specific views in the 1-based VB6 list. Zero-based
+            //     here, so the community-specific views are indices 1, 3, 5.
+            // Community-specific views carry SourceCommunity / Community columns
+            // in their SELECT; global views (0, 2, 4) don't — those need a
+            // second picklist to choose selling communities.
+            var viewIndex = pickList?.SelectedViewIndex ?? 0;
+            _lastAddAssemblyView = viewIndex;
+            _pickListContext = "";
+
+            if (selectedRows.Count == 0) return;
+            // DesignCenter worksheets get a single view (index 0) that already
+            // includes SourceCommunity — treat them like a community-specific
+            // view in the General flow.
+            var isCommunitySpecific = WorksheetType == WorksheetTypes.DesignCenter
+                                      || viewIndex == 1 || viewIndex == 3 || viewIndex == 5;
+
+            if (isCommunitySpecific)
+            {
+                foreach (var row in selectedRows)
+                {
+                    await AddAssemblyToGridAsync(
+                        community: GetRowStr(row, "SourceCommunity"),
+                        phase:     "",
+                        assembly:  GetRowStr(row, "Assembly"),
+                        model:     GetRowStr(row, "Model"),
+                        optionId:  GetRowStr(row, "Option"),
+                        series:    GetRowStr(row, "Series"));
+                }
+                mDirty = true;
+                StateHasChanged();
+                return;
+            }
+
+            // Global view: stash the assemblies, then open the second
+            // picklist for selling communities.
+            _pendingAssemblyPicks = selectedRows;
+            if (pickList != null)
+            {
+                _pickListContext = "AddAssemblyCommunities";
+                var sql = $@"
+SELECT '** All Communities **' AS Description, '' AS Community, '' AS Phase, '' AS Inactive, -1 AS SortOrder
+UNION
+SELECT c.Description, c.area AS Community, '' AS Phase,
+       CASE WHEN c.Inactive = 1 THEN 'Inactive' ELSE '' END, c.inactive AS SortOrder
+FROM tbllocality c
+LEFT OUTER JOIN DivisionCommunities d ON d.Community = c.Area
+WHERE d.DivisionID = {SessionState.DivisionID}
+UNION
+SELECT c.description + ISNULL(' ' + p.description, ''), c.area AS Community,
+       ISNULL(p.communityphase, '') AS Phase,
+       CASE WHEN c.Inactive = 1 THEN 'Inactive' ELSE '' END, c.inactive AS SortOrder
+FROM tbllocality c
+LEFT OUTER JOIN communityphase p ON c.area = p.community
+LEFT OUTER JOIN DivisionCommunities d ON d.Community = c.Area
+WHERE d.DivisionID = {SessionState.DivisionID}
+ORDER BY 5, 1";
+                await pickList.Open(
+                    title: "Selling Communities",
+                    queries: sql,
+                    hideColumns: "SortOrder",
+                    multiSelect: true,
+                    dialogCaption: "Select selling communities");
+            }
+            return;
+        }
+
+        if (_pickListContext == "AddAssemblyCommunities")
+        {
+            // Second-step picklist (global view → choose communities).
+            // For every (assembly × community) pair, run AddAssemblyToGrid.
+            _pickListContext = "";
+            if (_pendingAssemblyPicks.Count > 0 && selectedRows.Count > 0)
+            {
+                foreach (var asm in _pendingAssemblyPicks)
+                {
+                    foreach (var com in selectedRows)
+                    {
+                        await AddAssemblyToGridAsync(
+                            community: GetRowStr(com, "Community"),
+                            phase:     GetRowStr(com, "Phase"),
+                            assembly:  GetRowStr(asm, "Assembly"),
+                            model:     GetRowStr(asm, "Model"),
+                            optionId:  GetRowStr(asm, "Option"),
+                            series:    GetRowStr(asm, "Series"));
+                    }
+                }
+                mDirty = true;
+                StateHasChanged();
+            }
+            _pendingAssemblyPicks = new List<IDictionary<string, object>>();
+            return;
+        }
+
+        if (_pickListContext == "OpenWorksheet")
+        {
+            // VB6 ShowForm flow. FPickList's "New" button returns an EMPTY list
+            // (FPickList.OnNewClick), while picking an existing row returns it with
+            // a "Worksheet" key. So branch on whether a real worksheet was chosen
+            // -- NOT on selectedRows.Count, or the "New" path is unreachable.
+            _pickListContext = "";
+            var worksheetNum = 0;
+            if (selectedRows.Count > 0)
+            {
+                var row = selectedRows[0];
+                var worksheetStr = row.ContainsKey("Worksheet") ? row["Worksheet"]?.ToString() ?? "" : "";
+                int.TryParse(worksheetStr, out worksheetNum);
+            }
+
+            if (worksheetNum > 0)
             {
                 // VB6: s = HFApp.RecordLockedBy("tblSalesSheetMaster", i)
                 var lockedBy = await RecordLockedByAsync("tblSalesSheetMaster", worksheetNum);
                 if (!string.IsNullOrEmpty(lockedBy))
                 {
-                    // VB6: MsgBox "Unable to open this worksheet. It is in use by " & s
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        $"Unable to open this worksheet. It is in use by {lockedBy}");
-                    // Re-show the picklist so user can pick another
+                    Notifications.Info($"Unable to open this worksheet. It is in use by {lockedBy}");
                     await ShowWorksheetPickList();
                 }
                 else
                 {
-                    // VB6: If Not ShowForm("FPricingWorksheet", i)
-                    //        Then Call f.OpenWorksheet(0, i, "Estimating", "", "")
                     WorksheetId = worksheetNum;
                     await LoadDataAsync();
+                    // Publish /pricing-worksheet/{id} (distinct MDI key) AND retitle
+                    // this tab to the worksheet number, so opening an existing sheet
+                    // gives it its own titled tab instead of re-focusing a generic one.
+                    SyncWorksheetRouteState();
                 }
             }
-            _pickListContext = "";
+            else
+            {
+                // VB6 FPricingWorksheet.frm LoadData else-branch (lines 1079-1086):
+                // the "New Worksheet" pick (empty list) starts a fresh sheet.
+                // Cost Basis = Current (ListIndex 0), Incentive Cost% from the
+                // IncentiveCostPercent app-option (default 55).
+                await InitializeNewWorksheet();
+            }
             return;
         }
 
@@ -1565,9 +1778,10 @@
         if (WorksheetId == 0)
         {
             // No worksheet was ever loaded — go back
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
         _pickListContext = "";
+        _lookupTargets.Clear();
     }
 
     // VB6: HFApp.RecordLockedBy — checks if a record is locked by another user
@@ -1581,7 +1795,7 @@
                 WHERE TableName = @TableName
                   AND RecordLocked = 1
                   AND KeyRecord = @KeyRecord";
-            var result = await db.ExecuteScalarAsync<string>(sql,
+            var result = await Db.ExecuteScalarAsync<string>(sql,
                 new { TableName = tableName, KeyRecord = recordKey.ToString() });
             return result ?? "";
         }
@@ -1602,7 +1816,7 @@
     {
         if (string.IsNullOrWhiteSpace(SaveAsDescription))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Enter a description for the new worksheet.");
+            Notifications.Info("Enter a description for the new worksheet.");
             return;
         }
         IsSaveAsDialogVisible = false;
@@ -1611,10 +1825,10 @@
         try
         {
             // Insert new master record
-            var newId = await db.ExecuteScalarAsync<int>($@"
+            var newId = await Db.ExecuteScalarAsync<int>($@"
                 INSERT INTO tblSalesSheetMaster (Description, DivisionID, WorksheetType, CostBasisType,
                     IncentiveCostPercent, CostsEffectiveDate, Inactive)
-                SELECT @Desc, DivisionID, WorksheetType, CostBasisType,
+                SELECT @Desc, {SessionState.DivisionID}, WorksheetType, CostBasisType,
                     IncentiveCostPercent, CostsEffectiveDate, 0
                 FROM tblSalesSheetMaster WHERE Worksheet={WorksheetId};
                 SELECT SCOPE_IDENTITY();",
@@ -1623,7 +1837,7 @@
             if (newId > 0)
             {
                 // Copy detail rows
-                await db.ExecuteAsync($@"
+                await Db.ExecuteAsync($@"
                     INSERT INTO tblSalesSheetDetails
                     SELECT {newId} AS Worksheet, Community, CommunityPhase, SourceCommunity,
                            Assembly, AssemblyUOM, Model, Elevation, OptionID, AssemblyType,
@@ -1638,13 +1852,16 @@
                 WorksheetId = newId;
                 WorksheetDescription = SaveAsDescription;
                 mDirty = false;
-                await JSRuntime.InvokeVoidAsync("alert", $"Worksheet saved as number {newId}.");
+                Notifications.Info($"Worksheet saved as number {newId}.");
                 await LoadDataAsync();
+                // Re-key this MDI window to the new worksheet number so it no
+                // longer collides with the source worksheet's tab.
+                SyncWorksheetRouteState();
             }
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"SaveAs error: {ex.Message}");
+            Notifications.Error($"SaveAs error: {ex.Message}");
         }
         finally
         {
@@ -1653,23 +1870,171 @@
         }
     }
 
-    private void OnAddClick()
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── Add Assembly (VB6: FPricingWorksheet.frm AddAssembly()) ───────────
+    // ═══════════════════════════════════════════════════════════════════════
+    /// <summary>VB6 (line 4092) builds a multi-view FPickList — the user sees
+    /// a "View:" dropdown at the top (Models / Community Models / Model
+    /// Options / Community Model Options / Global Options / Community Global
+    /// Options) and a grid of assemblies for the chosen view. After the
+    /// assembly is picked, if it's a "global" view (not community-specific),
+    /// VB6 opens a SECOND picklist for "Selling Communities" so the user can
+    /// pick which communities to assign each global assembly to. Then for
+    /// every (assembly × community) pair, AddAssemblyToGrid runs.
+    ///
+    /// POC reuses the existing FPickList component (which already supports
+    /// multi-view via the `View1;SQL1|View2;SQL2|...` query string). The
+    /// follow-up community pick is handled via a second pickList.Open call
+    /// from the OnPickListSelected callback when SelectedViewIndex points
+    /// at one of the global views (0 = Models, 2 = Model Options,
+    /// 4 = Global Options).</summary>
+    private async Task OnAddClick()
     {
-        if (IsReadOnly) return;
-        AddCommunity = "";
-        AddModel = "";
-        AddAssemblyValue = "";
-        AssemblyList.Clear();
-        IsAddDialogVisible = true;
+        if (IsReadOnly || pickList == null) return;
+
+        var divId = SessionState.DivisionID;
+        string queries;
+
+        if (WorksheetType == WorksheetTypes.DesignCenter)
+        {
+            // Design Center worksheet — single view, all DC options.
+            // Mirrors VB6 fallback when neither DCOptionByAreaPhase nor
+            // DCOptionByArea is set (line 4133-4140). POC ignores those
+            // two AppOptions for now and uses the simplest variant; if a
+            // host needs the phase/area-keyed flavours, branch on the
+            // option here.
+            var dcSql =
+                $@"SELECT ISNULL(k.description, a.Category) AS Category,
+                          a.Model, a.OptionID AS [Option], a.Assembly, a.Description,
+                          a.assemblytype, a.community AS SourceCommunity, '' AS AreaID
+                   FROM tbldbassemblymaster a
+                   LEFT OUTER JOIN tblcategories k ON a.category = k.category
+                   WHERE a.divisionid = {divId}
+                     AND ISNULL(a.IsBaseAssembly, 0) = 0
+                     AND ISNULL(a.inactive, 0) = 0
+                     AND a.assemblytype = 4
+                     AND ISNULL(a.community, '') = ''
+                   ORDER BY 1, 2, 3, 4, 5, 6, 7";
+            queries = $"Design Center Options;{dcSql}";
+        }
+        else
+        {
+            // Six-view General/Estimating set — port of VB6 lines 4146-4234.
+            // The "Community ..." variants include a SourceCommunity / Community
+            // column so the consumer can route directly to AddAssemblyToGrid
+            // with that community. The bare variants are "global" — they
+            // trigger the second FPickList for selling communities.
+            string models = $@"
+SELECT DISTINCT m.Model, s.Series, m.Assembly, m.Description
+FROM tbldbassemblymaster m
+LEFT JOIN tblseries s ON s.DivisionID = {divId} AND (ISNULL(m.series,'')='' OR m.series = s.series)
+WHERE m.divisionid = {divId} AND ISNULL(m.community,'')=''
+  AND ISNULL(m.inactive,0)=0 AND m.assemblytype = 0 AND ISNULL(m.isbaseassembly,0)=0
+ORDER BY 1,2,3,4";
+
+            string communityModels = $@"
+SELECT DISTINCT m.Model, s.Series, m.Assembly, m.Description,
+       m.community AS SourceCommunity, c.description AS Community
+FROM tbldbassemblymaster m
+JOIN tbllocality c ON c.area = m.community
+LEFT JOIN divisioncommunities d ON m.community=d.community AND m.divisionid=d.divisionid
+LEFT JOIN tblseries s ON s.DivisionID = {divId} AND (ISNULL(m.series,'')='' OR m.series=s.series)
+WHERE m.divisionid = {divId}
+  AND (d.community IS NOT NULL OR ISNULL(m.community,'')='')
+  AND ISNULL(m.inactive,0)=0 AND m.assemblytype = 0 AND ISNULL(m.isbaseassembly,0)=0
+ORDER BY 1,2,3,4";
+
+            string modelOptions = $@"
+SELECT DISTINCT k.Description AS Category, m.Model, dm.description AS ModelDesc,
+       s.Series, m.OptionID AS [Option], m.Assembly, m.Description
+FROM tbldbassemblymaster m
+LEFT JOIN distinctmodelsbydivision dm ON m.model = dm.model AND m.divisionid = dm.divisionid
+LEFT OUTER JOIN tblcategories k ON m.category = k.category
+LEFT JOIN tblseries s ON s.DivisionID = {divId} AND (ISNULL(m.series,'')='' OR m.series=s.series)
+WHERE m.divisionid = {divId} AND ISNULL(m.community,'')=''
+  AND ISNULL(m.inactive,0)=0 AND m.assemblytype = 2 AND ISNULL(m.isbaseassembly,0)=0
+ORDER BY 1,2,3,4";
+
+            string communityModelOptions = $@"
+SELECT DISTINCT k.Description AS Category, m.Model, dm.description AS ModelDesc,
+       s.Series, m.OptionID AS [Option], m.Assembly, m.Description,
+       m.community AS SourceCommunity, c.description AS Community
+FROM tbldbassemblymaster m
+LEFT JOIN distinctmodelsbydivision dm ON m.model = dm.model AND m.divisionid = dm.divisionid
+JOIN tbllocality c ON c.area = m.community
+LEFT JOIN divisioncommunities d ON m.community=d.community AND m.divisionid=d.divisionid
+LEFT OUTER JOIN tblcategories k ON m.category = k.category
+LEFT JOIN tblseries s ON s.DivisionID = {divId} AND (ISNULL(m.series,'')='' OR m.series=s.series)
+WHERE m.divisionid = {divId}
+  AND (d.community IS NOT NULL OR ISNULL(m.community,'')='')
+  AND ISNULL(m.inactive,0)=0 AND m.assemblytype = 2 AND ISNULL(m.isbaseassembly,0)=0
+ORDER BY 1,2,3,4";
+
+            string globalOptions = $@"
+SELECT DISTINCT k.Description AS Category, m.OptionID AS [Option], m.Assembly, m.Description
+FROM tbldbassemblymaster m
+LEFT JOIN distinctmodelsbydivision dm ON m.model=dm.model AND m.divisionid=dm.divisionid
+LEFT OUTER JOIN tblcategories k ON m.category = k.category
+WHERE m.divisionid = {divId} AND ISNULL(m.community,'')=''
+  AND ISNULL(m.inactive,0)=0 AND ISNULL(m.isbaseassembly,0)=0 AND m.assemblytype = 3
+UNION
+SELECT DISTINCT k.Description AS Category, a.OptionID AS [Option], '' AS Assembly, a.Description
+FROM tblphaseitem a
+LEFT OUTER JOIN tblcategories k ON a.optioncategory = k.category
+WHERE a.divisionid = {divId} AND ISNULL(a.optionid,'') <> ''
+ORDER BY 1,2,3,4";
+
+            string communityGlobalOptions = $@"
+SELECT DISTINCT k.Description AS Category, m.OptionID AS [Option], m.Assembly, m.Description,
+       m.community AS SourceCommunity, c.description AS Community
+FROM tbldbassemblymaster m
+JOIN tbllocality c ON c.area = m.community
+LEFT JOIN divisioncommunities d ON m.community=d.community AND m.divisionid=d.divisionid
+LEFT OUTER JOIN tblcategories k ON m.category = k.category
+WHERE m.divisionid = {divId}
+  AND (d.community IS NOT NULL OR ISNULL(m.community,'')='')
+  AND ISNULL(m.inactive,0)=0 AND m.assemblytype = 3 AND ISNULL(m.isbaseassembly,0)=0
+ORDER BY 1,2,3,4";
+
+            // FPickList multi-view format: "View1;SQL1|View2;SQL2|..."
+            queries = string.Join("|", new[]
+            {
+                "Models;"                    + models,
+                "Community Models;"          + communityModels,
+                "Model Options;"             + modelOptions,
+                "Community Model Options;"   + communityModelOptions,
+                "Global Options;"            + globalOptions,
+                "Community Global Options;" + communityGlobalOptions,
+            });
+        }
+
+        _pendingAssemblyPicks = new List<IDictionary<string, object>>();
+        _pickListContext = "AddAssembly";
+        await pickList.Open(
+            title: "Assembly",
+            queries: queries,
+            hideColumns: "areaID,modelid,optionid,assemblytype,SourceCommunity",
+            multiSelect: true,
+            defaultView: _lastAddAssemblyView);
     }
+
+    // ── Add-assembly state plumbing ────────────────────────────────────
+    // Cached between the two-step VB6 flow: when the first picklist returns
+    // assemblies from a "global" view (not community-specific), the user
+    // must then choose which selling communities to assign each assembly
+    // to. We stash the picked rows + the chosen view index here so the
+    // second picklist's callback can run AddAssemblyToGrid for every
+    // (assembly × community) pair.
+    private List<IDictionary<string, object>> _pendingAssemblyPicks = new();
+    private int _lastAddAssemblyView = 0;
 
     private async Task OnRemoveClick()
     {
         if (SelectedRow == null || IsReadOnly) return;
-        if (await JSRuntime.InvokeAsync<bool>("confirm", $"Remove {SelectedRow.Assembly}?"))
+        if (await Dialogs.ConfirmAsync($"Remove {SelectedRow.Assembly}?"))
         {
             // VB6: DELETE from tblSalesSheetDetails
-            await db.ExecuteAsync($@"
+            await Db.ExecuteAsync($@"
                 DELETE FROM tblSalesSheetDetails
                 WHERE Worksheet={WorksheetId} AND Community=@Community AND Assembly=@Assembly AND ISNULL(OptionID,'')=@OptionID",
                 new { SelectedRow.Community, SelectedRow.Assembly, OptionID = SelectedRow.OptionID ?? "" });
@@ -1680,27 +2045,108 @@
         }
     }
 
-    private async Task OnPreviewClick() => await JSRuntime.InvokeVoidAsync("alert", "Preview - opens print preview");
-    private async Task OnCostsClick() => await JSRuntime.InvokeVoidAsync("alert", "Assembly Costs - shows cost breakdown");
+    /// <summary>VB6 (FPricingWorksheet.frm line 1993-2022): "Preview" toolbar
+    /// button opens one of FOUR Crystal Reports depending on the
+    /// RecordSalesSheetCosts AppOption + whether DivisionID is set:
+    ///
+    ///   Record=true,  no division → salessheetcosts.xml
+    ///   Record=true,  division    → SalesSheetCosts Division version.xml
+    ///   Record=false, no division → salessheetCurrentCosts.xml
+    ///   Record=false, division    → salessheetCurrentCosts Division version.xml
+    ///
+    /// The four XML files live in <c>wwwroot/resources/System/Estimating/</c>
+    /// (NOT the regular <c>Estimating/Reports/xml</c> tree). VB6 paths
+    /// were <c>System\Reports\Estimating\</c>; POC drops the redundant
+    /// <c>Reports\</c> segment.
+    ///
+    /// FRptViewer accepts an XML path directly (ShowReportAsync handles
+    /// both .rpt and .xml — see ReportWriterControl line 1016). Worksheet
+    /// + DivisionID get prompted via the embedded
+    /// ReportParamDialogControl; DivisionID auto-fills from SessionState.
+    ///
+    /// VB6 also forces a save before opening preview (msgbox "You must
+    /// save your changes before opening the print preview window."). Same
+    /// here, using JSRuntime confirm.</summary>
+    private async Task OnPreviewClick()
+    {
+        if (mDirty)
+        {
+            var answer = await Dialogs.ConfirmAsync(
+                "You must save your changes before opening the print preview window.\n\nSave now?");
+            if (!answer) return;
+            if (!await SaveDataAsync()) return;
+        }
+
+        // VB6: HFApp.Options(RecordSalesSheetCosts) — appoptions table row
+        // keyed by optionname. Default false → "Current" cost flavour.
+        var recordSalesSheetCosts = false;
+        try
+        {
+            var raw = await Db.ExecuteScalarAsync<string>(
+                $@"SELECT TOP 1 optionvalue FROM appoptions
+                   WHERE DivisionID = {SessionState.DivisionID}
+                     AND optionname = 'RecordSalesSheetCosts'");
+            recordSalesSheetCosts = string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase)
+                                    || raw == "1";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't read RecordSalesSheetCosts AppOption — defaulting to false");
+        }
+
+        // SessionState.DivisionID is int — "no division" maps to ≤ 0
+        // (VB6 stored it as a string and checked for empty, same intent).
+        var hasDivision = SessionState.DivisionID > 0;
+        var reportFileName = (recordSalesSheetCosts, hasDivision) switch
+        {
+            (true,  false) => "salessheetcosts.xml",
+            (true,  true ) => "SalesSheetCosts Division version.xml",
+            (false, false) => "salessheetCurrentCosts.xml",
+            (false, true ) => "salessheetCurrentCosts Division version.xml",
+        };
+
+        var xmlPath = System.IO.Path.Combine(
+            WebHost.WebRootPath ?? "wwwroot",
+            "resources", "System", "Estimating",
+            reportFileName);
+
+        // Pre-seed the Worksheet parameter so FRptViewer's parameter
+        // dialog skips the prompt — VB6 (FPricingWorksheet.frm:2017-2019)
+        // does the same with `c.ParameterValue("Worksheet", mWorksheet)`.
+        // Parameter name matches the XML's <ParameterFieldDefinition
+        // Name="Worksheet" NumberParameter>. ReportSeeds is one-shot —
+        // FRptViewer consumes + clears in OnAfterRenderAsync, so this
+        // doesn't leak into the next /report-viewer navigation.
+        if (WorksheetId > 0)
+            ReportSeeds.Set("Worksheet", WorksheetId.ToString());
+
+        var route = $"/report-viewer/{Uri.EscapeDataString(xmlPath)}";
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(route);     // stays inside FMain shell
+        else
+            NavigationManager.NavigateTo(route);  // standalone fallback
+    }
+    private async Task OnCostsClick() => Notifications.Info("Assembly Costs - shows cost breakdown");
 
     private async Task OnPublishClick()
     {
         if (IsReadOnly) return;
-        if (await JSRuntime.InvokeAsync<bool>("confirm", "Publish prices to sales?"))
+        if (await Dialogs.ConfirmAsync("Publish prices to sales?"))
         {
             try
             {
                 // VB6: Call PublishPricingWorksheet(mWorksheet)
                 SalesEffectiveDate = DateTime.Now;
-                await db.ExecuteAsync($"UPDATE tblSalesSheetMaster SET SalesEffectiveDate=@Date WHERE Worksheet={WorksheetId}",
-                    new { Date = SalesEffectiveDate });
+                await Db.ExecuteAsync(
+                    "UPDATE tblSalesSheetMaster SET SalesEffectiveDate=@Date WHERE Worksheet=@WorksheetId",
+                    new { Date = SalesEffectiveDate, WorksheetId });
                 IsReadOnly = true;
-                await JSRuntime.InvokeVoidAsync("alert", "Prices published successfully.");
+                Notifications.Info("Prices published successfully.");
                 StateHasChanged();
             }
             catch (Exception ex)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Publish error: {ex.Message}");
+                Notifications.Error($"Publish error: {ex.Message}");
             }
         }
     }
@@ -1709,7 +2155,7 @@
     private async Task OnRefreshCostsClick()
     {
         if (IsReadOnly) return;
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", "Refresh costs from estimating? This will update all cost fields."))
+        if (!await Dialogs.ConfirmAsync("Refresh costs from estimating? This will update all cost fields."))
             return;
 
         IsLoading = true;
@@ -1718,26 +2164,18 @@
         {
             foreach (var row in WorksheetData.Where(r => !r.Inactive))
             {
-                // Query assembly cost via stored procedure
-                var costRows = await db.QueryAsync(
-                    $"EXEC dbo.Purch_GetAssemblySalesSheetCost @DivisionID={DivisionID}, @Assembly='{row.Assembly}', @Model='{row.Model}', @CostBasisType={CostBasisType}");
-                if (costRows.Any())
-                {
-                    var cr = costRows.First();
-                    row.ConstructionCost = SafeDecimal(cr.ContainsKey("ConstructionCost") ? cr["ConstructionCost"] : null);
-                    row.LandCost = SafeDecimal(cr.ContainsKey("LandCost") ? cr["LandCost"] : null);
-                    row.IncentiveCost = row.ConstructionCost * IncentiveCostPercent / 100m;
-                    row.Cost = row.ConstructionCost + row.LandCost + row.IncentiveCost;
-                }
+                // VB6 RefreshCosts: action proc writes the real cost for this Cost Basis
+                // into the row; RefreshRowCostAsync re-reads it (correct proc params).
+                await RefreshRowCostAsync(row);
                 CalcData(row, "cost");
                 row.RowState = "DIRTY";
             }
             mDirty = true;
-            await JSRuntime.InvokeVoidAsync("alert", "Costs refreshed.");
+            Notifications.Info("Costs refreshed.");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Refresh costs error: {ex.Message}");
+            Notifications.Error($"Refresh costs error: {ex.Message}");
         }
         finally
         {
@@ -1755,10 +2193,10 @@
         {
             foreach (var row in WorksheetData)
             {
-                var pubRows = await db.QueryAsync(
+                var pubRows = await Db.QueryAsync(
                     $@"SELECT TOP 1 Pretax, Tax, Price, COPrice, Markup, Margin, Incentive
                        FROM tblPublishedPrices
-                       WHERE DivisionID={DivisionID} AND Model='{row.Model}' AND Assembly='{row.Assembly}'
+                       WHERE DivisionID ={SessionState.DivisionID} AND Model='{row.Model}' AND Assembly='{row.Assembly}'
                        ORDER BY EffectiveDate DESC");
                 if (pubRows.Any())
                 {
@@ -1773,11 +2211,11 @@
                     row.PublishedProfit = row.PublishedPretax - row.Cost;
                 }
             }
-            await JSRuntime.InvokeVoidAsync("alert", "Published prices refreshed.");
+            Notifications.Info("Published prices refreshed.");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Refresh published error: {ex.Message}");
+            Notifications.Error($"Refresh published error: {ex.Message}");
         }
         finally
         {
@@ -1786,7 +2224,7 @@
         }
     }
 
-    // === Export Handlers (use new HfGrid export methods) ===
+    // === Export Handlers (use new GridControl export methods) ===
     private void ToggleExportMenu()
     {
         ShowExportMenu = !ShowExportMenu;
@@ -1811,7 +2249,7 @@
     }
 
     // === Layout Management ===
-    private async void OnLayoutChanged(HfDropDownList<string, string>.ChangeEventArgs<string, string> args)
+    private async void OnLayoutChanged(DropDownListControl<string, string>.ChangeEventArgs<string, string> args)
     {
         // Reload grid layout when layout selection changes
         await LoadGridLayouts();
@@ -1833,6 +2271,205 @@
         }
     }
 
+    // ── Cell lookup "…" button (VB6 gData_CellButtonClick parity) ──────────
+    // The row + field whose "…" button was clicked, captured so the shared
+    // FPickList's OnSelected callback knows where to write the pick.
+    private WorksheetRow? _lookupRow;
+    private string _lookupField = "";
+    private readonly List<WorksheetRow> _lookupTargets = new();
+
+    /// <summary>Cell display text for a lookup column (Community shows the area
+    /// code, CommunityDesc the description, etc.).</summary>
+    private static string GetLookupDisplay(WorksheetRow row, string field) => field switch
+    {
+        "Location"       => row.Location,
+        "Community"      => row.Community,
+        "CommunityDesc"  => row.CommunityDesc,
+        "CommunityPhase" => row.CommunityPhase,
+        "Category"       => row.Category,
+        "CategoryDesc"   => row.CategoryDesc,
+        "Series"         => row.Series,
+        "AssemblyUOM"    => row.AssemblyUOM,
+        _ => ""
+    };
+
+    /// <summary>Opens the shared FPickList for a lookup cell. Mirrors VB6
+    /// gData_CellButtonClick: each field has its own query; the pick is applied
+    /// in OnPickListSelected's "Lookup" branch and fanned across the selected
+    /// rows.</summary>
+    private Task OnGridEditButtonClick(CellEditButtonArgs<WorksheetRow> args)
+    {
+        if (args.Data == null || string.IsNullOrWhiteSpace(args.ColumnName))
+            return Task.CompletedTask;
+
+        // Multi-line text columns (Description/Notes/Comments) open the text dialog;
+        // every other edit-button column (lookups/pickers) opens FPickList.
+        if (IsNotesOrCommentsField(args.ColumnName))
+        {
+            OnEditText(args.Data, args.ColumnName);
+            return Task.CompletedTask;
+        }
+
+        return OnLookupButton(args.Data, args.ColumnName);
+    }
+
+    private async Task OnLookupButton(WorksheetRow row, string field)
+    {
+        if (IsReadOnly || pickList == null) return;
+        var (title, query, hideCols) = BuildLookupQuery(field, row);
+        if (string.IsNullOrWhiteSpace(query)) return;
+        _lookupRow = row;
+        _lookupField = field;
+        _lookupTargets.Clear();
+        _lookupTargets.AddRange(await ResolveLookupTargetsAsync(row, field));
+        _pickListContext = "Lookup";
+        await pickList.Open(title: title, queries: query, hideColumns: hideCols,
+                            defaultItem: GetLookupDisplay(row, field), multiSelect: false);
+    }
+
+    private async Task<List<WorksheetRow>> ResolveLookupTargetsAsync(WorksheetRow row, string field)
+    {
+        if (gData == null)
+            return [row];
+
+        var selectedCells = await gData.GetSelectedRowCellIndexesAsync();
+        if (selectedCells.Count == 0)
+            return [row];
+
+        var visibleFields = GetOrderedGridLayout(gDataLayout)
+            .Where(c => !c.Hidden)
+            .Select(c => c.Field)
+            .ToList();
+        var fieldIndex = visibleFields.FindIndex(f => string.Equals(f, field, StringComparison.OrdinalIgnoreCase));
+        var clickedRowIndex = WorksheetData.IndexOf(row);
+        if (fieldIndex < 0
+            || clickedRowIndex < 0
+            || !selectedCells.Any(c => c.CellIndex == fieldIndex && c.RowIndex == clickedRowIndex))
+            return [row];
+
+        var targets = new List<WorksheetRow>();
+        var seen = new HashSet<WorksheetRow>();
+        foreach (var cell in selectedCells
+                     .Where(c => c.CellIndex == fieldIndex)
+                     .OrderBy(c => c.RowIndex))
+        {
+            if (cell.RowIndex < 0 || cell.RowIndex >= WorksheetData.Count)
+                continue;
+
+            var target = WorksheetData[cell.RowIndex];
+            if (seen.Add(target))
+                targets.Add(target);
+        }
+
+        return targets.Count == 0 ? [row] : targets;
+    }
+
+    /// <summary>Per-field picklist query (VB6 gData_CellButtonClick). DivisionID
+    /// is an int (safe to interpolate); the only row-derived string is the
+    /// current Community for the phase query, single-quote-escaped.</summary>
+    private (string Title, string Query, string? HideColumns) BuildLookupQuery(string field, WorksheetRow row)
+    {
+        var div = SessionState.DivisionID;
+        switch (field)
+        {
+            case "Location":
+                return ("Location", "SELECT Area, Description FROM tblAreas ORDER BY Description", null);
+            case "Community":
+            case "CommunityDesc":
+                return ("Community",
+                    $@"SELECT l.area Community, l.Description
+                         FROM tbllocality l
+                         LEFT OUTER JOIN DivisionCommunities d ON d.Community = l.Area
+                        WHERE ISNULL(l.Inactive,0)=0
+                          AND (d.DivisionID IS NULL OR d.DivisionID = {div})
+                        ORDER BY l.Description", null);
+            case "CommunityPhase":
+                var comm = (row.Community ?? "").Replace("'", "''");
+                return ("Phase",
+                    $@"SELECT CommunityPhase Phase, Description
+                         FROM communityphase
+                        WHERE Community = '{comm}'
+                        ORDER BY Description", null);
+            case "Category":
+                return ("Category",
+                    "SELECT Category, Description, COMarkup FROM tblCategories ORDER BY Description", "COMarkup");
+            case "CategoryDesc":
+                return ("Category",
+                    "SELECT Description, Category, COMarkup FROM tblCategories ORDER BY Description", "COMarkup");
+            case "Series":
+                return ("Series",
+                    $"SELECT Series, Description FROM tblSeries WHERE DivisionID = {div} ORDER BY Series", null);
+            case "AssemblyUOM":
+                return ("UOM",
+                    "SELECT DISTINCT ISNULL(AssemblyUOM,'') UOM FROM tblDBAssemblyMaster WHERE ISNULL(AssemblyUOM,'') <> '' ORDER BY UOM", null);
+            default:
+                return ("", "", null);
+        }
+    }
+
+    /// <summary>Applies a lookup pick to the target rows. VB6 fans the value
+    /// across .Row To .RowSel — here, across the grid's selected rows (plus the
+    /// clicked row), so a drag-select then pick updates the whole range.</summary>
+    private void ApplyLookupPick(IDictionary<string, object> picked)
+    {
+        if (_lookupRow == null || string.IsNullOrEmpty(_lookupField)) return;
+
+        var targets = _lookupTargets.Count > 0
+            ? _lookupTargets.ToList()
+            : new List<WorksheetRow> { _lookupRow };
+        if (!targets.Contains(_lookupRow)) targets.Insert(0, _lookupRow);
+        targets = targets.Where(r => IsCellEditable(r, _lookupField)).ToList();
+        if (targets.Count == 0)
+        {
+            _lookupRow = null;
+            _lookupField = "";
+            _lookupTargets.Clear();
+            return;
+        }
+
+        string Get(string col) => picked.TryGetValue(col, out var v) ? v?.ToString() ?? "" : "";
+
+        foreach (var r in targets)
+        {
+            switch (_lookupField)
+            {
+                case "Location":
+                    r.Location = Get("Area");
+                    break;
+                case "Community":
+                case "CommunityDesc":
+                    r.Community = Get("Community");
+                    r.CommunityDesc = Get("Description");
+                    r.CommunityPhase = "";
+                    break;
+                case "CommunityPhase":
+                    r.CommunityPhase = Get("Phase");
+                    break;
+                case "Category":
+                case "CategoryDesc":
+                    r.Category = Get("Category");
+                    r.CategoryDesc = Get("Description");
+                    if (decimal.TryParse(Get("COMarkup"), out var coMk))
+                        r.COMarkup = coMk;
+                    break;
+                case "Series":
+                    r.Series = Get("Series");
+                    break;
+                case "AssemblyUOM":
+                    r.AssemblyUOM = Get("UOM");
+                    break;
+            }
+            r.RowState = "DIRTY";
+            CalcData(r, _lookupField);
+        }
+
+        mDirty = true;
+        _lookupRow = null;
+        _lookupField = "";
+        _lookupTargets.Clear();
+        StateHasChanged();
+    }
+
     private void OnQueryCellInfo(QueryCellInfoEventArgs<WorksheetRow> args)
     {
         // VB6: gData_RowColChange — row styling handled via CSS classes
@@ -1844,7 +2481,7 @@
         if (row == null || IsReadOnly) return;
         EditingTextRow = row;
         EditingTextField = colField;
-        EditingText = colField.Equals("Notes", StringComparison.OrdinalIgnoreCase) ? row.Notes : row.Comments;
+        EditingText = GetMultiLineValue(row, colField);
         TextDialogTitle = $"Edit {colField}";
         IsTextDialogVisible = true;
     }
@@ -1855,6 +2492,8 @@
         {
             if (EditingTextField.Equals("Notes", StringComparison.OrdinalIgnoreCase))
                 EditingTextRow.Notes = EditingText;
+            else if (EditingTextField.Equals("Description", StringComparison.OrdinalIgnoreCase))
+                EditingTextRow.Description = EditingText;
             else
                 EditingTextRow.Comments = EditingText;
             EditingTextRow.RowState = "DIRTY";
@@ -1865,15 +2504,15 @@
     }
 
     // === Add Assembly ===
-    private async Task OnAddModelChanged(HfDropDownList<string, ModelItem>.ChangeEventArgs<string, ModelItem> args)
+    private async Task OnAddModelChanged(DropDownListControl<string, ModelItem>.ChangeEventArgs<string, ModelItem> args)
     {
         if (string.IsNullOrEmpty(args.Value))
         {
             AssemblyList.Clear();
             return;
         }
-        var assemblies = await db.QueryAsync(
-            $"SELECT Assembly, Description FROM tblDBAssemblyMaster WHERE DivisionID={DivisionID} AND Model='{args.Value}' ORDER BY Assembly");
+        var assemblies = await Db.QueryAsync(
+            $"SELECT Assembly, Description FROM tblDBAssemblyMaster WHERE DivisionID ={SessionState.DivisionID} AND Model='{args.Value}' ORDER BY Assembly");
         AssemblyList = assemblies.Select(r => new AssemblyItem
         {
             Assembly = r["Assembly"]?.ToString() ?? "",
@@ -1886,14 +2525,14 @@
     {
         if (string.IsNullOrEmpty(AddCommunity) || string.IsNullOrEmpty(AddAssemblyValue))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Select Community and Assembly.");
+            Notifications.Info("Select Community and Assembly.");
             return;
         }
 
         // Check for duplicate
         if (WorksheetData.Any(r => r.Community == AddCommunity && r.Assembly == AddAssemblyValue && r.Model == AddModel))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "This assembly is already in the worksheet.");
+            Notifications.Info("This assembly is already in the worksheet.");
             return;
         }
 
@@ -1901,11 +2540,11 @@
         try
         {
             // Load assembly details from database
-            var asmRows = await db.QueryAsync(
+            var asmRows = await Db.QueryAsync(
                 $@"SELECT a.*, c.Description AS CategoryDesc
                    FROM tblDBAssemblyMaster a
                    LEFT JOIN tblCategories c ON a.Category = c.Category
-                   WHERE a.DivisionID={DivisionID} AND a.Assembly='{AddAssemblyValue}' AND a.Model='{AddModel}'");
+                   WHERE a.DivisionID={SessionState.DivisionID} AND a.Assembly='{AddAssemblyValue}' AND a.Model='{AddModel}'");
 
             var newRow = new WorksheetRow
             {
@@ -1934,7 +2573,7 @@
             }
 
             // Get pricing defaults from category
-            var catRows = await db.QueryAsync(
+            var catRows = await Db.QueryAsync(
                 $"SELECT ISNULL(DefaultMarkup,0) AS Markup, ISNULL(DefaultCOMarkup,0) AS COMarkup FROM tblCategories WHERE Category='{newRow.Category}'");
             if (catRows.Any())
             {
@@ -1954,7 +2593,7 @@
             CalcData(newRow);
 
             // Insert to database
-            await db.ExecuteAsync($@"
+            await Db.ExecuteAsync($@"
                 INSERT INTO tblSalesSheetDetails
                     (Worksheet, Community, CommunityPhase, SourceCommunity, Assembly, AssemblyUOM,
                      Model, Elevation, OptionID, AssemblyType, Description, Category, Series, Style,
@@ -1981,7 +2620,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Add assembly error: {ex.Message}");
+            Notifications.Error($"Add assembly error: {ex.Message}");
         }
     }
 
@@ -1994,6 +2633,154 @@
 
     private decimal SafeDecimal(object? val, decimal def = 0) =>
         val != null && val != DBNull.Value && (val?.ToString() ?? "") != "" ? Convert.ToDecimal(val) : def;
+
+    private static string GetRowStr(IDictionary<string, object> row, string key) =>
+        row.TryGetValue(key, out var v) ? v?.ToString() ?? "" : "";
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ── AddAssemblyToGrid (VB6: FPricingWorksheet.frm:2048) ──────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    /// <summary>Looks up the assembly master record + category defaults and
+    /// inserts a row into tblSalesSheetDetails + WorksheetData. Shared by
+    /// the per-assembly and per-(assembly,community) callers in the two-step
+    /// FPickList flow (OnPickListSelected "AddAssembly" / "AddAssemblyCommunities").
+    /// VB6 (line 2048-…) takes the same 7-arg shape; we drop SourceCommunity
+    /// because the call sites never set it differently from community.</summary>
+    private async Task AddAssemblyToGridAsync(
+        string community, string phase, string assembly,
+        string model, string optionId, string series)
+    {
+        // Skip duplicates — VB6's gData_AfterEdit doesn't allow them either.
+        if (WorksheetData.Any(r =>
+                r.Community == community && r.CommunityPhase == phase
+                && r.Assembly == assembly && r.Model == model
+                && (r.OptionID ?? "") == optionId))
+        {
+            return;
+        }
+
+        try
+        {
+            var asmRows = await Db.QueryAsync(
+                $@"SELECT a.*, c.Description AS CategoryDesc
+                   FROM tblDBAssemblyMaster a
+                   LEFT JOIN tblCategories c ON a.Category = c.Category
+                   WHERE a.DivisionID = {SessionState.DivisionID}
+                     AND ISNULL(a.Assembly,'') = @Assembly
+                     AND ISNULL(a.Model,'')    = @Model
+                     AND ISNULL(a.OptionID,'') = @OptionID",
+                new { Assembly = assembly ?? "", Model = model ?? "", OptionID = optionId ?? "" });
+
+            var newRow = new WorksheetRow
+            {
+                Community = community ?? "",
+                CommunityPhase = phase ?? "",
+                SourceCommunity = community ?? "",
+                Assembly = assembly ?? "",
+                Model = model ?? "",
+                OptionID = optionId ?? "",
+                Series = series ?? "",
+                RowState = "DIRTY"
+            };
+
+            if (asmRows.Any())
+            {
+                var a = asmRows.First();
+                newRow.Description     = a.ContainsKey("Description")     ? a["Description"]?.ToString() ?? "" : "";
+                newRow.Category        = a.ContainsKey("Category")        ? a["Category"]?.ToString() ?? "" : "";
+                newRow.CategoryDesc    = a.ContainsKey("CategoryDesc")    ? a["CategoryDesc"]?.ToString() ?? "" : "";
+                newRow.AssemblyUOM     = a.ContainsKey("AssemblyUOM")     ? a["AssemblyUOM"]?.ToString() ?? "" : "";
+                newRow.AssemblyType    = a.ContainsKey("AssemblyType")    ? SafeInt(a["AssemblyType"]) : 0;
+                // VB6 AddAssemblyToGrid: SourceCommunity = the assembly MASTER's own
+                // Community (m.Community SourceCommunity), NOT the selling community.
+                // Purch_GetAssemblySalesSheetCost joins sd.SourceCommunity =
+                // tbldbassemblydetails.community, so a mismatch here yields cost 0.
+                // For a global model this is '' (matching the detail rows' '' community).
+                newRow.SourceCommunity = a.ContainsKey("Community") ? a["Community"]?.ToString() ?? "" : "";
+                if (string.IsNullOrEmpty(newRow.Series)
+                    && a.ContainsKey("Series")) newRow.Series = a["Series"]?.ToString() ?? "";
+                newRow.Style           = a.ContainsKey("Style")           ? a["Style"]?.ToString() ?? "" : "";
+                newRow.FloorArea       = a.ContainsKey("FloorArea")       ? SafeInt(a["FloorArea"]) : 0;
+                newRow.Bedrooms        = a.ContainsKey("Bedrooms")        ? SafeInt(a["Bedrooms"]) : 0;
+                newRow.Bathrooms       = a.ContainsKey("Bathrooms")       ? SafeDecimal(a["Bathrooms"]) : 0;
+                newRow.ModelDescription = a.ContainsKey("ModelDesc")      ? a["ModelDesc"]?.ToString() ?? "" : "";
+            }
+
+            // VB6 FPricingWorksheet.frm AddAssemblyToGrid: pricing fields come from the
+            // assembly master record (m.Markup / m.Margin / m.Pretax / ...), NOT category
+            // defaults -- Proposed Price (Pretax) is the master's value, so it stays 0
+            // when the assembly carries no retail (matches VB6). a.* already SELECTed them.
+            if (asmRows.Any())
+            {
+                var am = asmRows.First();
+                newRow.Markup          = am.ContainsKey("Markup")          ? SafeDecimal(am["Markup"])          : 0;
+                newRow.Margin          = am.ContainsKey("Margin")          ? SafeDecimal(am["Margin"])          : 0;
+                newRow.RoundTo         = am.ContainsKey("Roundto")         ? SafeDecimal(am["Roundto"])         : 0;
+                newRow.IncludeTax      = am.ContainsKey("IncludeTax")      && (am["IncludeTax"]?.ToString() == "True" || am["IncludeTax"]?.ToString() == "1");
+                newRow.IncentiveRetail = am.ContainsKey("IncentiveRetail") ? SafeDecimal(am["IncentiveRetail"]) : 0;
+                newRow.Pretax          = am.ContainsKey("Pretax")          ? SafeDecimal(am["Pretax"])          : 0;
+                newRow.COMarkup        = am.ContainsKey("COMarkup")        ? SafeDecimal(am["COMarkup"])        : 0;
+                newRow.COPretax        = am.ContainsKey("COPretax")        ? SafeDecimal(am["COPretax"])        : 0;
+            }
+
+            // VB6 AddAssemblyToGrid: CommunityDesc = tblLocality.Description (l.area = community).
+            if (!string.IsNullOrEmpty(newRow.Community))
+            {
+                var locRows = await Db.QueryAsync(
+                    "SELECT TOP 1 Description AS CommunityDesc FROM tblLocality WHERE area = @Area",
+                    new { Area = newRow.Community });
+                if (locRows.Any())
+                    newRow.CommunityDesc = locRows.First()["CommunityDesc"]?.ToString() ?? "";
+            }
+
+            // VB6 AddAssembly calls SaveData(False) before RefreshCosts, so a brand-new
+            // (unsaved) sheet gets a real Worksheet number first. Mirror that: persist
+            // the master row now if this sheet has never been saved.
+            if (WorksheetId <= 0)
+                await EnsureWorksheetSavedAsync();
+
+            // Insert the detail row FIRST. Purch_GetAssemblySalesSheetCost is an ACTION
+            // proc: it UPDATEs cost/landcost/incentivecost/constructioncost on the
+            // tblSalesSheetDetails row in place (no resultset), so the row must exist.
+            await Db.ExecuteAsync($@"
+                INSERT INTO tblSalesSheetDetails
+                    (Worksheet, Community, CommunityPhase, SourceCommunity, Assembly, AssemblyUOM,
+                     Model, Elevation, OptionID, AssemblyType, Description, Category, Series, Style,
+                     FloorArea, Bedrooms, Bathrooms, LandCost, ConstructionCost, IncentiveCost,
+                     IncentiveRetail, Cost, Pretax, Tax, Markup, Margin, COPretax, COTax, COMarkup, Qty)
+                VALUES (@Worksheet, @Community, @CommunityPhase, @SourceCommunity, @Assembly, @AssemblyUOM,
+                        @Model, @Elevation, @OptionID, @AssemblyType, @Description, @Category, @Series, @Style,
+                        @FloorArea, @Bedrooms, @Bathrooms, @LandCost, @ConstructionCost, @IncentiveCost,
+                        @IncentiveRetail, @Cost, @Pretax, @Tax, @Markup, @Margin, @COPretax, @COTax, @COMarkup, 1)",
+                new
+                {
+                    Worksheet = WorksheetId,
+                    newRow.Community, newRow.CommunityPhase, newRow.SourceCommunity,
+                    newRow.Assembly, newRow.AssemblyUOM, newRow.Model, Elevation = "",
+                    newRow.OptionID, newRow.AssemblyType, newRow.Description, newRow.Category,
+                    newRow.Series, newRow.Style, newRow.FloorArea, newRow.Bedrooms, newRow.Bathrooms,
+                    newRow.LandCost, newRow.ConstructionCost, newRow.IncentiveCost,
+                    newRow.IncentiveRetail, newRow.Cost, newRow.Pretax, newRow.Tax,
+                    newRow.Markup, newRow.Margin, newRow.COPretax, newRow.COTax, newRow.COMarkup
+                });
+
+            // VB6 RefreshCosts: EXEC the proc (computes & writes the real cost for this
+            // Cost Basis into the row), then re-read the cost columns it produced.
+            // Proc signature: (@SalesSheet, @Assembly, @Model, @OptionID, @Community, @CommunityPhase).
+            await RefreshRowCostAsync(newRow);
+
+            // VB6 CalcData(,"Cost",r): recompute Tax/Total/Profit/Markup/Margin from the
+            // real Cost and the master Pretax (Markup=(Pretax-Cost)/Cost*100, etc.).
+            CalcData(newRow, "cost");
+
+            WorksheetData.Add(newRow);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "AddAssemblyToGridAsync failed for {Community}/{Assembly}", community, assembly);
+            Notifications.Error($"Failed to add {assembly}: {ex.Message}");
+        }
+    }
 
     // === Models ===
     public class WorksheetRow
@@ -2081,6 +2868,13 @@
     {
         public string Model { get; set; } = "";
         public string Description { get; set; } = "";
+    }
+
+    public class CategoryItem
+    {
+        public string Category { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal COMarkup { get; set; }
     }
 
     public class AssemblyItem

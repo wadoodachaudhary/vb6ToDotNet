@@ -1,113 +1,17 @@
-```razor
 @page "/create-contract"
-@rendermode InteractiveServer
-
+@namespace HomeFront.Components.Pages
 @using HomeFront.Data
 @using System.Data
 @using System.Globalization
-
+@using Fx.ControlKit.Notifications
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FCreateContract> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+@layout HFComponent
 
 <PageTitle>Add To Contract</PageTitle>
-
-<style>
-    .create-contract-container {
-        display: flex;
-        flex-direction: column;
-        height: calc(100vh - 40px);
-        font-family: Arial, Helvetica, sans-serif;
-    }
-    .header-row {
-        display: grid;
-        grid-template-columns: 1fr 260px 1fr;
-        gap: 12px;
-        margin-bottom: 8px;
-    }
-    .section-title {
-        font-weight: 700;
-        color: #4a4a4a;
-        padding-left: 4px;
-    }
-    .content-row {
-        display: grid;
-        grid-template-columns: 1fr 260px 1fr;
-        gap: 12px;
-        flex: 1;
-        min-height: 0;
-    }
-    .panel {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        background: #fff;
-        padding: 8px;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-    }
-    .view-select {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 8px;
-        font-size: 13px;
-    }
-    .view-select select {
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-    .addon-panel {
-        margin-top: 12px;
-        border-top: 1px solid #dee2e6;
-        padding-top: 10px;
-        font-size: 13px;
-    }
-    .addon-title {
-        font-weight: 700;
-        color: #4a4a4a;
-        margin-bottom: 6px;
-    }
-    .addon-panel label {
-        display: block;
-        margin-bottom: 4px;
-    }
-    .footer {
-        border-top: 1px solid #dee2e6;
-        padding-top: 8px;
-        margin-top: 8px;
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-    }
-    .footer textarea {
-        flex: 1;
-        min-height: 70px;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-    .footer .buttons {
-        display: flex;
-        gap: 8px;
-        margin-left: auto;
-    }
-    .footer .buttons button {
-        padding: 6px 14px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f8f9fa;
-        cursor: pointer;
-        font-size: 13px;
-    }
-    .footer .buttons button.primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-</style>
 
 <div class="create-contract-container">
     <div class="header-row">
@@ -120,14 +24,15 @@
         <div class="panel">
             <div class="view-select">
                 <label>View:</label>
-                <select @onchange="OnViewChanged" value="@mViewIndex" disabled="@mChangeOrder">
-                    @for (int i = 0; i < mViews.Count; i++)
-                    {
-                        <option value="@i">@mViews[i].Name</option>
-                    }
-                </select>
+                <DropDownListControl TValue="int" TItem="ViewOption"
+                                     DataSource="@ViewOptions"
+                                     TextFieldName="Name"
+                                     ValueFieldName="Index"
+                                     Value="@mViewIndex"
+                                     ValueChanged="OnViewChanged"
+                                     Enabled="@(!mChangeOrder)" />
             </div>
-            <HfTreeGrid @ref="AssembliesTree"
+            <TreeGridControl @ref="AssembliesTree"
                         TValue="AssemblyNode"
                         DataSource="@AssemblyNodes"
                         IdMapping="NodeId"
@@ -136,16 +41,16 @@
                         AllowSelection="true"
                         Height="100%"
                         RowSelected="OnAssemblySelected">
-                <HfTreeGridColumn Field="SelectedIcon" HeaderText="" Width="40px" />
-                <HfTreeGridColumn Field="Node" HeaderText="Assembly" Width="260px" />
-                <HfTreeGridColumn Field="Budgeted" HeaderText="Budgeted" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                <HfTreeGridColumn Field="Changes" HeaderText="Changes" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                <HfTreeGridColumn Field="Commited" HeaderText="Committed" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-            </HfTreeGrid>
+                <TreeGridColumn Field="SelectedIcon" HeaderText="" Width="40px" />
+                <TreeGridColumn Field="Node" HeaderText="Assembly" Width="260px" />
+                <TreeGridColumn Field="Budgeted" HeaderText="Budgeted" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                <TreeGridColumn Field="Changes" HeaderText="Changes" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                <TreeGridColumn Field="Commited" HeaderText="Committed" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+            </TreeGridControl>
         </div>
 
         <div class="panel">
-            <HfGrid TValue="GroupingItem"
+            <GridControl TValue="GroupingItem"
                     DataSource="@GroupingItems"
                     AllowPaging="false"
                     AllowSorting="false"
@@ -154,29 +59,27 @@
                     Height="260px"
                     EditSettingsRef="@groupingEditSettings"
                     EventsRef="@groupingEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="Selected" HeaderText="" Width="40px" Type="ColumnType.CheckBox" />
-                    <HfGridColumn Field="Description" HeaderText="Group By" Width="180px" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase>
+                    <GridColumn Field="Selected" HeaderText="" Width="40px" Type="ColumnType.CheckBox" />
+                    <GridColumn Field="Description" HeaderText="Group By" Width="180px" />
+                </GridColumnsBase>
+            </GridControl>
 
             <div class="addon-panel">
                 <div class="addon-title">Addons</div>
-                <label>
-                    <input type="radio" name="addonMode" value="prorated"
-                           checked="@IsAddonProrated" @onchange="OnAddonChanged" />
-                    Prorated (hidden)
-                </label>
-                <label>
-                    <input type="radio" name="addonMode" value="individual"
-                           checked="@IsAddonIndividual" @onchange="OnAddonChanged" />
-                    Billed individually
-                </label>
+                <RadioControl TValue="string" Name="addonMode" Value="@("prorated")"
+                              Label="Prorated (hidden)"
+                              SelectedValue="@AddonMode"
+                              SelectedValueChanged="OnAddonChanged" />
+                <RadioControl TValue="string" Name="addonMode" Value="@("individual")"
+                              Label="Billed individually"
+                              SelectedValue="@AddonMode"
+                              SelectedValueChanged="OnAddonChanged" />
             </div>
         </div>
 
         <div class="panel">
-            <HfGrid @ref="BillingGrid"
+            <GridControl @ref="BillingGrid"
                     TValue="BillingItemRow"
                     DataSource="@BillingItems"
                     AllowPaging="false"
@@ -184,15 +87,15 @@
                     AllowFiltering="false"
                     AllowSelection="false"
                     Height="100%">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="Description" HeaderText="Description" Width="240px" />
-                    <HfGridColumn Field="Price" HeaderText="Price" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="TaxGroup" HeaderText="Tax Group" Width="80px" />
-                    <HfGridColumn Field="RevenueAccount" HeaderText="Revenue Acct" Width="110px" />
-                    <HfGridColumn Field="HoldbackRate" HeaderText="Holdback %" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="WhereClause" Visible="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase>
+                    <GridColumn Field="Description" HeaderText="Description" Width="240px" />
+                    <GridColumn Field="Price" HeaderText="Price" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="TaxGroup" HeaderText="Tax Group" Width="80px" />
+                    <GridColumn Field="RevenueAccount" HeaderText="Revenue Acct" Width="110px" />
+                    <GridColumn Field="HoldbackRate" HeaderText="Holdback %" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="WhereClause" Visible="false" />
+                </GridColumnsBase>
+            </GridControl>
         </div>
     </div>
 
@@ -201,32 +104,50 @@
         {
             <div style="flex:1;">
                 <label style="font-size:13px; font-weight:600;">Change Order Comments</label>
-                <textarea @bind="ChangeOrderComments"></textarea>
+                <TextAreaControl @bind-Value="ChangeOrderComments" CssClass="co-comments" />
             </div>
         }
         <div class="buttons">
-            <button class="primary" disabled="@(!CanSave)" @onclick="OnOkClick">OK</button>
-            <button @onclick="OnCancelClick">Cancel</button>
+            <ButtonControl CssClass="primary" Disabled="@(!CanSave)" OnClick="OnOkClick">OK</ButtonControl>
+            <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
         </div>
     </div>
 </div>
 
 @code {
-    [Parameter] public string Job { get; set; } = "";
-    [Parameter] public bool ChangeOrder { get; set; }
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+    [Inject] private NavigationManager Nav { get; set; } = default!;
 
-    private readonly DbWrapperSqlServer db = new();
+    private void ClosePage()
+    {
+        // When hosted inside FMain (workflow embed) we hand the close back
+        // to the parent navigator. Standalone (route /create-contract?...) we
+        // pop to the home page. NB: the previous else branch called
+        // ClosePage() recursively, which blew the stack on Cancel — fixed.
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            Nav.NavigateTo("/");
+    }
 
-    private HfTreeGrid<AssemblyNode>? AssembliesTree;
-    private HfGrid<BillingItemRow>? BillingGrid;
+    // Both come in either as direct parameter binding (when hosted as a
+    // child component) or as query-string params (when navigated to via
+    // /create-contract?job=NR00101&changeOrder=true). VB6 entry point:
+    // FCreateContract.Edit(ChangeOrder As Boolean, Job As String).
+    [Parameter, SupplyParameterFromQuery(Name = "job")]         public string Job { get; set; } = "";
+    [Parameter, SupplyParameterFromQuery(Name = "changeOrder")] public bool ChangeOrder { get; set; }
+private TreeGridControl<AssemblyNode>? AssembliesTree;
+    private GridControl<BillingItemRow>? BillingGrid;
 
     private List<ViewDef> mViews = new();
     private List<AssemblyNode> AssemblyNodes = new();
     private List<BillingItemRow> BillingItems = new();
     private List<GroupingItem> GroupingItems = new();
 
-    private readonly HfEditSettings groupingEditSettings = new() { AllowEditing = true, ShowConfirmDialog = false };
-    private readonly HfGridEvents<GroupingItem> groupingEvents = new();
+    private readonly EditSettings groupingEditSettings = new() { AllowEditing = true, ShowConfirmDialog = false };
+    private readonly GridControlEvents<GroupingItem> groupingEvents = new();
 
     private int mViewIndex;
     private string mViewQuery = "";
@@ -244,6 +165,12 @@
     private bool CanSave => BillingItems.Count > 0;
     private bool IsAddonProrated => AddonMode == "prorated";
     private bool IsAddonIndividual => AddonMode == "individual";
+
+    // Projection of mViews into {Index,Name} so the View DropDownListControl can
+    // bind its selected value to the list index (matching the old <select> whose
+    // <option value="@i"> used the loop index). Rebuilt on each render off mViews.
+    private List<ViewOption> ViewOptions =>
+        mViews.Select((v, i) => new ViewOption { Index = i, Name = v.Name }).ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -421,8 +348,16 @@
 
     private void BuildChildrenLookup()
     {
-        childrenLookup = AssemblyNodes.GroupBy(n => n.ParentId)
-            .ToDictionary(g => g.Key, g => g.ToList());
+        // Dictionary<int?, …> rejects a null key (both ToDictionary and the
+        // set_Item indexer throw ArgumentNullException). The lookup is only
+        // ever read with a real NodeId — never with null — so root nodes
+        // (ParentId == null) are simply skipped when building the index.
+        childrenLookup = new Dictionary<int?, List<AssemblyNode>>();
+        foreach (var grp in AssemblyNodes.GroupBy(n => n.ParentId))
+        {
+            if (grp.Key == null) continue;
+            childrenLookup[grp.Key] = grp.ToList();
+        }
     }
 
     private async Task LoadItemsAsync()
@@ -644,24 +579,26 @@ values(@Job,@Desc,0,0,99999,@TaxGroup,@RevenueAccount,@HoldbackRate)";
             }
         }
 
-        await JSRuntime.InvokeVoidAsync("alert", "Contract items saved.");
     }
 
-    private async Task OnOkClick() => await SaveDataAsync();
-
-    private void OnCancelClick() => NavigationManager.NavigateTo("/");
-
-    private async Task OnViewChanged(ChangeEventArgs e)
+    private async Task OnOkClick()
     {
-        if (int.TryParse(e.Value?.ToString(), out var idx))
-            mViewIndex = idx;
+        await SaveDataAsync();
+        ClosePage();
+    }
+
+    private void OnCancelClick() => ClosePage();
+
+    private async Task OnViewChanged(int idx)
+    {
+        mViewIndex = idx;
         await LoadAssembliesAsync();
         await LoadItemsAsync();
     }
 
-    private async Task OnAddonChanged(ChangeEventArgs e)
+    private async Task OnAddonChanged(string? mode)
     {
-        AddonMode = e.Value?.ToString() ?? "individual";
+        AddonMode = mode ?? "individual";
         await LoadItemsAsync();
     }
 
@@ -860,6 +797,12 @@ values(@Job,@Desc,0,0,99999,@TaxGroup,@RevenueAccount,@HoldbackRate)";
         public string IconKeys { get; set; } = "";
     }
 
+    public class ViewOption
+    {
+        public int Index { get; set; }
+        public string Name { get; set; } = "";
+    }
+
     public class AssemblyNode
     {
         public int NodeId { get; set; }
@@ -907,4 +850,3 @@ values(@Job,@Desc,0,0,99999,@TaxGroup,@RevenueAccount,@HoldbackRate)";
         All = 2
     }
 }
-```

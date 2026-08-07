@@ -1,13 +1,18 @@
+@namespace HomeFront.Components.Pages
 @page "/datagrid/picklist"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 @using System.Dynamic
 @using System.Collections.Generic
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
+@inject ILogger<FPickListOrig> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>HSMC - @mTitle</PageTitle>
 
@@ -24,7 +29,7 @@
     {
         <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
             <strong>View:</strong>
-            <HfDropDownList TValue="int" TItem="ViewItem"
+            <DropDownListControl TValue="int" TItem="ViewItem"
                             DataSource="@ViewItems"
                             TextFieldName="Name"
                             ValueFieldName="Id"
@@ -36,7 +41,7 @@
     }
 
     @* Main Grid - replaces Syncfusion SfGrid *@
-    <HfGrid @ref="grid"
+    <GridControl @ref="grid"
             TValue="ExpandoObject"
             DataSource="@GridData"
             AllowSorting="true"
@@ -48,31 +53,31 @@
             SelectionSettingsRef="@selectionSettings"
             EventsRef="@gridEvents">
 
-        <HfGridColumnsBase>
+        <GridColumnsBase>
             @foreach (var col in ColumnsConfig)
             {
-                <HfGridColumn Field="@col.Field"
+                <GridColumn Field="@col.Field"
                               HeaderText="@col.Header"
                               Width="@($"{col.Width}px")"
                               AllowSorting="true"
                               Visible="@col.Visible" />
             }
-        </HfGridColumnsBase>
-    </HfGrid>
+        </GridColumnsBase>
+    </GridControl>
 
     @* Action Buttons - New / OK / Cancel *@
     <div style="margin-top: 16px; text-align: right;">
         @if (AllowNew)
         {
-            <HfButton CssClass="hf-btn-flat" OnClick="OnNewClick" Style="margin-right:8px;">New</HfButton>
+            <ButtonControl CssClass="fx-btn-flat" OnClick="OnNewClick" Style="margin-right:8px;">New</ButtonControl>
         }
-        <HfButton CssClass="hf-btn-primary" OnClick="OnOkClick" Style="margin-right:8px;">OK</HfButton>
-        <HfButton OnClick="OnCancelClick">Cancel</HfButton>
+        <ButtonControl CssClass="fx-btn-primary" OnClick="OnOkClick" Style="margin-right:8px;">OK</ButtonControl>
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
     </div>
 
     @* Fast Loading Checkbox *@
     <div style="margin-top: 12px;">
-        <HfCheckBox @bind-Checked="chkFast"
+        <CheckBoxControl @bind-Checked="chkFast"
                     Label="Fast loading (memory optimization)" />
     </div>
 
@@ -105,13 +110,12 @@
     [Parameter] public string CancelNavigateTo { get; set; } = "/edit-model-assembly/220";
 
     // Private state
-    private HfGrid<ExpandoObject>? grid;
+    private GridControl<ExpandoObject>? grid;
     private string mTitle = "";
     private string mSQL = "";
     private int viewIndex = 1;
     private bool chkFast = true;
     private bool showSql = false;
-    private bool mLoading = false;
 
     private List<ViewItem> ViewItems = new();
     private List<ColumnConfig> ColumnsConfig = new();
@@ -120,13 +124,13 @@
     private List<string> HiddenColumnList = new();
 
     // Grid settings
-    private HfSelectionSettings selectionSettings = new()
+    private SelectionSettings selectionSettings = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Multiple,
         EnableToggle = true
     };
-    private HfGridEvents<ExpandoObject> gridEvents = new();
+    private GridControlEvents<ExpandoObject> gridEvents = new();
 
     // Data model classes
     public class ViewItem { public int Id { get; set; } public string Name { get; set; } = ""; }
@@ -163,10 +167,7 @@
 
         await LoadDataAndBuildColumns();
     }
-
-    private DbWrapperSqlServer db = new();
-
-    private async Task LoadDataAndBuildColumns()
+private async Task LoadDataAndBuildColumns()
     {
         if (string.IsNullOrWhiteSpace(mSQL)) return;
 
@@ -244,6 +245,7 @@
         if (args.Data == null) return;
         dynamic rowData = args.Data;
         Console.WriteLine($"Double click on row: {args.Column}");
+
     }
 
     private void HandleKeyDown(KeyboardEventArgs e)

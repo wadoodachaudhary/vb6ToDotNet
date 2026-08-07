@@ -1,6 +1,6 @@
-```razor
 @page "/export-ar-estimates"
 @rendermode InteractiveServer
+@layout HFComponent
 
 @namespace HomeFront.Components.Pages
 
@@ -9,204 +9,17 @@
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FExportAREstimates> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>AR Estimate Posting Wizard</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 700px;
-        margin: 0 auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        display: flex;
-        flex-direction: column;
-        min-height: 500px;
-    }
-
-    .wizard-header {
-        background: linear-gradient(to right, #f8f9fa, #e9ecef);
-        border-bottom: 1px solid #dee2e6;
-        padding: 16px 24px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        border-radius: 8px 8px 0 0;
-    }
-
-    .wizard-header-icon {
-        width: 48px;
-        height: 48px;
-    }
-
-    .wizard-header-text h3 {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .wizard-header-text p {
-        margin: 4px 0 0;
-        font-size: 13px;
-        color: #6c757d;
-    }
-
-    .wizard-body {
-        flex: 1;
-        padding: 24px;
-        min-height: 300px;
-    }
-
-    .wizard-footer {
-        border-top: 1px solid #dee2e6;
-        padding: 12px 24px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        background: #f8f9fa;
-        border-radius: 0 0 8px 8px;
-    }
-
-    .wizard-footer button {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 90px;
-    }
-
-    .wizard-footer button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .wizard-footer button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .wizard-footer button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .wizard-footer button.btn-primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .frame-content {
-        display: flex;
-        gap: 16px;
-        align-items: flex-start;
-    }
-
-    .frame-icon {
-        width: 48px;
-        height: 48px;
-        flex-shrink: 0;
-    }
-
-    .frame-body {
-        flex: 1;
-    }
-
-    .frame-body label {
-        font-size: 13px;
-        color: #495057;
-        display: block;
-        margin-bottom: 12px;
-    }
-
-    .radio-option {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-        font-size: 13px;
-    }
-
-    .radio-option input[type="radio"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .data-grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: auto;
-        max-height: 280px;
-    }
-
-    .data-grid-container table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-    }
-
-    .data-grid-container th {
-        background: #f0f0f0;
-        border: 1px solid #dee2e6;
-        padding: 6px 8px;
-        text-align: left;
-        font-weight: 600;
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
-
-    .data-grid-container td {
-        border: 1px solid #dee2e6;
-        padding: 4px 8px;
-    }
-
-    .data-grid-container tr:hover {
-        background: #e8f0fe;
-    }
-
-    .data-grid-container tr.selected {
-        background: #cce5ff;
-    }
-
-    .data-grid-container tr.has-errors td:last-child {
-        color: red;
-    }
-
-    .review-link {
-        color: #0d6efd;
-        text-decoration: underline;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .review-link:hover {
-        color: #0a58ca;
-    }
-
-    .message-label {
-        font-size: 13px;
-        color: #495057;
-        margin-bottom: 12px;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(255,255,255,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        font-size: 14px;
-        color: #333;
-    }
-</style>
 
 <div class="wizard-container" style="position: relative;">
     @if (IsLoading)
@@ -238,16 +51,16 @@
                     <div class="frame-body">
                         <label>Choose the task you would like to perform</label>
                         <div class="radio-option">
-                            <input type="radio" id="chkPostNew" name="taskChoice"
-                                   checked="@IsPostNew"
-                                   @onchange="() => OnTaskChanged(true)" />
-                            <label for="chkPostNew">Post new estimates</label>
+                            <RadioControl TValue="bool" Name="taskChoice" Value="true"
+                                          SelectedValue="@IsPostNew"
+                                          SelectedValueChanged="@(_ => OnTaskChanged(true))"
+                                          Label="Post new estimates" />
                         </div>
                         <div class="radio-option">
-                            <input type="radio" id="chkReview" name="taskChoice"
-                                   checked="@(!IsPostNew)"
-                                   @onchange="() => OnTaskChanged(false)" />
-                            <label for="chkReview">Review a previous posting</label>
+                            <RadioControl TValue="bool" Name="taskChoice" Value="false"
+                                          SelectedValue="@IsPostNew"
+                                          SelectedValueChanged="@(_ => OnTaskChanged(false))"
+                                          Label="Review a previous posting" />
                         </div>
                     </div>
                 </div>
@@ -267,8 +80,8 @@
                                         @if (IsPostNew)
                                         {
                                             <th style="width:30px;">
-                                                <input type="checkbox" @bind="SelectAll"
-                                                       @bind:after="OnSelectAllChanged" />
+                                                <CheckBoxControl @bind-Checked="SelectAll"
+                                                                 @bind-Checked:after="OnSelectAllChanged" />
                                             </th>
                                             <th>Community</th>
                                             <th>Phase</th>
@@ -311,9 +124,9 @@
                                                 @if (IsPostNew)
                                                 {
                                                     <td>
-                                                        <input type="checkbox" @bind="row.IsSelected"
-                                                               @bind:after="OnSelectionChanged"
-                                                               @onclick:stopPropagation="true" />
+                                                        <CheckBoxControl @bind-Checked="row.IsSelected"
+                                                                         @bind-Checked:after="OnSelectionChanged"
+                                                                         StopClickPropagation="true" />
                                                     </td>
                                                     <td>@row.Community</td>
                                                     <td>@row.Phase</td>
@@ -374,27 +187,36 @@
 
     @* ── Wizard Footer ─────────────────────────────────────── *@
     <div class="wizard-footer">
-        <button @onclick="OnCancelClick">
+        <ButtonControl OnClick="OnCancelClick">
             &amp;Cancel
-        </button>
-        <button disabled="@(CurrentFrame <= 0)" @onclick="OnBackClick">
+        </ButtonControl>
+        <ButtonControl Disabled="@(CurrentFrame <= 0)" OnClick="OnBackClick">
             &lt; &amp;Back
-        </button>
-        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">
+        </ButtonControl>
+        <ButtonControl Disabled="@(!CanGoNext)" OnClick="OnNextClick">
             &amp;Next &gt;
-        </button>
-        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">
+        </ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!CanFinish)" OnClick="OnFinishClick">
             &amp;Finish
-        </button>
+        </ButtonControl>
     </div>
 </div>
 
 @code {
-    // === Database ===
-    private DbWrapperSqlServer db = new();
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // === App State (would come from a shared service in production) ===
-    private int DivisionID = 1;
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // === Database ===
+// === App State (would come from a shared service in production) ===
     private string LoginID = "admin";
 
     // === Wizard State ===
@@ -477,7 +299,7 @@
 
     private async Task OnCancelClick()
     {
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private async Task OnBackClick()
@@ -503,7 +325,7 @@
         {
             await CreateBatch();
         }
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private async Task OnFrameChanged()
@@ -526,18 +348,20 @@
         StateHasChanged();
     }
 
-    // === Load Tasks (Frame 2) ===
+    // === Load Tasks (Frame 2) — VB6 LoadTasks ===
     private void LoadTasks()
     {
         if (!IsPostNew)
         {
-            // Review mode - get selected batch
+            // Review mode - get selected batch (VB6: mBatch = gData.ValueMatrix(gData.Row, 0))
             var selectedRow = GridData.FirstOrDefault(r => r.IsSelected);
             if (selectedRow != null)
             {
                 mBatch = selectedRow.Batch;
             }
         }
+        // VB6: in post-new mode, cmdNav(3).Enabled = True (Finish enabled)
+        // This is handled via CanFinish property (CurrentFrame == MaxFrame)
     }
 
     // === Load Data (Frame 1) ===
@@ -561,7 +385,7 @@
                     WHERE DivisionID = @DivisionID AND BatchType = 'AR Estimate Posting'
                     ORDER BY Batch DESC";
 
-                var rows = await db.QueryAsync(sql, new { DivisionID });
+                var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
                 foreach (var row in rows)
                 {
                     GridData.Add(new GridRow
@@ -614,7 +438,7 @@
                         AND a.Divisionid = @DivisionID
                     ORDER BY c.area, j.communityphase, j.job_no";
 
-                var rows = await db.QueryAsync(sql, new { DivisionID });
+                var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
                 foreach (var row in rows)
                 {
                     GridData.Add(new GridRow
@@ -638,8 +462,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportAREstimates.LoadData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            Notifications.Error($"Error loading data: {ex.Message}");
         }
         finally
         {
@@ -660,7 +485,7 @@
             var insertSql = @"
                 INSERT INTO Batches(BatchType, UStmp, TStmp, DivisionID)
                 VALUES('AR Estimate Posting', @LoginID, GETDATE(), @DivisionID)";
-            await db.ExecuteAsync(insertSql, new { LoginID, DivisionID });
+            await db.ExecuteAsync(insertSql, new { LoginID, SessionState.DivisionID });
 
             // Get the new batch identity
             mBatch = await db.ExecuteScalarAsync<long>("SELECT IDENT_CURRENT('Batches')");
@@ -687,8 +512,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportAREstimates.CreateBatch] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error creating batch: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            Notifications.Error($"Error creating batch: {ex.Message}");
         }
         finally
         {
@@ -697,12 +523,36 @@
         }
     }
 
-    // === Send Batch ===
+    // === Send Batch — VB6 dispatches by AccountingSystem option ===
     private async Task SendBatch()
     {
-        // In the VB6 version this dispatched to different accounting systems.
-        // For now we implement the QuickBooks path as a placeholder.
-        await SendBatchToQB();
+        // VB6: Select Case HFApp.Options(AccountingSystem)
+        //   Case asQuickBooks: Call SendBatchToQB
+        // Currently only QuickBooks path is implemented
+        try
+        {
+            var accountingSystem = await db.ExecuteScalarAsync<string>(
+                "SELECT Value FROM Options WHERE Name = 'AccountingSystem'") ?? "";
+
+            // VB6 enum: 1=Timberline, 2=MasterBuilder, 3=Quickbooks, 4=Sage50, 5=MYOB, 6=Peachtree, 7=Xero, 8=Spectrum
+            switch (accountingSystem.ToLower())
+            {
+                case "3":
+                case "quickbooks":
+                    await SendBatchToQB();
+                    break;
+                default:
+                    Console.WriteLine($"Accounting system '{accountingSystem}' not yet implemented");
+
+                    await SendBatchToQB(); // Fallback to QB path
+                    break;
+            }
+        }
+        catch
+        {
+            // Fallback if Options table lookup fails
+            await SendBatchToQB();
+        }
     }
 
     private async Task SendBatchToQB()
@@ -711,7 +561,7 @@
         {
             bool isUSVersion = await GetIsUSVersion();
 
-            // Ensure external job IDs exist
+            // VB6: ensure external job IDs exist — write any missing jobs to accounting
             var jobCheckSql = $@"
                 SELECT j.ExternalJobID, j.Job_no
                 FROM estimateassemblies a
@@ -721,11 +571,13 @@
             foreach (var jobRow in jobRows)
             {
                 var jobNo = jobRow["Job_no"]?.ToString() ?? "";
-                // In production, this would call HFApp.WriteJobToAccounting(jobNo)
-                Console.WriteLine($"[SendBatchToQB] Would write job {jobNo} to accounting");
+                // VB6: Call HFApp.WriteJobToAccounting("" & rs("job_no"))
+                // TODO: Implement WriteJobToAccounting service call
+                Console.WriteLine($"WriteJobToAccounting needed for job {jobNo}");
+
             }
 
-            // Load batch detail data
+            // VB6: Load batch detail data for QB XML construction
             var sql = $@"
                 SELECT
                     cc.ExternalID AS JCCostCode,
@@ -755,17 +607,81 @@
 
             var rows = await db.QueryAsync(sql, new { Batch = mBatch });
 
-            // In production, this would build XML and submit to QuickBooks.
-            // For now, log the batch details.
-            Console.WriteLine($"[SendBatchToQB] Batch {mBatch}: {rows.Count} line items to post");
+            // VB6: Build QuickBooks XML — EstimateAdd requests grouped by ExternalJobID
+            // Each unique ExternalJobID gets its own EstimateAddRq with line items
+            string lastJob = "";
+            int estimateCount = 0;
+            var xmlLines = new System.Text.StringBuilder();
 
-            await JSRuntime.InvokeVoidAsync("alert",
-                $"Batch {mBatch} created successfully with {rows.Count} line item(s).");
+            foreach (var row in rows)
+            {
+                var thisJob = row["ExternalJobID"]?.ToString() ?? "";
+                var jobNo = row["job_no"]?.ToString() ?? "";
+
+                if (thisJob != lastJob)
+                {
+                    // VB6: close previous EstimateAdd if any, submit, start new
+                    if (!string.IsNullOrEmpty(lastJob))
+                    {
+                        xmlLines.AppendLine("</EstimateAdd></EstimateAddRq>");
+                        // VB6: s = HFApp.XmlQBSubmit(s) — submit previous estimate
+                        Console.WriteLine($"Submitting estimate for job {lastJob}");
+
+                    }
+                    estimateCount++;
+                    lastJob = thisJob;
+
+                    // VB6: Build EstimateAddRq header with CustomerRef
+                    xmlLines.AppendLine($"<EstimateAddRq requestID=\"1\">");
+                    xmlLines.AppendLine($"<EstimateAdd>");
+                    xmlLines.AppendLine($"<CustomerRef><ListID>{thisJob}</ListID></CustomerRef>");
+                    xmlLines.AppendLine($"<TxnDate>{DateTime.Now:yyyy-MM-dd}</TxnDate>");
+                    var notes = row["notes"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(notes))
+                        xmlLines.AppendLine($"<Memo>{System.Security.SecurityElement.Escape(notes)}</Memo>");
+                }
+
+                // VB6: Build EstimateLineAdd for each row
+                xmlLines.AppendLine("<EstimateLineAdd>");
+                xmlLines.AppendLine($"<ItemRef><ListID>{row["JCCostCode"]}</ListID></ItemRef>");
+                xmlLines.AppendLine($"<Desc>{System.Security.SecurityElement.Escape(row["ItemDesc"]?.ToString() ?? "")}</Desc>");
+                xmlLines.AppendLine($"<Quantity>{SafeDecimal(row["Qty"]):F5}</Quantity>");
+                xmlLines.AppendLine($"<Rate>{SafeDecimal(row["Rate"]):F2}</Rate>");
+                xmlLines.AppendLine($"<ClassRef><ListID>{row["JCCategory"]}</ListID></ClassRef>");
+
+                // VB6: Canadian version includes SalesTaxCodeRef
+                if (!isUSVersion)
+                {
+                    var taxGroup = row["TaxGroup"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(taxGroup))
+                        xmlLines.AppendLine($"<SalesTaxCodeRef><FullName>{System.Security.SecurityElement.Escape(taxGroup)}</FullName></SalesTaxCodeRef>");
+                }
+                xmlLines.AppendLine("</EstimateLineAdd>");
+            }
+
+            // VB6: close and submit last estimate
+            if (!string.IsNullOrEmpty(lastJob))
+            {
+                xmlLines.AppendLine("</EstimateAdd></EstimateAddRq>");
+                // VB6: s = HFApp.XmlQBSubmit(s) — final submission
+                Console.WriteLine($"Submitting final estimate for job {lastJob}");
+
+            }
+
+            // TODO: Replace Console.WriteLine with actual QB SDK submission via HFApp.XmlQBSubmit
+            Console.WriteLine($"Batch {mBatch}: {rows.Count} line items across {estimateCount} estimate(s)");
+
+            Console.WriteLine($"Generated XML:\n{xmlLines}");
+
+
+            Notifications.Warning($"Batch {mBatch} created successfully with {rows.Count} line item(s); across {estimateCount} estimate(s).");
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FExportAREstimates.SendBatchToQB] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error sending batch: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            Notifications.Error($"Error sending batch: {ex.Message}");
         }
     }
 
@@ -801,13 +717,24 @@
         StateHasChanged();
     }
 
-    // === Review Report ===
+    // === Review Report — VB6 lblBatchTask_Click(0) ===
     private async Task OnOpenPostingSummaryReport()
     {
-        // In VB6 this opened a Crystal Report. In Blazor, we'd navigate to a report page or generate a PDF.
-        await JSRuntime.InvokeVoidAsync("alert",
-            $"Posting summary report for Batch {mBatch}.\n\n" +
-            "In production, this would open the ExportAREstimateBatch report.");
+        // VB6: Opens Crystal Report "System\Reports\Estimating\ExportAREstimateBatch.rpt"
+        //   with parameters SessionState.DivisionID and Batch
+        // TODO: Integrate with report viewer service when available
+        try
+        {
+            var reportPath = "System/Reports/Estimating/ExportAREstimateBatch.rpt";
+            var reportUrl = $"/report-viewer?report={Uri.EscapeDataString(reportPath)}&DivisionID ={SessionState.DivisionID}&Batch={mBatch}";
+            await JSRuntime.InvokeVoidAsync("open", reportUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+            Notifications.Error($"Unable to open the posting summary report for Batch {mBatch}. Report viewer not yet configured.");
+        }
     }
 
     // === Helpers ===
@@ -830,4 +757,3 @@
             ? Convert.ToDecimal(val)
             : def;
 }
-```

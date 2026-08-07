@@ -1,94 +1,58 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
 @page "/contacts"
 @page "/contacts/{Job}"
 @rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using System.Data
 @using System.Linq
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
+@using HomeFront.Models
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FContacts> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>Contacts - HomeFront</PageTitle>
 
-<style>
-    .contacts-container {
-        padding: 16px;
-        font-family: "Segoe UI", Arial, sans-serif;
-    }
-    .header-row {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        margin-bottom: 8px;
-    }
-    .title {
-        font-size: 20px;
-        font-weight: 600;
-        color: #333;
-    }
-    .job-label {
-        font-size: 13px;
-        color: #6c757d;
-    }
-    .section {
-        margin-bottom: 16px;
-    }
-    .section-title {
-        font-weight: 700;
-        color: #495057;
-        margin: 6px 0 6px;
-    }
-    .footer-bar {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 10px;
-    }
-    .btn {
-        padding: 6px 16px;
-        border: 1px solid #c9c9c9;
-        background: #f7f7f7;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-    }
-    .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-    .btn-secondary {
-        background: #fff;
-    }
-    .cell-edit-btn {
-        padding: 1px 6px;
-        margin-left: 6px;
-        border: 1px solid #ced4da;
-        background: #fff;
-        border-radius: 3px;
-        font-size: 11px;
-        cursor: pointer;
-    }
-    .cell-edit-btn:hover { background: #e9ecef; }
-    .edit-input {
-        width: 100%;
-        padding: 4px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 13px;
-    }
-    .grid-block {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: hidden;
-        background: #fff;
-    }
-</style>
+@* IsModal: when WorkflowEstimating (or any other caller) hosts
+   FContacts inline, wrap the page in a backdrop + frame so the
+   caller stays visible behind it. VB6 FContacts.ShowForm was
+   modal-blocking; this preserves that UX without stealing an MDI
+   tab. Standalone /contacts/{Job} route navigation leaves IsModal
+   false → full-page layout. Mirrors the FDBGrid/FTakeoff/FItemChart
+   pattern. *@
+@if (IsModal)
+{
+    <div class="fx-contacts-modal-backdrop"></div>
+}
+<div class="@(IsModal ? "fx-contacts-modal" : "")">
+@if (IsModal)
+{
+    <div class="fx-contacts-modal-header">
+        <img src="images/24/contacts.ico" class="fx-contacts-modal-icon" />
+        <span class="fx-contacts-modal-title">Contacts</span>
+        <button type="button" class="fx-contacts-modal-close" title="Close"
+                aria-label="Close" @onclick="OnCloseClick">×</button>
+    </div>
+}
 
-<div class="contacts-container">
+<div class="contacts-container @(IsModal ? "fx-contacts-modal-body" : "")">
     <div class="header-row">
         <div class="title">Contacts</div>
         <div class="job-label">Job: @Job</div>
@@ -97,86 +61,115 @@
     <div class="section">
         <div class="section-title">Personnel</div>
         <div class="grid-block">
-            <HfGrid @ref="ContactsGrid"
+            <GridControl @ref="ContactsGrid"
                     TValue="ContactRow"
                     DataSource="@ContactsData"
                     AllowPaging="false"
-                    AllowSorting="false"
+                    AllowSorting="true"
                     AllowFiltering="false"
                     AllowResizing="true"
                     AllowSelection="true"
                     Height="220px"
-                    RowHeight="32"
+                    RowHeight="22"
+                    MinRowHeight="22"
                     EditSettingsRef="@contactsEditSettings"
                     SelectionSettingsRef="@selectionSettings"
+                    AvailableColumns="@GetContactsChooseColumnsSchema()"
+                    OnColumnsChosen="@OnContactsColumnsChosenAsync"
+                    OnLayoutChanged="@OnContactsLayoutChangedAsync"
+                    OnHeaderAttachmentsRequested="@OnHeaderAttachmentsRequested"
                     EventsRef="@contactsEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(ContactRow.ContactType)" HeaderText="Type" Width="160px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(ContactRow.ID)" HeaderText="ID" Width="70px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="220px">
-                        <Template>
-                            @{
-                                var row = (ContactRow)context;
-                            }
-                            <span>@row.Name</span>
-                            @if (!IsCustomerRow(row))
+                <GridColumnsBase @key="gContactsLayoutVersion">
+                    @if (HasContactsGridLayout)
+                    {
+                        foreach (var entry in GetOrderedContactsGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                            var allowEdit = IsContactFieldEditable(fieldName);
+                            var isPickerField = IsContactPickerField(fieldName);
+
+                            @* VB6 gContacts shows a small blue user-card glyph
+                               next to the Title/Type cell (Project Manager,
+                               Estimator, Purchaser). When the column is the
+                               Type column, prepend the contact1.ico from
+                               wwwroot/images/16/ so the rendered row matches
+                               the VB6 screenshot. *@
+                            if (string.Equals(fieldName, nameof(ContactRow.ContactType), StringComparison.OrdinalIgnoreCase))
                             {
-                                <button class="cell-edit-btn" title="Select" @onclick="() => OnPickContact(row)">...</button>
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="false"
+                                              PrintCellIcon="GridPrintCellIcon.IdentityCard"
+                                              ClipMode="ClipMode.Ellipsis">
+                                    <Template>
+                                        @{ var rr = (ContactRow)context; }
+                                        <span class="fx-personnel-row">
+                                            <img src="images/16/contact1.ico" alt="" class="fx-personnel-icon" onerror="this.style.display='none'" />
+                                            <span>@rr.ContactType</span>
+                                        </span>
+                                    </Template>
+                                </GridColumn>
                             }
-                        </Template>
-                        <EditTemplate>
-                            @{
-                                var row = (ContactRow)context;
-                                var disabled = !CanEditCustomerRow(row);
+                            else if (isPickerField)
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="false"
+                                              ShowEditButton="true"
+                                              ClipMode="ClipMode.Ellipsis" />
                             }
-                            <input class="edit-input" @bind="row.Name" disabled="@disabled" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (ContactRow)context;
-                                var disabled = !CanEditCustomerRow(row);
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="@allowEdit"
+                                              ClipMode="ClipMode.Ellipsis" />
                             }
-                            <input class="edit-input" @bind="row.Phone" disabled="@disabled" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Cell" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (ContactRow)context;
-                                var disabled = !CanEditCustomerRow(row);
-                            }
-                            <input class="edit-input" @bind="row.Cell" disabled="@disabled" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (ContactRow)context;
-                                var disabled = !CanEditCustomerRow(row);
-                            }
-                            <input class="edit-input" @bind="row.Fax" disabled="@disabled" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="220px">
-                        <EditTemplate>
-                            @{
-                                var row = (ContactRow)context;
-                                var disabled = !CanEditCustomerRow(row);
-                            }
-                            <input class="edit-input" @bind="row.Email" disabled="@disabled" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                </HfGridColumnsBase>
-            </HfGrid>
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(ContactRow.ContactType)" HeaderText="Type" Width="@ScaledColumnWidth(160)" AllowEditing="false"
+                                    PrintCellIcon="GridPrintCellIcon.IdentityCard">
+                            <Template>
+                                @{ var rr = (ContactRow)context; }
+                                <span class="fx-personnel-row">
+                                    <img src="images/16/contact1.ico" alt="" class="fx-personnel-icon" onerror="this.style.display='none'" />
+                                    <span>@rr.ContactType</span>
+                                </span>
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(ContactRow.ID)" HeaderText="ID" Width="@ScaledColumnWidth(70)" AllowEditing="false" ShowEditButton="true" />
+                        <GridColumn Field="@nameof(ContactRow.Name)" HeaderText="Name" Width="@ScaledColumnWidth(220)" AllowEditing="false" ShowEditButton="true" />
+                        <GridColumn Field="@nameof(ContactRow.Phone)" HeaderText="Phone" Width="@ScaledColumnWidth(120)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(ContactRow.Cell)" HeaderText="Mobile" Width="@ScaledColumnWidth(120)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(ContactRow.Fax)" HeaderText="Fax" Width="@ScaledColumnWidth(120)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(ContactRow.Email)" HeaderText="Email" Width="@ScaledColumnWidth(220)" AllowEditing="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
     </div>
 
     <div class="section">
         <div class="section-title">Contacts</div>
         <div class="grid-block">
-            <HfGrid @ref="JobContactsGrid"
+            <GridControl @ref="JobContactsGrid"
                     TValue="JobContactRow"
                     DataSource="@JobContactsData"
                     AllowPaging="false"
@@ -185,126 +178,168 @@
                     AllowResizing="true"
                     AllowSelection="true"
                     Height="320px"
-                    RowHeight="32"
+                    RowHeight="22"
+                    MinRowHeight="22"
                     EditSettingsRef="@jobContactsEditSettings"
                     SelectionSettingsRef="@selectionSettings"
+                    AvailableColumns="@GetJobContactsChooseColumnsSchema()"
+                    OnColumnsChosen="@OnJobContactsColumnsChosenAsync"
+                    OnLayoutChanged="@OnJobContactsLayoutChangedAsync"
+                    OnHeaderAttachmentsRequested="@OnHeaderAttachmentsRequested"
                     EventsRef="@jobContactsEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(JobContactRow.Role)" HeaderText="Role" Width="120px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(JobContactRow.ContactID)" HeaderText="Contact ID" Width="90px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(JobContactRow.Company)" HeaderText="Company" Width="180px" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(JobContactRow.Name)" HeaderText="Name" Width="180px">
-                        <Template>
-                            @{
-                                var row = (JobContactRow)context;
+                <GridColumnsBase @key="gJobContactsLayoutVersion">
+                    @if (HasJobContactsGridLayout)
+                    {
+                        foreach (var entry in GetOrderedJobContactsGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                            var allowEdit = IsJobContactFieldEditable(fieldName);
+
+                            if (IsJobContactPickerField(fieldName))
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="false"
+                                              ShowEditButton="true"
+                                              ClipMode="ClipMode.Ellipsis" />
                             }
-                            <span>@row.Name</span>
-                            <button class="cell-edit-btn" title="Select" @onclick="() => OnPickJobContact(row)">...</button>
-                        </Template>
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
+                            else if (string.Equals(fieldName, nameof(JobContactRow.SendVia), StringComparison.OrdinalIgnoreCase))
+                            {
+                                <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="@allowEdit">
+                                    <Template>
+                                        @{ var row = (JobContactRow)context; }
+                                        <span>@GetSendViaLabel(row.SendVia)</span>
+                                    </Template>
+                                    <EditTemplate>
+                                        @{ var row = (JobContactRow)context; }
+                                        <DropDownListControl TValue="int" TItem="SendViaOption"
+                                                             DataSource="@SendViaOptions"
+                                                             Value="@row.SendVia"
+                                                             ValueChanged="@(v => { row.SendVia = v; MarkJobContactDirty(row); })"
+                                                             TextFieldName="@nameof(SendViaOption.Text)"
+                                                             ValueFieldName="@nameof(SendViaOption.Value)"
+                                                             OpenOnArrowClickOnly="true"
+                                                             Width="100%"
+                                                             CssClass="contacts-grid-edit" />
+                                    </EditTemplate>
+                                </GridColumn>
                             }
-                            <input class="edit-input" @bind="row.Name" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.Phone)" HeaderText="Phone" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
+                            else if (string.Equals(fieldName, nameof(JobContactRow.SmsAddress), StringComparison.OrdinalIgnoreCase))
+                            {
+                                <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="@allowEdit">
+                                    <Template>
+                                        @{ var row = (JobContactRow)context; }
+                                        <span>@GetSmsCarrierLabel(row.SmsAddress)</span>
+                                    </Template>
+                                    <EditTemplate>
+                                        @{ var row = (JobContactRow)context; }
+                                        <DropDownListControl TValue="string" TItem="SmsCarrier"
+                                                             DataSource="@SmsCarriers"
+                                                             Value="@row.SmsAddress"
+                                                             ValueChanged="@(v => { row.SmsAddress = v ?? ""; MarkJobContactDirty(row); })"
+                                                             TextFieldName="@nameof(SmsCarrier.Name)"
+                                                             ValueFieldName="@nameof(SmsCarrier.Address)"
+                                                             AllowFiltering="true"
+                                                             OpenOnArrowClickOnly="true"
+                                                             Width="100%"
+                                                             CssClass="contacts-grid-edit" />
+                                    </EditTemplate>
+                                </GridColumn>
                             }
-                            <input class="edit-input" @bind="row.Phone" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.Cell)" HeaderText="Cell" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="@allowEdit"
+                                              ClipMode="ClipMode.Ellipsis" />
                             }
-                            <input class="edit-input" @bind="row.Cell" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.Fax)" HeaderText="Fax" Width="120px">
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <input class="edit-input" @bind="row.Fax" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.Email)" HeaderText="Email" Width="200px">
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <input class="edit-input" @bind="row.Email" />
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.SendVia)" HeaderText="Send Via" Width="100px">
-                        <Template>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <span>@GetSendViaLabel(row.SendVia)</span>
-                        </Template>
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <select class="edit-input" @bind="row.SendVia">
-                                <option value="0"></option>
-                                @foreach (var opt in SendViaOptions)
-                                {
-                                    <option value="@opt.Value">@opt.Text</option>
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(JobContactRow.Role)" HeaderText="Role" Width="@ScaledColumnWidth(120)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(JobContactRow.ContactID)" HeaderText="Contact ID" Width="@ScaledColumnWidth(90)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(JobContactRow.Company)" HeaderText="Company" Width="@ScaledColumnWidth(180)" AllowEditing="false" />
+                        <GridColumn Field="@nameof(JobContactRow.Name)" HeaderText="Name" Width="@ScaledColumnWidth(180)" AllowEditing="false" ShowEditButton="true" />
+                        <GridColumn Field="@nameof(JobContactRow.Phone)" HeaderText="Phone" Width="@ScaledColumnWidth(120)" />
+                        <GridColumn Field="@nameof(JobContactRow.Cell)" HeaderText="Mobile" Width="@ScaledColumnWidth(120)" />
+                        <GridColumn Field="@nameof(JobContactRow.Fax)" HeaderText="Fax" Width="@ScaledColumnWidth(120)" />
+                        <GridColumn Field="@nameof(JobContactRow.Email)" HeaderText="Email" Width="@ScaledColumnWidth(200)" />
+                        <GridColumn Field="@nameof(JobContactRow.SendVia)" HeaderText="Send Via" Width="@ScaledColumnWidth(100)" AllowEditing="true">
+                            <Template>
+                                @{
+                                    var row = (JobContactRow)context;
                                 }
-                            </select>
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(JobContactRow.SmsAddress)" HeaderText="SMS Address" Width="160px">
-                        <Template>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <span>@GetSmsCarrierLabel(row.SmsAddress)</span>
-                        </Template>
-                        <EditTemplate>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <select class="edit-input" @bind="row.SmsAddress">
-                                <option value=""></option>
-                                @foreach (var carrier in SmsCarriers)
-                                {
-                                    <option value="@carrier.Address">@carrier.Name</option>
+                                <span>@GetSendViaLabel(row.SendVia)</span>
+                            </Template>
+                            <EditTemplate>
+                                @{
+                                    var row = (JobContactRow)context;
                                 }
-                            </select>
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn HeaderText="" Width="60px">
-                        <Template>
-                            @{
-                                var row = (JobContactRow)context;
-                            }
-                            <button class="cell-edit-btn" title="Clear" @onclick="() => ClearJobContact(row)">Clear</button>
-                        </Template>
-                    </HfGridColumn>
-                </HfGridColumnsBase>
-            </HfGrid>
+                                <DropDownListControl TValue="int" TItem="SendViaOption"
+                                                     DataSource="@SendViaOptions"
+                                                     Value="@row.SendVia"
+                                                     ValueChanged="@(v => { row.SendVia = v; MarkJobContactDirty(row); })"
+                                                     TextFieldName="@nameof(SendViaOption.Text)"
+                                                     ValueFieldName="@nameof(SendViaOption.Value)"
+                                                     OpenOnArrowClickOnly="true"
+                                                     Width="100%"
+                                                     CssClass="contacts-grid-edit" />
+                            </EditTemplate>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(JobContactRow.SmsAddress)" HeaderText="SMS Provider" Width="@ScaledColumnWidth(160)" AllowEditing="true">
+                            <Template>
+                                @{
+                                    var row = (JobContactRow)context;
+                                }
+                                <span>@GetSmsCarrierLabel(row.SmsAddress)</span>
+                            </Template>
+                            <EditTemplate>
+                                @{
+                                    var row = (JobContactRow)context;
+                                }
+                                <DropDownListControl TValue="string" TItem="SmsCarrier"
+                                                     DataSource="@SmsCarriers"
+                                                     Value="@row.SmsAddress"
+                                                     ValueChanged="@(v => { row.SmsAddress = v ?? ""; MarkJobContactDirty(row); })"
+                                                     TextFieldName="@nameof(SmsCarrier.Name)"
+                                                     ValueFieldName="@nameof(SmsCarrier.Address)"
+                                                     AllowFiltering="true"
+                                                     OpenOnArrowClickOnly="true"
+                                                     Width="100%"
+                                                     CssClass="contacts-grid-edit" />
+                            </EditTemplate>
+                        </GridColumn>
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
     </div>
 
     <div class="footer-bar">
-        <button class="btn btn-primary" @onclick="OnOk">OK</button>
-        <button class="btn btn-secondary" @onclick="OnCancel">Cancel</button>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnCancel">Cancel</ButtonControl>
     </div>
 </div>
 
 @if (ShowPickDialog)
 {
-    <HfDialog @bind-Visible="ShowPickDialog" Width="800px" Header="@PickDialogTitle"
+    <DialogControl @bind-Visible="ShowPickDialog" Width="800px" Header="@PickDialogTitle"
               IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
         <ChildContent>
-            <HfGrid @ref="PickGrid"
+            <GridControl @ref="PickGrid"
                     TValue="PickRow"
                     DataSource="@PickData"
                     AllowPaging="true"
@@ -313,34 +348,51 @@
                     Height="300px"
                     SelectionSettingsRef="@pickSelectionSettings"
                     EventsRef="@pickEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(PickRow.Id)" HeaderText="ID" Width="90px" />
-                    <HfGridColumn Field="@nameof(PickRow.Company)" HeaderText="Company" Width="200px" />
-                    <HfGridColumn Field="@nameof(PickRow.Name)" HeaderText="Name" Width="160px" />
-                    <HfGridColumn Field="@nameof(PickRow.Phone)" HeaderText="Phone" Width="120px" />
-                    <HfGridColumn Field="@nameof(PickRow.Cell)" HeaderText="Cell" Width="120px" />
-                    <HfGridColumn Field="@nameof(PickRow.Email)" HeaderText="Email" Width="200px" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase>
+                    @* VB6 FContacts.frm:457 hides PM, Phone, fax, email and cell on the
+                       personnel pick, leaving only Name. *@
+                    <GridColumn Field="@nameof(PickRow.Id)" HeaderText="ID" Width="90px" Visible="@(!PickIsPersonnel)" />
+                    <GridColumn Field="@nameof(PickRow.Company)" HeaderText="Company" Width="200px" Visible="@(!PickIsPersonnel)" />
+                    <GridColumn Field="@nameof(PickRow.Name)" HeaderText="Name" Width="160px" />
+                    <GridColumn Field="@nameof(PickRow.Phone)" HeaderText="Phone" Width="120px" Visible="@(!PickIsPersonnel)" />
+                    <GridColumn Field="@nameof(PickRow.Cell)" HeaderText="Cell" Width="120px" Visible="@(!PickIsPersonnel)" />
+                    <GridColumn Field="@nameof(PickRow.Email)" HeaderText="Email" Width="200px" Visible="@(!PickIsPersonnel)" />
+                </GridColumnsBase>
+            </GridControl>
         </ChildContent>
         <FooterContent>
-            <button class="btn btn-primary" @onclick="OnPickConfirm">OK</button>
-            <button class="btn" @onclick="() => ShowPickDialog = false">Cancel</button>
+            <ButtonControl CssClass="fx-dialog-btn" OnClick="OnPickConfirm">OK</ButtonControl>
+            <ButtonControl CssClass="fx-dialog-btn" OnClick="() => ShowPickDialog = false">Cancel</ButtonControl>
         </FooterContent>
-    </HfDialog>
+    </DialogControl>
 }
+</div> @* close .fx-contacts-modal / non-modal wrapper *@
+
+<FAttachments @ref="_attachmentsDialog" />
 
 @code {
     [Parameter] public string? Job { get; set; }
     [Parameter] public EventCallback<bool> OnClose { get; set; }
 
-    private const int DivisionID = 1;
+    /// <summary>When true, FContacts renders inside a backdrop+frame so
+    /// the host page (e.g. WorkflowEstimating) stays visible behind it.
+    /// VB6 FContacts.ShowForm was modal-blocking; this preserves that
+    /// UX without stealing an MDI tab. Standalone /contacts/{Job} route
+    /// navigation leaves IsModal=false → full-page layout.</summary>
+    [Parameter] public bool IsModal { get; set; }
 
-    private readonly DbWrapperSqlServer db = new();
-
-    private HfGrid<ContactRow>? ContactsGrid;
-    private HfGrid<JobContactRow>? JobContactsGrid;
-    private HfGrid<PickRow>? PickGrid;
+    /// <summary>Modal × header handler — same effect as Cancel
+    /// (CloseAsync routes through OnClose / history.back). Save-prompt
+    /// path runs first in case the user edited anything.</summary>
+    private async Task OnCloseClick()
+    {
+        if (await SaveDataAsync(true))
+            await CloseAsync();
+    }
+    private GridControl<ContactRow>? ContactsGrid;
+    private GridControl<JobContactRow>? JobContactsGrid;
+    private GridControl<PickRow>? PickGrid;
+    private FAttachments? _attachmentsDialog;
 
     private List<ContactRow> ContactsData = new();
     private List<JobContactRow> JobContactsData = new();
@@ -363,31 +415,73 @@
     private PickRow? SelectedPick;
     private ContactRow? _pendingContactRow;
     private JobContactRow? _pendingJobContactRow;
+    private bool PickIsPersonnel;
 
-    private readonly HfEditSettings contactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
-    private readonly HfEditSettings jobContactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
-    private readonly HfSelectionSettings selectionSettings = new()
+    // No Personnel column is inline-editable (IsContactFieldEditable is always false) —
+    // the ellipsis picker is the only edit path, so a double-click must not swap the row
+    // for an edit row, which drops the Title icon and the selection highlight.
+    private readonly EditSettings contactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false, AllowEditOnDblClick = false };
+    private readonly EditSettings jobContactsEditSettings = new() { AllowEditing = true, AllowAdding = false, AllowDeleting = false, ShowConfirmDialog = false };
+    private readonly SelectionSettings selectionSettings = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Single,
         EnableToggle = true
     };
-    private readonly HfSelectionSettings pickSelectionSettings = new()
+    private readonly SelectionSettings pickSelectionSettings = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Single,
         EnableToggle = true
     };
 
-    private readonly HfGridEvents<ContactRow> contactsEvents = new();
-    private readonly HfGridEvents<JobContactRow> jobContactsEvents = new();
-    private readonly HfGridEvents<PickRow> pickEvents = new();
+    private readonly GridControlEvents<ContactRow> contactsEvents = new();
+    private readonly GridControlEvents<JobContactRow> jobContactsEvents = new();
+    private readonly GridControlEvents<PickRow> pickEvents = new();
+
+    // ── Grid layout via the shared GridLayoutPresenter ────────
+    // The load/resolve/order/width boilerplate lives in GridLayoutPresenter<TRow>;
+    // only the VB6 form/grid name strings + per-grid alias maps stay here (fidelity).
+    // The members named gContactsLayout / HasContactsGridLayout / …Version below are
+    // thin delegations, so the markup and the rest of this file are unchanged.
+    private readonly GridLayoutPresenter<ContactRow> _contactsGrid =
+        new("FContacts", "gContacts", instanceKey: "(0)",
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["pmname"] = nameof(ContactRow.Name),
+                ["contactname"] = nameof(ContactRow.Name),
+                ["workphone"] = nameof(ContactRow.Phone),
+                ["cellphone"] = nameof(ContactRow.Cell)
+            });
+    private readonly GridLayoutPresenter<JobContactRow> _jobContactsGrid =
+        new("FContacts", "gJobContacts", instanceKey: "(0)",
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["firstname"] = nameof(JobContactRow.Name),
+                ["contactname"] = nameof(JobContactRow.Name),
+                ["workphone"] = nameof(JobContactRow.Phone),
+                ["cellphone"] = nameof(JobContactRow.Cell),
+                ["companyname"] = nameof(JobContactRow.Company),
+                ["commmodeid"] = nameof(JobContactRow.SendVia),
+                ["commmode"] = nameof(JobContactRow.SendVia)
+            });
+
+    private Dictionary<string, GridLayoutColumn> gContactsLayout => _contactsGrid.Layout;
+    private bool HasContactsGridLayout => _contactsGrid.Has;
+    private int gContactsLayoutVersion => _contactsGrid.Version;
+
+    private Dictionary<string, GridLayoutColumn> gJobContactsLayout => _jobContactsGrid.Layout;
+    private bool HasJobContactsGridLayout => _jobContactsGrid.Has;
+    private int gJobContactsLayoutVersion => _jobContactsGrid.Version;
 
     protected override async Task OnInitializedAsync()
     {
+        contactsEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<ContactRow>>(this, OnContactsEditButton);
         contactsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ContactRow>>(this, OnContactsCellSave);
+        jobContactsEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<JobContactRow>>(this, OnJobContactsEditButton);
         jobContactsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<JobContactRow>>(this, OnJobContactsCellSave);
         pickEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PickRow>>(this, OnPickRowSelected);
+        await LoadGridLayoutAsync();
         await LoadSmsCarriersAsync();
     }
 
@@ -402,9 +496,8 @@
 
     private async Task LoadSmsCarriersAsync()
     {
-        var dt = db.SqlExec("select address,name from smscarriers order by 2");
-        SmsCarriers = dt.AsEnumerable()
-            .Select(r => new SmsCarrier
+        var rows = await db.QueryAsync("select address,name from smscarriers order by 2");
+        SmsCarriers = rows.Select(r => new SmsCarrier
             {
                 Address = r["address"]?.ToString() ?? "",
                 Name = r["name"]?.ToString() ?? ""
@@ -423,17 +516,25 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task OnHeaderAttachmentsRequested(string _)
+    {
+        if (_attachmentsDialog == null || string.IsNullOrWhiteSpace(Job))
+            return;
+
+        await _attachmentsDialog.ShowForm("Attachments", ($"J~{Job}", "Job Documents"));
+    }
+
     private async Task LoadQuoteFlagAsync()
     {
-        var dt = db.SqlExec(
-            "select isQuote,Quote_No from tblJobs where DivisionID=@DivisionID and job_no=@Job",
-            new { DivisionID, Job });
+        var rows = await db.QueryAsync(
+            "select isQuote,Quote_No from tblJobs where DivisionID =@DivisionID and job_no=@Job",
+            new { SessionState.DivisionID, Job });
 
-        if (dt.Rows.Count > 0)
+        var first = rows.FirstOrDefault();
+        if (first != null)
         {
-            var row = dt.Rows[0];
-            var quoteNo = row["Quote_No"]?.ToString() ?? "";
-            var isQuote = row["IsQuote"]?.ToString() ?? "";
+            var quoteNo = first["Quote_No"]?.ToString() ?? "";
+            var isQuote = first["IsQuote"]?.ToString() ?? "";
             mIsQuote = !string.IsNullOrEmpty(quoteNo) || isQuote.Equals("True", StringComparison.OrdinalIgnoreCase);
         }
         else
@@ -464,8 +565,8 @@ SELECT 'vendor' icon,'Purchaser' ContactType,p.pm ID,p.pmname Name,p.phone,p.cel
        LEFT JOIN tblProjectManager p ON(j.Purchaser=p.PM)
  where s.id = @DivisionID";
 
-        var dt = db.SqlExec(sql, new { DivisionID, Job });
-        foreach (DataRow row in dt.Rows)
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, Job });
+        foreach (var row in rows)
         {
             ContactsData.Add(new ContactRow
             {
@@ -496,8 +597,8 @@ select j.Role JobRole,c.*
   join contacts c on(j.contactid=c.contactid)
  where j.Contactid<>0 and j.job=@Job";
 
-        var dt = db.SqlExec(sql, new { Job });
-        foreach (DataRow row in dt.Rows)
+        var dbRows = await db.QueryAsync(sql, new { Job });
+        foreach (var row in dbRows)
         {
             var role = row["JobRole"]?.ToString() ?? "";
             var match = JobContactsData.FirstOrDefault(r => r.Role.Equals(role, StringComparison.OrdinalIgnoreCase));
@@ -523,14 +624,21 @@ select j.Role JobRole,c.*
         string? roles = null;
         try
         {
-            roles = await db.ExecuteScalarAsync<string>("SELECT Value FROM AppOptions WHERE Name='JobContactRoles'");
+            // VB6 FContacts.frm:672 — HFApp.Options.ValueByName("JobContactRoles"):
+            // AppOptions uses OptionName/OptionValue columns (the old Name/Value names
+            // don't exist → the query always threw → it silently fell back to a
+            // FABRICATED default). The division-specific row (IN(0,@Div) ORDER BY
+            // divisionid DESC) overrides the global default. VB6 has NO hardcoded
+            // fallback — an empty option simply yields no roles, so we don't invent one.
+            roles = await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 OptionValue FROM AppOptions
+                   WHERE OptionName='JobContactRoles' AND ISNULL(divisionid,0) IN (0,@DivisionID)
+                   ORDER BY divisionid DESC",
+                new { SessionState.DivisionID });
         }
-        catch { }
+        catch { /* non-critical */ }
 
-        if (string.IsNullOrWhiteSpace(roles))
-            roles = "Buyer|Cobuyer|Superintendent|Sales";
-
-        return roles.Split('|', StringSplitOptions.RemoveEmptyEntries)
+        return (roles ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries)
                     .Select(r => r.Trim())
                     .Where(r => !string.IsNullOrEmpty(r))
                     .ToList();
@@ -545,15 +653,32 @@ select j.Role JobRole,c.*
         Dirty = true;
     }
 
+    private async Task OnContactsEditButton(CellEditButtonArgs<ContactRow> args)
+    {
+        if (args.Data == null || !IsContactPickerField(args.ColumnName)) return;
+        await OnPickContact(args.Data);
+    }
+
     private async Task OnJobContactsCellSave(CellSaveArgs<JobContactRow> args)
     {
         if (args.Data == null) return;
         args.Data.Phone = FormatPhone(args.Data.Phone);
         args.Data.Cell = FormatPhone(args.Data.Cell);
         args.Data.Fax = FormatPhone(args.Data.Fax);
-        args.Data.RowState = "DIRTY";
+        MarkJobContactDirty(args.Data);
+    }
+
+    private async Task OnJobContactsEditButton(CellEditButtonArgs<JobContactRow> args)
+    {
+        if (args.Data == null || !IsJobContactPickerField(args.ColumnName)) return;
+        await OnPickJobContact(args.Data);
+    }
+
+    private void MarkJobContactDirty(JobContactRow row)
+    {
+        row.RowState = "DIRTY";
         Dirty = true;
-        SyncJobContactDuplicates(args.Data);
+        SyncJobContactDuplicates(row);
     }
 
     private void SyncJobContactDuplicates(JobContactRow row)
@@ -579,14 +704,14 @@ select j.Role JobRole,c.*
     {
         _pendingContactRow = row;
         _pendingJobContactRow = null;
+        PickIsPersonnel = true;
         PickDialogTitle = $"Select {row.ContactType}";
         var field = row.ContactType == "Project Manager" ? "PrjMgr" : row.ContactType;
         var sql = $@"SELECT PM AS Id, PMName AS Name, Phone, Cell, Fax, Email
                      FROM tblProjectManager
                      WHERE Inactive<>1 AND 1={field}";
-        var dt = db.SqlExec(sql);
-        PickData = dt.AsEnumerable()
-            .Select(r => new PickRow
+        var dbRows = await db.QueryAsync(sql);
+        PickData = dbRows.Select(r => new PickRow
             {
                 Id = r["Id"]?.ToString() ?? "",
                 Name = r["Name"]?.ToString() ?? "",
@@ -603,16 +728,28 @@ select j.Role JobRole,c.*
     {
         _pendingContactRow = null;
         _pendingJobContactRow = row;
+        PickIsPersonnel = false;
         PickDialogTitle = "Select Contact";
-        var sql = @"SELECT ContactID AS Id, CompanyName AS Company, FirstName AS Name,
-                           WorkPhone AS Phone, CellPhone AS Cell, Fax, Email,
-                           CommModeID AS SendVia, SmsAddress
-                    FROM Contacts
-                    WHERE ContactTypeID=99
-                    ORDER BY CompanyName, FirstName";
-        var dt = db.SqlExec(sql);
-        PickData = dt.AsEnumerable()
-            .Select(r => new PickRow
+
+        // VB6: Two-section pick list for customer contacts and vendor contacts
+        var arCust = "";
+        try
+        {
+            arCust = await db.ExecuteScalarAsync<string>(
+                "Select isnull(AR_Customer_Deposit,'') from tblcustomers where customer_no=@Job",
+                new { Job }) ?? "";
+        }
+        catch { /* non-critical */ }
+
+        var sql = @"
+SELECT ContactID AS Id, CompanyName AS Company, FirstName AS Name,
+       WorkPhone AS Phone, CellPhone AS Cell, Fax, Email,
+       CommModeID AS SendVia, SmsAddress
+FROM Contacts
+WHERE ContactTypeID=99
+ORDER BY CompanyName, FirstName";
+        var dbRows = await db.QueryAsync(sql);
+        PickData = dbRows.Select(r => new PickRow
             {
                 Id = r["Id"]?.ToString() ?? "",
                 Company = r["Company"]?.ToString() ?? "",
@@ -659,8 +796,7 @@ select j.Role JobRole,c.*
             _pendingJobContactRow.Email = SelectedPick.Email;
             _pendingJobContactRow.SendVia = SelectedPick.SendVia;
             _pendingJobContactRow.SmsAddress = SelectedPick.SmsAddress;
-            _pendingJobContactRow.RowState = "DIRTY";
-            Dirty = true;
+            MarkJobContactDirty(_pendingJobContactRow);
         }
 
         ShowPickDialog = false;
@@ -677,8 +813,7 @@ select j.Role JobRole,c.*
         row.Email = "";
         row.SendVia = 0;
         row.SmsAddress = "";
-        row.RowState = "DIRTY";
-        Dirty = true;
+        MarkJobContactDirty(row);
     }
 
     private async Task OnOk()
@@ -707,7 +842,7 @@ select j.Role JobRole,c.*
 
         if (prompt)
         {
-            var save = await JSRuntime.InvokeAsync<bool>("confirm",
+            var save = await Dialogs.ConfirmAsync(
                 "This data has changed.\n\nDo you want to save these changes?");
             if (!save) { Dirty = false; return true; }
         }
@@ -721,7 +856,7 @@ select j.Role JobRole,c.*
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving contacts: {ex.Message}");
+            Notifications.Error($"Error saving contacts: {ex.Message}");
             return false;
         }
     }
@@ -778,20 +913,20 @@ where customer_no=@ID",
 
                 case "Project Manager":
                     await db.ExecuteAsync(
-                        "UPDATE tblJobs SET PM=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
-                        new { row.ID, DivisionID, Job });
+                        "UPDATE tblJobs SET PM=@ID WHERE DivisionID =@DivisionID and Job_No=@Job",
+                        new { row.ID, SessionState.DivisionID, Job });
                     break;
 
                 case "Estimator":
                     await db.ExecuteAsync(
-                        "UPDATE tblJobs SET Estimator=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
-                        new { row.ID, DivisionID, Job });
+                        "UPDATE tblJobs SET Estimator=@ID WHERE DivisionID =@DivisionID and Job_No=@Job",
+                        new { row.ID, SessionState.DivisionID, Job });
                     break;
 
                 case "Purchaser":
                     await db.ExecuteAsync(
-                        "UPDATE tblJobs SET Purchaser=@ID WHERE DivisionID=@DivisionID and Job_No=@Job",
-                        new { row.ID, DivisionID, Job });
+                        "UPDATE tblJobs SET Purchaser=@ID WHERE DivisionID =@DivisionID and Job_No=@Job",
+                        new { row.ID, SessionState.DivisionID, Job });
                     break;
             }
         }
@@ -888,6 +1023,146 @@ WHERE ContactID=@ContactID",
     private string GetSmsCarrierLabel(string address) =>
         SmsCarriers.FirstOrDefault(c => c.Address == address)?.Name ?? address;
 
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // The keyed/unkeyed "(0)" fallback + Version bump live in the presenter
+            // (its ctor was given the form/grid names, instanceKey "(0)", aliases).
+            await _contactsGrid.LoadAsync(GridLayoutSvc);
+            await _jobContactsGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // ── Persist Grid Layout ──────────────────────────────────
+    private Task OnContactsLayoutChangedAsync(GridSettings snapshot) =>
+        PersistGridLayoutAsync("gContacts", gContactsLayout, snapshot, _contactsGrid, ResolveContactsGridField);
+
+    private Task OnJobContactsLayoutChangedAsync(GridSettings snapshot) =>
+        PersistGridLayoutAsync("gJobContacts", gJobContactsLayout, snapshot, _jobContactsGrid, ResolveJobContactsGridField);
+
+    private async Task PersistGridLayoutAsync<TRow>(string gridName,
+        IDictionary<string, GridLayoutColumn> layout, GridSettings snapshot,
+        GridLayoutPresenter<TRow> presenter, Func<string, string> resolver)
+    {
+        if (snapshot == null || layout.Count == 0) return;
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FContacts", gridName, instanceKey: null,
+                layout, UnscaleSnapshotWidths(snapshot), resolver, staticNames: false);
+            presenter.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FContacts {Grid} layout", gridName);
+        }
+    }
+
+    // Columns render at ContactsColumnWidthScale times the stored layout width, so a
+    // dragged pixel width has to be divided back out before it is converted and saved.
+    private static GridSettings UnscaleSnapshotWidths(GridSettings snapshot)
+    {
+        if (snapshot.Widths == null || snapshot.Widths.Count == 0)
+            return snapshot;
+
+        return new GridSettings
+        {
+            ColumnOrder = snapshot.ColumnOrder,
+            Visibility = snapshot.Visibility,
+            HeaderOverrides = snapshot.HeaderOverrides,
+            GroupColumns = snapshot.GroupColumns,
+            Widths = snapshot.Widths.ToDictionary(kv => kv.Key, kv => kv.Value / ContactsColumnWidthScale)
+        };
+    }
+
+    // VB6 FColumns.frm:365-374 lists every captioned column, hidden ones merely
+    // unchecked. Without AvailableColumns the dialog can only offer the columns
+    // already rendered, so a hidden column can never be brought back.
+    private IEnumerable<ChooseColumnDescriptor>? GetContactsChooseColumnsSchema()
+        => _contactsGrid.GetChooseColumnsSchema();
+
+    private IEnumerable<ChooseColumnDescriptor>? GetJobContactsChooseColumnsSchema()
+        => _jobContactsGrid.GetChooseColumnsSchema();
+
+    private Task OnContactsColumnsChosenAsync(ChooseColumnsResult result)
+        => ApplyChosenColumnsAsync("gContacts", gContactsLayout, result, _contactsGrid, ResolveContactsGridField);
+
+    private Task OnJobContactsColumnsChosenAsync(ChooseColumnsResult result)
+        => ApplyChosenColumnsAsync("gJobContacts", gJobContactsLayout, result, _jobContactsGrid, ResolveJobContactsGridField);
+
+    private async Task ApplyChosenColumnsAsync<TRow>(string gridName,
+        IDictionary<string, GridLayoutColumn> layout, ChooseColumnsResult result,
+        GridLayoutPresenter<TRow> presenter, Func<string, string> resolver)
+    {
+        if (layout.Count == 0 || result?.Columns == null) return;
+        try
+        {
+            await GridLayoutPersister.MergeAndSaveChooseColumnsAsync(
+                GridLayoutSvc, "FContacts", gridName, instanceKey: null,
+                layout, result, resolver);
+            await GridLayoutSvc.FlushPendingGridLayoutsAsync();
+            presenter.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to apply FContacts {Grid} column choices", gridName);
+        }
+    }
+
+    private string ResolveContactsGridField(string layoutField)
+        => _contactsGrid.ResolveField(layoutField);
+
+    private string ResolveJobContactsGridField(string layoutField)
+        => _jobContactsGrid.ResolveField(layoutField);
+
+    // ── Contacts Grid Layout Helpers ─────────────────────────
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedContactsGridLayout()
+        => _contactsGrid.GetOrdered();
+
+    private static bool IsContactFieldEditable(string field)
+        => false;
+
+    private static bool IsContactPickerField(string field)
+        => string.Equals(field, nameof(ContactRow.ID), StringComparison.OrdinalIgnoreCase)
+           || string.Equals(field, nameof(ContactRow.Name), StringComparison.OrdinalIgnoreCase);
+
+    // ── JobContacts Grid Layout Helpers ──────────────────────
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedJobContactsGridLayout()
+        => _jobContactsGrid.GetOrdered();
+
+    private static bool IsJobContactFieldEditable(string field)
+    {
+        return field switch
+        {
+            "Role" or "ContactID" or "Company" or "Name" or "RowState" => false,
+            _ => true
+        };
+    }
+
+    private static bool IsJobContactPickerField(string field)
+        => string.Equals(field, nameof(JobContactRow.Name), StringComparison.OrdinalIgnoreCase);
+
+    // ── Shared Grid Layout Helpers ───────────────────────────
+    private const double ContactsColumnWidthScale = 1.5;
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => ScaleColumnWidth(GridLayoutPresenter.WidthPx(layoutWidth));
+
+    private static string ScaledColumnWidth(int widthPx)
+        => $"{ScaleColumnWidth(widthPx)}px";
+
+    private static int ScaleColumnWidth(int widthPx)
+        => Math.Max(1, (int)Math.Round(widthPx * ContactsColumnWidthScale));
+
     public class ContactRow
     {
         public string ContactType { get; set; } = "";
@@ -935,4 +1210,3 @@ WHERE ContactID=@ContactID",
 
     public record SendViaOption(int Value, string Text);
 }
-```

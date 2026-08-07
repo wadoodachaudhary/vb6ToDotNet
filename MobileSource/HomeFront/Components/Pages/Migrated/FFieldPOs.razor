@@ -1,95 +1,22 @@
+@namespace HomeFront.Components.Pages
 @page "/field-po-requests"
 @rendermode InteractiveServer
 
 @using HomeFront.Data
+@using HomeFront.Models
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit.Notifications
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FFieldPOs> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>Field PO Requests</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        background-color: #f8f9fa;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        align-items: center;
-    }
-
-    .tbar-btn {
-        padding: 6px 12px;
-        border: 1px solid #c9c9c9;
-        background: #fff;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 13px;
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 2px;
-        min-width: 80px;
-    }
-
-    .tbar-btn:hover { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: default; }
-    .tbar-btn.btn-success { border-color: #198754; color: #198754; }
-    .tbar-btn.btn-danger { border-color: #dc3545; color: #dc3545; }
-
-    .toolbar-info {
-        margin-left: auto;
-        font-size: 12px;
-        color: #555;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-    }
-
-    .fieldpo-body {
-        display: grid;
-        height: calc(100vh - 150px);
-        gap: 6px;
-    }
-
-    .grid-panel {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #fff;
-        overflow: hidden;
-    }
-
-    .slider-panel {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 0 12px;
-        background: #f1f3f5;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-    }
-
-    .slider-panel input[type=range] { width: 100%; }
-
-    .loading-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(255,255,255,0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-
-    .loading-spinner {
-        padding: 12px 20px;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -99,14 +26,14 @@
 }
 
 <div class="toolbar-cntr">
-    <button class="tbar-btn btn-success" disabled="@(!HasSelection)" @onclick="ApproveSelected">
+    <ButtonControl BareStyle="true" CssClass="tbar-btn btn-success" Disabled="@(!HasSelection)" OnClick="ApproveSelected">
         <span>✔</span>
         <span class="tool-label">Approve</span>
-    </button>
-    <button class="tbar-btn btn-danger" disabled="@(!HasSelection)" @onclick="DeclineSelected">
+    </ButtonControl>
+    <ButtonControl BareStyle="true" CssClass="tbar-btn btn-danger" Disabled="@(!HasSelection)" OnClick="DeclineSelected">
         <span>✖</span>
         <span class="tool-label">Decline</span>
-    </button>
+    </ButtonControl>
     <div class="toolbar-info">
         <span>@RequestsData.Count request(s)</span>
         @if (SelectedRequestId > 0)
@@ -118,7 +45,7 @@
 
 <div class="fieldpo-body" style="@($"grid-template-rows: {SplitPercent}fr 28px {100 - SplitPercent}fr;")">
     <div class="grid-panel">
-        <HfGrid @ref="RequestsGrid"
+        <GridControl @ref="RequestsGrid"
                 TValue="RequestRow"
                 DataSource="@RequestsData"
                 AllowSelection="true"
@@ -128,21 +55,45 @@
                 Height="100%"
                 SelectionSettingsRef="@requestSelectionSettings"
                 EventsRef="@requestGridEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(RequestRow.RequestID)" HeaderText="Request ID" Width="90px" IsPrimaryKey="true" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(RequestRow.RequestedBy)" HeaderText="Requested By" Width="120px" />
-                <HfGridColumn Field="@nameof(RequestRow.RequestedDate)" HeaderText="Requested Date" Width="120px" Format="d" />
-                <HfGridColumn Field="@nameof(RequestRow.Job)" HeaderText="Job" Width="80px" />
-                <HfGridColumn Field="@nameof(RequestRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
-                <HfGridColumn Field="@nameof(RequestRow.POIndex)" HeaderText="PO Index" Width="90px" />
-                <HfGridColumn Field="@nameof(RequestRow.Vendor)" HeaderText="Vendor" Width="90px" />
-                <HfGridColumn Field="@nameof(RequestRow.VendorDesc)" HeaderText="Vendor Desc" Width="200px" />
-                <HfGridColumn Field="@nameof(RequestRow.RequestDesc)" HeaderText="Request Desc" Width="240px" />
-                <HfGridColumn Field="@nameof(RequestRow.BCVendor)" HeaderText="BC Vendor" Width="90px" />
-                <HfGridColumn Field="@nameof(RequestRow.BCVendorDesc)" HeaderText="BC Vendor Desc" Width="200px" />
-                <HfGridColumn Field="@nameof(RequestRow.Comments)" HeaderText="Comments" Width="240px" />
-            </HfGridColumnsBase>
-        </HfGrid>
+            <GridColumnsBase @key="gRequestsLayoutVersion">
+                @if (HasRequestsGridLayout)
+                {
+                    foreach (var entry in GetOrderedRequestsGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      IsPrimaryKey="@(fieldName == "RequestID")"
+                                      ClipMode="ClipMode.Ellipsis" />
+                    }
+                }
+                else
+                {
+                    <GridColumn Field="@nameof(RequestRow.RequestID)" HeaderText="Request ID" Width="90px" IsPrimaryKey="true" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(RequestRow.RequestedBy)" HeaderText="Requested By" Width="120px" />
+                    <GridColumn Field="@nameof(RequestRow.RequestedDate)" HeaderText="Requested Date" Width="120px" Format="d" />
+                    <GridColumn Field="@nameof(RequestRow.Job)" HeaderText="Job" Width="80px" />
+                    <GridColumn Field="@nameof(RequestRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
+                    <GridColumn Field="@nameof(RequestRow.POIndex)" HeaderText="PO Index" Width="90px" />
+                    <GridColumn Field="@nameof(RequestRow.Vendor)" HeaderText="Vendor" Width="90px" />
+                    <GridColumn Field="@nameof(RequestRow.VendorDesc)" HeaderText="Vendor Desc" Width="200px" />
+                    <GridColumn Field="@nameof(RequestRow.RequestDesc)" HeaderText="Request Desc" Width="240px" />
+                    <GridColumn Field="@nameof(RequestRow.BCVendor)" HeaderText="BC Vendor" Width="90px" />
+                    <GridColumn Field="@nameof(RequestRow.BCVendorDesc)" HeaderText="BC Vendor Desc" Width="200px" />
+                    <GridColumn Field="@nameof(RequestRow.Comments)" HeaderText="Comments" Width="240px" />
+                }
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
     <div class="slider-panel">
@@ -151,7 +102,7 @@
     </div>
 
     <div class="grid-panel">
-        <HfGrid @ref="DetailsGrid"
+        <GridControl @ref="DetailsGrid"
                 TValue="DetailRow"
                 DataSource="@DetailsData"
                 AllowSelection="true"
@@ -160,70 +111,145 @@
                 EnableHover="true"
                 Height="100%"
                 SelectionSettingsRef="@detailSelectionSettings">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(DetailRow.Sequence)" HeaderText="Seq" Width="60px" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.Phase)" HeaderText="Phase" Width="70px" />
-                <HfGridColumn Field="@nameof(DetailRow.Item)" HeaderText="Item" Width="80px" />
-                <HfGridColumn Field="@nameof(DetailRow.Description)" HeaderText="Description" Width="220px" />
-                <HfGridColumn Field="@nameof(DetailRow.Job)" HeaderText="Job" Width="80px" />
-                <HfGridColumn Field="@nameof(DetailRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
-                <HfGridColumn Field="@nameof(DetailRow.JCExtra)" HeaderText="JC Extra" Width="90px" />
-                <HfGridColumn Field="@nameof(DetailRow.JCCostCode)" HeaderText="JC Cost Code" Width="110px" />
-                <HfGridColumn Field="@nameof(DetailRow.JCCostCodeDesc)" HeaderText="Cost Code Desc" Width="180px" />
-                <HfGridColumn Field="@nameof(DetailRow.JCCategory)" HeaderText="JC Category" Width="100px" />
-                <HfGridColumn Field="@nameof(DetailRow.JCCategoryDesc)" HeaderText="Category Desc" Width="180px" />
-                <HfGridColumn Field="@nameof(DetailRow.TaxGroup)" HeaderText="Tax Group" Width="90px" />
-                <HfGridColumn Field="@nameof(DetailRow.Qty)" HeaderText="Qty" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.Rate)" HeaderText="Rate" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.Amount)" HeaderText="Amount" Width="100px" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.JCTax)" HeaderText="JC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.NJCTax)" HeaderText="NJC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(DetailRow.UOM)" HeaderText="UOM" Width="70px" />
-                <HfGridColumn Field="@nameof(DetailRow.TotalAmount)" HeaderText="Total" Width="110px" Format="N2" TextAlign="TextAlign.Right" />
-            </HfGridColumnsBase>
-        </HfGrid>
+            <GridColumnsBase @key="gDetailsLayoutVersion">
+                @if (HasDetailsGridLayout)
+                {
+                    foreach (var entry in GetOrderedDetailsGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      ClipMode="ClipMode.Ellipsis" />
+                    }
+                }
+                else
+                {
+                    <GridColumn Field="@nameof(DetailRow.Sequence)" HeaderText="Seq" Width="60px" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.Phase)" HeaderText="Phase" Width="70px" />
+                    <GridColumn Field="@nameof(DetailRow.Item)" HeaderText="Item" Width="80px" />
+                    <GridColumn Field="@nameof(DetailRow.Description)" HeaderText="Description" Width="220px" />
+                    <GridColumn Field="@nameof(DetailRow.Job)" HeaderText="Job" Width="80px" />
+                    <GridColumn Field="@nameof(DetailRow.JobDesc)" HeaderText="Job Desc" Width="180px" />
+                    <GridColumn Field="@nameof(DetailRow.JCExtra)" HeaderText="JC Extra" Width="90px" />
+                    <GridColumn Field="@nameof(DetailRow.JCCostCode)" HeaderText="JC Cost Code" Width="110px" />
+                    <GridColumn Field="@nameof(DetailRow.JCCostCodeDesc)" HeaderText="Cost Code Desc" Width="180px" />
+                    <GridColumn Field="@nameof(DetailRow.JCCategory)" HeaderText="JC Category" Width="100px" />
+                    <GridColumn Field="@nameof(DetailRow.JCCategoryDesc)" HeaderText="Category Desc" Width="180px" />
+                    <GridColumn Field="@nameof(DetailRow.TaxGroup)" HeaderText="Tax Group" Width="90px" />
+                    <GridColumn Field="@nameof(DetailRow.Qty)" HeaderText="Qty" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.Rate)" HeaderText="Rate" Width="90px" Format="N4" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.Amount)" HeaderText="Amount" Width="100px" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.JCTax)" HeaderText="JC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.NJCTax)" HeaderText="NJC Tax" Width="90px" Format="N2" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(DetailRow.UOM)" HeaderText="UOM" Width="70px" />
+                    <GridColumn Field="@nameof(DetailRow.TotalAmount)" HeaderText="Total" Width="110px" Format="N2" TextAlign="TextAlign.Right" />
+                }
+            </GridColumnsBase>
+        </GridControl>
     </div>
 </div>
 
 @code {
-    private readonly DbWrapperSqlServer db = new();
-    private const int DivisionID = 1;
-    private const string LoginId = "SYSTEM";
+private const string LoginId = "SYSTEM";
     private bool IsLoading;
     private int SplitPercent = 45;
 
     private List<RequestRow> RequestsData = new();
     private List<DetailRow> DetailsData = new();
 
-    private HfGrid<RequestRow>? RequestsGrid;
-    private HfGrid<DetailRow>? DetailsGrid;
+    private GridControl<RequestRow>? RequestsGrid;
+    private GridControl<DetailRow>? DetailsGrid;
 
     private long SelectedRequestId;
     private int SelectedRequestCount;
 
     private bool HasSelection => SelectedRequestCount > 0;
 
-    private HfSelectionSettings requestSelectionSettings = new()
+    private SelectionSettings requestSelectionSettings = new()
     {
         Type = SelectionType.Multiple,
         Mode = SelectionMode.Row,
         EnableToggle = true
     };
 
-    private HfSelectionSettings detailSelectionSettings = new()
+    private SelectionSettings detailSelectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
 
-    private HfGridEvents<RequestRow> requestGridEvents = new();
-    private HfGridEvents<DetailRow> detailGridEvents = new();
+    private GridControlEvents<RequestRow> requestGridEvents = new();
+    private GridControlEvents<DetailRow> detailGridEvents = new();
+
+    // === Grid Layout (dynamic from AppGridLayout) ===
+    // Load/resolve/order/width boilerplate lives in the shared GridLayoutPresenter
+    // (Services/GridLayoutPresenter.cs); only the VB6 form/grid name strings stay
+    // here. The members named gRequestsLayout / HasRequestsGridLayout / …Version
+    // below are thin delegations so the markup is unchanged. The keyed-then-unkeyed
+    // two-call fallback is captured by instanceKey:"(0)" in the ctors.
+    private readonly GridLayoutPresenter<RequestRow> _requestsGrid =
+        new("FFieldPOs", "RequestsGrid", instanceKey: "(0)");
+    private readonly GridLayoutPresenter<DetailRow> _detailsGrid =
+        new("FFieldPOs", "DetailsGrid", instanceKey: "(0)");
+
+    private Dictionary<string, GridLayoutColumn> gRequestsLayout => _requestsGrid.Layout;
+    private bool HasRequestsGridLayout => _requestsGrid.Has;
+    private int gRequestsLayoutVersion => _requestsGrid.Version;
+
+    private Dictionary<string, GridLayoutColumn> gDetailsLayout => _detailsGrid.Layout;
+    private bool HasDetailsGridLayout => _detailsGrid.Has;
+    private int gDetailsLayoutVersion => _detailsGrid.Version;
+
+    // === Property Maps for Field Resolution ===
+    // NOTE (drift): kept locally because GetColumnTypeForRequestField /
+    // GetColumnTypeForDetailField below diverge from the presenter's canonical
+    // ColumnTypeFor (they map bool→CheckBox, not Boolean, and recognize a narrower
+    // numeric set). See the flag in GetColumnTypeForRequestField.
+    private static readonly Dictionary<string, PropertyInfo> _requestRowPropMap =
+        typeof(RequestRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, PropertyInfo> _detailRowPropMap =
+        typeof(DetailRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
         requestGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<RequestRow>>(this, OnRequestRowSelected);
         requestGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<RequestRow>>(this, OnRequestRowDeselected);
+        await LoadGridLayoutAsync();
         await LoadRequestsAsync();
+    }
+
+    // === Load Grid Layout ===
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // Presenter does the keyed-then-unkeyed fallback + Version bump
+            // (ctors hold the "FFieldPOs"/grid names + instanceKey "(0)").
+            await _requestsGrid.LoadAsync(GridLayoutSvc);
+            await _detailsGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
     }
 
     private async Task LoadRequestsAsync()
@@ -254,7 +280,7 @@ LEFT OUTER JOIN tblJobs j ON fpr.Job=j.Job_No and fpr.DivisionID = j.DivisionID
 WHERE fpr.Status=0
   AND fpr.DivisionID = @DivisionID
 ORDER BY fpr.RequestID";
-            var rows = await db.QueryAsync(sql, new { DivisionID });
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
             RequestsData = rows.Select(r => new RequestRow
             {
@@ -284,7 +310,7 @@ ORDER BY fpr.RequestID";
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading requests: {ex.Message}");
+            Notifications.Error($"Error loading requests: {ex.Message}");
         }
         finally
         {
@@ -331,7 +357,7 @@ LEFT OUTER JOIN standardcategories scat ON d.jccategory=scat.category and fpr.Di
 WHERE fpr.RequestID=@RequestID
   AND fpr.DivisionID = @DivisionID
 ORDER BY d.sequence";
-            var rows = await db.QueryAsync(sql, new { RequestID = requestId, DivisionID });
+            var rows = await db.QueryAsync(sql, new { RequestID = requestId, SessionState.DivisionID });
 
             DetailsData = rows.Select(r => new DetailRow
             {
@@ -358,7 +384,7 @@ ORDER BY d.sequence";
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading details: {ex.Message}");
+            Notifications.Error($"Error loading details: {ex.Message}");
         }
         finally
         {
@@ -394,13 +420,13 @@ ORDER BY d.sequence";
         var selected = RequestsGrid?.GetSelectedRecords()?.ToList() ?? new List<RequestRow>();
         if (selected.Count == 0)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Select one or more requests.");
+            Notifications.Info("Select one or more requests.");
             return;
         }
 
         if (selected.Count > 1)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"{action} these {selected.Count} requests?");
+            var confirm = await Dialogs.ConfirmAsync($"{action} these {selected.Count} requests?");
             if (!confirm) return;
         }
 
@@ -454,6 +480,102 @@ ORDER BY d.sequence";
 
     private static DateTime? AsDate(object? value) =>
         value == null || value == DBNull.Value ? null : Convert.ToDateTime(value);
+
+    // === Grid Layout Helpers (Requests) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedRequestsGridLayout()
+    {
+        if (!HasRequestsGridLayout) yield break;
+
+        var ordered = gRequestsLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveRequestGridField(layout.Field);
+            var columnType = GetColumnTypeForRequestField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private string ResolveRequestGridField(string layoutField)
+        => _requestsGrid.ResolveField(layoutField);
+
+    // DRIFT FLAG: bodies differ from the presenter's canonical ColumnTypeFor —
+    // bool maps to ColumnType.CheckBox (not Boolean) and only int/long/double/
+    // decimal are treated as Number (the presenter also covers byte/short/float).
+    // Kept verbatim to preserve the rendered <GridColumn Type="…"> behavior; not
+    // delegated to _requestsGrid.GetOrdered() for the same reason.
+    private static ColumnType GetColumnTypeForRequestField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_requestRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+            if (type == typeof(DateTime)) return ColumnType.Date;
+        }
+        return ColumnType.Text;
+    }
+
+    // === Grid Layout Helpers (Details) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedDetailsGridLayout()
+    {
+        if (!HasDetailsGridLayout) yield break;
+
+        var ordered = gDetailsLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveDetailGridField(layout.Field);
+            var columnType = GetColumnTypeForDetailField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private string ResolveDetailGridField(string layoutField)
+        => _detailsGrid.ResolveField(layoutField);
+
+    // DRIFT FLAG: same divergence as GetColumnTypeForRequestField (bool→CheckBox,
+    // narrower numeric set). Kept verbatim; not delegated to GetOrdered().
+    private static ColumnType GetColumnTypeForDetailField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_detailRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+        return ColumnType.Text;
+    }
+
+    // === Shared Grid Helpers ===
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    private static string NormalizeGridKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
+    }
 
     public class RequestRow
     {

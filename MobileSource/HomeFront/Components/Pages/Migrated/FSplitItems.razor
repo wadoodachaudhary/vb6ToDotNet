@@ -1,172 +1,12 @@
-```razor
-@page "/split-items"
-@rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
 
 @using System
 @using System.Collections.Generic
 @using System.Linq
+@using Fx.ControlKit.Notifications
 
-@inject IJSRuntime JSRuntime
-
-<PageTitle>Split Items - HomeFront</PageTitle>
-
-<style>
-    .split-items-dialog {
-        max-width: 500px;
-        margin: 40px auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-        padding: 24px;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-    }
-
-    .split-header {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        margin-bottom: 16px;
-    }
-
-    .split-header img {
-        width: 48px;
-        height: 48px;
-    }
-
-    .split-header .header-text {
-        font-size: 14px;
-        color: #333;
-    }
-
-    .field-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-        margin-left: 64px;
-    }
-
-    .field-row label {
-        min-width: 130px;
-        text-align: right;
-        padding-right: 10px;
-        font-size: 13px;
-        color: #333;
-    }
-
-    .field-row input[type="number"],
-    .field-row input[type="text"] {
-        width: 60px;
-        text-align: center;
-        padding: 3px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 13px;
-    }
-
-    .field-row input:disabled {
-        background-color: #e9ecef;
-        border: none;
-    }
-
-    .checkbox-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-        margin-left: 64px;
-        font-size: 13px;
-    }
-
-    .checkbox-row input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .radio-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 6px;
-        margin-left: 90px;
-        font-size: 13px;
-    }
-
-    .radio-row input[type="radio"] {
-        width: 14px;
-        height: 14px;
-    }
-
-    .radio-row.disabled label {
-        color: #999;
-    }
-
-    .percent-grid {
-        margin-left: 100px;
-        margin-bottom: 10px;
-        display: flex;
-        gap: 2px;
-        flex-wrap: wrap;
-    }
-
-    .percent-grid .percent-cell {
-        width: 60px;
-        text-align: center;
-        padding: 3px 4px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-
-    .percent-grid .percent-cell:disabled,
-    .percent-grid .percent-cell.readonly {
-        background-color: #e9ecef;
-        color: #6c757d;
-    }
-
-    .button-row {
-        display: flex;
-        justify-content: center;
-        gap: 12px;
-        margin-top: 20px;
-    }
-
-    .button-row button {
-        padding: 8px 24px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 13px;
-        min-width: 100px;
-    }
-
-    .button-row button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .button-row button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .button-row button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .button-row button.btn-primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .label-disabled {
-        color: #999;
-    }
-</style>
+@inject ILogger<FSplitItems> Logger
+@inject NotificationService Notifications
 
 <div class="split-items-dialog">
     <!-- Header -->
@@ -178,33 +18,36 @@
     <!-- Copies -->
     <div class="field-row">
         <label>Copies</label>
-        <input type="number" min="0" max="99" @bind="Copies" @bind:event="oninput" @onfocusin="() => SelectAllOnFocus(nameof(Copies))" />
+        <NumericTextBoxControl TValue="int"
+                               Min="0" Max="99"
+                               Value="Copies" ValueChanged="OnCopiesValueChanged" />
     </div>
 
     <!-- Allocate checkbox -->
     <div class="checkbox-row">
-        <input type="checkbox" id="chkAllocate" @bind="AllocateDollarAmount" />
-        <label for="chkAllocate">Allocate dollar amount across all copies.</label>
+        <CheckBoxControl Checked="AllocateDollarAmount"
+                         CheckedChanged="OnAllocateCheckChanged"
+                         Label="Allocate dollar amount across all copies." />
     </div>
 
-    <!-- Allocate options -->
+    <!-- Allocate options (VB6: optAllocate(0), optAllocate(1)) -->
     <div class="radio-row @(AllocateDollarAmount ? "" : "disabled")">
-        <input type="radio" id="optEqual" name="allocateOption" value="0"
-               checked="@(AllocateOption == 0)"
-               disabled="@(!AllocateDollarAmount)"
-               @onchange="() => OnAllocateOptionChanged(0)" />
-        <label for="optEqual">Equal shares</label>
+        <RadioControl TValue="int" Name="allocateOption" Value="0"
+                      SelectedValue="AllocateOption"
+                      SelectedValueChanged="OnAllocateOptionChanged"
+                      Disabled="@(!AllocateDollarAmount)"
+                      Label="Equal shares" />
     </div>
 
     <div class="radio-row @(AllocateDollarAmount ? "" : "disabled")">
-        <input type="radio" id="optCustom" name="allocateOption" value="1"
-               checked="@(AllocateOption == 1)"
-               disabled="@(!AllocateDollarAmount)"
-               @onchange="() => OnAllocateOptionChanged(1)" />
-        <label for="optCustom">Custom percentages</label>
+        <RadioControl TValue="int" Name="allocateOption" Value="1"
+                      SelectedValue="AllocateOption"
+                      SelectedValueChanged="OnAllocateOptionChanged"
+                      Disabled="@(!AllocateDollarAmount)"
+                      Label="Custom percentages" />
     </div>
 
-    <!-- Custom percentages grid -->
+    <!-- Custom percentages grid (VB6: gData - VSFlexGrid) -->
     @if (AllocateDollarAmount && AllocateOption == 1 && Copies > 0)
     {
         <div class="percent-grid">
@@ -213,140 +56,180 @@
                 var idx = i;
                 if (idx < Copies - 1)
                 {
-                    <input type="number" class="percent-cell" step="1" min="0" max="100"
-                           value="@PercentValues[idx]"
-                           @onchange="(e) => OnPercentChanged(idx, e)" />
+                    <NumericTextBoxControl @key="idx" TValue="double" CssClass="percent-cell"
+                                           Step="1" Min="0" Max="100"
+                                           Value="PercentValues[idx]"
+                                           ValueChanged="(v) => OnPercentChanged(idx, v)" />
                 }
                 else
                 {
-                    <!-- Last column is calculated (read-only) -->
-                    <input type="number" class="percent-cell readonly" readonly
-                           value="@PercentValues[idx]" />
+                    <!-- Last column is read-only (VB6: gData_BeforeEdit cancels edit on last col) -->
+                    <NumericTextBoxControl @key="idx" TValue="double" CssClass="percent-cell readonly"
+                                           Enabled="false"
+                                           Value="PercentValues[idx]" />
                 }
             }
         </div>
     }
 
-    <!-- Use Units checkbox -->
+    <!-- Use Units checkbox (VB6: chkUseUnits) -->
     <div class="checkbox-row">
-        <input type="checkbox" id="chkUseUnits" @bind="UseUnits" />
-        <label for="chkUseUnits">Assign the new items to apt/unit numbers</label>
+        <CheckBoxControl Checked="UseUnits"
+                         CheckedChanged="OnUseUnitsChanged"
+                         Label="Assign the new items to apt/unit numbers" />
     </div>
 
-    <!-- Starting number -->
+    <!-- Starting number (VB6: txtStart) -->
     <div class="field-row">
         <label class="@(UseUnits ? "" : "label-disabled")">Starting number</label>
-        <input type="number" min="0" @bind="UnitStart" disabled="@(!UseUnits)"
-               @onfocusin="() => SelectAllOnFocus(nameof(UnitStart))" />
+        <NumericTextBoxControl TValue="long" Min="0" @bind-Value="UnitStart" Enabled="@UseUnits" />
     </div>
 
-    <!-- Increment By -->
+    <!-- Increment By (VB6: txtIncrement) -->
     <div class="field-row">
         <label class="@(UseUnits ? "" : "label-disabled")">Increment By</label>
-        <input type="number" min="0" @bind="UnitIncrement" disabled="@(!UseUnits)"
-               @onfocusin="() => SelectAllOnFocus(nameof(UnitIncrement))" />
+        <NumericTextBoxControl TValue="long" Min="0" @bind-Value="UnitIncrement" Enabled="@UseUnits" />
     </div>
 
-    <!-- Buttons -->
+    <!-- Buttons (VB6: cmdNav(0)=OK, cmdNav(1)=Cancel) -->
     <div class="button-row">
-        <button class="btn-primary" disabled="@(Copies <= 0)" @onclick="OnOkClick">&amp;OK</button>
-        <button @onclick="OnCancelClick">&amp;Cancel</button>
+        <ButtonControl CssClass="btn-primary" Disabled="@(Copies <= 0)" OnClick="OnOkClick">&amp;OK</ButtonControl>
+        <ButtonControl OnClick="OnCancelClick">&amp;Cancel</ButtonControl>
     </div>
 </div>
 
 @code {
-    // === Result callback ===
+    // === Result callback (replaces VB6 modal ShowForm ByRef pattern) ===
     [Parameter] public EventCallback<SplitItemsResult> OnCompleted { get; set; }
 
     // === Form State ===
+    private string CopiesText { get; set; } = "";
     private int Copies { get; set; } = 0;
-    private bool AllocateDollarAmount { get; set; } = true;
-    private int AllocateOption { get; set; } = 0; // 0 = Equal shares, 1 = Custom percentages
+    private bool AllocateDollarAmount { get; set; } = true;   // VB6: chkAllocate.Value = vbChecked
+    private int AllocateOption { get; set; } = 0;              // 0 = Equal shares, 1 = Custom percentages
     private bool UseUnits { get; set; } = false;
     private long UnitStart { get; set; } = 100;
     private long UnitIncrement { get; set; } = 1;
-    private bool Cancelled { get; set; } = false;
 
-    // Percent values for custom allocation
+    // Percent values for custom allocation (mirrors VB6 gData grid cells)
     private List<double> PercentValues { get; set; } = new();
 
-    // Track previous copies to resize percent array
-    private int _previousCopies = 0;
-
-    protected override void OnInitialized()
+    /// <summary>
+    /// Adapter for NumericTextBoxControl ValueChanged (replaces the old
+    /// txtCopies @bind/@bind:after wiring): stash the typed value as text,
+    /// then run the VB6 txtCopies_Validate normalization.
+    /// </summary>
+    private void OnCopiesValueChanged(int value)
     {
-        RecalculatePercentValues();
+        CopiesText = value.ToString();
+        OnCopiesChanged();
     }
 
-    protected override void OnParametersSet()
+    /// <summary>
+    /// VB6: txtCopies_Validate -- normalizes input and resizes the percent grid.
+    /// </summary>
+    private void OnCopiesChanged()
     {
-        if (Copies != _previousCopies)
-        {
-            RecalculatePercentValues();
-            _previousCopies = Copies;
-        }
+        // VB6: i = Abs(Int(Val(txtCopies.Text)))
+        int parsed = 0;
+        if (double.TryParse(CopiesText, out var raw))
+            parsed = (int)Math.Abs(Math.Floor(raw));
+
+        Copies = parsed;
+        CopiesText = Copies.ToString();
+
+        // VB6: gData.Cols = i  then gData_AfterEdit(0, 0)
+        ResizePercentGrid();
+        RecalculateGrid();
     }
 
+    /// <summary>
+    /// VB6: chkAllocate_Click -- enables/disables radio buttons and grid visibility.
+    /// </summary>
+    private void OnAllocateCheckChanged(bool value)
+    {
+        AllocateDollarAmount = value;
+        // VB6: optAllocate(0).Enabled / optAllocate(1).Enabled driven by AllocateDollarAmount
+        // VB6: gData.Visible = optAllocate(1).value (driven by template @if)
+    }
+
+    /// <summary>
+    /// VB6: optAllocate_Click -- calls chkAllocate_Click then gData_AfterEdit.
+    /// </summary>
     private void OnAllocateOptionChanged(int option)
     {
         AllocateOption = option;
-        RecalculatePercentValues();
+        RecalculateGrid();
     }
 
-    private void RecalculatePercentValues()
+    /// <summary>
+    /// VB6: chkUseUnits_Click -- enables/disables txtStart, txtIncrement, lblStart, lblIncrement.
+    /// </summary>
+    private void OnUseUnitsChanged(bool value)
     {
-        if (Copies <= 0)
-        {
-            PercentValues = new List<double>();
-            return;
-        }
+        UseUnits = value;
+    }
 
-        // Resize the list
+    /// <summary>
+    /// Resize percent list to match Copies count (VB6: gData.Cols = i).
+    /// </summary>
+    private void ResizePercentGrid()
+    {
         while (PercentValues.Count < Copies)
             PercentValues.Add(0);
         while (PercentValues.Count > Copies)
             PercentValues.RemoveAt(PercentValues.Count - 1);
+    }
 
-        if (AllocateOption == 0) // Equal shares
+    /// <summary>
+    /// VB6: gData_AfterEdit -- recalculates grid cells.
+    /// Equal shares: each cell = Int(1/Cols * 100), last = 100 - sum.
+    /// Custom: user values kept, last = 100 - sum.
+    /// </summary>
+    private void RecalculateGrid()
+    {
+        if (Copies <= 0)
         {
-            for (int i = 0; i < Copies - 1; i++)
+            PercentValues.Clear();
+            return;
+        }
+
+        ResizePercentGrid();
+
+        double total = 0;
+        for (int i = 0; i < Copies - 1; i++)
+        {
+            if (AllocateOption == 0) // Equal shares
             {
-                PercentValues[i] = Math.Floor(100.0 / Copies);
+                // VB6: .TextMatrix(0, i) = Int(1 / .Cols * 100)
+                PercentValues[i] = Math.Floor(1.0 / Copies * 100);
             }
-            // Last one gets the remainder
-            double sumOthers = 0;
-            for (int i = 0; i < Copies - 1; i++)
-                sumOthers += PercentValues[i];
-            PercentValues[Copies - 1] = 100 - sumOthers;
+            // Custom: keep user-entered values as-is
+            total += PercentValues[i];
         }
-        else // Custom — just recalculate last column
-        {
-            RecalculateLastPercent();
-        }
+        // VB6: .TextMatrix(0, i) = 100 - t  (last column is remainder)
+        PercentValues[Copies - 1] = 100 - total;
     }
 
-    private void OnPercentChanged(int index, ChangeEventArgs e)
+    /// <summary>
+    /// User edited a custom percent cell (not the last one, which is read-only per gData_BeforeEdit).
+    /// </summary>
+    private void OnPercentChanged(int index, double val)
     {
-        if (double.TryParse(e.Value?.ToString(), out var val))
-        {
-            PercentValues[index] = val;
-        }
-        RecalculateLastPercent();
-    }
-
-    private void RecalculateLastPercent()
-    {
-        if (Copies <= 0) return;
+        PercentValues[index] = val;
+        // Recalculate the last column
         double total = 0;
         for (int i = 0; i < Copies - 1; i++)
             total += PercentValues[i];
         PercentValues[Copies - 1] = 100 - total;
     }
 
+    /// <summary>
+    /// VB6: cmdNav_Click(0) -- OK pressed; mCancel = False, Me.Hide.
+    /// Builds result matching VB6 ShowForm ByRef outputs.
+    /// </summary>
     private async Task OnOkClick()
     {
-        Cancelled = false;
-
         var result = new SplitItemsResult
         {
             Success = true,
@@ -360,16 +243,21 @@
             await OnCompleted.InvokeAsync(result);
     }
 
+    /// <summary>
+    /// VB6: cmdNav_Click(1) -- Cancel pressed; mCancel = True, Me.Hide.
+    /// </summary>
     private async Task OnCancelClick()
     {
-        Cancelled = true;
-
         var result = new SplitItemsResult { Success = false };
 
         if (OnCompleted.HasDelegate)
             await OnCompleted.InvokeAsync(result);
     }
 
+    /// <summary>
+    /// Builds the 1-based Percents array matching VB6 ShowForm output.
+    /// VB6: ReDim Percents(c), Percents(1..c) filled based on chkAllocate / optAllocate / gData.
+    /// </summary>
     private double[] BuildPercents()
     {
         int c = Copies;
@@ -380,19 +268,22 @@
 
         if (!AllocateDollarAmount)
         {
-            // No allocation: first copy gets 100%
+            // VB6: If chkAllocate.value = vbUnchecked Then Percents(1) = 1
             percents[1] = 1.0;
         }
         else if (AllocateOption == 0) // Equal shares
         {
+            // VB6: For i = 1 To c - 1: Percents(i) = 1 / c: Next
             for (int i = 1; i <= c - 1; i++)
             {
                 percents[i] = 1.0 / c;
             }
+            // VB6: Percents(c) = 1 - ((c - 1) / c)
             percents[c] = 1.0 - ((c - 1.0) / c);
         }
         else // Custom percentages
         {
+            // VB6: Percents(i) = gData.ValueMatrix(0, i - 1) / 100
             for (int i = 1; i <= c; i++)
             {
                 percents[i] = PercentValues[i - 1] / 100.0;
@@ -402,13 +293,7 @@
         return percents;
     }
 
-    private void SelectAllOnFocus(string fieldName)
-    {
-        // In Blazor, text selection on focus requires JS interop.
-        // This is a placeholder; implement via JSRuntime if needed.
-    }
-
-    // === Result Model ===
+    // === Result Model (replaces VB6 ShowForm ByRef parameters) ===
     public class SplitItemsResult
     {
         public bool Success { get; set; }
@@ -418,4 +303,3 @@
         public long UnitIncrement { get; set; }
     }
 }
-```

@@ -1,10 +1,15 @@
+@namespace HomeFront.Components.Pages
 @page "/assembly-replicator"
 @rendermode InteractiveServer
 @using HomeFront.Data
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using System.Text
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FAssemblyReplicator> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>Division Replication</PageTitle>
 
@@ -17,7 +22,7 @@
     <div class="replicator-form">
         <div class="replicator-row">
             <label>Source Division</label>
-            <HfDropDownList TValue="int?" TItem="DivisionItem"
+            <DropDownListControl TValue="int?" TItem="DivisionItem"
                             DataSource="@SourceDivisions"
                             TextFieldName="Name"
                             ValueFieldName="Id"
@@ -28,7 +33,7 @@
 
         <div class="replicator-row">
             <label>Source Community</label>
-            <HfDropDownList TValue="string" TItem="CommunityItem"
+            <DropDownListControl TValue="string" TItem="CommunityItem"
                             DataSource="@SourceCommunities"
                             TextFieldName="Name"
                             ValueFieldName="Code"
@@ -39,7 +44,7 @@
 
         <div class="replicator-row">
             <label>Assembly Type</label>
-            <HfDropDownList TValue="int?" TItem="AssemblyTypeItem"
+            <DropDownListControl TValue="int?" TItem="AssemblyTypeItem"
                             DataSource="@AssemblyTypes"
                             TextFieldName="Name"
                             ValueFieldName="Id"
@@ -50,7 +55,7 @@
 
         <div class="replicator-row">
             <label>Destination Community</label>
-            <HfDropDownList TValue="string" TItem="CommunityItem"
+            <DropDownListControl TValue="string" TItem="CommunityItem"
                             DataSource="@DestinationCommunities"
                             TextFieldName="Name"
                             ValueFieldName="Code"
@@ -59,96 +64,72 @@
         </div>
 
         <div class="replicator-row">
-            <HfCheckBox Checked="true" Label="Replicate Item DB" Disabled="true" />
+            <CheckBoxControl Checked="true" Label="Replicate Item DB" Disabled="true" />
         </div>
     </div>
 
     <div class="replicator-grid">
         <div class="replicator-grid-title">Assemblies</div>
-        <HfGrid TValue="AssemblyRow"
+        <GridControl TValue="AssemblyRow"
                 DataSource="@Assemblies"
                 AllowFiltering="true"
                 AllowSorting="true"
                 AllowResizing="true"
                 Height="520px"
                 FilterSettingsRef="@filterSettings">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(AssemblyRow.Selected)" HeaderText="Select" Width="80px" AllowFiltering="false" AllowSorting="false">
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(AssemblyRow.Selected)" HeaderText="Select" Width="80px" AllowFiltering="false" AllowSorting="false">
                     <HeaderTemplate>
-                        <input type="checkbox" checked="@SelectAllAssemblies" @onchange="ToggleSelectAll" />
+                        <CheckBoxControl Checked="@SelectAllAssemblies"
+                                         CheckedChanged="ToggleSelectAll"
+                                         StopClickPropagation="true"
+                                         StopMouseDownPropagation="true" />
                     </HeaderTemplate>
                     <Template>
                         @{
                             var row = (AssemblyRow)context;
                         }
-                        <input type="checkbox" @bind="row.Selected" @bind:after="OnSelectionChanged" />
+                        <CheckBoxControl Checked="@row.Selected"
+                                         CheckedChanged="v => { row.Selected = v; OnSelectionChanged(); }"
+                                         StopClickPropagation="true"
+                                         StopMouseDownPropagation="true" />
                     </Template>
-                </HfGridColumn>
-                <HfGridColumn Field="@nameof(AssemblyRow.Community)" HeaderText="Community" Width="140px" />
-                <HfGridColumn Field="@nameof(AssemblyRow.Model)" HeaderText="Model" Width="140px" />
-                <HfGridColumn Field="@nameof(AssemblyRow.OptionID)" HeaderText="Option" Width="120px" />
-                <HfGridColumn Field="@nameof(AssemblyRow.Assembly)" HeaderText="Assembly" Width="160px" />
-                <HfGridColumn Field="@nameof(AssemblyRow.Description)" HeaderText="Description" Width="320px" />
-                <HfGridColumn Field="@nameof(AssemblyRow.AssemblyID)" HeaderText="AssemblyID" Visible="false" AllowEditing="false" />
-            </HfGridColumnsBase>
-        </HfGrid>
+                </GridColumn>
+                <GridColumn Field="@nameof(AssemblyRow.Community)" HeaderText="Community" Width="140px" />
+                <GridColumn Field="@nameof(AssemblyRow.Model)" HeaderText="Model" Width="140px" />
+                <GridColumn Field="@nameof(AssemblyRow.OptionID)" HeaderText="Option" Width="120px" />
+                <GridColumn Field="@nameof(AssemblyRow.Assembly)" HeaderText="Assembly" Width="160px" />
+                <GridColumn Field="@nameof(AssemblyRow.Description)" HeaderText="Description" Width="320px" />
+                <GridColumn Field="@nameof(AssemblyRow.AssemblyID)" HeaderText="AssemblyID" Visible="false" AllowEditing="false" />
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
     <div class="replicator-actions">
-        <HfButton CssClass="hf-button-primary" OnClick="HandleOk">OK</HfButton>
-        <HfButton CssClass="hf-button-secondary" OnClick="HandleClose">Close</HfButton>
+        <ButtonControl CssClass="fx-button-primary" OnClick="HandleOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-button-secondary" OnClick="HandleClose">Close</ButtonControl>
     </div>
 </div>
 
-<style>
-    .replicator-container {
-        max-width: 1200px;
-        margin: 20px auto;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .replicator-header h2 {
-        margin: 0 0 6px 0;
-    }
-
-    .replicator-form {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 12px 24px;
-        align-items: center;
-    }
-
-    .replicator-row {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        font-size: 14px;
-    }
-
-    .replicator-grid-title {
-        font-weight: 600;
-        margin-bottom: 6px;
-    }
-
-    .replicator-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 12px;
-    }
-</style>
-
 @code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
     private const int atGlobal = 1;
     private const int atDesignCenter = 3;
 
     [Parameter] public int DivisionId { get; set; } = 1;
     [Parameter] public EventCallback CloseRequested { get; set; }
-
-    private readonly DbWrapperSqlServer db = new();
-    private readonly HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+private readonly FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
 
     private List<DivisionItem> SourceDivisions { get; set; } = new();
     private List<CommunityItem> SourceCommunities { get; set; } = new();
@@ -326,13 +307,12 @@
         }
         else
         {
-            NavigationManager.NavigateTo("/");
+            ClosePage();
         }
     }
 
-    private void ToggleSelectAll(ChangeEventArgs e)
+    private void ToggleSelectAll(bool isChecked)
     {
-        var isChecked = e.Value is bool b && b;
         SelectAllAssemblies = isChecked;
 
         foreach (var row in Assemblies)
@@ -456,7 +436,7 @@ insert tblDBAssemblyDetails(DivisionID, Community, AssemblyID, Assembly, OptionI
 select {DivisionId} DivisionID, {dstCommunitySql} Community, dstM.AssemblyID, src.Assembly, src.OptionID, src.Sequence, src.Phase, src.Item, src.Vendor, src.Quantity, src.Rate, src.Cost, src.Notes, src.UStmp, src.TStmp, src.TakeoffQty, src.OrderQty, src.Model, src.Formula, src.ItemChart, src.Location, src.WBS01, src.WBS02, src.WBS03, src.WBS04, src.WBS05, src.WBS06, src.WBS07, src.WBS08, src.WBS09, src.WBS10, src.WBS11, src.WBS12, src.WBS13, src.WBS14, src.WBS15, src.WBS16, src.WBS17, src.WBS18, src.WBS19,
        src.WBS20, src.WBS21, src.WBS22, src.WBS23, src.WBS24, src.WBS25, src.WBS26, src.WBS27, src.WBS28, src.WBS29, src.WBS30, src.WBS31, src.WBS32, src.WBS33, src.WBS34, src.WBS35, src.WBS36, src.WBS37, src.WBS38, src.WBS39, src.WBS40, src.POIndex, src.UseModelCost, src.ConversionFactor, src.Invertable
 from tblDBAssemblyDetails src
-join tblDBAssemblyMaster dstM on src.AssemblyID=dstM.SourceAssemblyID
+join tblDBAssemblyMaster dstM on src.AssemblyID=dstM.SourceAssemblyID and dstM.Divisionid={DivisionId} and dstM.community={dstCommunitySql} and dstM.Assembly=src.Assembly and dstM.model=Src.Model and dstM.OptionID=src.OptionID
 left join tblDBAssemblyDetails dst on dst.Divisionid={DivisionId} and dst.community={dstCommunitySql} and dst.Assembly=src.Assembly and dst.model=Src.Model and dst.OptionID=src.OptionID and dst.SourceSeq=src.Sequence
 where dst.divisionid is null
 and src.assemblyid in({allIds})
@@ -475,7 +455,7 @@ and dstX.ParentAssemblyID is null";
 
     private async Task ShowMessageAsync(string message)
     {
-        await JSRuntime.InvokeVoidAsync("alert", message);
+        Notifications.Info(message);
     }
 
     private static string SqlQuote(string value)

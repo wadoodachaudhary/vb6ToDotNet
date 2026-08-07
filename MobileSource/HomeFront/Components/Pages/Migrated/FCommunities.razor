@@ -5,6 +5,7 @@
    Changes     :
      - Initial port from VB6
    ───────────────────────────────────────────────────────────────── *@
+@namespace HomeFront.Components.Pages
 @page "/communities"
 @using HomeFront.Data
 @using Fx.ControlKit
@@ -100,7 +101,8 @@
                             FilterSettingsRef="@filterSettings"
                             SelectionSettingsRef="@selectionSettings"
                             EditSettingsRef="@communitiesEditSettings"
-                            EventsRef="@communitiesEvents">
+                            EventsRef="@communitiesEvents"
+                            OnLayoutChanged="@OnGridLayoutChangedAsync">
                         <GridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunities-gData">
                             <GridColumn Field="@nameof(CommunityRow.OriginalArea)" HeaderText="OriginalArea" Visible="false" AllowEditing="false" IsPrimaryKey="true" />
 
@@ -222,18 +224,18 @@
         <div class="form-section">
             <div class="field-row">
                 <label class="field-label">Company Name</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoCompanyName" AutoFocus="true" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoCompanyName" AutoFocus="true" MaxLength="@ColLen("CompanyName")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Address</label>
                 <div class="field-input">
-                    <TextBoxControl @bind-Value="CoAddress" Multiline="true" Rows="2" MaxLength="102" />
+                    <TextBoxControl @bind-Value="CoAddress" Multiline="true" Rows="2" MaxLength="@AddressLen" />
                 </div>
             </div>
             <div class="field-row">
                 <label class="field-label">City/Prov</label>
                 <div class="field-input field-input-split">
-                    <TextBoxControl @bind-Value="CoCity" MaxLength="50" />
+                    <TextBoxControl @bind-Value="CoCity" MaxLength="@ColLen("City")" />
                     <DropDownListControl TValue="string" TItem="string"
                                     @bind-Value="CoProvince" DataSource="@CompanyProvinces"
                                     AllowFiltering="true" Width="60px" />
@@ -241,7 +243,7 @@
             </div>
             <div class="field-row">
                 <label class="field-label">Postal Code</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoPostal" MaxLength="7" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoPostal" MaxLength="@ColLen("Zip")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Country</label>
@@ -254,23 +256,23 @@
             </div>
             <div class="field-row">
                 <label class="field-label">County</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoCounty" MaxLength="50" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoCounty" MaxLength="@ColLen("County")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Email</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoEmail" MaxLength="50" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoEmail" MaxLength="@ColLen("Email")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Phone</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoPhone" MaxLength="30" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoPhone" MaxLength="@ColLen("Phone")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Fax</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoFax" MaxLength="30" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoFax" MaxLength="@ColLen("FAX")" /></div>
             </div>
             <div class="field-row">
                 <label class="field-label">Tax Number</label>
-                <div class="field-input"><TextBoxControl @bind-Value="CoTaxNumber" MaxLength="20" /></div>
+                <div class="field-input"><TextBoxControl @bind-Value="CoTaxNumber" MaxLength="@ColLen("GSTNumber")" /></div>
             </div>
         </div>
     </ChildContent>
@@ -654,6 +656,7 @@ private GridControl<CommunityRow>? gData;
         // selected in the edited column — fan the value across the selection.
         communitiesEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<CommunityRow>>(this, OnCommunityTypeAheadCommit);
         communitiesEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<CommunityRow>>(this, OnGridEditButtonClick);
+        await LoadColumnLengthsAsync();
         await LoadAccountingOptions();
         await LoadScheduleTemplates();
         await LoadD365Functions();
@@ -812,6 +815,27 @@ private GridControl<CommunityRow>? gData;
         await _grid.LoadAsync(GridLayoutSvc);
     }
 
+    // Column resize / reorder / hide / group / header-rename done by the user is
+    // merged back into the loaded layout and written through to AppGridLayout.
+    private async Task OnGridLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || GridLayout.Count == 0) return;
+
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, FormName, GridName, instanceKey: null,
+                GridLayout, snapshot, layoutFieldResolver: ResolveGridField);
+
+            _grid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FCommunities {Grid} layout", GridName);
+        }
+    }
+
     private IEnumerable<(GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
         => _grid.GetOrdered().Select(e => (e.Layout, e.Field));
 
@@ -859,6 +883,21 @@ private GridControl<CommunityRow>? gData;
     {
         ["Area"] = 10, ["Description"] = 50, ["WarrantyJob"] = 12
     };
+
+    // Grid field -> Communities column where the two names differ.
+    private static readonly Dictionary<string, string> _gridFieldColumn = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Postal"] = "Zip", ["TaxNumber"] = "GSTNumber", ["Fax"] = "FAX",
+        ["Company"] = "CompanyName", ["WarrantyJob"] = "WarrantyJob"
+    };
+
+    // VB6 EditMaxLength wins where legacy set one; otherwise the column's real width.
+    private int? GridMaxLength(string field)
+    {
+        if (_maxLengths.TryGetValue(field, out var vb6)) return vb6;
+        var col = _gridFieldColumn.TryGetValue(field, out var mapped) ? mapped : field;
+        return ColLen(col);
+    }
 
     // Default columns that are hidden unless IniGetGrid reveals them
     private static readonly HashSet<string> _defaultHiddenFields = new(StringComparer.OrdinalIgnoreCase)
@@ -1005,8 +1044,7 @@ private GridControl<CommunityRow>? gData;
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
             builder.AddAttribute(5, "AllowEditing", true);
-            // HHM-508: VB6 EditMaxLength per column (Area 10, Description 50).
-            if (_maxLengths.TryGetValue(fieldName, out var ml))
+            if (GridMaxLength(fieldName) is int ml)
                 builder.AddAttribute(6, "MaxLength", ml);
             builder.CloseComponent();
         }
@@ -1018,8 +1056,7 @@ private GridControl<CommunityRow>? gData;
             builder.AddAttribute(3, "Width", width);
             builder.AddAttribute(4, "Visible", visible);
             builder.AddAttribute(5, "AllowEditing", true);
-            // HHM-508: VB6 EditMaxLength per column.
-            if (_maxLengths.TryGetValue(fieldName, out var ml))
+            if (GridMaxLength(fieldName) is int ml)
                 builder.AddAttribute(6, "MaxLength", ml);
             builder.CloseComponent();
         }
@@ -1876,6 +1913,42 @@ private GridControl<CommunityRow>? gData;
     private string CoTaxNumber = "";
     private List<string> CompanyCountries = new();
     private List<string> CompanyProvinces = new();
+
+    // ── Field caps come from the database, never hardcoded ────────────
+    // Over-allowing a field is what produces "String or binary data would be
+    // truncated" on save, so every capped input reads its column's real width.
+    private readonly Dictionary<string, int> _colLen = new(StringComparer.OrdinalIgnoreCase);
+
+    private async Task LoadColumnLengthsAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                @"SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH
+                  FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_NAME = @TableName AND CHARACTER_MAXIMUM_LENGTH > 0",
+                new { TableName = "Communities" });
+
+            foreach (var r in rows)
+            {
+                var col = r.TryGetValue("COLUMN_NAME", out var c) ? c?.ToString() ?? "" : "";
+                if (string.IsNullOrEmpty(col)) continue;
+                if (!r.TryGetValue("CHARACTER_MAXIMUM_LENGTH", out var raw) || raw == null || raw == DBNull.Value) continue;
+                if (int.TryParse(raw.ToString(), out var len) && len > 0) _colLen[col] = len;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadColumnLengths");
+        }
+    }
+
+    private int? ColLen(string column) => _colLen.TryGetValue(column, out var n) ? n : null;
+
+    // The address box holds Address1 and Address2 on separate lines; the cap is
+    // both columns plus the newline that splits them on save.
+    private int? AddressLen =>
+        ColLen("Address1") is int a && ColLen("Address2") is int b ? a + 1 + b : null;
 
     // VB6 FCompany.ShowForm: load the 11 fields from the grid row. Address is the
     // two address lines joined with a newline (split back on save).

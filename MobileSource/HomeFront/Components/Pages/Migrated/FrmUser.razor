@@ -1,100 +1,29 @@
 @page "/user-management"
+@namespace HomeFront.Components.Pages
 @rendermode InteractiveServer
 
 @using System.Data
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
+@using Microsoft.AspNetCore.Components.Authorization
+@using HomeFront.Auth.Cognito
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FrmUser> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+@inject HomeFront.Auth.Cognito.ICognitoAuthService CognitoAuth
 
 <PageTitle>HomeFront - User Management</PageTitle>
 
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 16px;
-    }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        transition: background 0.15s;
-        min-width: 60px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
-    .tool-label { font-size: 11px; }
-
-    .tab-buttons { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 0; }
-    .tab-buttons button {
-        padding: 10px 24px; border: none; background: #f0f0f0;
-        cursor: pointer; font-size: 14px; transition: background 0.2s;
-    }
-    .tab-buttons button:hover { background: #e0e0e0; }
-    .tab-buttons button.active {
-        background: #fff; border-bottom: 2px solid #0d6efd;
-        margin-bottom: -2px; color: #0d6efd; font-weight: bold;
-    }
-    .tab-content {
-        padding: 16px; border: 1px solid #ddd; border-top: none; background: #fff;
-    }
-
-    .form-section {
-        border: 1px solid #dee2e6; border-radius: 6px; padding: 16px;
-        background: #fff; margin-bottom: 16px;
-    }
-    .form-row { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
-    .form-row label { min-width: 140px; text-align: right; font-weight: 500; font-size: 13px; }
-    .form-row input, .form-row select {
-        flex: 1; max-width: 300px; padding: 5px 10px;
-        border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-    }
-    .form-row input:focus, .form-row select:focus {
-        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
-    }
-
-    .user-type-section { margin-top: 12px; }
-    .user-type-section label { font-size: 13px; margin-right: 16px; cursor: pointer; }
-    .user-type-section input[type="radio"] { margin-right: 4px; }
-
-    .permissions-frame {
-        border: 1px solid #dee2e6; border-radius: 4px; padding: 12px;
-        background: #fafafa; margin-bottom: 12px;
-    }
-    .permissions-frame h6 { margin-bottom: 10px; font-weight: 600; color: #495057; }
-    .check-grid {
-        display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 16px;
-    }
-    .check-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-    .check-item input[type="checkbox"] { width: 15px; height: 15px; }
-
-    .sub-tab-buttons { display: flex; border-bottom: 1px solid #ccc; margin-bottom: 12px; }
-    .sub-tab-buttons button {
-        padding: 6px 16px; border: none; background: #eee;
-        cursor: pointer; font-size: 12px; transition: background 0.15s;
-    }
-    .sub-tab-buttons button:hover { background: #ddd; }
-    .sub-tab-buttons button.active {
-        background: #fff; border-bottom: 2px solid #0d6efd;
-        margin-bottom: -1px; color: #0d6efd; font-weight: 600;
-    }
-</style>
-
 <h3 style="margin-bottom: 16px;">HomeFront - User Management</h3>
+
+@if (_isLoading)
+{
+    <div class="loading-overlay">⏳ Loading...</div>
+}
 
 @* ── TOOLBAR ─────────────────────────────────────────── *@
 <div class="toolbar-cntr">
@@ -137,6 +66,7 @@
 <div class="tab-buttons">
     <button class="@(MainTab == 0 ? "active" : "")" @onclick="() => MainTab = 0">General Information</button>
     <button class="@(MainTab == 1 ? "active" : "")" @onclick="() => MainTab = 1">Permissions / Privileges</button>
+    <button class="@(MainTab == 2 ? "active" : "")" @onclick="() => MainTab = 2">Cognito Information</button>
 </div>
 
 <div class="tab-content">
@@ -236,8 +166,8 @@
             <div class="permissions-frame">
                 <h6>File Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Open Database" @bind-Value="Check1_FileOpenData" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Database Utilities" @bind-Value="Check1_FileDataUtil" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Open Database" @bind-Value="Check1_FileOpenData" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Database Utilities" @bind-Value="Check1_FileDataUtil" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -246,32 +176,32 @@
             <div class="permissions-frame">
                 <h6>Tasks Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Enter Deposits" @bind-Value="Check1_TaskEntDep" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Enter Mortgage" @bind-Value="Check1_TaskEntMort" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Deposits" @bind-Value="Check1_TaskPostDep" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Mortgage" @bind-Value="Check1_TaskPostMort" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Process Lot Inventory" @bind-Value="Check1_TaskProcessLot" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="View/Update Lot Inventory" @bind-Value="Check1_TaskUpdLot" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Lot Inventory" @bind-Value="Check1_TaskPostLot" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Process Sales Closing" @bind-Value="Check1_TaskProcessSales" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Process Commission" @bind-Value="Check1_TaskProcessComm" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="View/Update Unposted Commission" @bind-Value="Check1_TaskUpdComm" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Commission" @bind-Value="Check1_TaskPostComm" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="View/Update Unposted Adjustments" @bind-Value="Check1_TaskUpdAdj" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Adjustments" @bind-Value="Check1_TaskPostAdj" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Create Job Quotes" @bind-Value="Check1_TaskEntQuote" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Update Totals to Job Cost" @bind-Value="Check1_TaskUpdTotalJobCost" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Update Address Info to Job Cost" @bind-Value="Check1_TaskUpdAddrJobCost" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Update Date Info to Timberline" @bind-Value="Check1_TaskUpdDatesTL" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Import Timberline Custom Fields" @bind-Value="Check1_TaskImportTLCustom" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Synchronize Customer Date List" @bind-Value="Check1_TaskSyncDate" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Synchronize Color Selection Items" @bind-Value="Check1_TaskSyncGroup" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Enter Deposits" @bind-Value="Check1_TaskEntDep" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Enter Mortgage" @bind-Value="Check1_TaskEntMort" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Deposits" @bind-Value="Check1_TaskPostDep" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Mortgage" @bind-Value="Check1_TaskPostMort" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Process Lot Inventory" @bind-Value="Check1_TaskProcessLot" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="View/Update Lot Inventory" @bind-Value="Check1_TaskUpdLot" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Lot Inventory" @bind-Value="Check1_TaskPostLot" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Process Sales Closing" @bind-Value="Check1_TaskProcessSales" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Process Commission" @bind-Value="Check1_TaskProcessComm" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="View/Update Unposted Commission" @bind-Value="Check1_TaskUpdComm" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Commission" @bind-Value="Check1_TaskPostComm" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="View/Update Unposted Adjustments" @bind-Value="Check1_TaskUpdAdj" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Adjustments" @bind-Value="Check1_TaskPostAdj" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Create Job Quotes" @bind-Value="Check1_TaskEntQuote" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Update Totals to Job Cost" @bind-Value="Check1_TaskUpdTotalJobCost" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Update Address Info to Job Cost" @bind-Value="Check1_TaskUpdAddrJobCost" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Update Date Info to Timberline" @bind-Value="Check1_TaskUpdDatesTL" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Import Timberline Custom Fields" @bind-Value="Check1_TaskImportTLCustom" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Synchronize Customer Date List" @bind-Value="Check1_TaskSyncDate" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Synchronize Color Selection Items" @bind-Value="Check1_TaskSyncGroup" OnChanged="OnCheckChanged" />
                 </div>
                 <h6 style="margin-top:12px;">Project Builder Settings</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Allow User to Create Schedules?" @bind-Value="Check0_CreateSchedule" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Allow User to Modify Actual End Dates?" @bind-Value="Check0_EditActualEndDate" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Allow Users to View all Schedules" @bind-Value="Check0_ViewAllSchedules" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Allow User to Create Schedules?" @bind-Value="Check0_CreateSchedule" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Allow User to Modify Actual End Dates?" @bind-Value="Check0_EditActualEndDate" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Allow Users to View all Schedules" @bind-Value="Check0_ViewAllSchedules" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -280,29 +210,29 @@
             <div class="permissions-frame">
                 <h6>Setup Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Customer Information" @bind-Value="Check1_SetupCustomer" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Community" @bind-Value="Check1_SetupCommunity" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Model" @bind-Value="Check1_SetupModel" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Series" @bind-Value="Check1_SetupSeries" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Major Groups" @bind-Value="Check1_SetupMajorGroup" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Category" @bind-Value="Check1_SetupCategory" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Model Specific Option" @bind-Value="Check1_SetupModelOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Global Option" @bind-Value="Check1_SetupGlobalOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Design Center Area" @bind-Value="Check1_SetupDCArea" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Design Center Option" @bind-Value="Check1_SetupDCOption" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Jobs" @bind-Value="Check1_SetupJobs" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Construction Cut Off" @bind-Value="Check1_SetupConstStatus" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Project Managers" @bind-Value="Check1_SetupProjectManager" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Sales Persons" @bind-Value="Check1_SetupSalesperson" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Customer Service Person" @bind-Value="Check1_SetupCustSrvPerson" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Law Firms" @bind-Value="Check1_SetupLawFirms" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Lending Companies" @bind-Value="Check1_SetupLendingCompany" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Developers" @bind-Value="Check1_SetupDevelopers" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Lot Inventory" @bind-Value="Check1_SetupLotInventory" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="TL Date List" @bind-Value="Check1_SetupTLDateList" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Group Template/Color Sheet" @bind-Value="Check1_SetupGroupTemplate" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Milestone" @bind-Value="Check1_MileStoneMenu" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Parking Stall" @bind-Value="Check1_ParkingStallMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Customer Information" @bind-Value="Check1_SetupCustomer" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Community" @bind-Value="Check1_SetupCommunity" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Model" @bind-Value="Check1_SetupModel" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Series" @bind-Value="Check1_SetupSeries" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Major Groups" @bind-Value="Check1_SetupMajorGroup" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Category" @bind-Value="Check1_SetupCategory" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Model Specific Option" @bind-Value="Check1_SetupModelOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Global Option" @bind-Value="Check1_SetupGlobalOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Design Center Area" @bind-Value="Check1_SetupDCArea" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Design Center Option" @bind-Value="Check1_SetupDCOption" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Jobs" @bind-Value="Check1_SetupJobs" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Construction Cut Off" @bind-Value="Check1_SetupConstStatus" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Project Managers" @bind-Value="Check1_SetupProjectManager" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Sales Persons" @bind-Value="Check1_SetupSalesperson" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Customer Service Person" @bind-Value="Check1_SetupCustSrvPerson" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Law Firms" @bind-Value="Check1_SetupLawFirms" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Lending Companies" @bind-Value="Check1_SetupLendingCompany" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Developers" @bind-Value="Check1_SetupDevelopers" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Lot Inventory" @bind-Value="Check1_SetupLotInventory" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="TL Date List" @bind-Value="Check1_SetupTLDateList" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Group Template/Color Sheet" @bind-Value="Check1_SetupGroupTemplate" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Milestone" @bind-Value="Check1_MileStoneMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Parking Stall" @bind-Value="Check1_ParkingStallMenu" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -311,14 +241,14 @@
             <div class="permissions-frame">
                 <h6>Inquiry Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Model/Options" @bind-Value="Check1_InqModelOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Global Options" @bind-Value="Check1_InqGlobalOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Design Center Options" @bind-Value="Check1_InqDCOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="New Deposits" @bind-Value="Check1_InqNewDeposits" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Posted Deposits" @bind-Value="Check1_InqPostDeposits" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="New Mortgage Advance" @bind-Value="Check1_InqNewMortgage" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Posted Mortgage Advance" @bind-Value="Check1_InqPostMortgage" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Locked Customer" @bind-Value="Check1_InqLockedCustomer" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Model/Options" @bind-Value="Check1_InqModelOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Global Options" @bind-Value="Check1_InqGlobalOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Design Center Options" @bind-Value="Check1_InqDCOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="New Deposits" @bind-Value="Check1_InqNewDeposits" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Posted Deposits" @bind-Value="Check1_InqPostDeposits" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="New Mortgage Advance" @bind-Value="Check1_InqNewMortgage" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Posted Mortgage Advance" @bind-Value="Check1_InqPostMortgage" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Locked Customer" @bind-Value="Check1_InqLockedCustomer" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -327,7 +257,7 @@
             <div class="permissions-frame">
                 <h6>Reports Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Report Manager" @bind-Value="Check1_ReportsRepMan" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Report Manager" @bind-Value="Check1_ReportsRepMan" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -336,18 +266,18 @@
             <div class="permissions-frame">
                 <h6>Tools Menu Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="User Administration" @bind-Value="Check1_ToolsUsrAdmin" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Customer Maintenance" @bind-Value="Check1_ToolsCustMaintain" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Administration and Maintenance" @bind-Value="Check1_ToolsAdminMaintain" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Customer's Report Package" @bind-Value="Check1_ToolsCustRepPackage" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="System Settings" @bind-Value="Check1_ToolsSystemSetup" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Commission Settings" @bind-Value="Check1_ToolsCommSettings" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Lot Status" @bind-Value="Check1_ToolsLotStatus" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Field Validation" @bind-Value="Check1_ToolsFieldVal" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="GST/PST Rebate Settings" @bind-Value="Check1_ToolsGSTPSTRebate" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Custom Descriptions" @bind-Value="Check1_ToolsCustDesc" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Timberline Field Descriptions" @bind-Value="Check1_ToolsTLFieldDesc" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Work In Progress Descriptions" @bind-Value="Check1_ToolsWorkInProgress" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="User Administration" @bind-Value="Check1_ToolsUsrAdmin" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Customer Maintenance" @bind-Value="Check1_ToolsCustMaintain" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Administration and Maintenance" @bind-Value="Check1_ToolsAdminMaintain" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Customer's Report Package" @bind-Value="Check1_ToolsCustRepPackage" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="System Settings" @bind-Value="Check1_ToolsSystemSetup" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Commission Settings" @bind-Value="Check1_ToolsCommSettings" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Lot Status" @bind-Value="Check1_ToolsLotStatus" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Field Validation" @bind-Value="Check1_ToolsFieldVal" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="GST/PST Rebate Settings" @bind-Value="Check1_ToolsGSTPSTRebate" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Custom Descriptions" @bind-Value="Check1_ToolsCustDesc" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Timberline Field Descriptions" @bind-Value="Check1_ToolsTLFieldDesc" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Work In Progress Descriptions" @bind-Value="Check1_ToolsWorkInProgress" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -356,11 +286,11 @@
             <div class="permissions-frame">
                 <h6>Main Menu Bar Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Tasks Menu" @bind-Value="Check1_TasksMenu" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Setup Menu" @bind-Value="Check1_SetupMenu" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Reports Menu" @bind-Value="Check1_ReportsMenu" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Inquiry Menu" @bind-Value="Check1_InquiryMenu" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Tools Menu" @bind-Value="Check1_ToolsMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Tasks Menu" @bind-Value="Check1_TasksMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Setup Menu" @bind-Value="Check1_SetupMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Reports Menu" @bind-Value="Check1_ReportsMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Inquiry Menu" @bind-Value="Check1_InquiryMenu" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Tools Menu" @bind-Value="Check1_ToolsMenu" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -378,38 +308,38 @@
                 <div class="permissions-frame">
                     <h6>General Permissions 1</h6>
                     <div class="check-grid">
-                        <CheckItem Label="Show Change Order?" @bind-Value="Check0_ShowCO" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Design Center?" @bind-Value="Check0_ShowDC" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Spec/Show Home?" @bind-Value="Check0_UpdSpecShow" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update to TL?" @bind-Value="Check0_UpdToTL" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update from TL?" @bind-Value="Check0_UpdFromTL" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Interior Color Info?" @bind-Value="Check0_UPDCustomerGroups" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Delete Customer?" @bind-Value="Check0_DeleteCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Create New Customer?" @bind-Value="Check0_CreateNewCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Addition of Addendums?" @bind-Value="Check0_AddAddendum" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Addition of Change Orders?" @bind-Value="Check0_AddCO" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Change Grid Layout?" @bind-Value="Check0_ChangeGridLayout" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Addition of Customer Dates?" @bind-Value="Check0_AddCustomerDates" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Addition of Design Center?" @bind-Value="Check0_AddDC" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="BarCode Entry?" @bind-Value="Check0_BarcodeEntry" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Contract Summary?" @bind-Value="Check0_UpdContractSummary" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Create Jobs?" @bind-Value="Check0_CreateJob" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Approve Customer on CO?" @bind-Value="Check0_ApproveCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Purchase?" @bind-Value="Check0_PurchaseCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Deleted Items?" @bind-Value="Check0_UpdDeletedItems" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Builder Approve?" @bind-Value="Check0_BldrApproveCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update TL Job" @bind-Value="Check0_UPDTLJob" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Customer Dates" @bind-Value="Check0_UPDCustomerDates" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Addendum" @bind-Value="Check0_UPDAddendum" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Change Order" @bind-Value="Check0_UPDCO" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Design Center" @bind-Value="Check0_UPDDC" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Customer" @bind-Value="Check0_UPDCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Change Dates" @bind-Value="Check0_ChangeDate" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Copy Customer?" @bind-Value="Check0_CopyCustomer" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Sales Override?" @bind-Value="Check0_SalesOverride" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Custom Pricing?" @bind-Value="Check0_CustomPricing" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Add CO to Locked Change Orders" @bind-Value="Check0_AllowAddCO_LOCKCO" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Deletion of Change Orders?" @bind-Value="Check0_AllowDelCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Change Order?" @bind-Value="Check0_ShowCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Design Center?" @bind-Value="Check0_ShowDC" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Spec/Show Home?" @bind-Value="Check0_UpdSpecShow" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update to TL?" @bind-Value="Check0_UpdToTL" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update from TL?" @bind-Value="Check0_UpdFromTL" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Interior Color Info?" @bind-Value="Check0_UPDCustomerGroups" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Delete Customer?" @bind-Value="Check0_DeleteCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Create New Customer?" @bind-Value="Check0_CreateNewCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Addition of Addendums?" @bind-Value="Check0_AddAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Addition of Change Orders?" @bind-Value="Check0_AddCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Change Grid Layout?" @bind-Value="Check0_ChangeGridLayout" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Addition of Customer Dates?" @bind-Value="Check0_AddCustomerDates" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Addition of Design Center?" @bind-Value="Check0_AddDC" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="BarCode Entry?" @bind-Value="Check0_BarcodeEntry" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Contract Summary?" @bind-Value="Check0_UpdContractSummary" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Create Jobs?" @bind-Value="Check0_CreateJob" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Approve Customer on CO?" @bind-Value="Check0_ApproveCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Purchase?" @bind-Value="Check0_PurchaseCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Deleted Items?" @bind-Value="Check0_UpdDeletedItems" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Builder Approve?" @bind-Value="Check0_BldrApproveCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update TL Job" @bind-Value="Check0_UPDTLJob" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Customer Dates" @bind-Value="Check0_UPDCustomerDates" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Addendum" @bind-Value="Check0_UPDAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Change Order" @bind-Value="Check0_UPDCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Design Center" @bind-Value="Check0_UPDDC" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Customer" @bind-Value="Check0_UPDCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Change Dates" @bind-Value="Check0_ChangeDate" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Copy Customer?" @bind-Value="Check0_CopyCustomer" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Sales Override?" @bind-Value="Check0_SalesOverride" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Custom Pricing?" @bind-Value="Check0_CustomPricing" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Add CO to Locked Change Orders" @bind-Value="Check0_AllowAddCO_LOCKCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Deletion of Change Orders?" @bind-Value="Check0_AllowDelCO" OnChanged="OnCheckChanged" />
                     </div>
                 </div>
             }
@@ -418,16 +348,16 @@
                 <div class="permissions-frame">
                     <h6>General Permissions 2</h6>
                     <div class="check-grid">
-                        <CheckItem Label="Access to All Menu Items when Customer form is open?" @bind-Value="Check0_AccessMenu" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Cost Information?" @bind-Value="Check0_UpdateCostInfo" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Update Construction Status?" @bind-Value="Check0_UpdateConstStatus" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Un Approve Change Order?" @bind-Value="Check0_UnApproveCO" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Uncheck Purchased on Customers?" @bind-Value="Check0_UnPurchase" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Sales Managers Default Pick List View is Pending Customers?" @bind-Value="Check0_PendingCustomerPick" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Modify Custom Option Comments after Quote Complete?" @bind-Value="Check0_ModifyCustom" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Prompt for Change Order Approval?" @bind-Value="Check0_PromptforCOApproval" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Reverse Top Tab Order for Dates and Contract Details?" @bind-Value="Check0_ReverseCustDateTab" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Allow Edits to Quote Complete Custom Options?" @bind-Value="Check0_EditCompletedCustom" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Access to All Menu Items when Customer form is open?" @bind-Value="Check0_AccessMenu" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Cost Information?" @bind-Value="Check0_UpdateCostInfo" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Update Construction Status?" @bind-Value="Check0_UpdateConstStatus" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Un Approve Change Order?" @bind-Value="Check0_UnApproveCO" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Uncheck Purchased on Customers?" @bind-Value="Check0_UnPurchase" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Sales Managers Default Pick List View is Pending Customers?" @bind-Value="Check0_PendingCustomerPick" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Modify Custom Option Comments after Quote Complete?" @bind-Value="Check0_ModifyCustom" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Prompt for Change Order Approval?" @bind-Value="Check0_PromptforCOApproval" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Reverse Top Tab Order for Dates and Contract Details?" @bind-Value="Check0_ReverseCustDateTab" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Allow Edits to Quote Complete Custom Options?" @bind-Value="Check0_EditCompletedCustom" OnChanged="OnCheckChanged" />
                     </div>
                 </div>
             }
@@ -436,17 +366,17 @@
                 <div class="permissions-frame">
                     <h6>Customer Info Tabs</h6>
                     <div class="check-grid">
-                        <CheckItem Label="Show Buyer Info?" @bind-Value="Check0_ShowBuyerInfo" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Home Info?" @bind-Value="Check0_ShowHomeInfo" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Selections?" @bind-Value="Check0_ShowSelections" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Dates?" @bind-Value="Check0_ShowDates" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Addendums?" @bind-Value="Check0_ShowAddendum" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Change Order?" @bind-Value="Check0_ShowChangeOrder" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Design Center?" @bind-Value="Check0_ShowDesignCenter" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Contract Summary?" @bind-Value="Check0_ShowContractSummary" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Accounting Info?" @bind-Value="Check0_ShowAccountingInfo" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Show Deleted Items?" @bind-Value="Check0_ShowDeletedItems" OnChanged="OnCheckChanged" />
-                        <CheckItem Label="Lot Premiums?" @bind-Value="Check0_ShowLotPremium" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Buyer Info?" @bind-Value="Check0_ShowBuyerInfo" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Home Info?" @bind-Value="Check0_ShowHomeInfo" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Selections?" @bind-Value="Check0_ShowSelections" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Dates?" @bind-Value="Check0_ShowDates" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Addendums?" @bind-Value="Check0_ShowAddendum" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Change Order?" @bind-Value="Check0_ShowChangeOrder" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Design Center?" @bind-Value="Check0_ShowDesignCenter" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Contract Summary?" @bind-Value="Check0_ShowContractSummary" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Accounting Info?" @bind-Value="Check0_ShowAccountingInfo" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Show Deleted Items?" @bind-Value="Check0_ShowDeletedItems" OnChanged="OnCheckChanged" />
+                        <CheckItemControl Label="Lot Premiums?" @bind-Value="Check0_ShowLotPremium" OnChanged="OnCheckChanged" />
                     </div>
                 </div>
             }
@@ -456,25 +386,25 @@
             <div class="permissions-frame">
                 <h6>Precision Builder Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Access to Precision Builder?" @bind-Value="Check0_OpenEstimating" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Access Marketing Worksheets?" @bind-Value="Check0_OpenMarketingWorksheets" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Access Estimating Worksheets?" @bind-Value="Check0_OpenEstimatingWorksheets" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Publish Worksheets?" @bind-Value="Check0_PublishWorksheets" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Synchronize from Timberline?" @bind-Value="Check0_PostToTimberline" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post Budgets to Accounting?" @bind-Value="Check0_PostBudgets" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Post POs to Accounting?" @bind-Value="Check0_PostCommitments" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Send POs?" @bind-Value="Check0_SendPO" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Edit Item Database?" @bind-Value="Check0_EditItemDb" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Edit Assemblies?" @bind-Value="Check0_EditAssemblies" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Setup Default Vendors?" @bind-Value="Check0_SetupDefaultVendor" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Setup PO Indexes?" @bind-Value="Check0_SetupPoIndex" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Setup Vendors?" @bind-Value="Check0_SetupVendors" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Setup Vendor Pricing?" @bind-Value="Check0_SetupVendorPricing" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Create/Edit Budgets" @bind-Value="Check1_IssueBudgets" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Create/Edit Purchase Orders" @bind-Value="Check1_IssuePOs" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Generate Purchase Orders Only" @bind-Value="Check1_GeneratePOs" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Access Options Menu" @bind-Value="Check1_PrecisionBldrOptions" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Limit Attachment Classifications to the List" @bind-Value="Check1_LimitAttachmentClasses" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Access to Precision Builder?" @bind-Value="Check0_OpenEstimating" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Access Marketing Worksheets?" @bind-Value="Check0_OpenMarketingWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Access Estimating Worksheets?" @bind-Value="Check0_OpenEstimatingWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Publish Worksheets?" @bind-Value="Check0_PublishWorksheets" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Synchronize from Timberline?" @bind-Value="Check0_PostToTimberline" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post Budgets to Accounting?" @bind-Value="Check0_PostBudgets" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Post POs to Accounting?" @bind-Value="Check0_PostCommitments" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Send POs?" @bind-Value="Check0_SendPO" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Edit Item Database?" @bind-Value="Check0_EditItemDb" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Edit Assemblies?" @bind-Value="Check0_EditAssemblies" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Setup Default Vendors?" @bind-Value="Check0_SetupDefaultVendor" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Setup PO Indexes?" @bind-Value="Check0_SetupPoIndex" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Setup Vendors?" @bind-Value="Check0_SetupVendors" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Setup Vendor Pricing?" @bind-Value="Check0_SetupVendorPricing" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Create/Edit Budgets" @bind-Value="Check1_IssueBudgets" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Create/Edit Purchase Orders" @bind-Value="Check1_IssuePOs" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Generate Purchase Orders Only" @bind-Value="Check1_GeneratePOs" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Access Options Menu" @bind-Value="Check1_PrecisionBldrOptions" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Limit Attachment Classifications to the List" @bind-Value="Check1_LimitAttachmentClasses" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
@@ -483,21 +413,122 @@
             <div class="permissions-frame">
                 <h6>Workticket Permissions</h6>
                 <div class="check-grid">
-                    <CheckItem Label="Change grid layouts" @bind-Value="Check0_WTEditGridLayouts" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Field Approve Tickets" @bind-Value="Check0_WTFieldApprove" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Customer Approve Tickets" @bind-Value="Check0_WTCustomerApprove" OnChanged="OnCheckChanged" />
-                    <CheckItem Label="Office Approve Tickets" @bind-Value="Check0_WTOfficeApprove" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Change grid layouts" @bind-Value="Check0_WTEditGridLayouts" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Field Approve Tickets" @bind-Value="Check0_WTFieldApprove" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Customer Approve Tickets" @bind-Value="Check0_WTCustomerApprove" OnChanged="OnCheckChanged" />
+                    <CheckItemControl Label="Office Approve Tickets" @bind-Value="Check0_WTOfficeApprove" OnChanged="OnCheckChanged" />
                 </div>
             </div>
         }
     }
+    else if (MainTab == 2)
+    {
+        @* ── COGNITO TOKEN INFORMATION & ADMIN TABS ───────────────── *@
+        <div class="cognito-panel-layout" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            @* Left Column: Active User Token Claims *@
+            <div class="form-section">
+                <h6 style="font-weight: bold; margin-bottom: 12px; color: #333;">Active Cognito Session Token Claims</h6>
+                @if (IsCognitoSession && CognitoClaims.Any())
+                {
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #ccc; text-align: left;">
+                                    <th style="padding: 4px;">Claim Type</th>
+                                    <th style="padding: 4px;">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var claim in CognitoClaims)
+                                {
+                                    <tr style="border-bottom: 1px solid #eee;">
+                                        <td style="padding: 4px; word-break: break-all; font-weight: bold; width: 40%;">@claim.Key</td>
+                                        <td style="padding: 4px; word-break: break-all;">@claim.Value</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info" role="alert" style="padding: 15px; background: #eaf2f8; border: 1px solid #bce1f2; color: #31708f; border-radius: 4px;">
+                        Not authenticated via Amazon Cognito. Log in using the "Login Cognito" option to view active token claims.
+                    </div>
+                }
+            </div>
+
+            @* Right Column: Cognito Administrative Console *@
+            <div class="form-section">
+                <h6 style="font-weight: bold; margin-bottom: 12px; color: #333;">Cognito Administrative Console</h6>
+                
+                @* Create/Add Cognito User *@
+                <div class="cognito-admin-box" style="border: 1px solid #ddd; padding: 12px; margin-bottom: 16px; background: #fafafa;">
+                    <h7 style="font-weight: bold; display: block; margin-bottom: 8px; color: #333;">➕ Add/Create User in User Pool</h7>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px;">Username</label>
+                        <TextBoxControl @bind-Value="_adminCreateUsername" Placeholder="Cognito Username" />
+                    </div>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px;">Email</label>
+                        <TextBoxControl @bind-Value="_adminCreateEmail" Placeholder="user@domain.com" />
+                    </div>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px;">Temp Password</label>
+                        <TextBoxControl @bind-Value="_adminCreateTempPassword" InputType="password" Placeholder="Temporary Password" />
+                    </div>
+                    <button class="btn btn-primary btn-sm" @onclick="HandleAdminCreateUserAsync">Add Cognito User</button>
+                </div>
+
+                @* Set Cognito User Password *@
+                <div class="cognito-admin-box" style="border: 1px solid #ddd; padding: 12px; margin-bottom: 16px; background: #fafafa;">
+                    <h7 style="font-weight: bold; display: block; margin-bottom: 8px; color: #333;">🔑 Change/Set User Password</h7>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px;">Username</label>
+                        <TextBoxControl @bind-Value="_adminSetPwUsername" Placeholder="Cognito Username" />
+                    </div>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px;">New Password</label>
+                        <TextBoxControl @bind-Value="_adminSetPwPassword" InputType="password" Placeholder="New Password" />
+                    </div>
+                    <div class="checkbox-row" style="margin-bottom: 8px; margin-left: 108px;">
+                        <CheckBoxControl @bind-Checked="_adminSetPwPermanent" Label="Permanent (bypass force change)" />
+                    </div>
+                    <button class="btn btn-warning btn-sm" @onclick="HandleAdminSetUserPasswordAsync">Change Cognito Password</button>
+                </div>
+
+                @* Delete Cognito User *@
+                <div class="cognito-admin-box" style="border: 1px solid #f8d7da; padding: 12px; background: #fdf3f4;">
+                    <h7 style="font-weight: bold; display: block; margin-bottom: 8px; color: #721c24;">⚠️ Delete User from User Pool</h7>
+                    <div class="form-row" style="margin-bottom: 8px;">
+                        <label style="width: 100px; color: #721c24;">Username</label>
+                        <TextBoxControl @bind-Value="_adminDeleteUsername" Placeholder="Cognito Username" />
+                    </div>
+                    <button class="btn btn-danger btn-sm" @onclick="HandleAdminDeleteUserAsync">Delete Cognito User</button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
-    // ── Database ──────────────────────────────────────────────
-    private DbWrapperSqlServer db = new();
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // ── State ─────────────────────────────────────────────────
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // ── Database ──────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────
     private int MainTab = 0;
     private int PermTab = 0;
     private int CustInfoSubTab = 0;
@@ -576,6 +607,38 @@
     // ── Lifecycle ─────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            var user = authState.User;
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                var idTokenClaim = user.FindFirst("CognitoIdToken")?.Value;
+                if (!string.IsNullOrEmpty(idTokenClaim))
+                {
+                    IsCognitoSession = true;
+                    CognitoClaims.Clear();
+                    try
+                    {
+                        var decodedClaims = CognitoTokenDecoder.DecodeIdToken(idTokenClaim);
+                        foreach (var claim in decodedClaims)
+                        {
+                            var key = claim.Key;
+                            if (key.Contains("/"))
+                            {
+                                key = key.Substring(key.LastIndexOf('/') + 1);
+                            }
+                            CognitoClaims[key] = claim.Value;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "Failed to decode Cognito ID token claims");
+                    }
+                }
+            }
+        }
+
         await LoadUsersAsync();
         if (allUsers.Count > 0)
         {
@@ -599,7 +662,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading users: {ex.Message}");
+            Notifications.Error($"Error loading users: {ex.Message}");
         }
     }
 
@@ -887,7 +950,7 @@
         FieldsEnabled = false;
     }
 
-    private void OnCloseClick() => NavigationManager.NavigateTo("/");
+    private void OnCloseClick() => ClosePage();
 
     private Task OnUserIdKeyDown(KeyboardEventArgs e)
     {
@@ -1018,7 +1081,130 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Delete failed: {ex.Message}");
+            Notifications.Error($"Delete failed: {ex.Message}");
+        }
+    }
+
+    // ── Cognito Fields & Console Actions ─────────────────────
+    private bool IsCognitoSession = false;
+    private Dictionary<string, string> CognitoClaims = new();
+
+    private string _adminCreateUsername = "";
+    private string _adminCreateEmail = "";
+    private string _adminCreateTempPassword = "";
+
+    private string _adminSetPwUsername = "";
+    private string _adminSetPwPassword = "";
+    private bool _adminSetPwPermanent = true;
+
+    private string _adminDeleteUsername = "";
+    private bool _isLoading = false;
+
+    private async Task HandleAdminCreateUserAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_adminCreateUsername) || string.IsNullOrWhiteSpace(_adminCreateEmail) || string.IsNullOrWhiteSpace(_adminCreateTempPassword))
+        {
+            Notifications.Error("Username, Email, and Temporary Password are required.");
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var result = await CognitoAuth.AdminCreateUserAsync(_adminCreateUsername, _adminCreateEmail, _adminCreateTempPassword);
+            if (result.Success)
+            {
+                Notifications.Success($"Successfully created Cognito user: {_adminCreateUsername}");
+                _adminCreateUsername = "";
+                _adminCreateEmail = "";
+                _adminCreateTempPassword = "";
+            }
+            else
+            {
+                Notifications.Error(result.ErrorMessage ?? "Failed to create Cognito user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAdminSetUserPasswordAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_adminSetPwUsername) || string.IsNullOrWhiteSpace(_adminSetPwPassword))
+        {
+            Notifications.Error("Username and New Password are required.");
+            return;
+        }
+
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var result = await CognitoAuth.AdminSetUserPasswordAsync(_adminSetPwUsername, _adminSetPwPassword, _adminSetPwPermanent);
+            if (result.Success)
+            {
+                Notifications.Success($"Successfully set password for Cognito user: {_adminSetPwUsername}");
+                _adminSetPwUsername = "";
+                _adminSetPwPassword = "";
+            }
+            else
+            {
+                Notifications.Error(result.ErrorMessage ?? "Failed to set Cognito user password.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAdminDeleteUserAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_adminDeleteUsername))
+        {
+            Notifications.Error("Username is required.");
+            return;
+        }
+
+        var confirmed = await Dialogs.ConfirmAsync($"Are you sure you want to permanently delete Cognito user: {_adminDeleteUsername}?");
+        if (!confirmed) return;
+
+        _isLoading = true;
+        StateHasChanged();
+        try
+        {
+            var result = await CognitoAuth.AdminDeleteUserAsync(_adminDeleteUsername);
+            if (result.Success)
+            {
+                Notifications.Success($"Successfully deleted Cognito user: {_adminDeleteUsername}");
+                _adminDeleteUsername = "";
+            }
+            else
+            {
+                Notifications.Error(result.ErrorMessage ?? "Failed to delete Cognito user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
         }
     }
 }

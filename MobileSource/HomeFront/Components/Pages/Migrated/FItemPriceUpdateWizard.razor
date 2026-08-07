@@ -1,6 +1,6 @@
-```razor
 @page "/item-price-update-wizard"
 @rendermode InteractiveServer
+@layout HFComponent
 
 @namespace HomeFront.Components.Pages
 
@@ -8,261 +8,19 @@
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FItemPriceUpdateWizard> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Item Pricing Wizard</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 640px;
-        margin: 0 auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        overflow: hidden;
-    }
-
-    .wizard-header {
-        background: linear-gradient(to right, #f8f9fa, #e9ecef);
-        padding: 16px 20px;
-        border-bottom: 1px solid #dee2e6;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .wizard-header-icon {
-        width: 48px;
-        height: 48px;
-        background: #0d6efd;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        font-size: 24px;
-    }
-
-    .wizard-header-text h4 {
-        margin: 0;
-        font-size: 16px;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .wizard-header-text p {
-        margin: 4px 0 0;
-        font-size: 12px;
-        color: #6c757d;
-    }
-
-    .wizard-body {
-        padding: 20px;
-        min-height: 280px;
-    }
-
-    .wizard-footer {
-        border-top: 1px solid #dee2e6;
-        padding: 12px 20px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        background: #f8f9fa;
-    }
-
-    .wizard-footer button {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .wizard-footer button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .wizard-footer button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .wizard-footer button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .wizard-footer button.btn-primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .step-section {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-    }
-
-    .step-icon {
-        width: 36px;
-        height: 36px;
-        background: #e9ecef;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        flex-shrink: 0;
-    }
-
-    .step-content {
-        flex: 1;
-    }
-
-    .step-content h5 {
-        margin: 0 0 12px;
-        font-size: 14px;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .phase-grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        max-height: 220px;
-        overflow-y: auto;
-    }
-
-    .phase-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 4px 10px;
-        border-bottom: 1px solid #f0f0f0;
-        font-size: 13px;
-    }
-
-    .phase-row:last-child {
-        border-bottom: none;
-    }
-
-    .phase-row:hover {
-        background: #f8f9fa;
-    }
-
-    .phase-row input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .all-phases-check {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-        font-size: 13px;
-        font-weight: 500;
-    }
-
-    .all-phases-check input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .radio-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .radio-option {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-    }
-
-    .radio-option input[type="radio"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .community-select {
-        margin-top: 12px;
-    }
-
-    .community-select label {
-        display: block;
-        font-size: 12px;
-        font-weight: 500;
-        color: #495057;
-        margin-bottom: 4px;
-    }
-
-    .community-select select {
-        width: 100%;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-
-    .community-select select:disabled {
-        background: #e9ecef;
-    }
-
-    .estimating-section {
-        margin-top: 20px;
-        padding-top: 16px;
-        border-top: 1px solid #dee2e6;
-    }
-
-    .estimating-section .step-section {
-        margin-bottom: 0;
-    }
-
-    .progress-section {
-        text-align: center;
-    }
-
-    .progress-section .status-text {
-        font-size: 13px;
-        color: #333;
-        margin-bottom: 12px;
-    }
-
-    .progress-bar-container {
-        width: 100%;
-        height: 24px;
-        background: #e9ecef;
-        border-radius: 4px;
-        overflow: hidden;
-        margin-bottom: 8px;
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(to right, #0d6efd, #0b5ed7);
-        transition: width 0.3s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        font-size: 11px;
-        font-weight: 600;
-    }
-
-    .progress-detail {
-        font-size: 12px;
-        color: #6c757d;
-    }
-</style>
 
 <div class="wizard-container">
     @* ── Wizard Header ─────────────────────────────────────── *@
@@ -286,21 +44,19 @@
                         <h5>Which phases do you want to update?</h5>
 
                         <div class="all-phases-check">
-                            <input type="checkbox" id="chkAllPhases"
-                                   checked="@AllPhasesChecked"
-                                   @onchange="OnAllPhasesChanged" />
-                            <label for="chkAllPhases">All Phases</label>
+                            <CheckBoxControl Checked="@AllPhasesChecked"
+                                             CheckedChanged="OnAllPhasesChanged"
+                                             Label="All Phases" />
                         </div>
 
                         <div class="phase-grid-container">
                             @foreach (var phase in PhasesList)
                             {
                                 <div class="phase-row">
-                                    <input type="checkbox"
-                                           checked="@phase.IsChecked"
-                                           @onchange="(e) => OnPhaseCheckedChanged(phase, (bool)(e.Value ?? false))" />
+                                    <CheckBoxControl Checked="@phase.IsChecked"
+                                                     CheckedChanged="(bool v) => OnPhaseCheckedChanged(phase, v)" />
                                     <span>@phase.Phase</span>
-                                    <span style="color: #6c757d;">@phase.Description</span>
+                                    <span class="phase-desc">@phase.Description</span>
                                 </div>
                             }
                         </div>
@@ -317,33 +73,30 @@
 
                         <div class="radio-group">
                             <div class="radio-option">
-                                <input type="radio" id="optHighest" name="updateOption"
-                                       checked="@(UpdateOption == 0)"
-                                       @onchange="() => OnUpdateOptionChanged(0)" />
-                                <label for="optHighest">Use the highest price found in any community.</label>
+                                <RadioControl TValue="int" Name="updateOption" Value="0"
+                                              @bind-SelectedValue="UpdateOption"
+                                              Label="Use the highest price found in any community." />
                             </div>
                             <div class="radio-option">
-                                <input type="radio" id="optDefault" name="updateOption"
-                                       checked="@(UpdateOption == 1)"
-                                       @onchange="() => OnUpdateOptionChanged(1)" />
-                                <label for="optDefault">Use the default vendor's price in the selected community.</label>
+                                <RadioControl TValue="int" Name="updateOption" Value="1"
+                                              @bind-SelectedValue="UpdateOption"
+                                              Label="Use the default vendor's price in the selected community." />
                             </div>
                             <div class="radio-option">
-                                <input type="radio" id="optHighestCommunity" name="updateOption"
-                                       checked="@(UpdateOption == 2)"
-                                       @onchange="() => OnUpdateOptionChanged(2)" />
-                                <label for="optHighestCommunity">Use the highest price found in the selected community.</label>
+                                <RadioControl TValue="int" Name="updateOption" Value="2"
+                                              @bind-SelectedValue="UpdateOption"
+                                              Label="Use the highest price found in the selected community." />
                             </div>
                         </div>
 
                         <div class="community-select">
                             <label>Community</label>
-                            <select @bind="SelectedCommunityIndex" disabled="@(UpdateOption == 0)">
-                                @for (var i = 0; i < CommunityList.Count; i++)
-                                {
-                                    <option value="@i">@CommunityList[i].DisplayText</option>
-                                }
-                            </select>
+                            <DropDownListControl TValue="int" TItem="CommunityComboItem"
+                                                 DataSource="@CommunityOptions"
+                                                 ValueFieldName="Index" TextFieldName="DisplayText"
+                                                 @bind-Value="SelectedCommunityIndex"
+                                                 Enabled="@(UpdateOption != 0)"
+                                                 Width="100%" />
                         </div>
 
                         @if (EstimatingAvailable)
@@ -355,16 +108,14 @@
                                         <h5>Do you want to update Timberline Estimating?</h5>
                                         <div class="radio-group">
                                             <div class="radio-option">
-                                                <input type="radio" id="optEstNo" name="estimatingOption"
-                                                       checked="@(!UpdateEstimating)"
-                                                       @onchange="() => UpdateEstimating = false" />
-                                                <label for="optEstNo">No, do not update Estimating.</label>
+                                                <RadioControl TValue="bool" Name="estimatingOption" Value="false"
+                                                              @bind-SelectedValue="UpdateEstimating"
+                                                              Label="No, do not update Estimating." />
                                             </div>
                                             <div class="radio-option">
-                                                <input type="radio" id="optEstYes" name="estimatingOption"
-                                                       checked="@UpdateEstimating"
-                                                       @onchange="() => UpdateEstimating = true" />
-                                                <label for="optEstYes">Yes, make Estimating's price match HomeFront's.</label>
+                                                <RadioControl TValue="bool" Name="estimatingOption" Value="true"
+                                                              @bind-SelectedValue="UpdateEstimating"
+                                                              Label="Yes, make Estimating's price match HomeFront's." />
                                             </div>
                                         </div>
                                     </div>
@@ -401,23 +152,32 @@
 
     @* ── Wizard Footer ─────────────────────────────────────── *@
     <div class="wizard-footer">
-        <button @onclick="OnCancelClick">Cancel</button>
-        <button disabled="@(CurrentFrame <= 0)" @onclick="OnBackClick">&lt; Back</button>
-        <button disabled="@(CurrentFrame >= MaxFrame)" @onclick="OnNextClick">Next &gt;</button>
-        <button class="btn-primary"
-                disabled="@(CurrentFrame != MaxFrame || IsProcessing)"
-                @onclick="OnFinishClick">
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
+        <ButtonControl Disabled="@(CurrentFrame <= 0)" OnClick="OnBackClick">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(CurrentFrame >= MaxFrame)" OnClick="OnNextClick">Next &gt;</ButtonControl>
+        <ButtonControl CssClass="btn-primary"
+                       Disabled="@(CurrentFrame != MaxFrame || IsProcessing)"
+                       OnClick="OnFinishClick">
             @(IsProcessing ? "Processing..." : "Finish")
-        </button>
+        </ButtonControl>
     </div>
 </div>
 
 @code {
-    // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // === Wizard State ===
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // === Database ===
+// === Wizard State ===
     private int CurrentFrame = 0;
     private const int MaxFrame = 2;
     private bool IsProcessing = false;
@@ -429,6 +189,9 @@
     // === Step 1: Pricing Options ===
     private int UpdateOption = 0; // 0=highest any, 1=default vendor, 2=highest in community
     private List<CommunityComboItem> CommunityList = new();
+    // DropDownListControl DataSource — items carry their list position in Index,
+    // which the control binds back to SelectedCommunityIndex.
+    private List<CommunityComboItem> CommunityOptions => CommunityList;
     private int SelectedCommunityIndex = 0;
     private bool EstimatingAvailable = false;
     private bool UpdateEstimating = false;
@@ -452,7 +215,7 @@
         {
             var rows = await db.QueryAsync(
                 "SELECT Phase, Description FROM tblEstPhases WHERE DivisionID = @DivisionID AND GroupPhase = 0 ORDER BY Phase",
-                new { DivisionID });
+                new { SessionState.DivisionID });
 
             PhasesList = rows.Select(r => new PhaseItem
             {
@@ -465,7 +228,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadPhasesAsync error: {ex.Message}");
+            Logger.LogError(ex, "LoadPhasesAsync error");
+
         }
     }
 
@@ -507,6 +271,12 @@
                 });
             }
 
+            // Stamp each item with its list position so the DropDownListControl's
+            // Index value field stays in lock-step with SelectedCommunityIndex
+            // (GetSelectedCommunity() indexes CommunityList by that position).
+            for (var idx = 0; idx < CommunityList.Count; idx++)
+                CommunityList[idx].Index = idx;
+
             SelectedCommunityIndex = 0;
 
             // Check if Estimating database is available
@@ -514,7 +284,7 @@
             {
                 var estCheck = await db.ExecuteScalarAsync<int>(
                     "SELECT COUNT(*) FROM EstimatingItems WHERE DivisionID = @DivisionID",
-                    new { DivisionID });
+                    new { SessionState.DivisionID });
                 EstimatingAvailable = true;
             }
             catch
@@ -524,14 +294,15 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadCommunitiesAsync error: {ex.Message}");
+            Logger.LogError(ex, "LoadCommunitiesAsync error");
+
         }
     }
 
     // === Phase Checkbox Handlers ===
-    private void OnAllPhasesChanged(ChangeEventArgs e)
+    private void OnAllPhasesChanged(bool value)
     {
-        AllPhasesChecked = (bool)(e.Value ?? false);
+        AllPhasesChecked = value;
         foreach (var phase in PhasesList)
         {
             phase.IsChecked = AllPhasesChecked;
@@ -563,7 +334,7 @@
     // === Navigation Handlers ===
     private void OnCancelClick()
     {
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private void OnBackClick()
@@ -602,13 +373,13 @@
             var success = await SaveDataAsync();
             if (success)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Item pricing update completed successfully.");
-                NavigationManager.NavigateTo("/");
+                Notifications.Success("Item pricing update completed successfully.");
+                ClosePage();
             }
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            Notifications.Error($"Error: {ex.Message}");
         }
         finally
         {
@@ -665,14 +436,14 @@
                                        FROM tblVendorCost
                                       WHERE tblVendorCost.Phase = tblPhaseItem.Phase
                                         AND tblVendorCost.Item = tblPhaseItem.Item
-                                        AND tblVendorCost.DivisionID = {DivisionID})
+                                        AND tblVendorCost.DivisionID = {SessionState.DivisionID})
                         WHERE 0 <> (SELECT ISNULL(MAX(current_cost), 0)
                                        FROM tblVendorCost
                                       WHERE tblVendorCost.Phase = tblPhaseItem.Phase
                                         AND tblVendorCost.Item = tblPhaseItem.Item
-                                        AND tblVendorCost.DivisionID = {DivisionID})
+                                        AND tblVendorCost.DivisionID = {SessionState.DivisionID})
                         {phaseFilter}
-                        AND DivisionID = {DivisionID}";
+                        AND DivisionID = {SessionState.DivisionID}";
                     await db.ExecuteAsync(sql);
                     break;
 
@@ -683,13 +454,13 @@
                         FROM tblVendorCost c
                         JOIN tblPhaseItem i ON c.DivisionID = i.DivisionID
                             AND c.Phase = i.Phase AND c.Item = i.Item
-                        WHERE c.Vendor = dbo.Purch_GetCommunityVendor(c.Community, i.POIndex, {DivisionID})
+                        WHERE c.Vendor = dbo.Purch_GetCommunityVendor(c.Community, i.POIndex, {SessionState.DivisionID})
                         {(string.IsNullOrEmpty(phases) ? "" : $" AND i.Phase IN({phases})")}
                         AND c.Community = '{community.Replace("'", "''")}'
                         AND c.CommunityPhase = '{communityPhase.Replace("'", "''")}'
                         AND c.Assembly = ''
                         AND c.Model = ''
-                        AND c.DivisionID = {DivisionID}";
+                        AND c.DivisionID = {SessionState.DivisionID}";
                     await db.ExecuteAsync(sql);
                     break;
 
@@ -704,7 +475,7 @@
                                         AND ISNULL(Model, '') = ''
                                         AND tblVendorCost.Phase = tblPhaseItem.Phase
                                         AND tblVendorCost.Item = tblPhaseItem.Item
-                                        AND tblVendorCost.DivisionID = {DivisionID})
+                                        AND tblVendorCost.DivisionID = {SessionState.DivisionID})
                         WHERE 0 <> (SELECT ISNULL(MAX(Current_Cost), 0)
                                        FROM tblVendorCost
                                       WHERE ISNULL(Community, '') = '{community.Replace("'", "''")}'
@@ -713,9 +484,9 @@
                                         AND ISNULL(Model, '') = ''
                                         AND tblVendorCost.Phase = tblPhaseItem.Phase
                                         AND tblVendorCost.Item = tblPhaseItem.Item
-                                        AND tblVendorCost.DivisionID = {DivisionID})
+                                        AND tblVendorCost.DivisionID = {SessionState.DivisionID})
                         {phaseFilter}
-                        AND DivisionID = {DivisionID}";
+                        AND DivisionID = {SessionState.DivisionID}";
                     await db.ExecuteAsync(sql);
                     break;
             }
@@ -739,7 +510,8 @@
                 return true;
             }
 
-            Console.WriteLine($"SaveDataAsync error: {ex.Message}");
+            Logger.LogError(ex, "SaveDataAsync error");
+
             StatusMessage = $"Error: {ex.Message}";
             StateHasChanged();
             return false;
@@ -751,7 +523,7 @@
         try
         {
             // Get count
-            var countSql = $"SELECT COUNT(*) FROM EstimatingItems WHERE DivisionID = {DivisionID}";
+            var countSql = $"SELECT COUNT(*) FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID}";
             if (!string.IsNullOrEmpty(phases))
                 countSql += $" AND Phase IN({phases})";
 
@@ -759,7 +531,7 @@
             if (totalCount == 0) return;
 
             // Get items
-            var itemsSql = $"SELECT * FROM EstimatingItems WHERE DivisionID = {DivisionID}";
+            var itemsSql = $"SELECT * FROM EstimatingItems WHERE DivisionID = {SessionState.DivisionID}";
             if (!string.IsNullOrEmpty(phases))
                 itemsSql += $" AND Phase IN({phases})";
 
@@ -810,7 +582,8 @@
                 catch (Exception ex)
                 {
                     if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
-                        Console.WriteLine($"Estimating update error: {ex.Message}");
+                        Logger.LogError(ex, "Estimating update error");
+
                 }
 
                 // Update price links
@@ -833,7 +606,8 @@
                         catch (Exception ex)
                         {
                             if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
-                                Console.WriteLine($"Price link update error: {ex.Message}");
+                                Logger.LogError(ex, "Price link update error");
+
                         }
                     }
                 }
@@ -845,7 +619,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"UpdateEstimatingPricesAsync error: {ex.Message}");
+            Logger.LogError(ex, "UpdateEstimatingPricesAsync error");
+
         }
     }
 
@@ -859,9 +634,9 @@
 
     public class CommunityComboItem
     {
+        public int Index { get; set; }
         public string DisplayText { get; set; } = "";
         public string KeyValue { get; set; } = "";
         public string CommunityPhase { get; set; } = "";
     }
 }
-```

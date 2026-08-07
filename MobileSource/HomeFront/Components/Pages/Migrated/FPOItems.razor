@@ -115,6 +115,8 @@
     private POTreeNode? SelectedPONode;
     private List<ItemTreeNode> SelectedItemNodes = new();
     private List<POTreeNode> SelectedPONodes = new();
+    private ItemTreeNode? _pendingItemFocus;
+    private POTreeNode? _pendingPOFocus;
 
     // === Drag & Drop ===
     private bool IsDraggingFromItems = false;
@@ -147,6 +149,20 @@
             {
                 Logger.LogError(ex, "Error initializing splitter in FPOItems");
             }
+        }
+
+        if (_pendingItemFocus != null)
+        {
+            var node = _pendingItemFocus;
+            _pendingItemFocus = null;
+            await node.Element.FocusAsync();
+        }
+
+        if (_pendingPOFocus != null)
+        {
+            var node = _pendingPOFocus;
+            _pendingPOFocus = null;
+            await node.Element.FocusAsync();
         }
     }
 
@@ -599,7 +615,9 @@
         if (parentPO != null)
             parentPO.IsExpanded = true;
 
+        SelectedItemNode = null;
         SelectedPONode = poChild;
+        _pendingPOFocus = poChild;
         StateHasChanged();
     }
 
@@ -612,7 +630,9 @@
         if (itemNode == null) return;
 
         ExpandToNode(itemNode, ItemNodes);
+        SelectedPONode = null;
         SelectedItemNode = itemNode;
+        _pendingItemFocus = itemNode;
         StateHasChanged();
     }
 
@@ -985,6 +1005,8 @@
             : "";
         <li style="@outlineIndent">
             <div class="tree-node-row @(SelectedItemNode == node ? "selected" : "") @(!string.IsNullOrEmpty(node.POIndex) ? "checked-item" : "")"
+                 @ref="node.Element"
+                 tabindex="-1"
                  @onclick="() => OnItemNodeClick(node)"
                  @ondblclick="() => OnItemNodeDoubleClick(node)"
                  draggable="@(node.NodeType == ItemNodeType.Item ? "true" : "false")"
@@ -1015,10 +1037,6 @@
 
                 <span class="tree-text">@node.DisplayText</span>
 
-                @if (node.NodeType == ItemNodeType.Item && !string.IsNullOrEmpty(node.POIndex))
-                {
-                    <span class="po-index-col">[@node.POIndex]</span>
-                }
             </div>
 
             @if (node.IsExpanded && node.Children.Count > 0)
@@ -1040,6 +1058,8 @@
 
         <li>
             <div class="tree-node-row @(SelectedPONode == node ? "selected" : "") @(DropTargetPONode == node ? "drag-over" : "")"
+                 @ref="node.Element"
+                 tabindex="-1"
                  @onclick="() => OnPONodeClick(node)"
                  @ondblclick="() => OnPONodeDoubleClick(node)"
                  draggable="@(node.NodeType == PONodeType.Item ? "true" : "false")"
@@ -1061,7 +1081,7 @@
                 @switch (node.NodeType)
                 {
                     case PONodeType.POIndex:
-                        <img class="tree-node-icon" src="images/16/poindex.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
+                        <img class="tree-node-icon" src="images/16/assembly2.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
                         break;
                     case PONodeType.Item:
                         <img class="tree-node-icon tree-node-icon-leaf" src="images/16/Item2.ico" alt="" aria-hidden="true" onerror="this.style.display='none'" />
@@ -1069,11 +1089,6 @@
                 }
 
                 <span class="tree-text">@node.DisplayText</span>
-
-                @if (node.NodeType == PONodeType.POIndex && !string.IsNullOrEmpty(node.Notes))
-                {
-                    <span class="po-index-col" title="@node.Notes">📝</span>
-                }
             </div>
 
             @if (node.IsExpanded && node.Children.Count > 0)
@@ -1167,6 +1182,7 @@
         public int OutlineLevel { get; set; }
         public bool IsExpanded { get; set; }
         public string RowState { get; set; } = "CLEAN";
+        public ElementReference Element { get; set; }
         public List<ItemTreeNode> Children { get; set; } = new();
     }
 
@@ -1183,6 +1199,7 @@
         public bool IsExpanded { get; set; }
         public bool IsHidden { get; set; }
         public string RowState { get; set; } = "CLEAN";
+        public ElementReference Element { get; set; }
         public List<POTreeNode> Children { get; set; } = new();
     }
 }

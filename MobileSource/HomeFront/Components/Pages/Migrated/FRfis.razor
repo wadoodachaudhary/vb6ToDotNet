@@ -1,93 +1,28 @@
-```razor
 @page "/rfis"
 @page "/rfis/{Job}"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Hf
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Components.Layout
 @using HomeFront.Data
+@using HomeFront.Models
 @using System.Data
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FRfis> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>Request For Information - HomeFront</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 8px;
-    }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        transition: background 0.15s;
-        min-width: 60px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
-    .tbar-btn.active { background: #cce5ff; border-color: #0d6efd; }
-    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
-    .tool-label { font-size: 11px; }
-
-    .rfi-container { display: flex; height: calc(100vh - 160px); min-height: 600px; }
-    .rfi-list-panel {
-        width: 320px; min-width: 200px; max-width: 500px;
-        border-right: 3px solid #c9c9c9; overflow: auto; resize: horizontal;
-    }
-    .rfi-detail-panel { flex: 1; overflow: auto; padding: 0 12px; }
-
-    .form-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
-    .form-row label { min-width: 80px; text-align: right; font-size: 12px; font-weight: 600; color: #495057; }
-    .form-row input, .form-row select, .form-row textarea {
-        flex: 1; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px;
-    }
-    .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
-        border-color: #86b7fe; outline: 0; box-shadow: 0 0 0 2px rgba(13,110,253,0.15);
-    }
-    .form-row .browse-btn {
-        padding: 2px 6px; border: 1px solid #ced4da; border-radius: 4px;
-        background: #fff; cursor: pointer; font-size: 14px;
-    }
-    .form-row .browse-btn:hover { background: #e9ecef; }
-    .form-row .date-field { max-width: 160px; }
-    .form-row .cost-field { max-width: 120px; text-align: right; }
-
-    .section-label {
-        font-size: 12px; font-weight: 600; color: #495057;
-        margin: 10px 0 4px 0; text-align: right; min-width: 80px;
-    }
-
-    .loading-overlay {
-        position: absolute; height: 100%; width: 100%;
-        background-color: rgba(1,1,1,0.2); z-index: 10000;
-        display: flex; align-items: center; justify-content: center;
-    }
-    .loading-spinner {
-        padding: 20px 40px; background: #fff; border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
-        font-weight: 500; color: #333;
-    }
-
-    .status-bar {
-        height: 24px; background: #f0f0f0; border-top: 1px solid #ccc;
-        padding: 3px 8px; font-size: 12px; color: #555;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -135,7 +70,7 @@
 <div class="rfi-container">
     <!-- Left: RFI List -->
     <div class="rfi-list-panel">
-        <HfGrid @ref="RFIGrid"
+        <GridControl @ref="RFIGrid"
                 TValue="RFIRow"
                 DataSource="@RFIData"
                 AllowSelection="true"
@@ -146,13 +81,36 @@
                 RowHeight="32"
                 SelectionSettingsRef="@rfiSelectionSettings"
                 EventsRef="@rfiGridEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(RFIRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center" />
-                <HfGridColumn Field="@nameof(RFIRow.RFIID)" HeaderText="RFI #" Width="60px" TextAlign="TextAlign.Center" />
-                <HfGridColumn Field="@nameof(RFIRow.Subject)" HeaderText="Subject" Width="180px" />
-                <HfGridColumn Field="@nameof(RFIRow.Status)" HeaderText="Status" Width="120px" />
-            </HfGridColumnsBase>
-        </HfGrid>
+            <GridColumnsBase @key="gRFILayoutVersion">
+                @if (HasRFIGridLayout)
+                {
+                    foreach (var entry in GetOrderedRFIGridLayout())
+                    {
+                        var layout = entry.Layout;
+                        var fieldName = entry.Field;
+                        var columnType = entry.ColumnType;
+                        var textAlign = entry.TextAlign;
+                        var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                        var width = layout.Width.HasValue && layout.Width.Value > 0
+                            ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      ClipMode="ClipMode.Ellipsis" />
+                    }
+                }
+                else
+                {
+                    <GridColumn Field="@nameof(RFIRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(RFIRow.RFIID)" HeaderText="RFI #" Width="60px" TextAlign="TextAlign.Center" />
+                    <GridColumn Field="@nameof(RFIRow.Subject)" HeaderText="Subject" Width="180px" />
+                    <GridColumn Field="@nameof(RFIRow.Status)" HeaderText="Status" Width="120px" />
+                }
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
     <!-- Right: RFI Detail -->
@@ -160,82 +118,76 @@
         <!-- From / To / CC / BCC -->
         <div class="form-row">
             <label>From</label>
-            <input type="text" @bind="txtSender" @bind:event="oninput" @onfocus="() => SelectAll(nameof(txtSender))" maxlength="50" />
+            <TextBoxControl @bind-Value="txtSender" MaxLength="50" @onfocus="() => SelectAll(nameof(txtSender))" />
             <button class="browse-btn" @onclick="() => BrowseContacts(3)" title="Pick Contact">📇</button>
-            <label style="min-width:40px;">Sent</label>
-            <input type="text" class="date-field" @bind="txtSentDate" @bind:event="oninput" readonly style="background:#e9ecef;" />
+            <label class="lbl-sm">Sent</label>
+            <TextBoxControl @bind-Value="txtSentDate" CssClass="date-field date-readonly" readonly />
             <button class="browse-btn" @onclick="() => BrowseDate(0)" title="Calendar">📅</button>
         </div>
         <div class="form-row">
             <label>To</label>
-            <input type="text" @bind="txtRecipients" @bind:event="oninput" maxlength="50" />
+            <TextBoxControl @bind-Value="txtRecipients" MaxLength="50" />
             <button class="browse-btn" @onclick="() => BrowseContacts(4)" title="Pick Contact">📇</button>
-            <label style="min-width:40px;">Due</label>
-            <input type="text" class="date-field" @bind="txtDueDate" @bind:event="oninput" />
+            <label class="lbl-sm">Due</label>
+            <TextBoxControl @bind-Value="txtDueDate" CssClass="date-field" />
             <button class="browse-btn" @onclick="() => BrowseDate(2)" title="Calendar">📅</button>
         </div>
         <div class="form-row">
             <label>CC</label>
-            <input type="text" @bind="txtRecipientsCC" @bind:event="oninput" maxlength="50" />
+            <TextBoxControl @bind-Value="txtRecipientsCC" MaxLength="50" />
             <button class="browse-btn" @onclick="() => BrowseContacts(5)" title="Pick Contact">📇</button>
-            <label style="min-width:40px;">Closed</label>
-            <input type="text" class="date-field" @bind="txtClosedDate" @bind:event="oninput" />
+            <label class="lbl-sm">Closed</label>
+            <TextBoxControl @bind-Value="txtClosedDate" CssClass="date-field" />
             <button class="browse-btn" @onclick="() => BrowseDate(1)" title="Calendar">📅</button>
         </div>
         <div class="form-row">
             <label>BCC</label>
-            <input type="text" @bind="txtRecipientsBCC" @bind:event="oninput" maxlength="50" />
+            <TextBoxControl @bind-Value="txtRecipientsBCC" MaxLength="50" />
             <button class="browse-btn" @onclick="() => BrowseContacts(6)" title="Pick Contact">📇</button>
-            <label style="min-width:40px;">Status</label>
-            <select @bind="cboStatus" style="max-width:180px;">
-                @foreach (var s in StatusOptions)
-                {
-                    <option value="@s">@s</option>
-                }
-            </select>
+            <label class="lbl-sm">Status</label>
+            <DropDownListControl TValue="string" TItem="string" DataSource="@StatusOptions" @bind-Value="cboStatus" Width="180px" />
         </div>
 
         <!-- Subject -->
         <div class="form-row">
             <label>Subject</label>
-            <input type="text" @bind="txtSubject" @bind:event="oninput" maxlength="50" />
+            <TextBoxControl @bind-Value="txtSubject" MaxLength="50" />
         </div>
 
         <!-- Question -->
-        <div class="form-row" style="align-items:flex-start;">
-            <label style="padding-top:6px;">Issue or Question</label>
-            <textarea rows="4" @bind="txtQuestion" @bind:event="oninput" maxlength="8000" style="resize:vertical;"></textarea>
+        <div class="form-row form-row-top">
+            <label class="lbl-top">Issue or Question</label>
+            <TextAreaControl @bind-Value="txtQuestion" Rows="4" MaxLength="8000" />
         </div>
 
         <!-- Answer -->
-        <div class="form-row" style="align-items:flex-start;">
-            <label style="padding-top:6px;">Resolution or Answer</label>
-            <textarea rows="4" @bind="txtAnswer" @bind:event="oninput" maxlength="8000" style="resize:vertical;"></textarea>
+        <div class="form-row form-row-top">
+            <label class="lbl-top">Resolution or Answer</label>
+            <TextAreaControl @bind-Value="txtAnswer" Rows="4" MaxLength="8000" />
         </div>
 
         <!-- Cost Impact / Scheduling Impact -->
         <div class="form-row">
             <label>Cost Impact</label>
-            <input type="text" class="cost-field" @bind="txtCostImpact" @bind:event="oninput"
-                   @onblur="OnCostImpactBlur" maxlength="50" style="text-align:right;" />
-            <label style="min-width:120px;">Scheduling Impact</label>
-            <input type="text" @bind="txtSchedulingImpact" @bind:event="oninput" maxlength="50" />
+            <TextBoxControl @bind-Value="txtCostImpact" CssClass="cost-field" @onblur="OnCostImpactBlur" MaxLength="50" />
+            <label class="lbl-md">Scheduling Impact</label>
+            <TextBoxControl @bind-Value="txtSchedulingImpact" MaxLength="50" />
         </div>
 
         <!-- Approved By / Approved Date -->
         <div class="form-row">
             <label>Approved By</label>
-            <input type="text" @bind="txtApprovedBy" @bind:event="oninput" maxlength="50" style="max-width:200px;" />
+            <TextBoxControl @bind-Value="txtApprovedBy" CssClass="approvedby-field" MaxLength="50" />
             <button class="browse-btn" @onclick="() => BrowseContacts(7)" title="Pick Contact">📇</button>
-            <label style="min-width:100px;">Approved Date</label>
-            <input type="text" class="date-field" @bind="txtApprovedDate" @bind:event="oninput" />
+            <label class="lbl-md2">Approved Date</label>
+            <TextBoxControl @bind-Value="txtApprovedDate" CssClass="date-field" />
             <button class="browse-btn" @onclick="() => BrowseDate(8)" title="Calendar">📅</button>
         </div>
 
         <!-- Attachments -->
         <div style="margin-top:12px;">
             <span class="section-label" style="display:block; text-align:left;">Attachments</span>
-            <HfGrid @ref="AttachmentsGrid"
+            <GridControl @ref="AttachmentsGrid"
                     TValue="AttachmentRow"
                     DataSource="@AttachmentsData"
                     AllowSelection="true"
@@ -243,27 +195,50 @@
                     EnableHover="true"
                     Height="180px"
                     RowHeight="28">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(AttachmentRow.FileTitle)" HeaderText="Name" Width="200px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Class" Width="100px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.Revision)" HeaderText="Revision" Width="80px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.Path)" HeaderText="Location" Width="200px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.FileSize)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.ModifiedDate)" HeaderText="Modified" Width="140px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.CreatedDate)" HeaderText="Created" Width="140px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.AttachedDate)" HeaderText="Attached" Width="140px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.WebPortals)" HeaderText="Web Portals" Width="100px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.WebLocation)" HeaderText="Web Location" Width="100px" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.Embedded)" HeaderText="Embedded" Width="80px" Visible="false" />
-                    <HfGridColumn Field="@nameof(AttachmentRow.FileName)" HeaderText="FileName" Width="1px" Visible="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                <GridColumnsBase @key="gAttachmentsLayoutVersion">
+                    @if (HasAttachmentsGridLayout)
+                    {
+                        foreach (var entry in GetOrderedAttachmentsGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                            <GridColumn Field="@fieldName"
+                                          HeaderText="@headerText"
+                                          Width="@width"
+                                          Type="@columnType"
+                                          TextAlign="@textAlign"
+                                          ClipMode="ClipMode.Ellipsis" />
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(AttachmentRow.FileTitle)" HeaderText="Name" Width="200px" />
+                        <GridColumn Field="@nameof(AttachmentRow.DocumentClass)" HeaderText="Class" Width="100px" />
+                        <GridColumn Field="@nameof(AttachmentRow.Revision)" HeaderText="Revision" Width="80px" />
+                        <GridColumn Field="@nameof(AttachmentRow.Path)" HeaderText="Location" Width="200px" />
+                        <GridColumn Field="@nameof(AttachmentRow.FileSize)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" />
+                        <GridColumn Field="@nameof(AttachmentRow.ModifiedDate)" HeaderText="Modified" Width="140px" />
+                        <GridColumn Field="@nameof(AttachmentRow.CreatedDate)" HeaderText="Created" Width="140px" />
+                        <GridColumn Field="@nameof(AttachmentRow.AttachedDate)" HeaderText="Attached" Width="140px" />
+                        <GridColumn Field="@nameof(AttachmentRow.WebPortals)" HeaderText="Web Portals" Width="100px" />
+                        <GridColumn Field="@nameof(AttachmentRow.WebLocation)" HeaderText="Web Location" Width="100px" />
+                        <GridColumn Field="@nameof(AttachmentRow.Embedded)" HeaderText="Embedded" Width="80px" Visible="false" />
+                        <GridColumn Field="@nameof(AttachmentRow.FileName)" HeaderText="FileName" Width="1px" Visible="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
 
         <!-- Conversation / Messages -->
         <div style="margin-top:12px;">
             <span class="section-label" style="display:block; text-align:left;">Conversation</span>
-            <HfGrid @ref="MessagesGrid"
+            <GridControl @ref="MessagesGrid"
                     TValue="MessageRow"
                     DataSource="@MessagesData"
                     AllowSelection="true"
@@ -274,52 +249,122 @@
                     RowHeight="28"
                     EditSettingsRef="@messageEditSettings"
                     EventsRef="@messageGridEvents">
-                <HfGridColumnsBase>
-                    <HfGridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center">
-                        <Template>
-                            @{
-                                var msg = (MessageRow)context;
-                                var icon = msg.Priority switch { 0 => "🔽", 2 => "🔺", _ => "" };
-                            }
-                            <span style="cursor:pointer;" @onclick="() => ToggleMessagePriority(msg)">@icon</span>
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="40px" TextAlign="TextAlign.Center">
-                        <Template>
-                            @{
-                                var msg = (MessageRow)context;
-                            }
-                            @if (msg.MessageType == "Email")
+                <GridColumnsBase @key="gMessagesLayoutVersion">
+                    <GridColumn Field="@nameof(MessageRow.ID)" Visible="false" AllowEditing="false" />
+                    @if (HasMessagesGridLayout)
+                    {
+                        foreach (var entry in GetOrderedMessagesGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                            var allowEdit = IsMessageFieldEditable(fieldName);
+
+                            if (fieldName == "Priority")
                             {
-                                <span style="cursor:pointer;" @onclick="() => OpenOriginalMessage(msg)" title="Open original email">📧</span>
+                                <GridColumn Field="Priority" HeaderText="@headerText" Width="@(width ?? "40px")" TextAlign="TextAlign.Center">
+                                    <Template>
+                                        @{
+                                            var msg = (MessageRow)context;
+                                            var icon = msg.Priority switch { 0 => "🔽", 2 => "🔺", _ => "" };
+                                        }
+                                        <span style="cursor:pointer;" @onclick="() => ToggleMessagePriority(msg)">@icon</span>
+                                    </Template>
+                                </GridColumn>
                             }
-                        </Template>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Type" Width="80px">
-                        <EditTemplate>
-                            @{
-                                var msg = (MessageRow)context;
+                            else if (fieldName == "Original")
+                            {
+                                <GridColumn Field="Original" HeaderText="@headerText" Width="@(width ?? "40px")" TextAlign="TextAlign.Center">
+                                    <Template>
+                                        @{
+                                            var msg = (MessageRow)context;
+                                        }
+                                        @if (msg.MessageType == "Email")
+                                        {
+                                            <span style="cursor:pointer;" @onclick="() => OpenOriginalMessage(msg)" title="Open original email">📧</span>
+                                        }
+                                    </Template>
+                                </GridColumn>
                             }
-                            <select @bind="msg.MessageType">
-                                <option value="Mail">Mail</option>
-                                <option value="Fax">Fax</option>
-                                <option value="Phone">Phone</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </EditTemplate>
-                    </HfGridColumn>
-                    <HfGridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="150px" />
-                    <HfGridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="150px" />
-                    <HfGridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="120px" />
-                    <HfGridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="120px" />
-                    <HfGridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="200px" />
-                    <HfGridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="250px" />
-                    <HfGridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent" Width="120px" />
-                    <HfGridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received" Width="120px" />
-                    <HfGridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" AllowEditing="false" />
-                    <HfGridColumn Field="@nameof(MessageRow.ID)" HeaderText="ID" Width="1px" Visible="false" AllowEditing="false" />
-                </HfGridColumnsBase>
-            </HfGrid>
+                            else if (fieldName == "MessageType")
+                            {
+                                <GridColumn Field="MessageType" HeaderText="@headerText" Width="@(width ?? "80px")">
+                                    <EditTemplate>
+                                        @{
+                                            var msg = (MessageRow)context;
+                                        }
+                                        <select @bind="msg.MessageType">
+                                            <option value="Mail">Mail</option>
+                                            <option value="Fax">Fax</option>
+                                            <option value="Phone">Phone</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </EditTemplate>
+                                </GridColumn>
+                            }
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="@allowEdit"
+                                              ClipMode="ClipMode.Ellipsis" />
+                            }
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(MessageRow.Priority)" HeaderText="!" Width="40px" TextAlign="TextAlign.Center">
+                            <Template>
+                                @{
+                                    var msg = (MessageRow)context;
+                                    var icon = msg.Priority switch { 0 => "🔽", 2 => "🔺", _ => "" };
+                                }
+                                <span style="cursor:pointer;" @onclick="() => ToggleMessagePriority(msg)">@icon</span>
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(MessageRow.Original)" HeaderText="📧" Width="40px" TextAlign="TextAlign.Center">
+                            <Template>
+                                @{
+                                    var msg = (MessageRow)context;
+                                }
+                                @if (msg.MessageType == "Email")
+                                {
+                                    <span style="cursor:pointer;" @onclick="() => OpenOriginalMessage(msg)" title="Open original email">📧</span>
+                                }
+                            </Template>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(MessageRow.MessageType)" HeaderText="Type" Width="80px">
+                            <EditTemplate>
+                                @{
+                                    var msg = (MessageRow)context;
+                                }
+                                <select @bind="msg.MessageType">
+                                    <option value="Mail">Mail</option>
+                                    <option value="Fax">Fax</option>
+                                    <option value="Phone">Phone</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </EditTemplate>
+                        </GridColumn>
+                        <GridColumn Field="@nameof(MessageRow.Sender)" HeaderText="Sender" Width="150px" />
+                        <GridColumn Field="@nameof(MessageRow.Recipients)" HeaderText="Recipients" Width="150px" />
+                        <GridColumn Field="@nameof(MessageRow.RecipientsCC)" HeaderText="CC" Width="120px" />
+                        <GridColumn Field="@nameof(MessageRow.RecipientsBCC)" HeaderText="BCC" Width="120px" />
+                        <GridColumn Field="@nameof(MessageRow.Subject)" HeaderText="Subject" Width="200px" />
+                        <GridColumn Field="@nameof(MessageRow.Body)" HeaderText="Body" Width="250px" />
+                        <GridColumn Field="@nameof(MessageRow.SentDate)" HeaderText="Sent" Width="120px" />
+                        <GridColumn Field="@nameof(MessageRow.ReceivedDate)" HeaderText="Received" Width="120px" />
+                        <GridColumn Field="@nameof(MessageRow.Size)" HeaderText="Size" Width="80px" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
         </div>
     </div>
 </div>
@@ -330,10 +375,7 @@
     private const string SRCFILE = "FRfis::";
 
     // Database
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // UI State
+// UI State
     private bool IsLoading = false;
     private bool mDirty = false;
     private bool mLoading = false;
@@ -343,18 +385,18 @@
     private bool LowPressed = false;
 
     // Grid refs
-    private HfGrid<RFIRow>? RFIGrid;
-    private HfGrid<AttachmentRow>? AttachmentsGrid;
-    private HfGrid<MessageRow>? MessagesGrid;
+    private GridControl<RFIRow>? RFIGrid;
+    private GridControl<AttachmentRow>? AttachmentsGrid;
+    private GridControl<MessageRow>? MessagesGrid;
 
     // Grid settings
-    private HfSelectionSettings rfiSelectionSettings = new()
+    private SelectionSettings rfiSelectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
-    private HfGridEvents<RFIRow> rfiGridEvents = new();
-    private HfEditSettings messageEditSettings = new()
+    private GridControlEvents<RFIRow> rfiGridEvents = new();
+    private EditSettings messageEditSettings = new()
     {
         AllowAdding = true,
         AllowEditing = true,
@@ -362,7 +404,31 @@
         AllowEditOnDblClick = true,
         ShowConfirmDialog = false
     };
-    private HfGridEvents<MessageRow> messageGridEvents = new();
+    private GridControlEvents<MessageRow> messageGridEvents = new();
+
+    // === Grid layout via the shared GridLayoutPresenter ===
+    // The load/resolve/order/width boilerplate lives in GridLayoutPresenter<TRow>;
+    // only the VB6 form/grid name strings stay here (fidelity). The members named
+    // gRFILayout / HasRFIGridLayout / …Version below are thin delegations, so the
+    // markup and the rest of this file are unchanged.
+    private readonly GridLayoutPresenter<RFIRow> _rfiGrid =
+        new("FRfis", "RFIGrid", instanceKey: "(0)");
+    private readonly GridLayoutPresenter<AttachmentRow> _attachmentsGrid =
+        new("FRfis", "AttachmentsGrid", instanceKey: "(0)");
+    private readonly GridLayoutPresenter<MessageRow> _messagesGrid =
+        new("FRfis", "MessagesGrid", instanceKey: "(0)");
+
+    private Dictionary<string, GridLayoutColumn> gRFILayout => _rfiGrid.Layout;
+    private bool HasRFIGridLayout => _rfiGrid.Has;
+    private int gRFILayoutVersion => _rfiGrid.Version;
+
+    private Dictionary<string, GridLayoutColumn> gAttachmentsLayout => _attachmentsGrid.Layout;
+    private bool HasAttachmentsGridLayout => _attachmentsGrid.Has;
+    private int gAttachmentsLayoutVersion => _attachmentsGrid.Version;
+
+    private Dictionary<string, GridLayoutColumn> gMessagesLayout => _messagesGrid.Layout;
+    private bool HasMessagesGridLayout => _messagesGrid.Has;
+    private int gMessagesLayoutVersion => _messagesGrid.Version;
 
     // Data
     private List<RFIRow> RFIData = new();
@@ -397,8 +463,28 @@
         rfiGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<RFIRow>>(this, OnRFIRowSelected);
         messageGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<MessageRow>>(this, OnMessageCellSaved);
 
+        await LoadGridLayoutAsync();
+
         mJob = Job ?? "";
         await LoadJob(mJob);
+    }
+
+    // === Load Grid Layout ===
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // The keyed/unkeyed "(0)" fallback + Version bump live in the presenter
+            // (its ctor was given the form/grid names and instanceKey "(0)").
+            await _rfiGrid.LoadAsync(GridLayoutSvc);
+            await _attachmentsGrid.LoadAsync(GridLayoutSvc);
+            await _messagesGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
     }
 
     // ShowForm equivalent
@@ -418,8 +504,11 @@
 
             if (string.IsNullOrEmpty(job))
             {
-                // Would show a job picker dialog
-                var promptResult = await JSRuntime.InvokeAsync<string?>("prompt", "Enter Job Number:");
+                // VB6: FPickList.Choose with SQL:
+                // SELECT DISTINCT j.Job_No Job, j.Description, j.Municipal_Address Address,
+                //   j.PM, Purchaser, j.Estimator FROM tblJobs j WHERE ISNULL(j.Inactive,0)=0
+                // For now, use prompt as picklist dialog is not yet integrated
+                var promptResult = await Dialogs.PromptAsync("Enter Job Number:");
                 if (string.IsNullOrWhiteSpace(promptResult)) return;
                 mJob = promptResult.Trim();
             }
@@ -472,8 +561,10 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{SRCFILE}LoadJob: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading job: {ex.Message}");
+            Logger.LogWarning(ex, "{SRCFILE}LoadJob");
+
+            // VB6: errHandler(SRCFILE & "LoadJob")
+            Notifications.Error($"Error loading job: {ex.Message}");
         }
         finally
         {
@@ -522,7 +613,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{SRCFILE}LoadRFI: {ex.Message}");
+            Logger.LogWarning(ex, "{SRCFILE}LoadRFI");
+
         }
         finally
         {
@@ -646,10 +738,11 @@
 
             if (prompt)
             {
-                var answer = await JSRuntime.InvokeAsync<string?>("prompt",
-                    "This data has changed.\n\nDo you want to save these changes?\n\nType 'yes' to save, 'no' to discard, or 'cancel' to go back.");
-                if (answer == null || answer.Equals("cancel", StringComparison.OrdinalIgnoreCase)) return false;
-                if (answer.Equals("no", StringComparison.OrdinalIgnoreCase)) { mDirty = false; return true; }
+                // VB6: MsgBox "This data has changed..." vbYesNoCancel
+                // confirm() returns true=Yes(save), false=No(discard). Cancel not available in JS confirm.
+                var doSave = await Dialogs.ConfirmAsync(
+                    "This data has changed.\n\nDo you want to save these changes?");
+                if (!doSave) { mDirty = false; return true; }
             }
 
             IsLoading = true;
@@ -771,8 +864,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"{SRCFILE}SaveData: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Logger.LogWarning(ex, "{SRCFILE}SaveData");
+
+            Notifications.Error($"Error saving: {ex.Message}");
             return false;
         }
         finally
@@ -833,7 +927,28 @@
     private async Task OpenOriginalMessage(MessageRow msg)
     {
         if (msg.MessageType != "Email" || string.IsNullOrEmpty(msg.ID)) return;
-        await JSRuntime.InvokeVoidAsync("alert", $"Would open original email message: {msg.ID}");
+
+        try
+        {
+            // VB6: DBGetFile to extract .msg from messages table, then ShellFile to open it
+            // In web context, we query for the original message data and present it
+            var sql = "SELECT Subject, Body, Sender, Recipients FROM messages WHERE id=@ID";
+            var rows = await db.QueryAsync(sql, new { msg.ID });
+            if (rows.Count > 0)
+            {
+                var r = rows[0];
+                var subject = SafeStr(r, "Subject");
+                var body = SafeStr(r, "Body");
+                var sender = SafeStr(r, "Sender");
+                var recipients = SafeStr(r, "Recipients");
+                Notifications.Info($"Original Email\n\nFrom: {sender}\nTo: {recipients}\nSubject: {subject}\n\n{body}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "{SRCFILE}OpenOriginalMessage");
+
+        }
     }
 
     // Toolbar handlers
@@ -874,14 +989,20 @@
 
     private async Task OnPreviewClick()
     {
+        // VB6: Opens Crystal Reports RFI.rpt with Job and RFI parameters
         if (mRFIRow < 0 || mRFIRow >= RFIData.Count) return;
         var rfiId = RFIData[mRFIRow].RFIID;
         if (rfiId == 0)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Please save the RFI first.");
+            Notifications.Info("Please save the RFI first.");
             return;
         }
-        await JSRuntime.InvokeVoidAsync("alert", $"Preview RFI #{rfiId} for Job {mJob} - Report preview not implemented.");
+        // VB6 path: System\Reports\Estimating\RFI.rpt with parameters Job, RFI, SessionState.DivisionID
+        // Crystal Reports preview is not available in web; show info for now
+        await Dialogs.AlertAsync(
+            $"Report preview for RFI #{rfiId}, Job {mJob}.\n\n" +
+            "Crystal Reports preview is not yet available in the web application.\n" +
+            "Report file: System\\Reports\\Estimating\\RFI.rpt");
     }
 
     private void OnHighClick()
@@ -905,7 +1026,10 @@
     // Browse handlers
     private async Task BrowseContacts(int index)
     {
-        var contact = await JSRuntime.InvokeAsync<string?>("prompt", "Enter contact name:");
+        // VB6: FPickList.Choose(dbHomefront, "Contact", "select * from addressbook", multi-select)
+        // Returns semicolon-separated list of selected contact names
+        // For now, use prompt as picklist dialog is not yet integrated
+        var contact = await Dialogs.PromptAsync("Enter contact name:");
         if (string.IsNullOrEmpty(contact)) return;
 
         switch (index)
@@ -921,12 +1045,12 @@
 
     private async Task BrowseDate(int index)
     {
-        var dateStr = await JSRuntime.InvokeAsync<string?>("prompt", "Enter date (e.g. Jan 15, 2024):");
+        var dateStr = await Dialogs.PromptAsync("Enter date (e.g. Jan 15, 2024):");
         if (string.IsNullOrEmpty(dateStr)) return;
 
         if (!DateTime.TryParse(dateStr, out var dt))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Invalid date format.");
+            Notifications.Info("Invalid date format.");
             return;
         }
 
@@ -963,7 +1087,11 @@
 
     private string GetObjectID()
     {
-        return $"RFI~{mJob}:{mRFIRow}";
+        // VB6: ObjectID = "RFI~" & mJob & ":" & mRFIRow
+        // mRFIRow in VB6 is the grid row index (1-based), used as the key in the objectid column
+        if (mRFIRow >= 0 && mRFIRow < RFIData.Count)
+            return $"RFI~{mJob}:{mRFIRow + 1}";
+        return $"RFI~{mJob}:0";
     }
 
     private string AppendContact(string existing, string newContact)
@@ -1026,6 +1154,31 @@
         return decimal.TryParse(s, out var v) ? v : null;
     }
 
+    // === Grid Layout Helpers (RFI) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedRFIGridLayout()
+        => _rfiGrid.GetOrdered();
+
+    // === Grid Layout Helpers (Attachments) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedAttachmentsGridLayout()
+        => _attachmentsGrid.GetOrdered();
+
+    // === Grid Layout Helpers (Messages) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedMessagesGridLayout()
+        => _messagesGrid.GetOrdered();
+
+    private static bool IsMessageFieldEditable(string field)
+    {
+        return field switch
+        {
+            "ID" or "Size" => false,
+            _ => true
+        };
+    }
+
+    // === Shared Grid Helpers ===
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
     // Models
     public class RFIRow
     {
@@ -1084,4 +1237,3 @@
         public string WebLocation { get; set; } = "Documents";
     }
 }
-```

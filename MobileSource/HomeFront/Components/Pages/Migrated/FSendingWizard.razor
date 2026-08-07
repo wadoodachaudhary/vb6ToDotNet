@@ -1,285 +1,26 @@
-```razor
 @page "/po-sending-wizard"
+@page "/po-sending-wizard/{DocType}"
 @rendermode InteractiveServer
 
 @namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using System
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Components.Layout
 @using HomeFront.Data
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FSendingWizard> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>PO Sending Wizard - HomeFront</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 700px;
-        margin: 0 auto;
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        background: #f0f0f0;
-        overflow: hidden;
-    }
-
-    .wizard-header {
-        background: linear-gradient(to right, #fff, #e8e8e8);
-        border-bottom: 1px solid #ccc;
-        padding: 12px 16px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-height: 60px;
-    }
-
-    .wizard-header-icon {
-        width: 48px;
-        height: 48px;
-        background: #0078d7;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 24px;
-    }
-
-    .wizard-header-text h4 {
-        margin: 0;
-        font-size: 14px;
-        font-weight: 700;
-    }
-
-    .wizard-header-text p {
-        margin: 2px 0 0;
-        font-size: 12px;
-        color: #555;
-    }
-
-    .wizard-body {
-        min-height: 280px;
-        padding: 16px;
-        background: #fff;
-    }
-
-    .wizard-footer {
-        border-top: 1px solid #aaa;
-        padding: 8px 16px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 6px;
-        background: #f0f0f0;
-    }
-
-    .wizard-footer button {
-        padding: 5px 16px;
-        border: 1px solid #888;
-        border-radius: 3px;
-        background: #e8e8e8;
-        cursor: pointer;
-        font-size: 12px;
-        min-width: 80px;
-    }
-
-    .wizard-footer button:hover:not(:disabled) {
-        background: #d0d0d0;
-    }
-
-    .wizard-footer button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .wizard-footer button.btn-primary {
-        background: #0078d7;
-        color: white;
-        border-color: #005a9e;
-    }
-
-    .wizard-footer button.btn-primary:hover:not(:disabled) {
-        background: #005a9e;
-    }
-
-    .frame-content {
-        display: flex;
-        gap: 12px;
-    }
-
-    .frame-icon {
-        width: 48px;
-        height: 48px;
-        background: #ddd;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        flex-shrink: 0;
-    }
-
-    .frame-main {
-        flex: 1;
-    }
-
-    .frame-label {
-        font-weight: 700;
-        margin-bottom: 8px;
-    }
-
-    .task-option {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 4px;
-        cursor: pointer;
-    }
-
-    .task-option input[type="radio"] {
-        margin: 0;
-    }
-
-    .task-option label {
-        cursor: pointer;
-        font-size: 13px;
-    }
-
-    .select-all-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 6px;
-    }
-
-    .select-all-row label {
-        font-weight: 700;
-    }
-
-    .select-all-check {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 12px;
-    }
-
-    .grid-wrapper {
-        height: 220px;
-        overflow: auto;
-        border: 1px solid #ccc;
-        border-radius: 3px;
-    }
-
-    .grid-wrapper table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-    }
-
-    .grid-wrapper th {
-        background: #e8e8e8;
-        padding: 4px 8px;
-        text-align: left;
-        border-bottom: 1px solid #ccc;
-        position: sticky;
-        top: 0;
-    }
-
-    .grid-wrapper td {
-        padding: 3px 8px;
-        border-bottom: 1px solid #eee;
-    }
-
-    .grid-wrapper tr:hover {
-        background: #f0f7ff;
-    }
-
-    .grid-wrapper input[type="checkbox"] {
-        margin: 0;
-    }
-
-    .finish-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .finish-info {
-        font-size: 13px;
-        line-height: 1.5;
-    }
-
-    .printer-section {
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        padding: 10px;
-        background: #fafafa;
-    }
-
-    .printer-section .field-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: 4px;
-        font-size: 12px;
-    }
-
-    .printer-section .field-row label {
-        min-width: 80px;
-        font-weight: 600;
-        color: #555;
-    }
-
-    .printer-section select {
-        width: 100%;
-        padding: 3px 6px;
-        border: 1px solid #ccc;
-        border-radius: 3px;
-        font-size: 12px;
-        margin-bottom: 6px;
-    }
-
-    .progress-bar-container {
-        width: 100%;
-        height: 20px;
-        background: #e0e0e0;
-        border-radius: 3px;
-        overflow: hidden;
-        margin-top: 8px;
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        background: linear-gradient(to right, #0078d7, #00a2ed);
-        transition: width 0.3s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 11px;
-        font-weight: 600;
-    }
-
-    .status-text {
-        background: #f5f5f5;
-        border: none;
-        width: 100%;
-        height: 100px;
-        font-size: 11px;
-        font-family: 'Consolas', monospace;
-        resize: none;
-        padding: 6px;
-        overflow-y: auto;
-    }
-
-    .processing-labels {
-        font-size: 12px;
-        color: #333;
-    }
-</style>
 
 <div class="wizard-container">
     @* ── WIZARD HEADER ─────────────────────────────────────── *@
@@ -301,26 +42,33 @@
                     <div class="frame-icon">📋</div>
                     <div class="frame-main">
                         <div class="frame-label">Choose the task you would like to perform</div>
-                        <div class="task-option">
-                            <input type="radio" id="chkSend0" name="sendTask" value="0"
-                                   checked="@(SelectedTask == 0)" @onchange="() => SelectedTask = 0" />
-                            <label for="chkSend0">Send new purchase orders</label>
-                        </div>
-                        <div class="task-option">
-                            <input type="radio" id="chkSend1" name="sendTask" value="1"
-                                   checked="@(SelectedTask == 1)" @onchange="() => SelectedTask = 1" />
-                            <label for="chkSend1">Resend a purchase order</label>
-                        </div>
-                        <div class="task-option">
-                            <input type="radio" id="chkSend2" name="sendTask" value="2"
-                                   checked="@(SelectedTask == 2)" @onchange="() => SelectedTask = 2" />
-                            <label for="chkSend2">Send new RFP's</label>
-                        </div>
-                        <div class="task-option">
-                            <input type="radio" id="chkSend3" name="sendTask" value="3"
-                                   checked="@(SelectedTask == 3)" @onchange="() => SelectedTask = 3" />
-                            <label for="chkSend3">Resend an RFP</label>
-                        </div>
+                        @if (mDocType == "NOI")
+                        {
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="0" @bind-SelectedValue="SelectedTask" Label="Send new Notices of Intent" />
+                            </div>
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="1" @bind-SelectedValue="SelectedTask" Label="Resend a Notice of Intent" />
+                            </div>
+                        }
+                        else if (mDocType == "RFQ")
+                        {
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="2" @bind-SelectedValue="SelectedTask" Label="Send new RFP's" />
+                            </div>
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="3" @bind-SelectedValue="SelectedTask" Label="Resend an RFP" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="0" @bind-SelectedValue="SelectedTask" Label="Send new purchase orders" />
+                            </div>
+                            <div class="task-option">
+                                <RadioControl TValue="int" Name="sendTask" Value="1" @bind-SelectedValue="SelectedTask" Label="Resend a purchase order" />
+                            </div>
+                        }
                     </div>
                 </div>
                 break;
@@ -333,9 +81,7 @@
                         <div class="select-all-row">
                             <label>Select Communities</label>
                             <div class="select-all-check">
-                                <input type="checkbox" id="selAll1" checked="@SelectAllCommunities"
-                                       @onchange="e => OnSelectAllChanged(1, (bool)(e.Value ?? false))" />
-                                <label for="selAll1">Select All</label>
+                                <CheckBoxControl Checked="@SelectAllCommunities" CheckedChanged="@(v => OnSelectAllChanged(1, v))" Label="Select All" />
                             </div>
                         </div>
                         <div class="grid-wrapper">
@@ -351,7 +97,7 @@
                                     @foreach (var item in CommunityData)
                                     {
                                         <tr>
-                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(1)" /></td>
+                                            <td><CheckBoxControl @bind-Checked="item.IsChecked" @bind-Checked:after="() => UpdateSelectAll(1)" /></td>
                                             <td>@item.Code</td>
                                             <td>@item.Description</td>
                                         </tr>
@@ -371,9 +117,7 @@
                         <div class="select-all-row">
                             <label>@JobsLabel</label>
                             <div class="select-all-check">
-                                <input type="checkbox" id="selAll2" checked="@SelectAllJobs"
-                                       @onchange="e => OnSelectAllChanged(2, (bool)(e.Value ?? false))" />
-                                <label for="selAll2">Select All</label>
+                                <CheckBoxControl Checked="@SelectAllJobs" CheckedChanged="@(v => OnSelectAllChanged(2, v))" Label="Select All" />
                             </div>
                         </div>
                         <div class="grid-wrapper">
@@ -393,7 +137,7 @@
                                     @foreach (var item in JobData)
                                     {
                                         <tr>
-                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(2)" /></td>
+                                            <td><CheckBoxControl @bind-Checked="item.IsChecked" @bind-Checked:after="() => UpdateSelectAll(2)" /></td>
                                             <td>@item.Code</td>
                                             <td>@item.Description</td>
                                             @if (SelectedTask >= 2)
@@ -417,9 +161,7 @@
                         <div class="select-all-row">
                             <label>Select Vendors</label>
                             <div class="select-all-check">
-                                <input type="checkbox" id="selAll3" checked="@SelectAllVendors"
-                                       @onchange="e => OnSelectAllChanged(3, (bool)(e.Value ?? false))" />
-                                <label for="selAll3">Select All</label>
+                                <CheckBoxControl Checked="@SelectAllVendors" CheckedChanged="@(v => OnSelectAllChanged(3, v))" Label="Select All" />
                             </div>
                         </div>
                         <div class="grid-wrapper">
@@ -435,7 +177,7 @@
                                     @foreach (var item in VendorData)
                                     {
                                         <tr>
-                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(3)" /></td>
+                                            <td><CheckBoxControl @bind-Checked="item.IsChecked" @bind-Checked:after="() => UpdateSelectAll(3)" /></td>
                                             <td>@item.Code</td>
                                             <td>@item.Description</td>
                                         </tr>
@@ -455,9 +197,7 @@
                         <div class="select-all-row">
                             <label>Select PO Groups</label>
                             <div class="select-all-check">
-                                <input type="checkbox" id="selAll4" checked="@SelectAllPOGroups"
-                                       @onchange="e => OnSelectAllChanged(4, (bool)(e.Value ?? false))" />
-                                <label for="selAll4">Select All</label>
+                                <CheckBoxControl Checked="@SelectAllPOGroups" CheckedChanged="@(v => OnSelectAllChanged(4, v))" Label="Select All" />
                             </div>
                         </div>
                         <div class="grid-wrapper">
@@ -474,7 +214,7 @@
                                     @foreach (var item in POGroupData)
                                     {
                                         <tr>
-                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(4)" /></td>
+                                            <td><CheckBoxControl @bind-Checked="item.IsChecked" @bind-Checked:after="() => UpdateSelectAll(4)" /></td>
                                             <td>@item.Code</td>
                                             <td>@item.Extra</td>
                                             <td>@item.Description</td>
@@ -495,9 +235,7 @@
                         <div class="select-all-row">
                             <label>Select Purchase Orders</label>
                             <div class="select-all-check">
-                                <input type="checkbox" id="selAll5" checked="@SelectAllPOs"
-                                       @onchange="e => OnSelectAllChanged(5, (bool)(e.Value ?? false))" />
-                                <label for="selAll5">Select All</label>
+                                <CheckBoxControl Checked="@SelectAllPOs" CheckedChanged="@(v => OnSelectAllChanged(5, v))" Label="Select All" />
                             </div>
                         </div>
                         <div class="grid-wrapper">
@@ -513,7 +251,7 @@
                                     @foreach (var item in POData)
                                     {
                                         <tr>
-                                            <td><input type="checkbox" @bind="item.IsChecked" @bind:after="() => UpdateSelectAll(5)" /></td>
+                                            <td><CheckBoxControl @bind-Checked="item.IsChecked" @bind-Checked:after="() => UpdateSelectAll(5)" /></td>
                                             <td>@item.Code</td>
                                             <td>@item.Description</td>
                                         </tr>
@@ -540,12 +278,7 @@
                                     <div class="field-row" style="margin-top:6px;">
                                         <label style="font-weight:700;">Printer:</label>
                                     </div>
-                                    <select @bind="SelectedPrinter">
-                                        @foreach (var p in PrinterList)
-                                        {
-                                            <option value="@p">@p</option>
-                                        }
-                                    </select>
+                                    <DropDownListControl TValue="string" TItem="string" DataSource="@PrinterList" @bind-Value="SelectedPrinter" Width="100%" CssClass="printer-select" />
                                     <div class="field-row"><label>Status:</label><span>@PrinterStatus</span></div>
                                     <div class="field-row"><label>Model:</label><span>@PrinterModel</span></div>
                                     <div class="field-row"><label>Where:</label><span>@PrinterLocation</span></div>
@@ -568,7 +301,7 @@
                                     <div style="margin-top:4px;">@ProgressCountLabel</div>
                                     <div>@ProgressItemLabel</div>
                                 </div>
-                                <textarea class="status-text" readonly>@StatusText</textarea>
+                                <TextAreaControl Value="@StatusText" CssClass="status-text" />
                             }
                         </div>
                     </div>
@@ -579,18 +312,28 @@
 
     @* ── WIZARD FOOTER ─────────────────────────────────────── *@
     <div class="wizard-footer">
-        <button @onclick="OnCancelClick">Cancel</button>
-        <button disabled="@(!CanGoBack)" @onclick="OnBackClick">&lt; Back</button>
-        <button disabled="@(!CanGoNext)" @onclick="OnNextClick">Next &gt;</button>
-        <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">Finish</button>
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoBack)" OnClick="OnBackClick">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoNext)" OnClick="OnNextClick">Next &gt;</ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!CanFinish)" OnClick="OnFinishClick">Finish</ButtonControl>
     </div>
 </div>
 
 @code {
-    // === Database ===
-    private DbWrapperSqlServer db = new();
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
 
-    // === Parameters ===
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // === Database ===
+// === Parameters ===
     [Parameter] public string? Job { get; set; }
 
     // === Wizard State ===
@@ -598,9 +341,23 @@
     private int SelectedTask = 0; // 0=Send new POs, 1=Resend PO, 2=Send new RFPs, 3=Resend RFP
     private bool IsProcessing = false;
 
+    // === Document type (VB6 SendingWizard DocType: PO | RFQ | NOI) ===
+    [Parameter] public string? DocType { get; set; }
+    private string mDocType = "PO";
+
     // === Header ===
-    private string WizardCaption => "Send purchase orders to vendors";
-    private string WizardDescription => "The PO Sending wizard will help you deliver your purchase orders.";
+    private string WizardCaption => mDocType switch
+    {
+        "NOI" => "Send Notices of Intent to vendors",
+        "RFQ" => "Send RFP's to vendors",
+        _ => "Send purchase orders to vendors"
+    };
+    private string WizardDescription => mDocType switch
+    {
+        "NOI" => "The Sending wizard will help you deliver your Notices of Intent.",
+        "RFQ" => "The Sending wizard will help you deliver your RFP's.",
+        _ => "The PO Sending wizard will help you deliver your purchase orders."
+    };
 
     // === Navigation ===
     private bool CanGoBack => CurrentFrame > 0 && !IsProcessing;
@@ -649,13 +406,21 @@
     // === Lifecycle ===
     protected override void OnInitialized()
     {
-        SetCurrentFrame(0, true);
+        mDocType = (DocType ?? "").Trim().ToUpperInvariant() switch
+        {
+            "NOI" => "NOI",
+            "RFQ" or "RFP" => "RFQ",
+            _ => "PO"
+        };
+        // RFQ defaults to "Send new RFP's" (task 2); PO and NOI use the PO-flow tasks (0/1).
+        SelectedTask = mDocType == "RFQ" ? 2 : 0;
+        _ = SetCurrentFrame(0, true);
     }
 
     // === Navigation ===
     private async Task OnCancelClick()
     {
-        NavigationManager.NavigateTo("/");
+        ClosePage();
     }
 
     private async Task OnBackClick()
@@ -670,16 +435,37 @@
 
     private async Task OnFinishClick()
     {
-        if (SelectedTask < 2)
+        if (mDocType == "NOI")
+        {
+            await SendNOIs();   // see SendNOIs() — recipient selection is faithful; NOI document delivery is HFSend-owned
+        }
+        else if (SelectedTask < 2)
         {
             if (await SendPOs())
-                NavigationManager.NavigateTo("/");
+                ClosePage();
         }
         else
         {
             if (await SendRFPs())
-                NavigationManager.NavigateTo("/");
+                ClosePage();
         }
+    }
+
+    // VB6: SendingWizard("NOI") shells HFSend.exe, which builds AND delivers the Notice-of-Intent
+    // document. NOI is grouped with PO sending (same "sendpos" command bar, same
+    // SendNOIsFromPrecisionBuilder gating as SendPOsFromPrecisionBuilder), so the recipient-selection
+    // frames above are the faithful PO-flow. BUT the NOI document definition + delivery live entirely
+    // in HFSend.exe, whose source is NOT part of this migration — there is no NOI report (NOI.rpt) or
+    // NOI data/marking in the available source. We therefore do NOT fabricate a document send here:
+    // the wizard collects recipients faithfully and surfaces that final delivery is pending the HFSend
+    // NOI spec. (When that spec is available, mirror SendPOs() delivery with the NOI document.)
+    private async Task<bool> SendNOIs()
+    {
+        await Task.CompletedTask;
+        Notifications.Warning("Notice-of-Intent recipients selected. NOI document generation & delivery " +
+            "is handled by the HFSend service, whose definition is not part of this migration's source — " +
+            "no NOI was sent. (Wire SendNOIs() to the HFSend NOI document once that spec is available.)");
+        return false; // keep the wizard open so the message is visible
     }
 
     private int GetNextFrame()
@@ -783,7 +569,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadCommunities error: {ex.Message}");
+            Logger.LogError(ex, "LoadCommunities error");
+
             CommunityData = new();
         }
     }
@@ -805,7 +592,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadJobs error: {ex.Message}");
+            Logger.LogError(ex, "LoadJobs error");
+
             JobData = new();
         }
     }
@@ -827,7 +615,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadVendors error: {ex.Message}");
+            Logger.LogError(ex, "LoadVendors error");
+
             VendorData = new();
         }
     }
@@ -854,7 +643,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadPOGroups error: {ex.Message}");
+            Logger.LogError(ex, "LoadPOGroups error");
+
             POGroupData = new();
         }
     }
@@ -876,22 +666,49 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadPurchaseOrders error: {ex.Message}");
+            Logger.LogError(ex, "LoadPurchaseOrders error");
+
             POData = new();
         }
+    }
+
+    // Defensive integer reader — handles null / DBNull / strings / decimals
+    // (SQL Server returns SUM() as decimal in many cases) without throwing.
+    private static int ToInt(object? value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        if (value is int i) return i;
+        if (value is long l) return (int)l;
+        if (value is decimal d) return (int)d;
+        if (value is double db) return (int)db;
+        if (int.TryParse(value.ToString(), out var parsed)) return parsed;
+        return 0;
     }
 
     private async Task LoadFinishSummary()
     {
         try
         {
+            // VB6 (FPOSendingWizard.frm:1271) reads the two aggregates by
+            // ordinal — `rs(0)` / `rs(1)` — which works because ADO recordsets
+            // expose unnamed columns positionally. DotNet's QueryAsync returns
+            // a Dictionary<string, object> keyed by column name; two columns
+            // both named "" collide and the second one overwrites the first,
+            // leaving only one entry. Alias the aggregates so each lands in
+            // its own dict slot.
             var whereClause = BuildPOWhereClause(6);
-            var sql = $"SELECT COUNT(DISTINCT PONumber), SUM(CASE ISNULL(DeliveryMethod,0) WHEN 0 THEN 1 ELSE 0 END) FROM PurchaseOrders p {whereClause}";
-            var dt = db.SqlExec(sql);
-            if (dt.Rows.Count > 0)
+            var sql = $@"SELECT COUNT(DISTINCT PONumber)                                     AS AllPOs,
+                                SUM(CASE ISNULL(DeliveryMethod,0) WHEN 0 THEN 1 ELSE 0 END)  AS PrintedPOs
+                           FROM PurchaseOrders p {whereClause}";
+            var rows = await db.QueryAsync(sql);
+            if (rows.Count > 0)
             {
-                AllPOCount = Convert.ToInt32(dt.Rows[0][0] ?? 0);
-                PrintedPOCount = Convert.ToInt32(dt.Rows[0][1] ?? 0);
+                AllPOCount     = ToInt(rows[0]["AllPOs"]);
+                PrintedPOCount = ToInt(rows[0]["PrintedPOs"]);
+            }
+            else
+            {
+                AllPOCount = PrintedPOCount = 0;
             }
             ProgressMax = AllPOCount;
             FinishMessage = $"Ready for processing. You have selected {AllPOCount} purchase orders for sending. Click Finish to send these documents now.";
@@ -899,7 +716,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadFinishSummary error: {ex.Message}");
+            Logger.LogError(ex, "LoadFinishSummary error");
+
             FinishMessage = "Error loading summary.";
         }
     }
@@ -922,7 +740,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadRFPJobs error: {ex.Message}");
+            Logger.LogError(ex, "LoadRFPJobs error");
+
             JobData = new();
         }
     }
@@ -944,7 +763,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadRFPVendors error: {ex.Message}");
+            Logger.LogError(ex, "LoadRFPVendors error");
+
             VendorData = new();
         }
     }
@@ -953,13 +773,22 @@
     {
         try
         {
+            // Same fix as LoadFinishSummary — alias the aggregates so
+            // unnamed columns don't collide in the result dictionary.
             var whereClause = BuildRFPWhereClause(6);
-            var sql = $"SELECT COUNT(*), SUM(CASE ISNULL(PurchDelMethod,0) WHEN 0 THEN 1 ELSE 0 END) FROM VendorBids b JOIN tblvendors v ON (b.vendor=v.vendor_id) {whereClause}";
-            var dt = db.SqlExec(sql);
-            if (dt.Rows.Count > 0)
+            var sql = $@"SELECT COUNT(*)                                                       AS AllPOs,
+                                SUM(CASE ISNULL(PurchDelMethod,0) WHEN 0 THEN 1 ELSE 0 END)    AS PrintedPOs
+                           FROM VendorBids b
+                           JOIN tblvendors v ON (b.vendor = v.vendor_id) {whereClause}";
+            var rows = await db.QueryAsync(sql);
+            if (rows.Count > 0)
             {
-                AllPOCount = Convert.ToInt32(dt.Rows[0][0] ?? 0);
-                PrintedPOCount = Convert.ToInt32(dt.Rows[0][1] ?? 0);
+                AllPOCount     = ToInt(rows[0]["AllPOs"]);
+                PrintedPOCount = ToInt(rows[0]["PrintedPOs"]);
+            }
+            else
+            {
+                AllPOCount = PrintedPOCount = 0;
             }
             ProgressMax = AllPOCount;
             FinishMessage = $"Ready for processing. You have selected {AllPOCount} documents for sending. Click Finish to send these documents now.";
@@ -967,12 +796,28 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadRFPFinishSummary error: {ex.Message}");
+            Logger.LogError(ex, "LoadRFPFinishSummary error");
+
             FinishMessage = "Error loading summary.";
         }
     }
 
     // === WHERE Clause Builders ===
+    // SECURITY / SQL-injection note (deferred identifier-pass audit, 2026-06-14):
+    // Every dynamic fragment these builders emit comes from APP-INTERNAL state, not
+    // free-typed user input, so there is nothing here that needs parameterizing:
+    //   • the column/table names ("Community","Job","Vendor","POIndex","PONumber",
+    //     "p","b.rfp","b.vendor") are all hardcoded literals in this file;
+    //   • the IN(...) value lists are built by FormatInClause/EscapeSql from the
+    //     CODE values of grid rows the user merely CHECKED (GetSelectedCodes /
+    //     POGroupData.Extra) — codes the wizard itself loaded from the DB a step
+    //     earlier, never typed; each value is single-quoted and '-escaped (the VB6
+    //     DbQuote(Str,…) equivalent — see FPOSendingWizard.frm BuildWhereClause);
+    //   • Job is a caller-supplied [Parameter] (a job number passed in by the
+    //     opening form, mirroring VB6 mJob = Job), and it too is EscapeSql'd.
+    // Mirrors VB6 exactly (FPOSendingWizard.frm:1388-1471): the IN-list must stay a
+    // dynamically-assembled quoted-literal list, so this is intentionally left as a
+    // string build rather than a parameterized query.
     private string BuildPOWhereClause(int frameIndex)
     {
         var c = $" WHERE Delivered={(SelectedTask == 1 ? "1" : "0")}";
@@ -1017,12 +862,19 @@
         return c;
     }
 
+    // Same provenance/escaping guarantee as BuildPOWhereClause above — all
+    // fragments come from app-internal grid-selection state, not free-typed input.
+    // (VB6 parity: FPOSendingWizard.frm:1342-1373.)
     private string BuildRFPWhereClause(int frameIndex)
     {
         var c = " WHERE b.SentDate" + (SelectedTask == 3 ? " IS NOT NULL" : " IS NULL");
 
         if (frameIndex > 2 && !SelectAllJobs)
         {
+            // b.rfp is a numeric RFP id pulled from the (DB-loaded) JobData grid's
+            // Extra column for the rows the user checked — not typed, so VB6 leaves
+            // it unquoted (FPOSendingWizard.frm:1356 "IN(" & Mid(s,2) & ")"). Kept
+            // identical; the values are app-internal ids, never user free-text.
             var selected = JobData.Where(x => x.IsChecked).Select(x => x.Extra).ToList();
             c += selected.Any() ? $" AND b.rfp IN({string.Join(",", selected)})" : " AND 1=2";
         }
@@ -1047,8 +899,13 @@
         try
         {
             var whereClause = BuildPOWhereClause(99);
-            var sql = $@"SELECT DeliveryMethod, DeliveryAddress, POFormat, PONumber, VendorDesc, '' AS PMEmail
-                         FROM PurchaseOrders p {whereClause} ORDER BY 1, 2, 5";
+            // VB6: If SendPO_CCPrjMgr option is set, join project manager to get PM email for CC
+            // For now, include the PM email join by default (matches VB6 extended query)
+            var sql = $@"SELECT p.DeliveryMethod, p.DeliveryAddress, p.POFormat, p.PONumber, p.VendorDesc, ISNULL(pm.email,'') AS PMEmail
+                         FROM PurchaseOrders p
+                         LEFT OUTER JOIN tblJobs j ON (p.job=j.job_no)
+                         LEFT OUTER JOIN tblProjectManager pm ON (j.pm=pm.pm)
+                         {whereClause} ORDER BY 1, 2, 5";
             var rows = await db.QueryAsync(sql);
 
             int i = 0;
@@ -1097,7 +954,7 @@
         catch (Exception ex)
         {
             StatusText += $"Error: {ex.Message}\n";
-            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send POs: {ex.Message}");
+            Notifications.Error($"Failed to send POs: {ex.Message}");
             return false;
         }
         finally
@@ -1111,27 +968,93 @@
     {
         if (!poNumbers.Any() || string.IsNullOrEmpty(rptFormat)) return;
 
+        // poNumbers were read straight out of the PO query result rows above
+        // (row["PONumber"]), never typed by the user; FormatInClause '-escapes each
+        // one. Safe to interpolate into the PONumber IN(...) clauses below (the
+        // sender/attachment lookups and the "mark sent" UPDATE POMaster), matching
+        // VB6 (FPOSendingWizard.frm:1713/1812 "WHERE p.PONumber IN(" & PONumbers & ")").
         var poNumbersInClause = FormatInClause(poNumbers);
 
-        // Fax falls back to print; empty recipient falls back to print
-        if (sendVia == 2) sendVia = 0; // dtFax -> dtPrint
+        // VB6: dtFax -> dtPrint fallback; empty recipient -> dtPrint
+        if (sendVia == 2) sendVia = 0;
         if (string.IsNullOrWhiteSpace(recipient)) sendVia = 0;
 
         StatusText += "Loading PO format...\n";
         StatusText += "Reading data...\n";
         StateHasChanged();
+        await Task.Delay(1);
 
-        switch (sendVia)
+        // VB6: Query sender/recipient info for email subject/body templates
+        try
         {
-            case 0: // Print
-                StatusText += "Printing...\n";
-                // In a real implementation, generate report and send to printer
-                break;
+            var infoSql = $@"SELECT pm.PMName SenderName
+                  ,s.CompanyName SenderCompany
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.fax   ELSE s.fax END SenderFax
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.phone ELSE s.fax END SenderPhone
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.email ELSE s.estimator_email END SenderEmail
+                  ,v.PurchContact RecipientName
+                  ,v.Vendor_Name RecipientCompany
+                  ,v.PurchFax RecipientFax
+                  ,v.PurchPhone RecipientPhone
+                  ,v.PurchEmail RecipientEmail
+                  ,p.Job Quote
+                  ,p.Job
+                  ,p.Vendor
+                  ,v.Vendor_Name VendorName
+                  ,j.Model
+                  ,j.Municipal_Address MunicipalAddress
+                  ,j.Legal_Address LegalAddress
+                  ,j.County
+                  ,j.Township
+                  ,ISNULL(NULLIF(l.Description,''),j.Community) Community
+                  ,ISNULL(NULLIF(a.Description,''),j.CommunityPhase) Phase
+              FROM System_setup s
+                  ,POMaster p
+                   LEFT OUTER JOIN tblJobs j on(p.Job=j.Job_no)
+                   LEFT OUTER JOIN tblProjectManager pm on(j.Purchaser=pm.PM)
+                   LEFT OUTER JOIN tblVendors v on(p.vendor=v.vendor_id)
+                   LEFT OUTER JOIN tblLocality l on(j.community=l.area)
+                   LEFT OUTER JOIN CommunityPhase a on(j.CommunityPhase=a.CommunityPhase)
+             WHERE p.PONumber IN({poNumbersInClause})";
+            var infoRows = await db.QueryAsync(infoSql);
+            var info = infoRows.FirstOrDefault();
 
-            case 1: // Email
-                StatusText += "Sending email...\n";
-                // In a real implementation, generate PDF and send via email
-                break;
+            switch (sendVia)
+            {
+                case 0: // Print
+                    // VB6: Crystal Reports SelectPrinter + PrintOut
+                    StatusText += $"Printing {poNumbers.Count} PO(s) to {SelectedPrinter}...\n";
+                    StatusText += "Crystal Reports printing is not yet available in the web application.\n";
+                    break;
+
+                case 1: // Email
+                    StatusText += "Retrieving attachments...\n";
+                    StateHasChanged();
+                    await Task.Delay(1);
+
+                    // VB6: Query POIndexDocuments for attached documents
+                    var attachSql = $@"SELECT DISTINCT p.Job, a.FileName, a.Embedded
+                         FROM POMaster p
+                         JOIN Attachments a ON(a.ObjectID='J~'+p.Job)
+                         JOIN POIndexDocuments i ON(p.POIndex=i.POIndex AND a.DocumentClass=i.Class)
+                         WHERE p.IncludeDocuments = 1 AND p.PONumber IN({poNumbersInClause})";
+                    var attachRows = await db.QueryAsync(attachSql);
+                    var attachmentCount = attachRows.Count;
+
+                    StatusText += $"Found {attachmentCount} attachment(s).\n";
+
+                    // VB6: Generate PDF via Crystal Reports, then send via SMTP or MAPI
+                    var vendorName = info != null && info.ContainsKey("VendorName")
+                        ? info["VendorName"]?.ToString() ?? "" : "";
+                    StatusText += $"Sending email to {recipient} for {vendorName}...\n";
+                    // Email sending requires server-side SMTP implementation
+                    StatusText += "Email sending is not yet available in the web application.\n";
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error preparing PO group: {ex.Message}\n";
         }
 
         // Mark sent date
@@ -1191,7 +1114,7 @@
         catch (Exception ex)
         {
             StatusText += $"Error: {ex.Message}\n";
-            await JSRuntime.InvokeVoidAsync("alert", $"Failed to send RFPs: {ex.Message}");
+            Notifications.Error($"Failed to send RFPs: {ex.Message}");
             return false;
         }
         finally
@@ -1205,27 +1128,91 @@
     {
         if (rfp == 0 || string.IsNullOrEmpty(vendor)) return;
 
-        if (sendVia == 2) sendVia = 0; // Fax -> Print
+        // VB6: dtFax -> dtPrint fallback; empty recipient -> dtPrint
+        if (sendVia == 2) sendVia = 0;
         if (string.IsNullOrWhiteSpace(recipient)) sendVia = 0;
 
         StatusText += "Reading RFP...\n";
         StatusText += "Reading data...\n";
         StateHasChanged();
+        await Task.Delay(1);
 
-        switch (sendVia)
+        // VB6: Crystal Reports RFQ.rpt with RFP and Vendor parameters
+        // Query sender/recipient info for email subject/body templates
+        try
         {
-            case 0: // Print
-                StatusText += "Printing...\n";
-                break;
-            case 1: // Email
-                StatusText += "Sending email...\n";
-                break;
+            var infoSql = $@"SELECT CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.pmname ELSE s.companyname END SenderName
+                  ,s.CompanyName SenderCompany
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.fax   ELSE s.fax END SenderFax
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.phone ELSE s.fax END SenderPhone
+                  ,CASE WHEN s.SendFaxUsingPurchasersInfo=1 THEN pm.email ELSE s.estimator_email END SenderEmail
+                  ,v.PurchContact RecipientName
+                  ,v.Vendor_Name RecipientCompany
+                  ,v.PurchFax RecipientFax
+                  ,v.PurchPhone RecipientPhone
+                  ,v.PurchEmail RecipientEmail
+                  ,p.Job Quote
+                  ,p.Job
+                  ,p.RFP
+                  ,b.Vendor
+                  ,b.BidGUID
+                  ,v.Vendor_Name VendorName
+                  ,j.Model
+                  ,j.Municipal_Address MunicipalAddress
+                  ,j.Legal_Address LegalAddress
+                  ,j.County
+                  ,j.Township
+                  ,ISNULL(NULLIF(l.Description,''),j.Community) Community
+                  ,ISNULL(NULLIF(a.Description,''),j.CommunityPhase) Phase
+              FROM System_setup s
+                  ,RFPs p
+                   JOIN VendorBids b on(p.rfp=b.rfp)
+                   LEFT OUTER JOIN tblJobs j on(p.Job=j.Job_no)
+                   LEFT OUTER JOIN tblProjectManager pm on(j.Purchaser=pm.PM)
+                   LEFT OUTER JOIN tblVendors v on(b.vendor=v.vendor_id)
+                   LEFT OUTER JOIN tblLocality l on(j.community=l.area)
+                   LEFT OUTER JOIN CommunityPhase a on(j.CommunityPhase=a.CommunityPhase)
+             WHERE p.RFP=@RFP AND b.vendor=@Vendor";
+            var infoRows = await db.QueryAsync(infoSql, new { RFP = rfp, Vendor = vendor });
+            var info = infoRows.FirstOrDefault();
+
+            var vendorName = info != null && info.ContainsKey("VendorName")
+                ? info["VendorName"]?.ToString() ?? "" : "";
+
+            switch (sendVia)
+            {
+                case 0: // Print
+                    // VB6: Crystal Reports SelectPrinter + PrintOut
+                    StatusText += $"Printing RFP {rfp} for {vendorName} to {SelectedPrinter}...\n";
+                    StatusText += "Crystal Reports printing is not yet available in the web application.\n";
+                    break;
+
+                case 1: // Email
+                    StatusText += "Retrieving attachments...\n";
+                    StateHasChanged();
+                    await Task.Delay(1);
+
+                    // VB6: Query attachments for ObjectID='RFP~{rfp}'
+                    var attachSql = "SELECT DISTINCT FileName, Embedded, FileTitle FROM Attachments WHERE ObjectID=@ObjectId";
+                    var attachRows = await db.QueryAsync(attachSql, new { ObjectId = $"RFP~{rfp}" });
+                    StatusText += $"Found {attachRows.Count} attachment(s).\n";
+
+                    // VB6: Options for AttachRFP_PDF or AttachRFP_XLS, then send via MAPI or SMTP
+                    StatusText += $"Sending email to {recipient} for {vendorName}...\n";
+                    StatusText += "Email sending is not yet available in the web application.\n";
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText += $"Error preparing RFP group: {ex.Message}\n";
         }
 
         // Mark sent date
         try
         {
-            await db.ExecuteAsync($"UPDATE vendorbids SET SentDate=GETDATE() WHERE RFP={rfp} AND Vendor='{EscapeSql(vendor)}'");
+            await db.ExecuteAsync("UPDATE vendorbids SET SentDate=GETDATE() WHERE RFP=@RFP AND Vendor=@Vendor",
+                new { RFP = rfp, Vendor = vendor });
             StatusText += $"Marked RFP {rfp} / Vendor {vendor} as sent.\n";
         }
         catch (Exception ex)
@@ -1292,11 +1279,19 @@
         return data.Where(x => x.IsChecked).Select(x => x.Code).ToList();
     }
 
+    // Builds a quoted, '-escaped comma list for a SQL IN(...) clause. Inputs are
+    // always app-internal codes (grid selections / DB-derived PO numbers), never
+    // free-typed input; EscapeSql doubles embedded single quotes so a code that
+    // legitimately contains a quote can't break out of its string literal. This is
+    // the VB6 DbQuote(Str,…) equivalent — the deferred identifier-pass audit
+    // (2026-06-14) confirmed there are no user-typed segments to parameterize here.
     private string FormatInClause(List<string> values)
     {
         return string.Join(",", values.Select(v => $"'{EscapeSql(v)}'"));
     }
 
+    // Doubles single quotes (VB6 DbQuote string-escaping). Used for the IN(...)
+    // value lists and the Job= predicate; all callers pass app-internal values.
     private string EscapeSql(string value)
     {
         return (value ?? "").Replace("'", "''");
@@ -1311,4 +1306,3 @@
         public bool IsChecked { get; set; } = true;
     }
 }
-```

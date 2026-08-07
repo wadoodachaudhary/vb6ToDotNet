@@ -458,7 +458,15 @@
                             @if (WorkflowVisible)
                             {
                                 <div class="workflow-host">
-                                    <Workflow Embedded="true"
+                                    @* @key = the division epoch. VB6 FMain.frm:3074 calls
+                                       FHome2.LoadJobs after a division change; re-keying is the Blazor
+                                       equivalent — it disposes this Workflow (and the
+                                       WorkflowEstimating it hosts via DynamicComponent) so
+                                       OnInitializedAsync re-runs the division-scoped Current Jobs
+                                       query. Without the key the component survives the division
+                                       change and keeps showing the previous division's jobs. *@
+                                    <Workflow @key="_divisionEpoch"
+                                              Embedded="true"
                                               SelectedTabName="@_workflowTab"
                                               OnTabChanged="OnWorkflowTabChanged" />
                                 </div>
@@ -625,6 +633,10 @@
     private bool WorkflowVisible = false;
     private string _workflowTab = "Estimating";   // Persisted: last selected workflow tab
     private string _lastRoute = "";                // Persisted: last opened page route
+    // Bumped by OnDivisionSelected and used as the @key on the home <Workflow> host, so a
+    // division change disposes and re-creates WorkflowEstimating — the Blazor equivalent of
+    // VB6 FMain.frm:3074 `If IsFormLoaded("FHome2") Then Call FHome2.LoadJobs`.
+    private int _divisionEpoch;
 
     // === Current Job ===
     private string mCurrentJob = "";
@@ -646,7 +658,8 @@
     private bool AccountingConnected = false;
     private bool UseEstimatingWorksheetsOnly = false;
     private bool UseCommunityStandards = false;
-    private string AppVersion = "1.0.0.1";
+    private string AppVersion = Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "Unknown";
 
     // === Dynamic Menu Items (Inquiries & Reports) ===
     private List<MenuFileItem> InquiryItems = new();
@@ -989,7 +1002,7 @@
             route: route,
             pageType: pageType,
             parameters: parameters,
-            title: PrettyTitleForRoute(basePath, pageType),
+            title: PrettyTitleForRoute(basePath, pageType, route),
             isSingleton: isSingleton);
         _windows.Add(window);
         _activeWindowId = window.Id;
@@ -1002,12 +1015,26 @@
     /// override this via the SetPageTitle cascading delegate once they
     /// load their data. Falls back to the .NET class name (e.g. "FAssembly")
     /// when no friendlier label is wired here.</summary>
-    private static string PrettyTitleForRoute(string basePath, Type pageType)
+    private static string PrettyTitleForRoute(string basePath, Type pageType, string? route = null)
     {
+        // HHM-672: the Import/Export wizard is one form with several modes, and the
+        // mode rides on the route ("/assembly-import-export/importvendors"). basePath
+        // strips it, so the vendor modes were inheriting the Assemblies caption. The
+        // vendor modes are VB6 FImportVendors.frm / FVendor "ExcelExport", which are
+        // their own windows, so they get their own tab title.
+        if (basePath == "/assembly-import-export"
+            && route != null
+            && (route.EndsWith("/importvendors", StringComparison.OrdinalIgnoreCase)
+                || route.EndsWith("/exportvendors", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Import/Export Vendors";
+        }
+
         return basePath switch
         {
             "/assembly"           => "Assembly",
             "/job"                => "Job",
+            "/job-correspondence" => "Correspondence Log",   // VB6 FJobCorrespondence.frm caption
             "/pricing-worksheet"  => "Pricing Worksheet",
             "/estimate-items"     => "Estimate Items",
             "/purchase-order"     => "Purchase Order",
@@ -2841,8 +2868,22 @@
             if (row.TryGetValue("DivisionID", out var divId))
             {
                 DivisionID = divId?.ToString() ?? "1";
+
+                // VB6 FMain.frm:3060 — Call HFApp.SetDivision(...). HFApp.DivisionID is the ONE
+                // global every other form reads, so setting it switches the whole app at once.
+                // Here the canonical value is ISessionStateService.DivisionID; without this write
+                // the change only re-captioned FMain's own shell and every other screen — including
+                // the home screen's Current Jobs query — kept querying the login-time division.
+                if (int.TryParse(DivisionID, out var newDiv))
+                    Session.DivisionID = newDiv;
+
                 UpdateCaption();
                 await LoadInterface();
+                // VB6 FMain.frm:3074 — If IsFormLoaded("FHome2") Then Call FHome2.LoadJobs.
+                // Blazor has no "call a method on the open form", so bump the epoch: it re-keys the
+                // home <Workflow> host below, which disposes and re-creates WorkflowEstimating so
+                // its OnInitializedAsync re-runs the jobs query against the new division.
+                _divisionEpoch++;
                 StateHasChanged();
             }
         }

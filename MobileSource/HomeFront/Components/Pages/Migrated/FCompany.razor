@@ -1,203 +1,81 @@
-```razor
 @namespace HomeFront.Components.Pages
 @rendermode InteractiveServer
 
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 @inject IJSRuntime JSRuntime
+@inject ILogger<FCompany> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
-<style>
-    .company-dialog-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        background: rgba(0, 0, 0, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .company-dialog {
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-        width: 540px;
-        max-height: 80vh;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .company-dialog-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 20px;
-        font-weight: 600;
-        font-size: 16px;
-        border-bottom: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .company-dialog-header button {
-        background: none;
-        border: none;
-        font-size: 22px;
-        cursor: pointer;
-        color: #6c757d;
-        padding: 0 4px;
-    }
-
-    .company-dialog-header button:hover {
-        color: #212529;
-    }
-
-    .company-dialog-body {
-        padding: 20px;
-        overflow-y: auto;
-        flex: 1;
-    }
-
-    .company-field-row {
-        display: flex;
-        align-items: flex-start;
-        margin-bottom: 10px;
-    }
-
-    .company-field-row label {
-        min-width: 120px;
-        text-align: right;
-        padding-right: 12px;
-        padding-top: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        color: #495057;
-    }
-
-    .company-field-row input,
-    .company-field-row textarea,
-    .company-field-row select {
-        flex: 1;
-        padding: 5px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-
-    .company-field-row input:focus,
-    .company-field-row textarea:focus,
-    .company-field-row select:focus {
-        border-color: #86b7fe;
-        outline: 0;
-        box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.15);
-    }
-
-    .company-dialog-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        padding: 12px 20px;
-        border-top: 1px solid #dee2e6;
-        background: #f8f9fa;
-    }
-
-    .company-dialog-footer .btn {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-    }
-
-    .company-dialog-footer .btn:hover {
-        background: #e9ecef;
-    }
-
-    .company-dialog-footer .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .company-dialog-footer .btn-primary:hover {
-        background: #0b5ed7;
-    }
-</style>
-
-@if (IsVisible)
-{
-    <div class="company-dialog-overlay" @onkeydown="OnKeyDown" tabindex="0">
-        <div class="company-dialog" @onclick:stopPropagation="true">
-            <div class="company-dialog-header">
-                <span>Company</span>
-                <button @onclick="OnCancel">×</button>
-            </div>
-            <div class="company-dialog-body">
-                <div class="company-field-row">
-                    <label>Company Name</label>
-                    <input type="text" @bind="CompanyName" @onfocus="@(() => SelectAll("CompanyName"))" />
-                </div>
-                <div class="company-field-row">
-                    <label>Address</label>
-                    <textarea rows="2" maxlength="102" @bind="Address" @onfocus="@(() => SelectAll("Address"))"></textarea>
-                </div>
-                <div class="company-field-row">
-                    <label>City/Prov</label>
-                    <div style="display: flex; gap: 6px; flex: 1;">
-                        <input type="text" maxlength="50" @bind="City" @onfocus="@(() => SelectAll("City"))" style="flex: 3;" />
-                        <select @bind="Province" style="flex: 1;">
-                            <option value="">--</option>
-                            @foreach (var prov in ProvinceList)
-                            {
-                                <option value="@prov">@prov</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-                <div class="company-field-row">
-                    <label>Postal Code</label>
-                    <input type="text" maxlength="7" @bind="PostalCode" @onfocus="@(() => SelectAll("PostalCode"))" style="max-width: 140px;" />
-                </div>
-                <div class="company-field-row">
-                    <label>Country</label>
-                    <select @bind="Country" @bind:after="OnCountryChanged" style="max-width: 120px;">
-                        <option value="">--</option>
-                        @foreach (var c in CountryList)
-                        {
-                            <option value="@c">@c</option>
-                        }
-                    </select>
-                </div>
-                <div class="company-field-row">
-                    <label>County</label>
-                    <input type="text" maxlength="50" @bind="County" @onfocus="@(() => SelectAll("County"))" />
-                </div>
-                <div class="company-field-row">
-                    <label>Email</label>
-                    <input type="text" maxlength="50" @bind="Email" @onfocus="@(() => SelectAll("Email"))" />
-                </div>
-                <div class="company-field-row">
-                    <label>Phone</label>
-                    <input type="text" maxlength="30" @bind="Phone" @onfocus="@(() => SelectAll("Phone"))"
-                           @onblur="@(() => Phone = FormatPhone(Phone))" style="max-width: 180px;" />
-                </div>
-                <div class="company-field-row">
-                    <label>Fax</label>
-                    <input type="text" maxlength="30" @bind="Fax" @onfocus="@(() => SelectAll("Fax"))"
-                           @onblur="@(() => Fax = FormatPhone(Fax))" style="max-width: 180px;" />
-                </div>
-                <div class="company-field-row">
-                    <label>Tax Number</label>
-                    <input type="text" maxlength="20" @bind="TaxNumber" @onfocus="@(() => SelectAll("TaxNumber"))" style="max-width: 160px;" />
-                </div>
-            </div>
-            <div class="company-dialog-footer">
-                <button class="btn btn-primary" @onclick="OnOk">OK</button>
-                <button class="btn" @onclick="OnCancel">Cancel</button>
+<DialogControl Visible="IsVisible"
+               Header="Company"
+               Width="540px"
+               IsModal="false"
+               CloseOnEscape="true"
+               CssClass="company-dialog"
+               VisibleChanged="OnDialogVisibleChanged">
+    <ChildContent>
+        <div class="company-field-row">
+            <label>Company Name</label>
+            <TextBoxControl @bind-Value="CompanyName" @onfocus="@(() => SelectAll("CompanyName"))" />
+        </div>
+        <div class="company-field-row">
+            <label>Address</label>
+            <TextBoxControl Multiline="true" Rows="2" MaxLength="102" @bind-Value="Address" @onfocus="@(() => SelectAll("Address"))" />
+        </div>
+        <div class="company-field-row">
+            <label>City/Prov</label>
+            <div class="company-cityprov">
+                <TextBoxControl MaxLength="50" @bind-Value="City" @onfocus="@(() => SelectAll("City"))" CssClass="company-city" />
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="ProvinceListWithBlank"
+                                     @bind-Value="Province"
+                                     Width="110px"
+                                     CssClass="company-prov" />
             </div>
         </div>
-    </div>
-}
+        <div class="company-field-row">
+            <label>Postal Code</label>
+            <TextBoxControl MaxLength="7" @bind-Value="PostalCode" @onfocus="@(() => SelectAll("PostalCode"))" style="max-width: 140px;" />
+        </div>
+        <div class="company-field-row">
+            <label>Country</label>
+            <DropDownListControl TValue="string" TItem="string"
+                                 DataSource="CountryListWithBlank"
+                                 Value="Country"
+                                 ValueChanged="OnCountrySelected"
+                                 Width="120px"
+                                 CssClass="company-country" />
+        </div>
+        <div class="company-field-row">
+            <label>County</label>
+            <TextBoxControl MaxLength="50" @bind-Value="County" @onfocus="@(() => SelectAll("County"))" />
+        </div>
+        <div class="company-field-row">
+            <label>Email</label>
+            <TextBoxControl MaxLength="50" @bind-Value="Email" @onfocus="@(() => SelectAll("Email"))" />
+        </div>
+        <div class="company-field-row">
+            <label>Phone</label>
+            <TextBoxControl MaxLength="30" @bind-Value="Phone" @onfocus="@(() => SelectAll("Phone"))"
+                            @onblur="@(() => Phone = FormatPhone(Phone))" style="max-width: 180px;" />
+        </div>
+        <div class="company-field-row">
+            <label>Fax</label>
+            <TextBoxControl MaxLength="30" @bind-Value="Fax" @onfocus="@(() => SelectAll("Fax"))"
+                            @onblur="@(() => Fax = FormatPhone(Fax))" style="max-width: 180px;" />
+        </div>
+        <div class="company-field-row">
+            <label>Tax Number</label>
+            <TextBoxControl MaxLength="20" @bind-Value="TaxNumber" @onfocus="@(() => SelectAll("TaxNumber"))" style="max-width: 160px;" />
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-primary" OnClick="OnOk">OK</ButtonControl>
+        <ButtonControl OnClick="OnCancel">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
 
 @code {
     // === Parameters ===
@@ -206,9 +84,7 @@
     [Parameter] public EventCallback<CompanyData> OnSave { get; set; }
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-
-    // === Form Fields ===
+// === Form Fields ===
     private string CompanyName { get; set; } = "";
     private string Address { get; set; } = "";
     private string City { get; set; } = "";
@@ -224,6 +100,18 @@
     // === Lookup Lists ===
     private List<string> CountryList { get; set; } = new();
     private List<string> ProvinceList { get; set; } = new();
+
+    // DropDownListControl data sources include a leading blank entry so the user
+    // can re-select the empty "--" choice (mirrors the old <option value="">--</option>).
+    private List<string> CountryListWithBlank => PrependBlank(CountryList);
+    private List<string> ProvinceListWithBlank => PrependBlank(ProvinceList);
+
+    private static List<string> PrependBlank(List<string> source)
+    {
+        var list = new List<string>(source.Count + 1) { "" };
+        list.AddRange(source);
+        return list;
+    }
 
     // === Lifecycle ===
     protected override async Task OnInitializedAsync()
@@ -274,7 +162,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadCountries error: {ex.Message}");
+            Logger.LogError(ex, "LoadCountries error");
+
         }
     }
 
@@ -294,11 +183,20 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"LoadProvinces error: {ex.Message}");
+            Logger.LogError(ex, "LoadProvinces error");
+
         }
     }
 
     // === Event Handlers ===
+    // DropDownListControl has no @bind:after; this adapter sets Country then runs
+    // the original after-binding logic (OnCountryChanged).
+    private async Task OnCountrySelected(string? value)
+    {
+        Country = value ?? "";
+        await OnCountryChanged();
+    }
+
     private async Task OnCountryChanged()
     {
         Province = "";
@@ -335,18 +233,26 @@
         await IsVisibleChanged.InvokeAsync(false);
     }
 
-    private async Task OnKeyDown(KeyboardEventArgs e)
+    // DialogControl raises VisibleChanged(false) on Escape (CloseOnEscape) or the ×
+    // close icon — both map to the original Cancel behavior.
+    private async Task OnDialogVisibleChanged(bool visible)
     {
-        if (e.Key == "Escape")
+        if (!visible)
         {
             await OnCancel();
         }
     }
 
-    private void SelectAll(string fieldName)
+    private async Task SelectAll(string fieldName)
     {
-        // In Blazor, text selection on focus is typically handled via JS interop.
-        // This is a placeholder; implement via JSRuntime if needed.
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "document.activeElement?.select?.()");
+        }
+        catch
+        {
+            // ignore if element doesn't support select
+        }
     }
 
     // === Helpers ===
@@ -404,4 +310,3 @@
         public string Email { get; set; } = "";
     }
 }
-```

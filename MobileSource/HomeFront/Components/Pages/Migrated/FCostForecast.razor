@@ -1,106 +1,30 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Ported from HomeFront to POC
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
 @page "/cost-forecast"
 @rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
 
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 @using System.Data
+@using System.Text
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FCostForecast> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Cost Forecasting - HomeFront</PageTitle>
-
-<style>
-    .cost-forecast-container {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 16px;
-        font-family: Arial, Helvetica, sans-serif;
-    }
-    .header-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    .header-row h3 {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 600;
-        color: #333;
-    }
-    .grid-section {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        overflow: hidden;
-        background: #fff;
-    }
-    .forecast-panel {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 12px;
-        background: #f8f9fa;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-    .checkbox-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-    }
-    .form-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-    .form-row label {
-        min-width: 90px;
-        text-align: right;
-        font-size: 13px;
-        font-weight: 600;
-    }
-    .label-disabled { color: #9aa0a6; }
-    .label-enabled { color: #212529; }
-    .form-row select {
-        min-width: 180px;
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #fff;
-    }
-    .btn {
-        padding: 6px 12px;
-        border-radius: 4px;
-        border: 1px solid #ced4da;
-        background: #fff;
-        font-size: 13px;
-        cursor: pointer;
-    }
-    .btn:hover { background: #e9ecef; }
-    .btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .btn-warning { background: #ffc107; border-color: #ffc107; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .loading-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 2000;
-    }
-    .loading-box {
-        background: #fff;
-        padding: 16px 24px;
-        border-radius: 6px;
-        box-shadow: 0 4px 18px rgba(0,0,0,0.2);
-        font-size: 14px;
-        font-weight: 500;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -112,86 +36,96 @@
 <div class="cost-forecast-container">
     <div class="header-row">
         <h3>Cost Forecasting</h3>
-        <button class="btn btn-primary" disabled="@(!mDirty)" @onclick="() => SaveDataAsync(true)">Save Changes</button>
+
+        @* View toggle — Grid (the editable table) vs. Chart (per-row bar
+           charts of Forecast1..12). Mirrors VB6 frame-tab semantics with a
+           pair of radio buttons. *@
+        <div class="cf-view-toggle" role="radiogroup" aria-label="View">
+            <RadioControl TValue="ForecastViewMode" Name="cf-view" Value="ForecastViewMode.Grid" @bind-SelectedValue="_viewMode" Label="Grid" CssClass="cf-radio" />
+            <RadioControl TValue="ForecastViewMode" Name="cf-view" Value="ForecastViewMode.Chart" @bind-SelectedValue="_viewMode" Label="Chart" CssClass="cf-radio" />
+        </div>
+
+        <ButtonControl CssClass="btn btn-primary" Disabled="@(!mDirty)" OnClick="() => SaveDataAsync(true)">Save Changes</ButtonControl>
     </div>
 
     <div class="grid-section">
-        <HfGrid @ref="ForecastGrid"
+        <GridControl @ref="ForecastGrid"
                 TValue="ForecastRow"
                 DataSource="@ForecastData"
                 AllowSorting="true"
                 AllowResizing="true"
                 AllowSelection="true"
                 Height="520px"
+                ShowAsChart="@(_viewMode == ForecastViewMode.Chart)"
+                ChartLabelField="@nameof(ForecastRow.POIndexDisplay)"
+                ChartValueFields="@_forecastFieldNames"
+                ChartValueLabels="@ForecastNames"
+                ChartBarColor="#2563eb"
+                ChartShowValues="false"
                 EditSettingsRef="@editSettings"
                 EventsRef="@gridEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(ForecastRow.POIndexDisplay)" HeaderText="PO Index" Width="260px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast1)" HeaderText="@GetForecastHeader(1)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast2)" HeaderText="@GetForecastHeader(2)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast3)" HeaderText="@GetForecastHeader(3)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast4)" HeaderText="@GetForecastHeader(4)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast5)" HeaderText="@GetForecastHeader(5)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast6)" HeaderText="@GetForecastHeader(6)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast7)" HeaderText="@GetForecastHeader(7)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast8)" HeaderText="@GetForecastHeader(8)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast9)" HeaderText="@GetForecastHeader(9)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast10)" HeaderText="@GetForecastHeader(10)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast11)" HeaderText="@GetForecastHeader(11)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-                <HfGridColumn Field="@nameof(ForecastRow.Forecast12)" HeaderText="@GetForecastHeader(12)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right" />
-            </HfGridColumnsBase>
-        </HfGrid>
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(ForecastRow.POIndexDisplay)" HeaderText="PO Index" Width="260px" AllowEditing="false" />
+                @for (int fi = 1; fi <= 12; fi++)
+                {
+                    var idx = fi;
+                    <GridColumn Field="@($"Forecast{idx}")" HeaderText="@GetForecastHeader(idx)" Width="100px" Type="ColumnType.Number" Format="N2" TextAlign="TextAlign.Right">
+                        <HeaderTemplate>
+                            <span @ondblclick="() => RenameColumn(idx)" title="Double-click to rename" style="cursor:pointer">@GetForecastHeader(idx)</span>
+                        </HeaderTemplate>
+                    </GridColumn>
+                }
+            </GridColumnsBase>
+        </GridControl>
     </div>
 
     <div class="forecast-panel">
         <div class="checkbox-row">
-            <input type="checkbox" id="chkCalc" @bind="CalcPrices" />
-            <label for="chkCalc">Calculate new vendor price forecasts</label>
+            <CheckBoxControl @bind-Checked="CalcPrices" Label="Calculate new vendor price forecasts" />
         </div>
 
         <div class="form-row">
             <label class="@(CalcPrices ? "label-enabled" : "label-disabled")">Calculate</label>
-            <select @bind="ForecastStartIndex" disabled="@(!CalcPrices)">
-                @for (int i = 0; i < ForecastNames.Count; i++)
-                {
-                    <option value="@i">@ForecastNames[i]</option>
-                }
-            </select>
+            <DropDownListControl TValue="int" TItem="IndexedOption" DataSource="@ForecastOptions"
+                                 ValueFieldName="Value" TextFieldName="Text"
+                                 @bind-Value="ForecastStartIndex" Enabled="@CalcPrices" Width="180px" />
             <span class="@(CalcPrices ? "label-enabled" : "label-disabled")">thru</span>
-            <select @bind="ForecastEndIndex" disabled="@(!CalcPrices)">
-                @for (int i = 0; i < ForecastNames.Count; i++)
-                {
-                    <option value="@i">@ForecastNames[i]</option>
-                }
-            </select>
+            <DropDownListControl TValue="int" TItem="IndexedOption" DataSource="@ForecastOptions"
+                                 ValueFieldName="Value" TextFieldName="Text"
+                                 @bind-Value="ForecastEndIndex" Enabled="@CalcPrices" Width="180px" />
         </div>
 
         <div class="form-row">
             <label class="@(CalcPrices ? "label-enabled" : "label-disabled")">Cost Basis</label>
-            <select @bind="CostBasisIndex" disabled="@(!CalcPrices)">
-                @for (int i = 0; i < CostBasisItems.Count; i++)
-                {
-                    <option value="@i">@CostBasisItems[i]</option>
-                }
-            </select>
+            <DropDownListControl TValue="int" TItem="IndexedOption" DataSource="@CostBasisOptions"
+                                 ValueFieldName="Value" TextFieldName="Text"
+                                 @bind-Value="CostBasisIndex" Enabled="@CalcPrices" Width="180px" />
         </div>
 
         <div class="form-row">
             @if (CalcPrices)
             {
-                <button class="btn btn-warning" @onclick="UpdateForecastsAsync">Update Forecasted Prices</button>
+                <ButtonControl CssClass="btn btn-warning" OnClick="UpdateForecastsAsync">Update Forecasted Prices</ButtonControl>
             }
         </div>
     </div>
 </div>
 
 @code {
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<ForecastRow>? ForecastGrid;
+private GridControl<ForecastRow>? ForecastGrid;
 
     private bool IsLoading;
     private bool mDirty;
     private bool CalcPrices;
+
+    // ── View toggle (Grid / Chart) ────────────────────────────────────
+    private enum ForecastViewMode { Grid, Chart }
+    private ForecastViewMode _viewMode = ForecastViewMode.Grid;
+
+    // Forecast1..Forecast12 field names — fed to GridControl.ChartValueFields
+    // so each row is rendered as a 12-bar mini chart in chart mode.
+    private static readonly List<string> _forecastFieldNames =
+        Enumerable.Range(1, 12).Select(i => $"Forecast{i}").ToList();
 
     private List<ForecastRow> ForecastData = new();
     private List<string> ForecastNames = new();
@@ -219,7 +153,18 @@
     }
     private int CostBasisIndex;
 
-    private readonly HfEditSettings editSettings = new()
+    // Selectable-option projections for the DropDownListControls. The lists they
+    // project (ForecastNames / CostBasisItems) can change at runtime (e.g. after
+    // a column rename), so these are computed properties rather than cached lists.
+    private sealed record IndexedOption(int Value, string Text);
+
+    private List<IndexedOption> ForecastOptions =>
+        ForecastNames.Select((name, i) => new IndexedOption(i, name)).ToList();
+
+    private List<IndexedOption> CostBasisOptions =>
+        CostBasisItems.Select((name, i) => new IndexedOption(i, name)).ToList();
+
+    private readonly EditSettings editSettings = new()
     {
         AllowAdding = false,
         AllowEditing = true,
@@ -228,9 +173,7 @@
         ShowConfirmDialog = false
     };
 
-    private readonly HfGridEvents<ForecastRow> gridEvents = new();
-
-    private int DivisionID => 1;
+    private readonly GridControlEvents<ForecastRow> gridEvents = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -256,7 +199,7 @@
                 FROM tblPOIndex
                 WHERE DivisionID = @DivisionID
                 ORDER BY POIndex";
-            var rows = await db.QueryAsync(sql, new { DivisionID });
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
             foreach (var row in rows)
             {
@@ -292,7 +235,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Notifications.Error($"Error loading data: {ex.Message}");
         }
         finally
         {
@@ -344,7 +287,7 @@
 
         if (prompt)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            var confirm = await Dialogs.ConfirmAsync(
                 "This data has changed.\n\nDo you want to save the changes?");
             if (!confirm) return true;
         }
@@ -374,7 +317,7 @@
             {
                 await db.ExecuteAsync(sql, new
                 {
-                    DivisionID,
+                    SessionState.DivisionID,
                     row.POIndex,
                     F1 = row.Forecast1,
                     F2 = row.Forecast2,
@@ -396,7 +339,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Notifications.Error($"Error saving: {ex.Message}");
             return false;
         }
         finally
@@ -430,7 +373,7 @@
             "to do?\n\n" +
             string.Join("\n", lines);
 
-        if (!await JSRuntime.InvokeAsync<bool>("confirm", message)) return;
+        if (!await Dialogs.ConfirmAsync(message)) return;
         if (!await SaveDataAsync(false)) return;
 
         IsLoading = true;
@@ -458,13 +401,13 @@
                 INNER JOIN tblPOIndex p
                     ON p.DivisionID = t2.DivisionID AND p.POIndex = t2.POIndex
                 WHERE t1.DivisionID = @DivisionID";
-            await db.ExecuteAsync(updateSql, new { DivisionID });
+            await db.ExecuteAsync(updateSql, new { SessionState.DivisionID });
 
             await db.ExecuteAsync("ALTER TABLE tblVendorCost ENABLE TRIGGER ALL");
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error updating forecasts: {ex.Message}");
+            Notifications.Error($"Error updating forecasts: {ex.Message}");
         }
         finally
         {
@@ -485,6 +428,31 @@
             5 => "Last_Cost3",
             _ => $"Forecast{Math.Max(1, CostBasisIndex - 5)}"
         };
+    }
+
+    // ── Rename Forecast Column (from VB6 RenameColumn / RenameForecast) ──
+    private async Task RenameColumn(int forecastIndex)
+    {
+        if (forecastIndex < 1 || forecastIndex > 12) return;
+        var currentName = ForecastNames[forecastIndex - 1];
+        var newName = await Dialogs.PromptAsync(
+            $"Enter a new description for Forecast{forecastIndex}.", "", currentName);
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        newName = newName.Trim();
+        if (newName.Length > 30) newName = newName.Substring(0, 30);
+
+        ForecastNames[forecastIndex - 1] = newName;
+        // Update CostBasisItems entry (index forecastIndex + 5)
+        if (forecastIndex + 5 < CostBasisItems.Count)
+            CostBasisItems[forecastIndex + 5] = newName;
+
+        await db.ExecuteAsync(@"
+            UPDATE CustomDescriptions
+            SET Custom_Description=@NewName
+            WHERE Item=@ItemKey",
+            new { NewName = newName, ItemKey = $"Forecast{forecastIndex}" });
+
+        StateHasChanged();
     }
 
     private static decimal? ToNullableDecimal(object? val)
@@ -513,4 +481,3 @@
         public decimal? Forecast12 { get; set; }
     }
 }
-```

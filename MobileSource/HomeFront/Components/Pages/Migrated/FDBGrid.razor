@@ -1,66 +1,65 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Fixed double-click crash (indexer reflection) and modal rows invisible
+     - Modal-capable mode for FAssembly Cat / Sub Cat / Location popups
+     - Ported from HomeFront to POC
+   ───────────────────────────────────────────────────────────────── *@
 @page "/db-grid"
 @page "/db-grid/{FormCaption}"
 @rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using HomeFront.Data
 @using System.Data
+@using System.Globalization
+@using System.Reflection
 @using System.Text
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FDBGrid> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject IUserPreferencesService Prefs
+@using HomeFront.Models
+@inject DbWrapperSqlServer db
 
 <PageTitle>@Caption - HomeFront</PageTitle>
 
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
+@* IsModal: when FAssembly (or any caller) hosts FDBGrid inline, wrap the
+   page in a backdrop+frame so the caller stays visible behind it. VB6
+   FDBGrid.ShowForm was modal-blocking; this preserves that UX without
+   stealing the tab. When IsModal is false (the /db-grid/{caption} route
+   or the FMain Setup menu path), the page renders normally as an MDI
+   tab. Dual mode mirrors FTakeoff's IsModal pattern. *@
+@if (IsModal)
+{
+    <div class="fx-dbgrid-modal-backdrop"></div>
+}
+@* tabindex + @onkeydown: VB6 Form_KeyDown/gData_KeyDown shortcuts (Ctrl+S
+   save, modifier+Delete delete record — FDBGrid.frm:368-373, 406-448). The
+   GridControl exposes no consumer keydown event, so catch the bubbled
+   keydown on the page wrapper — same pattern as FDefaultVendors/
+   FCommunities. Pure Blazor @onkeydown, no JS (HHM-286). *@
+@* Sizer drag is tracked here, not on the grid wrapper: that wrapper is only as
+   wide as its columns, so dragging right left it immediately and cancelled. *@
+<div class="@DbGridRootCssClass" tabindex="0" @ref="_pageElement" @onkeydown="OnPageKeyDown"
+     @onmousemove="OnGridResizeDrag" @onmouseup="EndGridResize" @onmouseleave="EndGridResize">
+    @if (IsModal)
+    {
+        <div class="fx-dbgrid-modal-header">
+            <img class="fx-dbgrid-modal-icon" src="@ModalIconPath" alt="" onerror="this.style.display='none'" />
+            <span class="fx-dbgrid-modal-title">@Caption</span>
+            <button type="button" class="fx-dbgrid-modal-close" title="Close" @onclick="OnModalCloseClick">×</button>
+        </div>
     }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 6px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 11px;
-        transition: background 0.15s;
-        min-width: 60px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-btn img { height: 24px; width: 24px; margin-bottom: 4px; }
-    .tbar-separator { width: 1px; height: 36px; background: #ced4da; margin: 0 4px; }
-    .tool-label { font-size: 11px; }
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-    .loading-overlay {
-        position: absolute; height: 92%; width: 100%;
-        background-color: rgba(1,1,1,0.2); z-index: 10000;
-        display: flex; align-items: center; justify-content: center;
-    }
-    .loading-spinner {
-        padding: 20px 40px; background: #fff; border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
-        font-weight: 500; color: #333;
-    }
-    .dirty-row { background-color: #fff3cd !important; }
-    .insert-row { background-color: #d4edda !important; }
-</style>
-
 @if (IsLoading)
 {
     <div class="loading-overlay">
@@ -70,111 +69,962 @@
 
 @* ── TOOLBAR ─────────────────────────────────────────── *@
 <div class="toolbar-cntr">
-    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+    @* HHM-285: VB6 FDBGrid.frm:130-137 — Save/Delete ToolTipText are the SHORTCUT hints;
+       the words Save/Delete are the visible captions below. Owner directive 2026-08-01:
+       shortcut hints show BOTH Windows (Ctrl) and Mac (⌘) forms — OnPageKeyDown accepts
+       either modifier. *@
+    <button class="tbar-btn" title="Ctrl+S / ⌘S" aria-label="Save" disabled="@(!mDirty)" @onclick="OnSaveClick">
         <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
         <span class="tool-label">Save</span>
     </button>
-    <button class="tbar-btn" @onclick="OnExportClick">
-        <img src="images/32/PricebookExport.ico" alt="Export" onerror="this.style.display='none'" />
-        <span class="tool-label">Export</span>
-    </button>
-    @if (mAllowAddDelete && !mReadOnly)
+    @if (mDeleteRecords && !mReadOnly)
     {
-        <button class="tbar-btn" @onclick="OnNewClick">
-            <img src="images/32/new.ico" alt="New" onerror="this.style.display='none'" />
-            <span class="tool-label">New</span>
+        <button class="tbar-btn" title="Ctrl+Delete / ⌘Delete" aria-label="Delete" @onclick="OnDeleteClick">
+            <img src="images/32/Delete.ico" alt="Delete" onerror="this.style.display='none'" />
+            <span class="tool-label">Delete</span>
+        </button>
+    }
+    @* VB6 FDBGrid.frm:139-141: the Export button's Key is "ExcelExport", and
+       SetToolbarIcons (MMisc.bas:1930-1937) shows the ImageList image whose
+       Key matches — ListImage4 "ExcelExport" (FDBGrid.frm:170-172), NOT the
+       "PricebookExport" image (ListImage26). Same asset FVendor/FItems use
+       for their VB6 "ExcelExport" buttons (HHM-284). *@
+    @if (mAllowExport)
+    {
+        <button class="tbar-btn" @onclick="OnExportClick">
+            <img src="images/32/excelexport.ico" alt="Export" onerror="this.style.display='none'" />
+            <span class="tool-label">Export</span>
         </button>
     }
 </div>
 
-<h4 style="margin-bottom: 12px;">@Caption</h4>
-
 @* ── DATA GRID ───────────────────────────────────────── *@
-<div class="grid-container">
-    <HfGrid @ref="DataGrid"
+@* Owner directive 2026-08-01: the Windows-style Cut/Copy/Paste/Delete right-click
+   menu was REMOVED from the web app (its Ctrl+X hints are wrong on Mac and the
+   browser's own context menu handles the clipboard natively on every OS). *@
+@* The handle after the container scales the columns rather than just stretching
+   the box, so the grid keeps its proportions at any width. *@
+<div class="grid-sizing-row">
+<div class="grid-container"
+     style="@GridContainerStyle">
+    @* Height: 600 px works for the route-based full-page layout, but inside
+       the modal envelope (84vh max) on smaller screens the bottom of a
+       hardcoded-600px grid lives below the modal frame and gets clipped by
+       overflow:hidden — headers visible, rows hidden. Use 100% when modal-
+       hosted so the grid shrinks/expands with the container (whose own
+       flex:1 1 auto + min-height:0 give it the modal's remaining height). *@
+    <GridControl @ref="DataGrid"
             TValue="GridRow"
             DataSource="@GridData"
-            AllowPaging="true"
             AllowSorting="true"
             AllowFiltering="true"
             AllowResizing="true"
             AllowSelection="true"
             EnableHover="true"
-            Height="600px"
+            Width="@ResolvedGridWidth"
+            Height="100%"
+            RowHeight="22"
+            MinRowHeight="22"
+            WidthMode="@ResolvedGridWidthMode"
+            ShowRowSelectorHandle="@UseInlineGridAddRows"
+            RowSelectorHandleEmphasisPredicate="IsInlineNewRow"
+            HighlightSelectedRows="@(!UseInlineGridAddRows)"
             FilterSettingsRef="@filterSettings"
-            PageSettingsRef="@pageSettings"
             SelectionSettingsRef="@selectionSettings"
             EditSettingsRef="@editSettings"
-            EventsRef="@gridEvents">
-        <HfGridColumnsBase>
-            @foreach (var col in ColumnDefinitions)
+            NewItemFactory="CreateGridRowFromGrid"
+            EnsureTrailingNewRow="@UseInlineGridAddRows"
+            IsTrailingNewRow="IsInlineNewRow"
+            AddNewRowOnLastCellExit="@UseInlineGridAddRows"
+            CanAddNewRowOnLastCellExit="CanAppendInlineNewRowAfter"
+            BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+            AllowSingleCellColumnMassEdit="true"
+            EnableHeaderContextMenu="@(!UseLegacyTextContextMenu && !UseLegacyHeaderContextMenu && !SuppressGridHeaderContextMenu)"
+            EnableCellContextMenu="@UseGridCellContextMenu"
+            EventsRef="@gridEvents"
+            OnLayoutChanged="@OnGridLayoutChangedAsync">
+        <GridColumnsBase @key="gDBGridLayoutVersion">
+            @if (HasGridLayout)
             {
-                <HfGridColumn Field="@col.FieldName"
-                              HeaderText="@col.HeaderText"
-                              Width="@col.Width"
-                              AllowEditing="@col.AllowEditing"
-                              IsPrimaryKey="@col.IsPrimaryKey"
-                              Visible="@col.Visible"
-                              Type="@col.ColumnType"
-                              TextAlign="@col.TextAlign"
-                              Format="@col.Format" />
+                @* Hidden system columns always rendered *@
+                <GridColumn Field="_RowIndex" HeaderText="" Width="1px" Visible="false" IsPrimaryKey="true" AllowEditing="false" Type="ColumnType.Number" />
+                <GridColumn Field="_RowState" HeaderText="" Width="1px" Visible="false" AllowEditing="false" />
+                foreach (var entry in GetOrderedGridLayout())
+                {
+                    var layout = entry.Layout;
+                    var fieldName = entry.Field;
+                    var columnType = entry.ColumnType;
+                    var textAlign = entry.TextAlign;
+                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                    var format = columnType == ColumnType.Number ? "N2" : null;
+
+                    @* VB6 gData_BeforeEdit: D365 financial-dimension columns and
+                       WalletBankAccount get a "…" picker button (ComboList="..."
+                       / "|..."). Render those with a Template like FAssembly's
+                       Vendor picker; everything else stays a plain cell. *@
+                    if (IsPickerField(fieldName))
+                    {
+                        var pickField = fieldName;
+                        <GridColumn Field="@pickField"
+                                      HeaderText="@headerText"
+                                      Width="@(width ?? "150px")"
+                                      AllowEditing="false"
+                                      ShowEditButton="true"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      Format="@format"
+                                      ClipMode="ClipMode.Ellipsis">
+                            <Template>
+                                @{ var row = (GridRow)context; }
+                                @{ var current = row.GetValue(pickField)?.ToString() ?? ""; }
+                                @{ var pickDisabled = mReadOnly || (string.Equals(pickField, "Sage300GLPrefixes", StringComparison.OrdinalIgnoreCase) && !IsSage300PrefixButtonEnabled(row)); }
+                                <div class="poindex-cell">
+                                    <span class="poindex-text" title="@current">@current</span>
+                                    <button class="poindex-btn fx-grid-popup-btn" disabled="@pickDisabled"
+                                            @onclick="() => OnPickColumn(row, pickField)"
+                                            @onclick:stopPropagation="true">…</button>
+                                </div>
+                            </Template>
+                        </GridColumn>
+                    }
+                    else
+                    {
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@(width ?? "150px")"
+                                      AllowEditing="@IsFieldEditable(fieldName)"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      Format="@format"
+                                      MaxLength="@GetMaxLengthForField(fieldName)"
+                                      EditOptions="@GetComboEditOptions(fieldName)"
+                                      ClipMode="ClipMode.Ellipsis" />
+                    }
+                }
             }
-        </HfGridColumnsBase>
-    </HfGrid>
-</div>
+            else
+            {
+                @* Fallback: columns from ColumnDefinitions *@
+                foreach (var col in ColumnDefinitions)
+                {
+                    @* VB6 gData_BeforeEdit: D365 financial-dimension columns and
+                       WalletBankAccount get a "…" picker button. Mirror the
+                       dynamic-layout branch above. *@
+                    if (col.Visible && IsPickerField(col.FieldName))
+                    {
+                        var pickField = col.FieldName;
+                        <GridColumn Field="@pickField"
+                                      HeaderText="@col.HeaderText"
+                                      Width="@col.Width"
+                                      AllowEditing="false"
+                                      ShowEditButton="true"
+                                      IsPrimaryKey="@col.IsPrimaryKey"
+                                      Visible="@col.Visible"
+                                      Type="@col.ColumnType"
+                                      TextAlign="@col.TextAlign"
+                                      Format="@col.Format">
+                            <Template>
+                                @{ var row = (GridRow)context; }
+                                @{ var current = row.GetValue(pickField)?.ToString() ?? ""; }
+                                @{ var pickDisabled = mReadOnly || (string.Equals(pickField, "Sage300GLPrefixes", StringComparison.OrdinalIgnoreCase) && !IsSage300PrefixButtonEnabled(row)); }
+                                <div class="poindex-cell">
+                                    <span class="poindex-text" title="@current">@current</span>
+                                    <button class="poindex-btn fx-grid-popup-btn" disabled="@pickDisabled"
+                                            @onclick="() => OnPickColumn(row, pickField)"
+                                            @onclick:stopPropagation="true">…</button>
+                                </div>
+                            </Template>
+                        </GridColumn>
+                    }
+                    else
+                    {
+                        <GridColumn Field="@col.FieldName"
+                                      HeaderText="@col.HeaderText"
+                                      Width="@col.Width"
+                                      AllowEditing="@col.AllowEditing"
+                                      IsPrimaryKey="@col.IsPrimaryKey"
+                                      Visible="@col.Visible"
+                                      Type="@col.ColumnType"
+                                      TextAlign="@col.TextAlign"
+                                      Format="@col.Format"
+                                      MaxLength="@col.MaxLength"
+                                      EditOptions="@GetComboEditOptions(col.FieldName)" />
+                    }
+                }
+            }
+        </GridColumnsBase>
+    </GridControl>
+	</div>
+
+    @if (!IsModal)
+    {
+        <div class="grid-sizer @(_gridResizing ? "dragging" : "")"
+             @onmousedown="StartGridResize" @onmousedown:preventDefault="true"></div>
+    }
+	</div>
+
+	</div>
+
+@* VB6 gData_CellButtonClick → FPickList.Choose for the "…" picker columns
+   (D365 financial dimensions + WalletBankAccount). Declared at the end of
+   markup per the house FPickList pattern. *@
+<FPickList @ref="pickList" OnSelected="OnPickListSelected" />
+
+@* VB6 cmdDelete confirm ("Are you sure you want to delete this record?") +
+   any other in-app confirmations. FlexKit dialog, not a raw JS confirm. *@
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
+
+@* VB6 gData_CellButtonClick Case "Sage300GLPrefixes": Dim f As New FDBGrid /
+   f.ShowForm("GLPrefixes", …, "Wallet_Sage300GLPrefixes", …) — a NESTED FDBGrid
+   shown over this one. We host another FDBGrid instance as a modal (IsModal) and
+   re-instantiate it each open via @if so its ShowForm runs fresh. Only reachable
+   from the "Book of Accounts" form under Timberline. *@
+@if (_showSage300Modal)
+{
+    <FDBGrid @ref="_sage300Grid"
+             IsModal="true"
+             FormCaption="GLPrefixes"
+             OnClose="CloseSage300PrefixesGrid" />
+}
 
 @code {
     // === Parameters ===
     [Parameter] public string? FormCaption { get; set; }
 
-    // === Database ===
-    private DbWrapperSqlServer db = new();
+    // MDI tab title: push the resolved entity caption (e.g. "Cost Codes") up to the
+    // FMain shell so the tab shows it instead of the form name "FDBGrid". FMain
+    // supplies this cascade; null when the page runs standalone.
+    [CascadingParameter(Name = "SetPageTitle")] private Action<string?>? SetPageTitle { get; set; }
+    private string? _titledCaption;
 
-    // === State ===
+    /// <summary>When true, FDBGrid renders inside a modal overlay so the
+    /// host page stays visible behind it. Set by callers like FAssembly
+    /// that open the lookup table as a popup instead of as an MDI tab.
+    /// Route-based navigation (/db-grid/{caption}) leaves this false →
+    /// full-page layout.</summary>
+    [Parameter] public bool IsModal { get; set; }
+
+    /// <summary>Fires when the user clicks the × on the modal header.
+    /// Only used when <see cref="IsModal"/> is true — host flips its
+    /// visibility flag. No-op for non-modal usage.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private async Task OnModalCloseClick()
+    {
+        // VB6 Form_Unload: If Not SaveData(True) Then Cancel = True. Prompt to
+        // save pending edits before closing; SaveData(true) shows the
+        // "This data has changed. Do you want to save?" confirm and returns
+        // false only when the save itself fails — in which case we keep the
+        // modal open (don't fire OnClose), matching VB6's Cancel.
+        if (mDirty)
+        {
+            var ok = await SaveData(true);
+            if (!ok) return;
+        }
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync();
+    }
+
+    // === Database ===
+// === State ===
     private bool IsLoading = false;
     private bool mDirty = false;
+    // HHM-350: rows the user deleted this session but that are NOT yet removed from the DB — VB6
+    // defers the actual DELETE to SaveData (gData_KeyDown Delete just hides the row + sets mDirty;
+    // the DB DELETE runs in SaveData's deletes-first loop, FDBGrid.frm:424-431 / 849-900). Keeping
+    // them here (removed from the visible grid, mDirty=true) means closing the pane shows the
+    // "save changes?" prompt, and No/Cancel leaves the rows in the DB — they reappear on reload.
+    private readonly List<GridRow> _pendingDeletes = new();
     private string Caption = "";
     private string mFormCaption = "";
     private string mTableName = "";
     private string mSQLStatement = "";
+    // Optional parameters for the load query so callers (e.g. the "Cost Codes"
+    // form) can pass a parameterized SELECT instead of interpolating values.
+    private IDictionary<string, object>? mSqlParameters;
     private bool mReadOnly = false;
     private string mLockedColumns = "";
     private string mKeyColumns = "";
-    private bool mAllowAddDelete = true;
+    private bool mAddRecords = false;
+    private bool mDeleteRecords = true;
+    private bool mAllowExport = true;
+    private bool mHasIdentityColumn = false;
     private string mHiddenColumns = "";
-    private int DivisionID = 1;
-
+    private const string InlineNewRowFlag = "_InlineNewRow";
+    // VB6 FDBGrid SaveData wrote each cell back to its BASECOLUMNNAME (recordset
+    // metadata), not the SELECT alias — so a column selected as
+    // "ABN_D03CostCentre D03_CostCentre" displays as D03_CostCentre but UPDATEs
+    // the real ABN_D03CostCentre column. ADO.NET's SqlDataAdapter.Fill drops
+    // that base-name metadata, so callers that alias columns pass an explicit
+    // display→real map here; SaveData emits the real name. Empty/absent for
+    // non-aliased forms (their FieldName already IS the real column).
+    private IDictionary<string, string>? mColumnAliases;
+    private bool UseInlineGridAddRows => mAddRecords && !mReadOnly;
+    private string? ResolvedGridWidth => IsModal ? "100%" : null;
+    private GridWidthMode ResolvedGridWidthMode => IsModal ? GridWidthMode.FitColumns : GridWidthMode.FillAvailable;
+    // Capped at the pane so widening a column past the edge scrolls the grid
+    // (VB6 ScrollBars=3, FDBGrid.frm:88) instead of running off-screen.
+    private string? GridContainerStyle => IsModal ? null : $"width:min({GetLogicalGridWidthPx()}px, 100%);";
+    private bool IsCostCodes =>
+        string.Equals(Caption, "Cost Codes", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "standardcostcodes", StringComparison.OrdinalIgnoreCase);
+    private string DbGridRootCssClass =>
+        $"{(IsModal ? "fx-dbgrid-modal" : "fx-dbgrid-page")}{(IsCostCodes ? " fx-dbgrid-costcodes" : "")}";
+    // Owner directive 2026-08-01: the legacy Cut/Copy/Paste/Delete popup itself was
+    // REMOVED from the web app (Windows-only idiom; browser's native menu covers the
+    // clipboard on every OS). This flag now ONLY suppresses the FlexKit header
+    // sort/columns menu on the grids where VB6 showed the plain popup instead
+    // (HHM-523 kept for that gating); right-clicks fall through to the browser menu.
+    private bool UseLegacyTextContextMenu =>
+        string.Equals(Caption, "Option Categories", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "OptionCategories", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "tblcategories", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(Caption, "Community Phases", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "CommunityPhase", StringComparison.OrdinalIgnoreCase);
+    private bool IsOptionSubcategories =>
+        string.Equals(Caption, "Option Subcategories", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "OptionSubcategories", StringComparison.OrdinalIgnoreCase);
+    private bool UseGridCellContextMenu =>
+        IsOptionSubcategories
+        || IsCostCodes;
+    private bool SuppressGridHeaderContextMenu => IsOptionSubcategories;
+    private bool IsJobCostCategories =>
+        string.Equals(Caption, "Categories", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mTableName, "standardcategories", StringComparison.OrdinalIgnoreCase);
+    // HHM-310 (amended by owner directive 2026-08-01): VB6 popped its plain
+    // menu on ANY right-click, header included, so Cost Codes / Job Cost
+    // Categories never matched FlexKit's header sort/columns menu. The custom
+    // popup is gone from the web app; this flag still suppresses the FlexKit
+    // header menu on those grids so a header right-click falls through to the
+    // browser's native menu.
+    private bool UseLegacyHeaderContextMenu => IsCostCodes || IsJobCostCategories;
+    private string ModalIconPath =>
+        Caption.Contains("Option", StringComparison.OrdinalIgnoreCase)
+            ? "images/16/Option.ico"
+            : "images/16/Properties.ico";
     // === Grid ===
-    private HfGrid<GridRow>? DataGrid;
+    private GridControl<GridRow>? DataGrid;
+    private ElementReference _pageElement;
+    private bool _openFocusApplied;
+    private int _openFocusAttempts;
     private List<GridRow> GridData = new();
     private List<ColumnDef> ColumnDefinitions = new();
 
-    // === Grid Settings ===
-    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
-    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = new int[] { 25, 50, 100, 200 } };
-    private HfSelectionSettings selectionSettings = new()
+    // HHM-365: resolve a data column's user-facing title for messages — the
+    // AppGridLayout caption when present (same source as the grid header),
+    // else the column definition's header text, else the raw column name.
+    private string ColumnTitle(string field)
     {
-        Type = SelectionType.Single,
-        Mode = SelectionMode.Row
+        foreach (var entry in GetOrderedGridLayout())
+            if (string.Equals(entry.Field, field, StringComparison.OrdinalIgnoreCase))
+                return string.IsNullOrWhiteSpace(entry.Layout.Caption) ? entry.Field : entry.Layout.Caption;
+        var def = ColumnDefinitions.FirstOrDefault(c => string.Equals(c.FieldName, field, StringComparison.OrdinalIgnoreCase));
+        return !string.IsNullOrWhiteSpace(def?.HeaderText) ? def!.HeaderText : field;
+    }
+
+    // === Grid Settings ===
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    // HHM-605: VB6 gData allows free range selection (AllowSelection=True,
+    // FDBGrid.frm:49) clamped to a single column by gData_AfterSelChange
+    // (frm:394-396 "gData.ColSel = gData.Col"), and an edit committed with a
+    // range selected marks the whole .Row..RowSel span (gData_ValidateEdit,
+    // frm:498-500). SelectionType.Multiple + AllowSingleCellColumnMassEdit
+    // reproduce that: drag down a column, press Enter, type, Enter — the
+    // typed value fans across every selected cell via OnTypeAheadCommit
+    // (same wiring as FAddPricelist / FTakeoff / FAssembly).
+    private SelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Cell,
+        EnableToggle = true
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowAdding = true,
         AllowEditing = true,
         AllowDeleting = false,
         AllowEditOnDblClick = true,
-        ShowConfirmDialog = false
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
     };
-    private HfGridEvents<GridRow> gridEvents = new();
+    private GridControlEvents<GridRow> gridEvents = new();
+
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // The load + Version bump live in the shared GridLayoutPresenter<TRow>; only the
+    // VB6 form/grid name strings stay here for fidelity, and gDBGridLayout /
+    // HasGridLayout / gDBGridLayoutVersion below are thin delegations so the markup is
+    // unchanged. NOTE: the field/column-type resolvers (GetOrderedGridLayout,
+    // ResolveGridField, GetColumnTypeForField, FindColumnDefinition, NormalizeGridKey)
+    // are deliberately NOT delegated — FDBGrid's row is a dynamic Dictionary-backed
+    // GridRow whose columns come from the runtime ColumnDefinitions list, so those
+    // helpers resolve against ColumnDefinitions, not TRow reflection (what the
+    // presenter does). Left as-is to preserve FDBGrid semantics.
+    // One host, many grids. VB6 keys the saved layout by the rendered grid's
+    // caption — IniGetForm(Me, , mFormCaption) builds "FDBGrid(<caption>)"
+    // (MMisc.bas:3226) — so each grid keeps its own columns. A fixed key would
+    // make Cost Codes and GLPrefixes share one layout.
+    private GridLayoutPresenter<GridRow> _dataGrid =
+        new("FDBGrid", "gData", instanceKey: "(0)");
+    private Dictionary<string, GridLayoutColumn> gDBGridLayout => _dataGrid.Layout;
+    private bool HasGridLayout => _dataGrid.Has;
+    private int gDBGridLayoutVersion => _dataGrid.Version;
 
     // === Original Key Values (for update WHERE clause) ===
     // Maps row index -> dictionary of key column name -> original value
     private Dictionary<int, Dictionary<string, string>> OriginalKeyValues = new();
 
     // === Lifecycle ===
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<GridRow>>(this, OnCellSaved);
+        // HHM-605: multi-cell entry — GridControl raises OnTypeAheadCommit once
+        // per committed edit when 2+ cells are selected in the edited column.
+        gridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<GridRow>>(this, OnGridTypeAheadCommit);
+        gridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<GridRow>>(this, OnGridEditButtonClick);
+        await LoadGridLayoutAsync();
+    }
+
+    /// <summary>HHM-605: VB6 multi-cell value entry. VSFlexGrid lets the user
+    /// drag a selection down a column and commit one typed value to the whole
+    /// range; gData_ValidateEdit (FDBGrid.frm:498-500) then marks every row in
+    /// .Row..RowSel changed. GridControl raises OnTypeAheadCommit with the
+    /// selected rows when 2+ cells are selected in the edited column — write
+    /// the typed value to each row and mark it Update/Insert, the same page-
+    /// side fan-out FAddPricelist / FTakeoff / FAssembly use.</summary>
+    private async Task OnGridTypeAheadCommit(TypeAheadCommitArgs<GridRow> args)
+    {
+        var field = args.ColumnName;
+        if (string.IsNullOrWhiteSpace(field) || !IsFieldEditable(field)) return;
+
+        foreach (var row in args.SelectedItems)
+        {
+            row.SetValue(field, CoerceTypedCellValue(field, args.Value));
+            MarkRowChanged(row);
+        }
+
+        if (DataGrid != null) await DataGrid.Refresh();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Coerce a typed/pasted string to the CLR shape the column's
+    /// cells hold. Numbers parse to double (blank stays blank → NULL on save,
+    /// VB6 DbQuote Nullable), booleans accept true/1, combo cells keep the
+    /// display TEXT (VB6 ColComboList semantics), everything else stays the
+    /// raw string — BindDbValue does the final SQL-type mapping on save.</summary>
+    private object? CoerceTypedCellValue(string field, string? text)
+    {
+        var raw = ApplyFieldMaxLength(field, text ?? "");
+        var col = FindColumnDefinition(field);
+        if (col == null || col.HasComboList) return raw;
+
+        switch (col.DataType)
+        {
+            case "boolean":
+                return raw == "1" || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+            case "number":
+                if (string.IsNullOrWhiteSpace(raw)) return "";
+                return double.TryParse(raw, NumberStyles.Any, CultureInfo.InvariantCulture, out var d)
+                    ? (object)d
+                    : raw;
+            default:
+                return raw;
+        }
+    }
+
+    /// <summary>VB6 parity for FMain's mnuSetup* → FDBGrid.ShowForm(...)
+    /// chain. Without this, navigating to /db-grid/{FormCaption} arrived
+    /// at an empty page because nothing wired the [Parameter] caption to
+    /// the SQL/table/keys triplet. We now auto-resolve the well-known
+    /// captions VB6 uses (FMain.frm ~lines 1995-2025 for the Setup menu,
+    /// plus the per-page popup callers like FAssembly's lblCategory /
+    /// lblGroup / lblLocation). Pages can still call ShowForm(...) for
+    /// ad-hoc captions; this just covers the route-driven path.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrEmpty(FormCaption)) return;
+
+        // The route delivers the caption percent-encoded, so every caption with
+        // a space ("Cost Codes", "Community Phases", "Tax Groups", …) arrived as
+        // "Cost%20Codes" and matched no case below — the screen rendered its
+        // toolbar over an empty grid.
+        var caption = FormCaption.Contains('%')
+            ? Uri.UnescapeDataString(FormCaption)
+            : FormCaption;
+
+        // Avoid re-bootstrapping when the parameter value doesn't change
+        // (FMain may re-render this tab repeatedly under MDI).
+        if (string.Equals(caption, mFormCaption, StringComparison.Ordinal)) return;
+
+        // Re-key the layout to the grid about to be rendered.
+        _dataGrid = new GridLayoutPresenter<GridRow>("FDBGrid", "gData", instanceKey: caption);
+
+        // Auto-resolve well-known captions to the same SQL VB6 used.
+        // DivisionID-scoped tables are parameterized; the keyColumns
+        // argument drives the WHERE clause when rows are updated.
+        var div = SessionState.DivisionID;
+        switch (caption)
+        {
+            // VB6 FAssembly lblGroup_Click ("Cat" link) → FDBGrid.ShowForm(
+            // "Option Categories", "select Category,Description,Inactive from
+            // OptionCategories order by 1", "OptionCategories", "Category",
+            // , , , True, False). AddRecords=True, AllowExport=False; no hidden
+            // or locked columns. NOTE: this is the OptionCategories lookup table
+            // (Category/Description/Inactive), NOT the sales-system tblcategories
+            // (Group_Code/Category/Description/COMarkup) used by FOptions/FMain
+            // Setup "Option Categories" — those callers pass the SQL explicitly
+            // via ShowForm(...) and don't rely on this route-driven resolver.
+            case "Option Categories":
+                await ShowForm(
+                    formCaption: "Option Categories",
+                    sqlStatement: "select Category, Description, Inactive from OptionCategories order by 1",
+                    tableName: "OptionCategories",
+                    keyColumns: "Category",
+                    addRecords: true,
+                    allowExport: false);
+                break;
+
+            // VB6 FOptions Sales tab "Edit option categories" (FOptions.frm Case 6) +
+            // FMain Setup "Option Categories" → the SALES option-category taxonomy in
+            // tblcategories (Group_Code/Category/Description/COMarkup). VB6 reuses the
+            // title "Option Categories" for TWO different tables (disambiguating by the
+            // SQL it passes per-call); since HF resolves by caption, this caller gets a
+            // DISTINCT resolver key while the displayed title stays "Option Categories".
+            case "Sales Option Categories":
+                await ShowForm(
+                    formCaption: "Option Categories",
+                    sqlStatement: "select Group_Code, Category, Description, COMarkup from tblcategories order by 1",
+                    tableName: "tblcategories",
+                    keyColumns: "category",
+                    addRecords: true);
+                break;
+
+            // VB6 FAssembly lblGroup / FAssemblyWithPricing lblGroup_Click
+            case "Option Groups":
+                await ShowForm(
+                    formCaption: "Option Groups",
+                    sqlStatement: "select Major_Group, Description from tblmajorgroups order by 1",
+                    tableName: "tblmajorgroups",
+                    keyColumns: "major_group");
+                break;
+
+            // VB6 FOptions Sales-System tab → "Edit communities..." (lblEditList index 4)
+            case "Communities":
+                await ShowForm(
+                    formCaption: "Communities",
+                    sqlStatement: "select Area, Description, CompanyName, GSTNumber TaxNumber, Address1, Address2, City, Province, Zip PostalCode, County, Country, Phone, Fax, Inactive from tbllocality order by 1",
+                    tableName: "tbllocality",
+                    keyColumns: "area",
+                    addRecords: true);
+                break;
+
+            // VB6 FMain RunTask "Rooms" → FDBGrid.ShowForm("Rooms", ...,
+            // "RoomMaster", "RoomID", , "RoomID,DivisionID", , True). RoomID is an
+            // identity column, so it's hidden + auto-filled on insert.
+            case "Rooms":
+                await ShowForm(
+                    formCaption: "Rooms",
+                    sqlStatement: "select RoomID, DivisionID, Room, Inactive from RoomMaster where divisionid=@DivisionID order by room",
+                    tableName: "RoomMaster",
+                    keyColumns: "RoomID",
+                    hiddenColumns: "RoomID,DivisionID",
+                    addRecords: true,
+                    parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                break;
+
+            // VB6 FAssembly lblLocation_Click → FDBGrid.ShowForm("Room Locations",
+            // "select Area,Description from tblareas", "tblareas", "area", , , , True).
+            // Distinct from "Rooms" (RoomMaster): this edits the tblareas lookup
+            // used by the assembly Location dropdown.
+            case "Room Locations":
+                await ShowForm(
+                    formCaption: "Room Locations",
+                    sqlStatement: "select Area, Description from tblareas order by 1",
+                    tableName: "tblareas",
+                    keyColumns: "area",
+                    addRecords: true);
+                break;
+
+            // VB6 FMain Setup → "Series" item (FMain.frm:2043) and FOptions
+            // lblEditList(9). DivisionID-scoped key.
+            case "Series List":
+                await ShowForm(
+                    formCaption: "Series List",
+                    sqlStatement: "select Series, Description from tblSeries where DivisionID = @DivisionID order by series",
+                    tableName: "tblSeries",
+                    keyColumns: "divisionid,series",
+                    addRecords: true,
+                    parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                break;
+
+            // VB6 FAssembly lblSeries_Click → FDBGrid.ShowForm(FMain.CD_Series,
+            // "select Series,Description from tblseries where divisionid = <Div>",
+            // "tblSeries", "divisionid,series"). Same table as "Series List" but
+            // VB6 uses the CD_Series caption (default "Series") from the assembly
+            // form; AddRecords defaults True in VB6.
+            case "Series":
+                await ShowForm(
+                    formCaption: "Series",
+                    sqlStatement: "select Series, Description from tblSeries where divisionid = @DivisionID order by series",
+                    tableName: "tblSeries",
+                    keyColumns: "divisionid,series",
+                    addRecords: true,
+                    parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                break;
+
+            // VB6 FAssembly lblCategory_Click → FDBGrid.ShowForm("Option
+            // Subcategories", "select Category,Subcategory,Description,COMarkup,
+            // Inactive from OptionSubcategories order by 1,2", "OptionSubcategories",
+            // "Subcategory", , , , True, False). AddRecords=True, AllowExport=False.
+            case "Option Subcategories":
+                await ShowForm(
+                    formCaption: "Option Subcategories",
+                    sqlStatement: "select Category, Subcategory, Description, COMarkup, Inactive from OptionSubcategories order by 1,2",
+                    tableName: "OptionSubcategories",
+                    keyColumns: "Subcategory",
+                    addRecords: true,
+                    allowExport: false);
+                break;
+
+            // VB6 FMain Setup → "<CD_Community> Phases Setup" item
+            case "Community Phases":
+                var communityPhaseHiddenColumns = await BuildCommunityPhaseHiddenColumnsAsync();
+                await ShowForm(
+                    formCaption: "Community Phases",
+                    sqlStatement: "select Community, CommunityPhase, Description, TarionBuilderNumber, ABN_D03CostCentre D03_CostCentre, ABN_D06Brand D06_Brand from CommunityPhase order by 1,2",
+                    tableName: "CommunityPhase",
+                    keyColumns: "Community,CommunityPhase",
+                    hiddenColumns: communityPhaseHiddenColumns,
+                    addRecords: true,
+                    // VB6 SaveData wrote these aliased columns back to their real
+                    // table columns (BASECOLUMNNAME); map display→real so the
+                    // UPDATE/INSERT targets ABN_D03CostCentre / ABN_D06Brand.
+                    columnAliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["D03_CostCentre"] = "ABN_D03CostCentre",
+                        ["D06_Brand"] = "ABN_D06Brand"
+                    });
+                break;
+
+            // VB6 Application.EditJCCostCodes → FDBGrid.ShowForm("Cost Codes",
+            //   "select DivisionID,GroupDescription,CostCode,Description,DebitAccount,
+            //    ABN_D04SpendCategory D04_SpendCategory,ABN_ProjectCategory ProjectCategory,
+            //    ABN_ItemCode ItemCode from standardcostcodes where DivisionID=<Div>",
+            //   "standardcostcodes","divisionid,costcode", ...). Built INLINE like every
+            // other case here — NOT via Application.HFApp.BuildCostCodesForm(): HFApp is a
+            // per-circuit static that is null when FDBGrid renders standalone via the
+            // /db-grid/Cost Codes route, which left the grid EMPTY (no spec → no query).
+            // asD365_ABN(11) hides DebitAccount,GroupDescription; every other accounting
+            // system hides the ABN spend/project/item columns. The SELECT aliases ABN_* →
+            // D04_*/ProjectCategory/ItemCode, so the UPDATE maps display→base via columnAliases.
+            case "Cost Codes":
+                {
+                    var acct = ParseAccountingSystem(await GetAppOptionValueAsync("AccountingSystem"));
+                    var hidden = "DivisionID" + (acct == 11 // asD365_ABN
+                        ? ",DebitAccount,GroupDescription"
+                        : ",D04_SpendCategory,ProjectCategory,ItemCode");
+                    await ShowForm(
+                        formCaption: "Cost Codes",
+                        sqlStatement: "select DivisionID,GroupDescription,CostCode, Description, DebitAccount," +
+                                      "ABN_D04SpendCategory D04_SpendCategory,ABN_ProjectCategory ProjectCategory," +
+                                      "ABN_ItemCode ItemCode from standardcostcodes where DivisionID = @DivisionID",
+                        tableName: "standardcostcodes",
+                        keyColumns: "divisionid,costcode",
+                        readOnly: false,
+                        hiddenColumns: hidden,
+                        addRecords: true,
+                        deleteRecords: true,
+                        columnAliases: new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["D04_SpendCategory"] = "ABN_D04SpendCategory",
+                            ["ProjectCategory"] = "ABN_ProjectCategory",
+                            ["ItemCode"] = "ABN_ItemCode"
+                        },
+                        parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                }
+                break;
+
+            // VB6 Application.EditJCCategories → FDBGrid.ShowForm("Categories",
+            // "select DivisionID,Category,Description,CostType,DebitAccount,
+            // IsVariance from standardcategories where DivisionID=<Div>",
+            // "standardcategories", "divisionid,category", False, ...). For
+            // Timberline/Intacct/QuickBooks/QuickBooksOnline the editable set is
+            // limited (locked = DivisionID,Category,Description,DebitAccount);
+            // every other accounting system only locks DivisionID. The CostType
+            // combo is wired generically in BuildColumnDefinitions; DebitAccount
+            // is a "…" GL-account picker. (FMain Setup "Job Cost Categories".)
+            case "Categories":
+                {
+                    var acct = ParseAccountingSystem(await GetAppOptionValueAsync("AccountingSystem"));
+                    var limited = acct is 1 or 3 or 9 or 10; // Timberline, QuickBooks, Intacct, QuickBooksOnline
+                    await ShowForm(
+                        formCaption: "Categories",
+                        sqlStatement: "select DivisionID, Category, Description, CostType, DebitAccount, IsVariance from standardcategories where DivisionID = @DivisionID",
+                        tableName: "standardcategories",
+                        keyColumns: "divisionid,category",
+                        hiddenColumns: "DivisionID",
+                        lockedColumns: limited ? "DivisionID,Category,Description,DebitAccount" : "DivisionID",
+                        addRecords: true,
+                        parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                }
+                break;
+
+            // VB6 FOptions lblEditList(2) → FDBGrid.ShowForm("Tax Groups",
+            // "select divisionid,TaxGroup,Description,JCRate,NJCRate from taxgroups
+            // where DivisionID=<Div>", "taxgroups", "divisionid,taxgroup", <RO if
+            // Timberline>, "divisionid"). After the grid closes VB6 runs
+            // "update taxgroups set grouprate=njcrate+jcrate"; do the same so the
+            // derived rate stays consistent.
+            case "Tax Groups":
+                {
+                    var acct = ParseAccountingSystem(await GetAppOptionValueAsync("AccountingSystem"));
+                    await ShowForm(
+                        formCaption: "Tax Groups",
+                        sqlStatement: "select divisionid, TaxGroup, Description, JCRate, NJCRate from taxgroups where DivisionID = @DivisionID",
+                        tableName: "taxgroups",
+                        keyColumns: "divisionid,taxgroup",
+                        readOnly: acct == 1, // asTimberline
+                        lockedColumns: "divisionid",
+                        addRecords: true,
+                        parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+                    try { await db.ExecuteAsync("update taxgroups set grouprate=njcrate+jcrate"); }
+                    catch (Exception ex) { Logger.LogWarning(ex, "Tax Groups grouprate recompute"); }
+                }
+                break;
+
+            // VB6 FOptions lblEditList(11) → FDBGrid.ShowForm("Book of Accounts",
+            // <sql>, "DataSources", "BookOfAccount", False, , "WalletPartyID").
+            // The SELECT adds the Sage300 columns only for Timberline. DataSourceID
+            // is aliased to WalletPartyID (a locked column); the lower()-newid()
+            // GUID is set by VB6 both on insert (handled when a trailing blank row
+            // is created) and via a post-edit UPDATE for any null ids.
+            case "Book of Accounts":
+                {
+                    var acct = ParseAccountingSystem(await GetAppOptionValueAsync("AccountingSystem"));
+                    var sql = acct == 1 // asTimberline
+                        ? "select BookOfAccount, WalletBankAccount, lower(DataSourceID) WalletPartyID, Sage300GLPrefixLength, '' Sage300GLPrefixes from DataSources"
+                        : "select BookOfAccount, WalletBankAccount, lower(DataSourceID) WalletPartyID from DataSources";
+                    await ShowForm(
+                        formCaption: "Book of Accounts",
+                        sqlStatement: sql,
+                        tableName: "DataSources",
+                        keyColumns: "BookOfAccount",
+                        lockedColumns: "WalletPartyID",
+                        addRecords: true,
+                        // DataSourceID is selected as WalletPartyID; writes go back
+                        // to the real DataSourceID column (VB6 BASECOLUMNNAME).
+                        columnAliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["WalletPartyID"] = "DataSourceID"
+                        });
+                    try { await db.ExecuteAsync("update DataSources set DataSourceID=lower(newid()) where DataSourceID is null"); }
+                    catch (Exception ex) { Logger.LogWarning(ex, "DataSources id backfill"); }
+                }
+                break;
+
+            // VB6 FOptions lblEditList(10) → FDBGrid.ShowForm("WBS Codes",
+            // "select Item,Custom_Description from customDescriptions where item
+            // like 'WBS__' order by item", "customDescriptions", "Item", False).
+            case "WBS Codes":
+                await ShowForm(
+                    formCaption: "WBS Codes",
+                    sqlStatement: "select Item, Custom_Description from customDescriptions where item like 'WBS__' order by item",
+                    tableName: "customDescriptions",
+                    keyColumns: "Item",
+                    addRecords: true);
+                break;
+
+            // VB6 nested FDBGrid for Sage300 GL prefixes. The SELECT is row-
+            // dependent (filtered by the parent row's DataSourceID + prefix
+            // length), so it can't be resolved from the caption alone — the
+            // hosting FDBGrid calls ShowForm(...) on this instance directly in
+            // OnAfterRenderAsync. Just set the heading here.
+            case "GLPrefixes":
+                Caption = "GLPrefixes";
+                break;
+
+            default:
+                // Unknown caption — caller is expected to call ShowForm(...)
+                // explicitly. Set the visible heading so the user at least
+                // sees what was requested instead of a blank chrome.
+                Caption = caption;
+                break;
+        }
+
+        // Title the MDI tab with the resolved entity caption (e.g. "Cost Codes")
+        // instead of the form name "FDBGrid". Guarded on _titledCaption so a
+        // SetPageTitle-triggered re-render can't re-enter and loop.
+        if (!string.Equals(Caption, _titledCaption, StringComparison.Ordinal))
+        {
+            _titledCaption = Caption;
+            SetPageTitle?.Invoke(Caption);
+        }
+    }
+
+    /// <summary>Parse the AppOptions "AccountingSystem" value to its int code
+    /// (matches Application.AccountingSystems). Returns -1 when unset/unparseable
+    /// so callers fall through to their non-special branch.</summary>
+    private static int ParseAccountingSystem(string raw) =>
+        int.TryParse(raw, out var v) ? v : -1;
+
+    private async Task<string> BuildCommunityPhaseHiddenColumnsAsync()
+    {
+        var hidden = new List<string>();
+
+        if (!string.Equals(await GetAppOptionValueAsync("EnableTarionFields"), "true", StringComparison.OrdinalIgnoreCase))
+            hidden.Add("TarionBuilderNumber");
+
+        // HHM-518: D03_CostCentre / D06_Brand are NEVER hidden, matching Legacy.
+        // VB6 FMain.frm:2036 built its hide-list with non-matching column names
+        // (D365D03CostCenter / D365D06Brand) vs. the actual grid keys
+        // (D03_CostCentre / D06_Brand), so FDBGrid.frm:624's exact ColKey match
+        // never fired and both columns always displayed regardless of accounting system.
+
+        return string.Join(",", hidden);
+    }
+
+    private async Task<string> GetAppOptionValueAsync(string optionName)
+    {
+        try
+        {
+            return await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 OptionValue
+                  FROM AppOptions
+                  WHERE OptionName=@OptionName
+                    AND ISNULL(UID,'')=''
+                    AND DivisionID IN (0,@DivisionID)
+                  ORDER BY DivisionID DESC",
+                new { OptionName = optionName, SessionState.DivisionID }) ?? "";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't read AppOptions.{OptionName}", optionName);
+            return "";
+        }
+    }
+
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // Keyed/unkeyed "(0)" fallback + Version bump handled by the presenter
+            // (ctor set the "FDBGrid"/"gData" names + instanceKey "(0)").
+            await _dataGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // One host, many grids, and AppGridLayout carries no rows for any of them —
+    // the layout service only ever UPDATEs, so a column layout cannot be stored
+    // here. VB6 kept the same distinction: FDBGrid.frm never calls IniPutGrid, it
+    // calls IniPutForm(Me, , Me.Caption), i.e. the form's SIZE keyed by the grid
+    // being rendered. This keeps that one number per screen, per user, and redraws
+    // the columns to it on the next visit.
+    private const string PrefsSection = "FDBGrid";
+    private string GridWidthPrefKey => "Width_" + NormalizeGridKey(mFormCaption);
+
+    /// <summary>Column resize done by the user. The widths apply for this session;
+    /// only the overall width is remembered.</summary>
+    private async Task OnGridLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot?.Widths == null || snapshot.Widths.Count == 0) return;
+
+        try
+        {
+            foreach (var kv in snapshot.Widths)
+            {
+                var def = ColumnDefinitions.FirstOrDefault(
+                    c => string.Equals(c.FieldName, kv.Key, StringComparison.OrdinalIgnoreCase));
+                if (def != null) def.Width = $"{(int)Math.Round(kv.Value)}px";
+            }
+            if (!string.IsNullOrEmpty(mFormCaption))
+                Prefs.Put(PrefsSection, GridWidthPrefKey, GetLogicalGridWidthPx().ToString());
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to store FDBGrid width for {Caption}", mFormCaption);
+        }
+    }
+
+    // ── Grid sizer ──────────────────────────────────────────────────────
+    // Dragging it scales every visible column, so the grid keeps its shape at
+    // any width instead of the box stretching away from its columns.
+    private const int GridSizerMinPx = 120;
+    private const int GridSizerColumnMinPx = 40;
+    private bool _gridResizing;
+    private double _gridResizeStartX;
+    private int _gridResizeStartWidth;
+
+    private void StartGridResize(MouseEventArgs e)
+    {
+        _gridResizing = true;
+        _gridResizeStartX = e.ClientX;
+        _gridResizeStartWidth = GetLogicalGridWidthPx();
+    }
+
+    private void OnGridResizeDrag(MouseEventArgs e)
+    {
+        if (!_gridResizing) return;
+        if ((e.Buttons & 1) == 0) { EndGridResize(); return; }
+
+        var target = _gridResizeStartWidth + (int)(e.ClientX - _gridResizeStartX);
+        if (target < GridSizerMinPx) target = GridSizerMinPx;
+        ScaleColumnsToWidth(target);
+    }
+
+    private void ScaleColumnsToWidth(int totalPx)
+    {
+        var visible = ColumnDefinitions.Where(c => c.Visible).ToList();
+        if (visible.Count == 0) return;
+        var current = visible.Sum(c => TryParseWidthPx(c.Width) ?? 150);
+        if (current <= 0) return;
+
+        var content = totalPx - 24 - (UseInlineGridAddRows ? 22 : 0);
+        var floor = visible.Count * GridSizerColumnMinPx;
+        if (content < floor) content = floor;
+        var factor = (double)content / current;
+        if (Math.Abs(factor - 1d) < 0.005) return;
+
+        foreach (var col in visible)
+            col.Width = $"{Math.Max(GridSizerColumnMinPx, (int)Math.Round((TryParseWidthPx(col.Width) ?? 150) * factor))}px";
+        _dataGrid.BumpVersion();
+    }
+
+    private void EndGridResize()
+    {
+        if (!_gridResizing) return;
+        _gridResizing = false;
+        if (!string.IsNullOrEmpty(mFormCaption))
+            Prefs.Put(PrefsSection, GridWidthPrefKey, GetLogicalGridWidthPx().ToString());
+    }
+
+    /// <summary>Scale the SQL-derived column widths so the grid comes back at the
+    /// width this user last left it at for this screen.</summary>
+    private void ApplySavedGridWidth()
+    {
+        if (string.IsNullOrEmpty(mFormCaption)) return;
+        if (!int.TryParse(Prefs.Get(PrefsSection, GridWidthPrefKey), out var saved) || saved < 120) return;
+
+        var visible = ColumnDefinitions.Where(c => c.Visible).ToList();
+        if (visible.Count == 0) return;
+        var current = visible.Sum(c => TryParseWidthPx(c.Width) ?? 150);
+        if (current <= 0) return;
+
+        var target = saved - 24 - (UseInlineGridAddRows ? 22 : 0);
+        var floor = visible.Count * 40;
+        if (target < floor) target = floor;
+        var factor = (double)target / current;
+        if (Math.Abs(factor - 1d) < 0.01) return;
+
+        foreach (var col in visible)
+            col.Width = $"{Math.Max(40, (int)Math.Round((TryParseWidthPx(col.Width) ?? 150) * factor))}px";
     }
 
     /// <summary>
@@ -188,29 +1038,40 @@
         bool readOnly = false,
         string hiddenColumns = "",
         string lockedColumns = "",
-        bool allowAddDelete = true)
+        bool addRecords = false,
+        bool deleteRecords = true,
+        IDictionary<string, object>? parameters = null,
+        IDictionary<string, string>? columnAliases = null,
+        bool allowExport = true)
     {
         mFormCaption = formCaption;
         mSQLStatement = sqlStatement;
+        mSqlParameters = parameters;
+        mColumnAliases = columnAliases;
         mReadOnly = readOnly;
         mLockedColumns = "," + lockedColumns + ",";
         mTableName = tableName;
         mKeyColumns = keyColumns;
-        mAllowAddDelete = allowAddDelete;
+        mAddRecords = addRecords;
+        mDeleteRecords = deleteRecords;
+        mAllowExport = allowExport;
         mHiddenColumns = hiddenColumns;
+        mHasIdentityColumn = false;
         Caption = formCaption;
 
-        editSettings = new HfEditSettings
+        editSettings = new EditSettings
         {
-            AllowAdding = !mReadOnly && mAllowAddDelete,
+            AllowAdding = !mReadOnly && mAddRecords,
             AllowEditing = !mReadOnly,
             AllowDeleting = false,
             AllowEditOnDblClick = !mReadOnly,
-            ShowConfirmDialog = false
+            ShowConfirmDialog = false,
+            Mode = EditMode.Batch
         };
 
         await LoadDataAsync();
         mDirty = false;
+        _pendingDeletes.Clear();   // HHM-350: a fresh load has no pending deletes
         await InvokeAsync(StateHasChanged);
     }
 
@@ -222,16 +1083,22 @@
 
         try
         {
-            var dt = db.SqlExec(mSQLStatement);
+            var dt = mSqlParameters != null
+                ? db.SqlExec(mSQLStatement, mSqlParameters)
+                : db.SqlExec(mSQLStatement);
             if (dt == null || dt.Columns.Count == 0) return;
 
+            // Detect identity columns via schema
+            DetectIdentityColumns(dt);
             BuildColumnDefinitions(dt);
+            ApplySavedGridWidth();
             BuildGridData(dt);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FDBGrid.LoadDataAsync] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            Notifications.Error($"Error loading data: {ex.Message}");
         }
         finally
         {
@@ -286,14 +1153,30 @@
                 Visible = !isHidden,
                 AllowEditing = !isLocked,
                 IsPrimaryKey = false,
-                DataType = MapDataType(col.DataType)
+                DataType = MapDataType(col.DataType),
+                // VB6 BASECOLUMNNAME: real table column for INSERT/UPDATE. For a
+                // SELECT alias (e.g. ABN_D03CostCentre D03_CostCentre) the caller
+                // maps the alias back to the real column; otherwise the column
+                // name IS the real column.
+                BaseColumnName = (mColumnAliases != null
+                    && mColumnAliases.TryGetValue(colName, out var realName)
+                    && !string.IsNullOrWhiteSpace(realName))
+                    ? realName
+                    : colName
             };
+
+            colDef.MaxLength = ResolveMaxLength(colDef, col);
+
+            // Mark identity columns
+            if (_identityColumns.Contains(colName))
+                colDef.IsIdentity = true;
 
             // Set column type and format based on data type
             switch (colDef.DataType)
             {
                 case "boolean":
-                    colDef.ColumnType = ColumnType.Boolean;
+                    colDef.ColumnType = ColumnType.CheckBox;
+                    colDef.TextAlign = TextAlign.Center;   // HHM-352: VB6 centers boolean checkbox cells
                     break;
                 case "date":
                     colDef.Format = "d";
@@ -308,7 +1191,8 @@
                     break;
             }
 
-            // CostType combo
+            // CostType combo (VB6 FDBGrid.frm:613-617: ColComboList(CostType) =
+            // "#1;labour|#2;material|#3;subcontract|#4;equipment|#5;overhead|#6;other")
             if (string.Equals(colName, "CostType", StringComparison.OrdinalIgnoreCase))
             {
                 colDef.HasComboList = true;
@@ -321,10 +1205,23 @@
                     new() { Value = "5", Text = "overhead" },
                     new() { Value = "6", Text = "other" }
                 };
+                // VSFlexGrid ColComboList semantics: the cell holds/displays the
+                // translated TEXT ("labour"…), not the stored int code — so the
+                // column renders as left-aligned text (no "N2" number format;
+                // BuildGridData translates code→text, BindDbValue text→code).
+                colDef.ColumnType = ColumnType.Text;
+                colDef.TextAlign = TextAlign.Left;
+                colDef.Format = null;
             }
 
-            // DebitAccount button
+            // DebitAccount button (VB6: opens FPickList for GL Accounts)
             if (string.Equals(colName, "DebitAccount", StringComparison.OrdinalIgnoreCase))
+            {
+                colDef.HasButtonColumn = true;
+            }
+
+            // Group_Code button (VB6: opens FPickList for Major Groups)
+            if (string.Equals(colName, "Group_Code", StringComparison.OrdinalIgnoreCase))
             {
                 colDef.HasButtonColumn = true;
             }
@@ -333,22 +1230,134 @@
         }
     }
 
+    /// <summary>
+    /// Detect identity (autoincrement) columns. VB6 used rs.Fields(c).Properties("ISAUTOINCREMENT").
+    /// </summary>
+    private void DetectIdentityColumns(DataTable dt)
+    {
+        mHasIdentityColumn = false;
+        _identityColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _tableColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _columnMaxLengths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            // Query INFORMATION_SCHEMA for the table's real columns + which are
+            // identity. VB6 used rs.Fields(c).Properties("BASECOLUMNNAME") /
+            // ("ISAUTOINCREMENT"); ADO.NET drops that metadata, so we read it
+            // from schema. mTableName is always a hardcoded allowlist literal
+            // (never the route param), but parameterize anyway per house rule.
+            if (!string.IsNullOrEmpty(mTableName))
+            {
+                var schemaDt = db.SqlExec(
+                    @"SELECT COLUMN_NAME,
+                             COLUMNPROPERTY(OBJECT_ID(TABLE_SCHEMA + '.' + TABLE_NAME), COLUMN_NAME, 'IsIdentity') AS IsIdentity,
+                             CHARACTER_MAXIMUM_LENGTH
+                      FROM INFORMATION_SCHEMA.COLUMNS
+                      WHERE TABLE_NAME=@TableName",
+                    new { TableName = mTableName });
+                if (schemaDt != null)
+                {
+                    foreach (DataRow row in schemaDt.Rows)
+                    {
+                        var colName = row["COLUMN_NAME"]?.ToString() ?? "";
+                        if (string.IsNullOrEmpty(colName)) continue;
+                        _tableColumns.Add(colName);
+                        if (Convert.ToInt32(row["IsIdentity"] is DBNull ? 0 : row["IsIdentity"]) == 1)
+                        {
+                            _identityColumns.Add(colName);
+                            mHasIdentityColumn = true;
+                        }
+
+                        var maxLengthValue = row["CHARACTER_MAXIMUM_LENGTH"];
+                        if (maxLengthValue != DBNull.Value
+                            && int.TryParse(maxLengthValue?.ToString(), out var maxLength)
+                            && maxLength > 0)
+                        {
+                            _columnMaxLengths[colName] = maxLength;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // If schema query fails, proceed without identity/column detection.
+            // _tableColumns stays empty → IsPersistedColumn treats all columns as
+            // persisted (pre-existing behavior) rather than blocking the save.
+            // It also leaves _columnMaxLengths empty, which uncaps every text editor on
+            // the form — non-fatal (BindDbValue still trims) but never silent.
+            Logger.LogError(ex, "FDBGrid.DetectIdentityColumns: schema probe failed for '{Table}' — "
+                + "field max lengths cannot be derived and editors will be uncapped.", mTableName);
+        }
+    }
+
+    private HashSet<string> _identityColumns = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int> _columnMaxLengths = new(StringComparer.OrdinalIgnoreCase);
+
+    // Real columns of mTableName (from schema). VB6 SaveData only writes columns
+    // whose BASETABLENAME == mTableName; a SELECT can carry computed/literal
+    // columns (e.g. "'' Sage300GLPrefixes") that don't exist on the table. We
+    // skip those on INSERT/UPDATE. Empty set (schema-read failed) = persist all.
+    private HashSet<string> _tableColumns = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>VB6 SaveData: only emit columns that belong to mTableName.
+    /// Returns true when the column's real (base) name is on the table, or when
+    /// the schema read failed (empty set) so we don't regress existing forms.</summary>
+    private bool IsPersistedColumn(ColumnDef col) =>
+        _tableColumns.Count == 0 || _tableColumns.Contains(col.BaseColumnName);
+
+    private int? ResolveMaxLength(ColumnDef col, DataColumn? dataColumn = null)
+    {
+        if (!string.Equals(col.DataType, "string", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(col.BaseColumnName)
+            && _columnMaxLengths.TryGetValue(col.BaseColumnName, out var baseLength))
+            return baseLength;
+
+        if (!string.IsNullOrWhiteSpace(col.FieldName)
+            && _columnMaxLengths.TryGetValue(col.FieldName, out var fieldLength))
+            return fieldLength;
+
+        if (dataColumn?.MaxLength > 0)
+            return dataColumn.MaxLength;
+
+        return null;
+    }
+
     private void BuildGridData(DataTable dt)
     {
         GridData.Clear();
         OriginalKeyValues.Clear();
         var keyColumns = ParseCsvList(mKeyColumns);
 
+        // VB6 FDBGrid.frm:613-617: ColComboList columns display the translated
+        // text for the stored code ("#1;labour|…"); NULL shows blank, an
+        // unmatched code shows the raw value (VSFlexGrid behavior).
+        var comboColumns = new Dictionary<string, ColumnDef>(StringComparer.OrdinalIgnoreCase);
+        foreach (DataColumn col in dt.Columns)
+        {
+            if (FindColumnDefinition(col.ColumnName) is { HasComboList: true } comboDef)
+                comboColumns[col.ColumnName] = comboDef;
+        }
+
         for (int r = 0; r < dt.Rows.Count; r++)
         {
             var row = new GridRow();
             row.SetValue("_RowIndex", r);
             row.SetValue("_RowState", "");
+            row.SetValue(InlineNewRowFlag, false);
 
             foreach (DataColumn col in dt.Columns)
             {
                 var val = dt.Rows[r][col];
-                if (val == DBNull.Value)
+                if (comboColumns.TryGetValue(col.ColumnName, out var comboDef))
+                {
+                    var code = val == DBNull.Value ? "" : val?.ToString() ?? "";
+                    var item = comboDef.ComboItems.FirstOrDefault(ci => ci.Value == code);
+                    row.SetValue(col.ColumnName, item?.Text ?? code);
+                }
+                else if (val == DBNull.Value)
                     row.SetValue(col.ColumnName, GetDefaultForType(col.DataType));
                 else
                     row.SetValue(col.ColumnName, val);
@@ -374,66 +1383,27 @@
         }
     }
 
-    // === Event Handlers ===
-    private void OnCellSaved(CellSaveArgs<GridRow> args)
-    {
-        if (args.Data != null)
-        {
-            var currentState = args.Data.GetValue("_RowState")?.ToString() ?? "";
-            if (currentState != "Insert")
-            {
-                args.Data.SetValue("_RowState", "Update");
-            }
-            mDirty = true;
-        }
-    }
+    private GridRow CreateGridRowFromGrid() =>
+        CreateNewGridRow(markInsert: !UseInlineGridAddRows, inlinePlaceholder: UseInlineGridAddRows);
 
-    private void OnComboChanged(GridRow row, string fieldName, ChangeEventArgs e)
-    {
-        row.SetValue(fieldName, e.Value?.ToString() ?? "");
-        var currentState = row.GetValue("_RowState")?.ToString() ?? "";
-        if (currentState != "Insert")
-            row.SetValue("_RowState", "Update");
-        mDirty = true;
-        StateHasChanged();
-    }
-
-    private async Task OnCellButtonClick(GridRow row, string fieldName)
-    {
-        if (string.Equals(fieldName, "DebitAccount", StringComparison.OrdinalIgnoreCase))
-        {
-            // In VB6 this opened FPickList for GL Accounts
-            await JSRuntime.InvokeVoidAsync("alert", "Account picker not yet implemented. Would open GL Accounts lookup.");
-        }
-    }
-
-    private async Task OnSaveClick()
-    {
-        await SaveData(false);
-    }
-
-    private async Task OnExportClick()
-    {
-        if (mDirty)
-        {
-            var saved = await SaveData(false);
-            if (!saved) return;
-        }
-        await JSRuntime.InvokeVoidAsync("alert", "Export to Excel not yet implemented.");
-    }
-
-    private void OnNewClick()
+    private GridRow CreateNewGridRow(bool markInsert, bool inlinePlaceholder)
     {
         var newRow = new GridRow();
         var newIndex = GridData.Count;
         newRow.SetValue("_RowIndex", newIndex);
-        newRow.SetValue("_RowState", "Insert");
+        newRow.SetValue("_RowState", markInsert ? "Insert" : "");
+        newRow.SetValue(InlineNewRowFlag, inlinePlaceholder);
 
-        // Initialize columns with defaults
         foreach (var col in ColumnDefinitions)
         {
             if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
-            switch (col.DataType)
+            if (col.HasComboList)
+            {
+                // VB6 FDBGrid.frm:610 AddItem "": a fresh row's ColComboList cell
+                // is blank until the user picks a text — never a numeric 0.
+                newRow.SetValue(col.FieldName, "");
+            }
+            else switch (col.DataType)
             {
                 case "boolean":
                     newRow.SetValue(col.FieldName, false);
@@ -449,17 +1419,739 @@
                     break;
             }
 
-            // Set DivisionID automatically
             if (string.Equals(col.FieldName, "DivisionID", StringComparison.OrdinalIgnoreCase))
-            {
-                newRow.SetValue(col.FieldName, DivisionID);
-            }
+                newRow.SetValue(col.FieldName, SessionState.DivisionID);
+
+            // VB6 gData_ValidateEdit creates WalletPartyID when a new row first
+            // becomes an insert row. Pre-seeding it keeps picker/edit paths simple
+            // while the row still remains unsaved until _RowState becomes Insert.
+            if (string.Equals(col.FieldName, "WalletPartyID", StringComparison.OrdinalIgnoreCase))
+                newRow.SetValue(col.FieldName, Guid.NewGuid().ToString().ToLowerInvariant());
         }
 
         OriginalKeyValues[newIndex] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        GridData.Add(newRow);
+        return newRow;
+    }
+
+    private bool CanAppendInlineNewRowAfter(GridRow row)
+    {
+        if (!UseInlineGridAddRows)
+            return true;
+
+        return !IsInlineNewRow(row) || RowHasMeaningfulValue(row);
+    }
+
+    private bool MarkRowChanged(GridRow row)
+    {
+        if (IsInlineNewRow(row))
+        {
+            if (!RowHasMeaningfulValue(row))
+                return false;
+
+            row.SetValue(InlineNewRowFlag, false);
+            row.SetValue("_RowState", "Insert");
+        }
+        else
+        {
+            var currentState = row.GetValue("_RowState")?.ToString() ?? "";
+            if (currentState != "Insert")
+                row.SetValue("_RowState", "Update");
+        }
+
         mDirty = true;
+        return true;
+    }
+
+    private static bool IsInlineNewRow(GridRow row)
+    {
+        return row.TryGetValue(InlineNewRowFlag, out var value)
+            && value is bool flag
+            && flag;
+    }
+
+    private bool RowHasMeaningfulValue(GridRow row)
+    {
+        foreach (var col in ColumnDefinitions)
+        {
+            if (col.FieldName == "_RowIndex"
+                || col.FieldName == "_RowState"
+                || !col.Visible
+                || !col.AllowEditing
+                || col.IsIdentity
+                || !IsPersistedColumn(col))
+                continue;
+
+            var value = row.GetValue(col.FieldName);
+            // A ColComboList cell holds the display TEXT ("labour"…), not the
+            // numeric code — judge it as a string (VB6 FDBGrid.frm:613-617).
+            if (IsMeaningfulValue(value, col.HasComboList ? "string" : col.DataType))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsMeaningfulValue(object? value, string dataType)
+    {
+        if (value == null || value == DBNull.Value)
+            return false;
+
+        if (string.Equals(dataType, "boolean", StringComparison.OrdinalIgnoreCase))
+            return value is bool flag ? flag : bool.TryParse(value.ToString(), out var parsed) && parsed;
+
+        if (string.Equals(dataType, "number", StringComparison.OrdinalIgnoreCase))
+        {
+            if (value is IConvertible)
+                return double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Any, CultureInfo.InvariantCulture, out var number)
+                    && Math.Abs(number) > double.Epsilon;
+
+            return false;
+        }
+
+        if (string.Equals(dataType, "date", StringComparison.OrdinalIgnoreCase))
+            return value is DateTime dt && dt != default;
+
+        return !string.IsNullOrWhiteSpace(value.ToString());
+    }
+
+    // === Event Handlers ===
+    private void OnCellSaved(CellSaveArgs<GridRow> args)
+    {
+        if (args.Data != null)
+        {
+            // VB6 gData_ValidateEdit: for the D365_DimensionConfig "Value"
+            // column, a free-typed value (not chosen from a list) is wrapped
+            // in single quotes — strip any surrounding single quotes the user
+            // typed, double up embedded quotes, then re-wrap. List-picked
+            // values are stored verbatim (no quotes). In this dynamic grid the
+            // Value cell is plain free-text, so every committed edit takes the
+            // "typed value" branch.
+            if (string.Equals(args.ColumnName, "Value", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(mTableName, "D365_DimensionConfig", StringComparison.OrdinalIgnoreCase))
+            {
+                var raw = args.Value?.ToString() ?? args.Data.GetValue("Value")?.ToString() ?? "";
+                var quoted = "'" + DeQuoteSingle(raw).Replace("'", "''") + "'";
+                args.Data.SetValue("Value", quoted);
+            }
+            else if (!string.IsNullOrWhiteSpace(args.ColumnName))
+            {
+                var val = args.Value;
+                var colDef = FindColumnDefinition(args.ColumnName);
+                if (string.Equals(args.ColumnName, "CostCode", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(mTableName, "standardcostcodes", StringComparison.OrdinalIgnoreCase))
+                {
+                    var codeStr = ApplyFieldMaxLength(args.ColumnName, val?.ToString() ?? "");
+                    if (codeStr.Any(char.IsLetter))
+                    {
+                        Notifications.Warning("Cost Code must be numeric.");
+                        return;
+                    }
+                    val = codeStr;
+                }
+                else if (string.Equals(colDef?.DataType, "string", StringComparison.OrdinalIgnoreCase))
+                {
+                    val = ApplyFieldMaxLength(args.ColumnName, val?.ToString() ?? "");
+                }
+                args.Data.SetValue(args.ColumnName, val);
+            }
+
+            MarkRowChanged(args.Data);
+        }
+    }
+
+    /// <summary>VB6 MMisc.DeQuote(s, SingleQuotes:=True): trims, and if the
+    /// string is wrapped in a matching pair of single quotes, removes them.</summary>
+    private static string DeQuoteSingle(string s)
+    {
+        s = (s ?? "").Trim();
+        if (s.Length >= 2 && s[0] == '\'' && s[^1] == '\'')
+            s = s.Substring(1, s.Length - 2);
+        return s;
+    }
+
+    private void OnComboChanged(GridRow row, string fieldName, ChangeEventArgs e)
+    {
+        row.SetValue(fieldName, e.Value?.ToString() ?? "");
+        MarkRowChanged(row);
         StateHasChanged();
+    }
+
+    // ── "…" picker columns (VB6 gData_BeforeEdit / gData_CellButtonClick) ──
+    // VB6 flags these columns with .ComboList = "..." (or "|...") so the cell
+    // renders a "…" button, then gData_CellButtonClick opens FPickList.Choose
+    // and fans the picked value across the whole selection range. The picked
+    // result column differs per picker (FPickList.SelectedItem("value") for
+    // D365 dimensions, "BankAccount" for WalletBankAccount, "major_group" for
+    // Group_Code, "account" for DebitAccount).
+    private FPickList? pickList;
+    private GridRow? _pickRow;
+    private string _pickField = "";
+
+    // VB6 cmdDelete / SaveData confirms — FlexKit dialog (no raw JS confirm()).
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
+
+    /// <summary>VB6 gData_BeforeEdit: which columns get a "…" picker button.
+    /// DebitAccount / Group_Code were already picker columns; the NEW VB6 adds
+    /// the three D365 financial-dimension columns and WalletBankAccount.
+    /// Sage300GLPrefixes is special — instead of FPickList it opens a NESTED
+    /// FDBGrid over Wallet_Sage300GLPrefixes (VB6 gData_CellButtonClick Case
+    /// "Sage300GLPrefixes"); its button is gated per-row on Sage300GLPrefixLength
+    /// > 0 (see IsSage300PrefixButtonEnabled).</summary>
+    private static readonly string[] _pickerFields =
+    {
+        "DebitAccount", "Group_Code",
+        "D03_CostCentre", "D06_Brand", "D04_SpendCategory",
+        "WalletBankAccount", "Sage300GLPrefixes"
+    };
+
+    private bool IsPickerField(string fieldName) =>
+        !string.IsNullOrWhiteSpace(fieldName) &&
+        _pickerFields.Contains(fieldName, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>VB6 gData_BeforeEdit Case "Sage300GLPrefixes": the "…" button is
+    /// only active when this row's Sage300GLPrefixLength &gt; 0 (otherwise the
+    /// edit is cancelled). Mirror that per-row gate on the rendered button.</summary>
+    private bool IsSage300PrefixButtonEnabled(GridRow row)
+    {
+        var raw = row.GetValue("Sage300GLPrefixLength")?.ToString() ?? "";
+        return int.TryParse(raw, out var len) && len > 0;
+    }
+
+    private async Task OnGridEditButtonClick(CellEditButtonArgs<GridRow> args)
+    {
+        if (args.Data == null || !IsPickerField(args.ColumnName)) return;
+        await OnPickColumn(args.Data, args.ColumnName);
+    }
+
+    /// <summary>Opens the FPickList for a "…" column. Mirrors the per-column
+    /// cases in VB6 gData_CellButtonClick — each builds its own SQL and picks
+    /// a specific result column.</summary>
+    private async Task OnPickColumn(GridRow row, string fieldName)
+    {
+        // VB6 gData_CellButtonClick Case "Sage300GLPrefixes": open a NESTED
+        // FDBGrid over Wallet_Sage300GLPrefixes filtered to this row's
+        // DataSource (WalletPartyID) + prefix length — not an FPickList.
+        if (string.Equals(fieldName, "Sage300GLPrefixes", StringComparison.OrdinalIgnoreCase))
+        {
+            await OpenSage300PrefixesGrid(row);
+            return;
+        }
+
+        if (pickList == null || mReadOnly) return;
+        _pickRow = row;
+        _pickField = fieldName;
+
+        var div = SessionState.DivisionID;
+
+        if (string.Equals(fieldName, "DebitAccount", StringComparison.OrdinalIgnoreCase))
+        {
+            // VB6: FPickList.Choose(..,"GL Account","select Account, Description
+            //       from GLAccounts where divisionid=" & DbQuote(Num, DivisionID))
+            // HHM-288: no title override — FPickList's default caption is the VB6 one
+            // (FPickList.frm:290 App.ProductName & " - " & Title & " List" =
+            // "Precision Builder - GL Account List").
+            await pickList.Open(
+                title: "GL Account",
+                queries: "select Account, Description from GLAccounts where divisionid=@DivisionID",
+                parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+        }
+        else if (string.Equals(fieldName, "Group_Code", StringComparison.OrdinalIgnoreCase))
+        {
+            // VB6: FPickList.Choose(..,"Group","select Major_Group,Description
+            //       from tblmajorgroups")
+            await pickList.Open(
+                title: "Group",
+                queries: "select Major_Group,Description from tblmajorgroups");
+        }
+        else if (string.Equals(fieldName, "WalletBankAccount", StringComparison.OrdinalIgnoreCase))
+        {
+            // VB6: select distinct p.BankAccount from divisions i
+            //      join datasources d on i.bookofaccount=d.bookofaccount
+            //      join accountingap p on d.datasourceid=p.datasourceid
+            //      where i.divisionid=<DivisionID>
+            const string sql =
+                "select distinct p.BankAccount " +
+                "from divisions i " +
+                "join datasources d on i.bookofaccount=d.bookofaccount " +
+                "join accountingap p on d.datasourceid=p.datasourceid " +
+                "where i.divisionid=@DivisionID";
+            await pickList.Open(
+                title: "BankAccount",
+                queries: sql,
+                parameters: new Dictionary<string, object> { ["DivisionID"] = div });
+        }
+        else // D03_CostCentre / D06_Brand / D04_SpendCategory
+        {
+            // VB6: select Value,Description from D365FinancialDimensionValues
+            //      where Dimension=<colkey> order by 1  (colkey = the column key)
+            await pickList.Open(
+                title: fieldName,
+                queries: "select Value,Description from D365FinancialDimensionValues where Dimension=@Dimension order by 1",
+                parameters: new Dictionary<string, object> { ["Dimension"] = fieldName });
+        }
+    }
+
+    /// <summary>FPickList callback for the "…" picker columns. VB6 fans the
+    /// picked value across Min(Row,RowSel)..Max(Row,RowSel) and, for the
+    /// last (blank) row in add mode, marks it "insert" + appends a new blank
+    /// row. We apply to the current multi-selection (falling back to the row
+    /// whose button was clicked) and mark each touched row Update/Insert.</summary>
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        if (_pickRow == null || selectedRows.Count == 0)
+        {
+            _pickRow = null;
+            _pickField = "";
+            return;
+        }
+
+        var picked = selectedRows[0];
+
+        // Result column per VB6 gData_CellButtonClick.
+        var resultKey = _pickField switch
+        {
+            var f when string.Equals(f, "DebitAccount", StringComparison.OrdinalIgnoreCase) => "Account",
+            var f when string.Equals(f, "Group_Code", StringComparison.OrdinalIgnoreCase) => "Major_Group",
+            var f when string.Equals(f, "WalletBankAccount", StringComparison.OrdinalIgnoreCase) => "BankAccount",
+            _ => "Value" // D365 dimensions → FPickList.SelectedItem("value")
+        };
+        var pickedValue = GetRowString(picked, resultKey);
+
+        // Fan out across the multi-selection (VB6 selection range). If the
+        // clicked row isn't part of the current selection, target just it.
+        var targets = DataGrid != null
+            ? (await DataGrid.GetSelectedRecordsAsync())
+            : new List<GridRow>();
+        if (targets.Count == 0 || !targets.Contains(_pickRow))
+            targets = new List<GridRow> { _pickRow };
+
+        foreach (var t in targets)
+        {
+            t.SetValue(_pickField, pickedValue);
+            MarkRowChanged(t);
+        }
+
+        _pickRow = null;
+        _pickField = "";
+
+        if (DataGrid != null) await DataGrid.Refresh();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string GetRowString(IDictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var value) && value != null)
+            return value.ToString() ?? "";
+        foreach (var k in row.Keys)
+        {
+            if (string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                return row[k]?.ToString() ?? "";
+        }
+        return "";
+    }
+
+    // ── Nested Sage300 GL-prefixes FDBGrid (VB6 self-recursion) ──────────
+    // VB6 gData_CellButtonClick Case "Sage300GLPrefixes":
+    //   Dim f As New FDBGrid
+    //   s = "select lower(DataSourceID) DataSourceID,GLPrefix,Description,
+    //        WalletCompanyID from Wallet_Sage300GLPrefixes
+    //        where datasourceid=<WalletPartyID> and len(glprefix)=<PrefixLength>"
+    //   Call f.ShowForm("GLPrefixes", s, "Wallet_Sage300GLPrefixes",
+    //                   "DataSourceID,GLPrefix", False, "DataSourceID",
+    //                   "GLPrefix,Description", False)
+    private bool _showSage300Modal;
+    private FDBGrid? _sage300Grid;
+    private Sage300Spec? _pendingSage300Spec;
+    private sealed record Sage300Spec(string Sql, IDictionary<string, object> Parameters);
+
+    private async Task OpenSage300PrefixesGrid(GridRow row)
+    {
+        if (mReadOnly || !IsSage300PrefixButtonEnabled(row)) return;
+
+        var dataSourceId = row.GetValue("WalletPartyID")?.ToString() ?? "";
+        var prefixLenRaw = row.GetValue("Sage300GLPrefixLength")?.ToString() ?? "";
+        if (!int.TryParse(prefixLenRaw, out var prefixLen) || prefixLen <= 0) return;
+
+        // Parameterized equivalent of the VB6 interpolated SELECT.
+        _pendingSage300Spec = new Sage300Spec(
+            Sql: "select lower(DataSourceID) DataSourceID, GLPrefix, Description, WalletCompanyID " +
+                 "from Wallet_Sage300GLPrefixes " +
+                 "where datasourceid=@DataSourceID and len(glprefix)=@PrefixLen",
+            Parameters: new Dictionary<string, object>
+            {
+                ["DataSourceID"] = dataSourceId,
+                ["PrefixLen"] = prefixLen
+            });
+        _showSage300Modal = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseSage300PrefixesGrid()
+    {
+        _showSage300Modal = false;
+        _pendingSage300Spec = null;
+        _sage300Grid = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Drive the freshly-instantiated nested FDBGrid: its FormCaption="GLPrefixes"
+    // resolves to a no-op case (the SQL is row-dependent), so we call ShowForm on
+    // the @ref here once it exists.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // VB6 FDBGrid.frm:16 — gData is TabIndex 1 and a VSFlexGrid always has a
+        // current cell, so the grid opens ready for the keyboard. Re-applied for a
+        // few renders: the rows arrive after the first one.
+        if (DataGrid != null && GridData.Count > 0 && _openFocusAttempts < 3)
+        {
+            _openFocusAttempts++;
+            try
+            {
+                await DataGrid.SelectCellAsync((0, 0));
+                await DataGrid.FocusGridAsync();
+            }
+            catch (Exception) { }
+        }
+        else if (firstRender && !_openFocusApplied)
+        {
+            _openFocusApplied = true;
+            try { await _pageElement.FocusAsync(preventScroll: true); } catch { }
+        }
+
+        if (_showSage300Modal && _sage300Grid != null && _pendingSage300Spec != null)
+        {
+            var spec = _pendingSage300Spec;
+            _pendingSage300Spec = null;
+            await _sage300Grid.ShowForm(
+                formCaption: "GLPrefixes",
+                sqlStatement: spec.Sql,
+                tableName: "Wallet_Sage300GLPrefixes",
+                keyColumns: "DataSourceID,GLPrefix",
+                readOnly: false,
+                hiddenColumns: "DataSourceID",
+                lockedColumns: "GLPrefix,Description",
+                addRecords: false,
+                deleteRecords: true,
+                parameters: spec.Parameters);
+        }
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    /// <summary>VB6 Form_KeyDown (FDBGrid.frm:368-373) + gData_KeyDown
+    /// (FDBGrid.frm:406-448): Ctrl+S ⇒ Toolbar "Save" click (save, no
+    /// prompt); Delete with any modifier (Ctrl+Delete in Form_KeyDown,
+    /// <c>Shift &lt;&gt; 0</c> in gData_KeyDown) ⇒ confirmed record delete.
+    /// GridControl exposes no consumer keydown event, so the page wrapper
+    /// div catches the bubbled keydown — the house pattern from
+    /// FCommunities.OnGridKeyDown / FDefaultVendors.OnPageKeyDown. (No
+    /// preventDefault: Blazor evaluates @onkeydown:preventDefault at render
+    /// time, not per-event, so it can't selectively suppress the browser's
+    /// own Ctrl+S default — same accepted behavior as those forms.) VB6's
+    /// bare-Delete clear-cell (frm:433-443) is NOT wired: with the grid's
+    /// in-cell batch editors open, Delete is a normal text-editing key and
+    /// no public grid API distinguishes the two states. (HHM-286)</summary>
+    private async Task OnPageKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        var ctrl = e.CtrlKey || e.MetaKey;
+
+        // VB6 FDBGrid.frm:371 + :445 — Ctrl+S ⇒ SaveData(False) (no prompt).
+        if (ctrl && (e.Key == "s" || e.Key == "S"))
+        {
+            await SaveData(false);
+            return;
+        }
+
+        // VB6 FDBGrid.frm:370 (Ctrl+Delete) + :424-431 (Delete And Shift <> 0):
+        // Delete with ANY modifier deletes the current record. OnDeleteClick
+        // already carries the VB6 confirm dialog plus the mReadOnly /
+        // mDeleteRecords / mAddRecords guards and the insert-row skip.
+        if ((e.Key == "Delete" || e.Code == "Delete")
+            && (e.CtrlKey || e.ShiftKey || e.AltKey || e.MetaKey))
+        {
+            await OnDeleteClick();
+        }
+    }
+
+    /// <summary>VB6 Toolbar "Delete" button → gData_KeyDown(vbKeyDelete,
+    /// vbCtrlMask) (FDBGrid.frm:560-561 → 424-431): confirm, then delete the
+    /// CURRENT row(s) by their key columns. VB6 guarded on <c>mAddRecords</c>
+    /// and skipped the trailing blank "new" row + the header.
+    ///
+    /// ROOT-CAUSE FIX: the grid runs in <see cref="SelectionMode.Cell"/>
+    /// (selectionSettings.Mode), so a user click goes through GridControl's
+    /// HandleCellClick, which populates the CELL set (_selectedCells) but
+    /// NEVER the ROW set (_selectedItems) — that branch is gated on
+    /// <c>Mode != SelectionMode.Cell</c>. The old handler asked for
+    /// <c>GetSelectedRecordsAsync()</c> (= _selectedItems), which was always
+    /// empty, so it returned immediately and Delete did nothing. We resolve
+    /// the target rows from the selected CELLS' row indices instead (each
+    /// RowIndex is a direct index into GridData), falling back to the active
+    /// row, then build a parameterized key-based DELETE and execute it.</summary>
+    private async Task OnDeleteClick()
+    {
+        if (DataGrid == null || mReadOnly || !mDeleteRecords) return;
+
+        // VB6: only allow delete when the grid is in add/edit mode.
+        if (!mAddRecords) return;
+
+        // Resolve the rows the user is positioned on. In cell-selection mode
+        // the row set (_selectedItems) is empty, so read the selected cells'
+        // row indices (each indexes directly into GridData). Fall back to the
+        // current active row, then — last resort — to any row-selection set.
+        var targetRows = new List<GridRow>();
+
+        var cellSel = await DataGrid.GetSelectedRowCellIndexesAsync();
+        if (cellSel != null && cellSel.Count > 0)
+        {
+            foreach (var rowIndex in cellSel.Select(c => c.RowIndex).Distinct())
+            {
+                if (rowIndex >= 0 && rowIndex < GridData.Count)
+                    targetRows.Add(GridData[rowIndex]);
+            }
+        }
+
+        if (targetRows.Count == 0)
+        {
+            var current = DataGrid.GetCurrentRowIndex();
+            if (current.HasValue && current.Value >= 0 && current.Value < GridData.Count)
+                targetRows.Add(GridData[current.Value]);
+        }
+
+        if (targetRows.Count == 0)
+        {
+            // Some grids do populate the row set (e.g. if Mode ever changes);
+            // honor it so the handler degrades gracefully.
+            var rowSel = await DataGrid.GetSelectedRecordsAsync();
+            if (rowSel != null) targetRows.AddRange(rowSel);
+        }
+
+        // HHM-600: VB6 gData_KeyDown (FDBGrid.frm:419) — "If Not mDeleteRecords
+        // Or .Row = .Rows - 1 Then Exit Sub": Delete on the trailing blank
+        // add-row does NOTHING (no confirm popup). Drop still-empty placeholder
+        // rows from the target set and exit silently when nothing else is
+        // selected — previously the placeholder was treated as a committed row,
+        // so QA saw a confirm, a fake delete and the row re-creating itself.
+        targetRows.RemoveAll(IsInlineNewRow);
+        if (targetRows.Count == 0) return;
+
+        // VB6 skipped the trailing blank "insert" row (.Row = .Rows - 1) — a
+        // not-yet-saved new row that has no DB presence. Drop any rows still
+        // in the "Insert" state: they only need to be removed from the grid.
+        var inserts = targetRows.Where(r =>
+            string.Equals(r.GetValue("_RowState")?.ToString(), "Insert", StringComparison.OrdinalIgnoreCase)).ToList();
+        var committed = targetRows.Where(r => !inserts.Contains(r)).ToList();
+
+        if (committed.Count == 0 && inserts.Count == 0) return;
+
+        // VB6: MsgBox("Are you sure you want to delete this record?" & ... &
+        // "You will not be able to undo this action.", vbYesNo + vbExclamation).
+        // Use the FlexKit MessageBoxControl (no raw JS confirm).
+        if (_messageBox != null)
+        {
+            var answer = await _messageBox.ShowAsync(
+                "Are you sure you want to delete this record?\n\nYou will not be able to undo this action.",
+                title: "Precision Builder",
+                buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo,
+                icon: "warning");
+            if (answer != Fx.ControlKit.Dialogs.MessageBoxResult.Yes) return;
+        }
+
+        IsLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            // Never-saved new rows: just drop them from the grid (no DB row).
+            foreach (var row in inserts)
+                GridData.Remove(row);
+
+            // HHM-350: committed rows are DEFERRED, not deleted on the spot — VB6 only hides them
+            // and sets mDirty; the DB DELETE happens later in SaveData. Removing them from the grid
+            // makes them look deleted, mDirty=true makes closing the pane prompt to save, and the
+            // deferred DELETE (over _pendingDeletes) runs only if the user confirms Save.
+            foreach (var row in committed)
+            {
+                row.SetValue("_RowState", "Delete");
+                _pendingDeletes.Add(row);
+                GridData.Remove(row);
+            }
+            if (committed.Count > 0 || inserts.Count > 0)
+                mDirty = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Delete failed");
+            Notifications.Error($"Error deleting record: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            if (DataGrid != null) await DataGrid.Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Builds and executes a parameterized, key-based DELETE for one
+    /// row — VB6 SaveData deletes-first loop (FDBGrid.frm:880-900):
+    /// <c>delete &lt;mTableName&gt; where [key1]=v1 and [key2]=v2 …</c> using
+    /// the row's ORIGINAL key values (so a key the user edited in-grid still
+    /// targets the persisted row). Every value is bound as a SqlParameter;
+    /// composite keys (comma-separated <see cref="mKeyColumns"/>, e.g.
+    /// "divisionid,costcode") emit one ANDed predicate per key column.
+    /// DivisionID always uses the live <c>SessionState.DivisionID</c>.
+    /// Returns false (and warns) when no key columns are available, so we
+    /// never issue an unfiltered DELETE. Runs on SaveData's transaction
+    /// session so an aborted save rolls this DELETE back with everything
+    /// else (data incident 2026-08-01).</summary>
+    private async Task<bool> DeleteRowFromDbAsync(GridRow row, DbWrapperSqlServer.DbTransactionSession tx)
+    {
+        var keyColumns = ParseCsvList(mKeyColumns);
+        if (keyColumns.Count == 0)
+        {
+            Notifications.Warning("Cannot delete: no key columns are defined for this table.");
+            return false;
+        }
+
+        var rowIndex = Convert.ToInt32(row.GetValue("_RowIndex"));
+        var origKeys = OriginalKeyValues.TryGetValue(rowIndex, out var ok)
+            ? ok
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var whereClause = new StringBuilder();
+        var parameters = new Dictionary<string, object>();
+        var p = 0;
+
+        foreach (var kc in keyColumns)
+        {
+            var trimmed = kc.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+            if (whereClause.Length > 0) whereClause.Append(" AND ");
+
+            var paramName = $"k{p++}";
+            if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters[paramName] = SessionState.DivisionID;
+            }
+            else
+            {
+                var colDef = ColumnDefinitions.FirstOrDefault(c =>
+                    string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
+                // Prefer the preserved original key (VB6 stashed it so an
+                // in-grid edit to a key column still deletes the right row);
+                // fall back to the row's current value if not stashed.
+                var rawVal = origKeys.TryGetValue(trimmed, out var ov)
+                    ? ov
+                    : row.GetValue(trimmed)?.ToString() ?? "";
+                parameters[paramName] = CoerceKeyValue(rawVal, colDef?.DataType ?? "string");
+            }
+
+            whereClause.Append($"[{trimmed}]=@{paramName}");
+        }
+
+        if (whereClause.Length == 0)
+        {
+            Notifications.Warning("Cannot delete: key column values are unavailable for this row.");
+            return false;
+        }
+
+        // mTableName is always a hardcoded allowlist literal (set by ShowForm /
+        // the route resolver, never the raw route param). Guard it anyway before
+        // it's concatenated as a SQL identifier — SQL Server can't parameterize
+        // a table name, so this is the defense against identifier injection.
+        var sql = $"DELETE FROM [{DbWrapperSqlServer.ValidateIdentifier(mTableName)}] WHERE {whereClause}";
+        await tx.ExecuteAsync(sql, parameters);
+        return true;
+    }
+
+    /// <summary>Coerce a stringified key value to the CLR type the column
+    /// holds so the bound SqlParameter matches the column's SQL type (VB6
+    /// DbQuote did the type-specific formatting; parameter binding does the
+    /// equivalent here). Falls back to the raw string when parsing fails.</summary>
+    private static object CoerceKeyValue(string val, string dataType)
+    {
+        switch (dataType)
+        {
+            case "boolean":
+                return (val == "True" || val == "1");
+            case "date":
+                return DateTime.TryParse(val, out var dt) ? dt : (object)DBNull.Value;
+            case "number":
+                if (long.TryParse(val, out var l)) return l;
+                if (double.TryParse(val, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var d)) return d;
+                return val;
+            default:
+                return val ?? "";
+        }
+    }
+
+    private async Task OnExportClick()
+    {
+        if (mDirty)
+        {
+            var saved = await SaveData(false);
+            if (!saved) return;
+        }
+        // VB6: FDataExport.ExportData(mSQLStatement) runs the grid SQL and dumps the
+        // result to Excel via a Save-As dialog. In the web app there is no intermediate
+        // screen — re-run the same (parameterized) query, build the .xlsx in memory with
+        // ClosedXML, and push a browser download (the FVendor / FImportExportAssemblies
+        // pattern). Exports the full query result, matching VB6 (not the filtered view).
+        try
+        {
+            var dt = mSqlParameters != null
+                ? db.SqlExec(mSQLStatement, mSqlParameters)
+                : db.SqlExec(mSQLStatement);
+
+            // VB6 FDataExport.frm:147-160 "format these stupid things so excel
+            // doesnt break them": adBoolean columns export as flexDTDouble, so
+            // the legacy file holds numbers (VB6 True=-1, False=0), never Excel
+            // TRUE/FALSE cells (HHM-336). A DataColumn's type can't change in
+            // place — swap each bool column for a double column, same name/slot.
+            foreach (var boolCol in dt.Columns.Cast<DataColumn>()
+                         .Where(c => c.DataType == typeof(bool)).ToList())
+            {
+                var ordinal = boolCol.Ordinal;
+                var name = boolCol.ColumnName;
+                var numCol = new DataColumn(name + "__boolAsNum", typeof(double));
+                dt.Columns.Add(numCol);
+                foreach (DataRow r in dt.Rows)
+                    r[numCol] = r[boolCol] == DBNull.Value
+                        ? DBNull.Value
+                        : ((bool)r[boolCol] ? -1d : 0d);
+                dt.Columns.Remove(boolCol);
+                numCol.ColumnName = name;
+                numCol.SetOrdinal(ordinal);
+            }
+
+            // Excel sheet name: max 31 chars, none of []:*?/\
+            var sheet = string.IsNullOrWhiteSpace(Caption) ? "Export" : Caption;
+            foreach (var ch in new[] { '[', ']', ':', '*', '?', '/', '\\' }) sheet = sheet.Replace(ch, ' ');
+            if (sheet.Length > 31) sheet = sheet.Substring(0, 31);
+
+            var invalid = System.IO.Path.GetInvalidFileNameChars();
+            var baseName = new string((Caption ?? "Export").Where(c => !invalid.Contains(c)).ToArray()).Trim();
+            if (string.IsNullOrWhiteSpace(baseName)) baseName = "Export";
+            var fileName = baseName + ".xlsx";
+
+            var result = await BrowserFileExport.SaveExcelAsync(JSRuntime, dt, fileName, sheet);
+            if (BrowserFileExport.WasCancelled(result))
+            {
+                Notifications.Info("Export cancelled.");
+                return;
+            }
+
+            Notifications.Success(BrowserFileExport.FormatExportSuccess(dt.Rows.Count, "row", fileName: fileName));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FDBGrid export failed for {Caption}", Caption);
+            Notifications.Error("Export failed: " + ex.Message);
+        }
     }
 
     // === Save Data ===
@@ -469,19 +2161,147 @@
 
         if (prompt)
         {
-            var answer = await JSRuntime.InvokeAsync<string>("eval",
-                "confirm('This data has changed.\\n\\nDo you want to save these changes?') ? 'yes' : 'no'");
-            if (answer == "no") return true;
+            if (_messageBox != null)
+            {
+                // HHM-294 / VB6 FDBGrid.frm:866: vbExclamation + vbYesNoCancel, App.ProductName.
+                // Yes = save, No = discard and continue closing, Cancel = keep the window open.
+                var answer = await _messageBox.ShowAsync(
+                    "This data has changed.\n\nDo you want to save these changes?",
+                    title: "Precision Builder",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNoCancel,
+                    icon: "warning");
+                if (answer == Fx.ControlKit.Dialogs.MessageBoxResult.Cancel) return false;
+                if (answer != Fx.ControlKit.Dialogs.MessageBoxResult.Yes) return true;
+            }
+            else
+            {
+                var save = await JSRuntime.InvokeAsync<bool>("confirm",
+                    "This data has changed.\n\nDo you want to save these changes?");
+                if (!save) return true;
+            }
+        }
+
+        var keyColumns = ParseCsvList(mKeyColumns);
+        var newkey = "";
+
+        // Data incident 2026-08-01 (Community Phases): validate EVERY pending
+        // Insert row's key columns BEFORE any DML executes. This check used to
+        // live inside the row loop below, so Update rows earlier in GridData
+        // had already had their UPDATEs executed when a later Insert row
+        // failed validation — SaveData returned false but those updates
+        // stayed committed (a partial save that had to be restored by hand).
+        // VB6 never hit this because it validated during editing; validating
+        // everything up front restores that no-DML-on-abort guarantee (the
+        // transaction below is the backstop for mid-save SQL errors).
+        foreach (var row in GridData)
+        {
+            if ((row.GetValue("_RowState")?.ToString() ?? "") != "Insert") continue;
+            foreach (var kc in keyColumns)
+            {
+                var trimmed = kc.Trim();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+                if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase)) continue;
+                var val = row.GetValue(trimmed)?.ToString() ?? "";
+                if (string.IsNullOrWhiteSpace(val))
+                {
+                    // HHM-365: show the column's display TITLE (grid caption), not the
+                    // internal column name — "Cost Code is required."
+                    // HHM-520: use a modal MessageBox (matching VB6 FDBGrid.frm:1051
+                    // MsgBox vbInformation) instead of a corner toast, consistent with
+                    // the SQL-error catch block below. Runs before the "Loading
+                    // Data..." overlay goes up, so the HHM-602 overlay-behind-the-
+                    // popup problem can't recur on this path.
+                    if (_messageBox != null)
+                        await _messageBox.ShowAsync($"{ColumnTitle(trimmed)} is required.",
+                            title: "Precision Builder",
+                            buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok,
+                            icon: "info");
+                    else
+                        Notifications.Info($"{ColumnTitle(trimmed)} is required.");
+                    return false;
+                }
+            }
         }
 
         IsLoading = true;
         StateHasChanged();
 
-        var keyColumns = ParseCsvList(mKeyColumns);
-        var newkey = "";
+        // mTableName is always a hardcoded allowlist literal (set by ShowForm /
+        // the route resolver, never the raw route param). Validate it once here
+        // before any DELETE/INSERT/UPDATE/IDENT_CURRENT concatenates it as a SQL
+        // identifier — SQL Server can't parameterize a table name, so this guard
+        // is the identifier-injection defense for every SQL built below.
+        var safeTable = DbWrapperSqlServer.ValidateIdentifier(mTableName);
 
         try
         {
+            // Data incident 2026-08-01: one transaction for the whole save —
+            // any failure below rolls back EVERY delete/insert/update already
+            // issued, so a failed save leaves the database exactly as it was.
+            // Disposing the session without CommitAsync performs the rollback.
+            await using var tx = await db.BeginTransactionAsync();
+
+            // In-memory bookkeeping (row-state clears, original-key stashes,
+            // grid row removals) is deferred until after Commit — on rollback
+            // the grid must still look dirty so a retry re-issues every row.
+            var postCommit = new List<Action>();
+
+            // Do deletes first (VB6 pattern: deletes, then updates, then inserts)
+            if (mDeleteRecords)
+            {
+                // HHM-350: commit rows deleted this session (removed from the grid, deferred until
+                // save). DeleteRowFromDbAsync builds the parameterized key DELETE from the row's
+                // OriginalKeyValues, so it works even though the row is no longer in GridData.
+                foreach (var row in _pendingDeletes.ToList())
+                {
+                    if (await DeleteRowFromDbAsync(row, tx))
+                        postCommit.Add(() => _pendingDeletes.Remove(row));
+                }
+
+                for (int i = GridData.Count - 1; i >= 0; i--)
+                {
+                    var row = GridData[i];
+                    var rowState = row.GetValue("_RowState")?.ToString() ?? "";
+                    if (rowState != "Delete") continue;
+
+                    var rowIndex = Convert.ToInt32(row.GetValue("_RowIndex"));
+                    var whereClause = new StringBuilder();
+                    var parameters = new Dictionary<string, object>();
+                    var origKeys = OriginalKeyValues.ContainsKey(rowIndex)
+                        ? OriginalKeyValues[rowIndex]
+                        : new Dictionary<string, string>();
+
+                    foreach (var kc in keyColumns)
+                    {
+                        var trimmed = kc.Trim();
+                        if (string.IsNullOrEmpty(trimmed)) continue;
+                        if (whereClause.Length > 0) whereClause.Append(" AND ");
+
+                        if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            whereClause.Append($"[{trimmed}]={AddParam(parameters, SessionState.DivisionID)}");
+                        }
+                        else
+                        {
+                            var origVal = origKeys.ContainsKey(trimmed) ? origKeys[trimmed] : "";
+                            var colDef = ColumnDefinitions.FirstOrDefault(c =>
+                                string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
+                            whereClause.Append($"[{trimmed}]={AddParam(parameters, CoerceKeyValue(origVal, colDef?.DataType ?? "string"))}");
+                        }
+                    }
+
+                    if (whereClause.Length > 0)
+                    {
+                        var sql = $"DELETE {safeTable} WHERE {whereClause}";
+                        await tx.ExecuteAsync(sql, parameters);
+                        // Removal deferred to postCommit; until then the row keeps
+                        // its "Delete" state, which the insert/update loop below
+                        // skips (it only acts on Insert/Update rows).
+                        postCommit.Add(() => GridData.Remove(row));
+                    }
+                }
+            }
+
             foreach (var row in GridData)
             {
                 var rowState = row.GetValue("_RowState")?.ToString() ?? "";
@@ -489,52 +2309,61 @@
 
                 if (rowState == "Insert")
                 {
-                    // Validate key columns are not blank
-                    foreach (var kc in keyColumns)
-                    {
-                        var trimmed = kc.Trim();
-                        if (string.IsNullOrEmpty(trimmed)) continue;
-                        if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase)) continue;
-                        var val = row.GetValue(trimmed)?.ToString() ?? "";
-                        if (string.IsNullOrWhiteSpace(val))
-                        {
-                            await JSRuntime.InvokeVoidAsync("alert", $"{trimmed} cannot be blank.");
-                            IsLoading = false;
-                            StateHasChanged();
-                            return false;
-                        }
-                    }
+                    // Key-column blank validation happens in the pre-pass above,
+                    // BEFORE any DML has run (data incident 2026-08-01) — by the
+                    // time this branch executes every Insert row is known-valid.
 
-                    // Build INSERT
+                    // Build INSERT (skip identity/autoincrement columns)
                     var ic = new StringBuilder();
                     var iv = new StringBuilder();
+                    var parameters = new Dictionary<string, object>();
                     foreach (var col in ColumnDefinitions)
                     {
                         if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
+                        if (col.IsIdentity) continue; // skip autoincrement columns
+                        if (!IsPersistedColumn(col)) continue; // VB6: skip non-table (computed/literal) columns
                         if (ic.Length > 0) { ic.Append(","); iv.Append(","); }
-                        ic.Append($"[{col.FieldName}]");
-                        iv.Append(FormatDbValue(row, col));
+                        // Emit the REAL table column (VB6 BASECOLUMNNAME); the row
+                        // value is still keyed by the display/alias FieldName.
+                        ic.Append($"[{col.BaseColumnName}]");
+                        iv.Append(AddParam(parameters, BindDbValue(row, col)));
                     }
 
                     newkey = BuildNewKeyDisplay(row, keyColumns);
-                    var sql = $"INSERT INTO {mTableName} ({ic}) VALUES ({iv})";
-                    await db.ExecuteAsync(sql);
-                    row.SetValue("_RowState", "");
+                    var sql = $"INSERT INTO {safeTable} ({ic}) VALUES ({iv})";
+                    await tx.ExecuteAsync(sql, parameters);
 
-                    // Store original keys for future updates
-                    var origKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var kc in keyColumns)
+                    // Get new identity value if single key column with identity
+                    // (read on the transaction connection so it reflects the
+                    // still-uncommitted INSERT above).
+                    object? identityVal = null;
+                    if (mHasIdentityColumn && keyColumns.Count == 1)
+                        identityVal = await tx.ExecuteScalarAsync<object>($"SELECT IDENT_CURRENT('{safeTable}')");
+
+                    postCommit.Add(() =>
                     {
-                        var trimmed = kc.Trim();
-                        if (!string.IsNullOrEmpty(trimmed))
-                            origKeys[trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
-                    }
-                    OriginalKeyValues[rowIndex] = origKeys;
+                        if (identityVal != null)
+                            row.SetValue(keyColumns[0].Trim(), identityVal);
+
+                        row.SetValue("_RowState", "");
+
+                        // Store original keys for future updates (after the
+                        // identity write-back so the stash sees the new key)
+                        var origKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kc in keyColumns)
+                        {
+                            var trimmed = kc.Trim();
+                            if (!string.IsNullOrEmpty(trimmed))
+                                origKeys[trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
+                        }
+                        OriginalKeyValues[rowIndex] = origKeys;
+                    });
                 }
                 else if (rowState == "Update")
                 {
                     // Build WHERE clause using original key values
                     var whereClause = new StringBuilder();
+                    var parameters = new Dictionary<string, object>();
                     var origKeys = OriginalKeyValues.ContainsKey(rowIndex)
                         ? OriginalKeyValues[rowIndex]
                         : new Dictionary<string, string>();
@@ -548,47 +2377,60 @@
 
                         if (string.Equals(trimmed, "DivisionID", StringComparison.OrdinalIgnoreCase))
                         {
-                            whereClause.Append($"[{trimmed}]={DivisionID}");
+                            whereClause.Append($"[{trimmed}]={AddParam(parameters, SessionState.DivisionID)}");
                         }
                         else
                         {
                             var origVal = origKeys.ContainsKey(trimmed) ? origKeys[trimmed] : "";
                             var colDef = ColumnDefinitions.FirstOrDefault(c =>
                                 string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
-                            whereClause.Append($"[{trimmed}]={QuoteValue(origVal, colDef?.DataType ?? "string")}");
+                            whereClause.Append($"[{trimmed}]={AddParam(parameters, CoerceKeyValue(origVal, colDef?.DataType ?? "string"))}");
                         }
                     }
 
-                    // Build SET clause
+                    // Build SET clause (skip identity/autoincrement columns)
                     var setClause = new StringBuilder();
                     foreach (var col in ColumnDefinitions)
                     {
                         if (col.FieldName == "_RowIndex" || col.FieldName == "_RowState") continue;
+                        if (col.IsIdentity) continue; // skip autoincrement columns
+                        if (!IsPersistedColumn(col)) continue; // VB6: skip non-table (computed/literal) columns
                         if (setClause.Length > 0) setClause.Append(",");
-                        setClause.Append($"[{col.FieldName}]={FormatDbValue(row, col)}");
+                        // Emit the REAL table column (VB6 BASECOLUMNNAME); the row
+                        // value is still keyed by the display/alias FieldName.
+                        setClause.Append($"[{col.BaseColumnName}]={AddParam(parameters, BindDbValue(row, col))}");
                     }
 
                     newkey = BuildNewKeyDisplay(row, keyColumns);
-                    var sql = $"UPDATE {mTableName} SET {setClause}";
+                    var sql = $"UPDATE {safeTable} SET {setClause}";
                     if (whereClause.Length > 0)
                         sql += $" WHERE {whereClause}";
 
-                    await db.ExecuteAsync(sql);
-                    row.SetValue("_RowState", "");
+                    await tx.ExecuteAsync(sql, parameters);
 
-                    // Update original keys to current values
-                    foreach (var kc in keyColumns)
+                    postCommit.Add(() =>
                     {
-                        var trimmed = kc.Trim();
-                        if (!string.IsNullOrEmpty(trimmed))
+                        row.SetValue("_RowState", "");
+
+                        // Update original keys to current values
+                        foreach (var kc in keyColumns)
                         {
-                            if (!OriginalKeyValues.ContainsKey(rowIndex))
-                                OriginalKeyValues[rowIndex] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                            OriginalKeyValues[rowIndex][trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
+                            var trimmed = kc.Trim();
+                            if (!string.IsNullOrEmpty(trimmed))
+                            {
+                                if (!OriginalKeyValues.ContainsKey(rowIndex))
+                                    OriginalKeyValues[rowIndex] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                                OriginalKeyValues[rowIndex][trimmed] = row.GetValue(trimmed)?.ToString() ?? "";
+                            }
                         }
-                    }
+                    });
                 }
             }
+
+            await tx.CommitAsync();
+
+            // The DB changes are now permanent — reflect them in the grid state.
+            foreach (var apply in postCommit) apply();
 
             mDirty = false;
             IsLoading = false;
@@ -600,66 +2442,139 @@
             IsLoading = false;
             StateHasChanged();
 
+            // HHM-353: SqlException.Message concatenates EVERY error in the
+            // Errors collection, so the informational msg-3621 trailer "The
+            // statement has been terminated." rides along with the duplicate-key
+            // violation. VB6/ADO Err.Description (FDBGrid.frm:952) carried only
+            // the primary error, so the legacy MsgBox never showed that line —
+            // strip it before display.
+            var sqlMsg = StripStatementTerminated(ex.Message);
+            var errMsg = sqlMsg;
+            // HHM-332: VB6 uses vbInformation for the duplicate and required-column
+            // MsgBoxes (FDBGrid.frm:1044/1046/1051); only the generic error handler
+            // (MError errHandler) is vbCritical.
+            var icon = "error";
             if (ex.Message.IndexOf("duplicate", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                await JSRuntime.InvokeVoidAsync("alert",
-                    $"Unable to save duplicate record with key\n\n{newkey}");
+                errMsg = mHasIdentityColumn
+                    ? $"Unable to save duplicate record.\n\n{sqlMsg}"
+                    : $"Unable to save duplicate record with key\n\n{newkey}";
+                icon = "info";
+            }
+            else if (ex.Message.IndexOf("column does not allow nulls", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var parts = ex.Message.Split('\'');
+                var colName = parts.Length >= 3 ? parts[1] : "A column";
+                errMsg = $"{colName} is required.";
+                icon = "info";
             }
             else
             {
-                Console.WriteLine($"[FDBGrid.SaveData] Error: {ex.Message}");
-                await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+                Logger.LogError(ex, "Operation failed");
+                errMsg = $"Error saving data: {sqlMsg}";
+            }
+
+            if (_messageBox != null)
+            {
+                await _messageBox.ShowAsync(errMsg, title: "Precision Builder", buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.Ok, icon: icon);
+            }
+            else
+            {
+                Notifications.Error(errMsg);
             }
             return false;
         }
     }
 
     // === Helpers ===
-    private string FormatDbValue(GridRow row, ColumnDef col)
+
+    /// <summary>
+    /// HHM-353: drop SQL Server's informational message 3621 ("The statement
+    /// has been terminated.") from an exception message before showing it to
+    /// the user. .NET SqlException.Message joins every SqlError with a
+    /// newline; VB6/ADO Err.Description only carried the primary error, so
+    /// the legacy duplicate-save MsgBox never included that trailer.
+    /// </summary>
+    private static string StripStatementTerminated(string message)
     {
+        if (string.IsNullOrEmpty(message)) return message;
+        var kept = message
+            .Split('\n')
+            .Where(l => !l.Trim().TrimEnd('.')
+                .Equals("The statement has been terminated", StringComparison.OrdinalIgnoreCase));
+        return string.Join("\n", kept).TrimEnd('\r', '\n', ' ');
+    }
+
+    // === Parameterized-SQL helpers ===
+    // SaveData (insert/update/delete) binds every user value through a
+    // SqlParameter instead of interpolating a quoted literal — the old
+    // FormatDbValue/QuoteValue string builders were an injection vector.
+    // Key-column values reuse CoerceKeyValue (shared with the parameterized
+    // single-row delete); cell values use BindDbValue below.
+
+    /// <summary>Add a bound value to the parameter map and return its
+    /// @placeholder. Keys are p0,p1,... (pars.Count gives the next index);
+    /// DbWrapper.AddParameters auto-prefixes '@'.</summary>
+    private static string AddParam(Dictionary<string, object> pars, object? v)
+    {
+        var key = "p" + pars.Count;
+        pars[key] = v ?? DBNull.Value;
+        return "@" + key;
+    }
+
+    /// <summary>Bound CLR value for a grid cell (param-path mirror of the old
+    /// FormatDbValue). DivisionID always comes from SessionState; types map to
+    /// the column's SQL type so binding does the formatting VB6 DbQuote did.</summary>
+    private object BindDbValue(GridRow row, ColumnDef col)
+    {
+        if (string.Equals(col.FieldName, "DivisionID", StringComparison.OrdinalIgnoreCase))
+            return SessionState.DivisionID;
+
         var val = row.GetValue(col.FieldName);
 
-        if (string.Equals(col.FieldName, "DivisionID", StringComparison.OrdinalIgnoreCase))
-            return DivisionID.ToString();
+        // VB6 FDBGrid.frm:613-617 ColComboList: the cell holds the display text
+        // ("labour"…) but the table column stores the numeric code (#1..#6) —
+        // translate text back to code on save. Blank writes NULL; a raw numeric
+        // code (unmatched legacy value shown verbatim) passes through unchanged.
+        if (col.HasComboList)
+        {
+            var comboText = val?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(comboText)) return DBNull.Value;
+            var item = col.ComboItems.FirstOrDefault(ci =>
+                string.Equals(ci.Text, comboText, StringComparison.OrdinalIgnoreCase));
+            if (item != null) return int.Parse(item.Value);
+            if (long.TryParse(comboText, out var comboCode)) return comboCode;
+            return DBNull.Value;
+        }
 
         switch (col.DataType)
         {
             case "boolean":
-                var boolVal = val is bool b ? b : (val?.ToString() == "True" || val?.ToString() == "1");
-                return boolVal ? "1" : "0";
+                return val is bool b ? b : (val?.ToString() == "True" || val?.ToString() == "1");
             case "date":
-                if (val is DateTime dt && dt != DateTime.MinValue)
-                    return $"'{dt:yyyy-MM-dd HH:mm:ss}'";
-                var dateStr = val?.ToString() ?? "";
-                if (DateTime.TryParse(dateStr, out var parsed))
-                    return $"'{parsed:yyyy-MM-dd HH:mm:ss}'";
-                return "NULL";
+                if (val is DateTime dt && dt != DateTime.MinValue) return dt;
+                return DateTime.TryParse(val?.ToString() ?? "", out var parsed) ? parsed : (object)DBNull.Value;
             case "number":
                 var numStr = val?.ToString() ?? "";
-                if (string.IsNullOrWhiteSpace(numStr)) return "0";
-                if (double.TryParse(numStr, out var num)) return num.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                return "0";
+                // VB6 DbQuote(Num, s, Nullable:=True): a blank cell writes NULL.
+                if (string.IsNullOrWhiteSpace(numStr)) return DBNull.Value;
+                if (long.TryParse(numStr, out var l)) return l;
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var d)) return d;
+                return 0;
             default:
-                return $"'{(val?.ToString() ?? "").Replace("'", "''")}'";
-        }
-    }
-
-    private string QuoteValue(string val, string dataType)
-    {
-        switch (dataType)
-        {
-            case "boolean":
-                return (val == "True" || val == "1") ? "1" : "0";
-            case "date":
-                if (DateTime.TryParse(val, out var dt))
-                    return $"'{dt:yyyy-MM-dd HH:mm:ss}'";
-                return "NULL";
-            case "number":
-                if (double.TryParse(val, out var num))
-                    return num.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                return "0";
-            default:
-                return $"'{val.Replace("'", "''")}'";
+                // VB6 DbQuote(Str, s, Nullable:=True): a blank cell writes NULL — on a
+                // NOT NULL column SQL raises "column does not allow nulls", which the
+                // catch above turns into the legacy "'X' is required." block. Emitting
+                // '' here skipped that validation entirely (HHM-207: blank Category
+                // rows saved without the mandatory warning).
+                var strVal = val?.ToString() ?? "";
+                // VB6 capped the editor itself (.EditMaxLength = rs.Fields(c).DefinedSize,
+                // FDBGrid.frm:747). Trim here too, so a value that bypassed the in-cell
+                // maxlength cannot fail the whole save on a truncation error.
+                if (col.MaxLength is > 0 && strVal.Length > col.MaxLength.Value)
+                    strVal = strVal[..col.MaxLength.Value];
+                return string.IsNullOrEmpty(strVal) ? (object)DBNull.Value : strVal;
         }
     }
 
@@ -671,9 +2586,23 @@
             var trimmed = kc.Trim();
             if (string.IsNullOrEmpty(trimmed)) continue;
             var val = row.GetValue(trimmed)?.ToString() ?? "";
-            parts.Add($"[{trimmed}]={val}");
+            var colDef = ColumnDefinitions.FirstOrDefault(c => string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
+            var needsQuotes = true;
+            if (colDef != null)
+            {
+                if (colDef.ColumnType == ColumnType.Number || string.Equals(colDef.DataType, "number", StringComparison.OrdinalIgnoreCase))
+                {
+                    needsQuotes = false;
+                }
+            }
+            else if (int.TryParse(val, out _))
+            {
+                needsQuotes = false;
+            }
+            var valStr = needsQuotes ? $"'{val}'" : val;
+            parts.Add($"[{trimmed.ToLowerInvariant()}]={valStr}");
         }
-        return string.Join(" AND ", parts);
+        return string.Join(" and ", parts);
     }
 
     private string MapDataType(Type type)
@@ -715,32 +2644,182 @@
                    .ToList();
     }
 
-    // === Models ===
-    public class GridRow
+    // ── Grid Layout Helpers (dynamic columns from AppGridLayout) ──
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
     {
-        private Dictionary<string, object?> _values = new(StringComparer.OrdinalIgnoreCase);
+        if (!HasGridLayout) yield break;
 
-        public object? GetValue(string fieldName)
+        var ordered = gDBGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
         {
-            return _values.ContainsKey(fieldName) ? _values[fieldName] : null;
+            var resolvedField = ResolveGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            // HHM-352: VB6 center-aligns flexDTBoolean checkbox cells (FDBGrid.frm:644-645).
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right
+                          : columnType == ColumnType.CheckBox ? TextAlign.Center
+                          : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private string ResolveGridField(string layoutField)
+    {
+        if (string.IsNullOrWhiteSpace(layoutField)) return "";
+        var trimmed = layoutField.Trim();
+
+        // Match against ColumnDefinitions (case-insensitive)
+        var colDef = ColumnDefinitions.FirstOrDefault(c =>
+            string.Equals(c.FieldName, trimmed, StringComparison.OrdinalIgnoreCase));
+        if (colDef != null) return colDef.FieldName;
+
+        var normalized = NormalizeGridKey(trimmed);
+        colDef = ColumnDefinitions.FirstOrDefault(c =>
+            NormalizeGridKey(c.FieldName) == normalized);
+        if (colDef != null) return colDef.FieldName;
+
+        return trimmed;
+    }
+
+    private bool IsFieldEditable(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName) || mReadOnly)
+            return false;
+
+        var colDef = FindColumnDefinition(fieldName);
+        return colDef?.AllowEditing ?? false;
+    }
+
+    private int? GetMaxLengthForField(string fieldName) =>
+        FindColumnDefinition(fieldName)?.MaxLength;
+
+    /// <summary>VB6 FDBGrid.frm:613-617 ColComboList: editing a combo column
+    /// offers a dropdown of the translated texts ("labour"…"other"); null =
+    /// plain text editor for every other column.</summary>
+    private IEnumerable<string>? GetComboEditOptions(string fieldName) =>
+        FindColumnDefinition(fieldName) is { HasComboList: true } comboDef
+            ? comboDef.ComboItems.Select(ci => ci.Text).ToList()
+            : null;
+
+    private ColumnDef? FindColumnDefinition(string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName))
+            return null;
+
+        var colDef = ColumnDefinitions.FirstOrDefault(c =>
+            string.Equals(c.FieldName, fieldName, StringComparison.OrdinalIgnoreCase));
+        if (colDef != null)
+            return colDef;
+
+        var normalized = NormalizeGridKey(fieldName);
+        return ColumnDefinitions.FirstOrDefault(c => NormalizeGridKey(c.FieldName) == normalized);
+    }
+
+    private string ApplyFieldMaxLength(string fieldName, string value)
+    {
+        var maxLength = FindColumnDefinition(fieldName)?.MaxLength;
+        return maxLength is > 0 && value.Length > maxLength.Value
+            ? value[..maxLength.Value]
+            : value;
+    }
+
+    private ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        var colDef = FindColumnDefinition(field);
+        if (colDef != null) return colDef.ColumnType;
+        return ColumnType.Text;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    private int GetLogicalGridWidthPx()
+    {
+        var total = UseInlineGridAddRows ? 22 : 0;
+
+        if (HasGridLayout)
+        {
+            foreach (var entry in GetOrderedGridLayout())
+                total += entry.Layout.Width.HasValue && entry.Layout.Width.Value > 0
+                    ? ConvertLayoutWidthToPx(entry.Layout.Width.Value)
+                    : 150;
+        }
+        else
+        {
+            foreach (var col in ColumnDefinitions.Where(c => c.Visible))
+                total += TryParseWidthPx(col.Width) ?? 150;
         }
 
-        public void SetValue(string fieldName, object? value)
-        {
-            _values[fieldName] = value;
-        }
+        // HHM-289: +24 (was +6) reserves room for the grid's vertical
+        // scrollbar (~17px classic scrollbar), which lives INSIDE this
+        // fixed-width container and was eating the right edge of the last
+        // column — the DebitAccount "…" picker button rendered half-hidden
+        // under the scrollbar on Cost Codes / Categories.
+        return Math.Max(total + 24, 120);
+    }
 
-        // Indexer for grid binding
-        public object? this[string fieldName]
+    private static int? TryParseWidthPx(string? width)
+    {
+        if (string.IsNullOrWhiteSpace(width))
+            return null;
+
+        var trimmed = width.Trim();
+        if (trimmed.EndsWith("px", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^2];
+
+        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var px)
+            ? (int)Math.Round(px)
+            : null;
+    }
+
+    private static string NormalizeGridKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
         {
-            get => GetValue(fieldName);
-            set => SetValue(fieldName, value);
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
         }
+        return sb.ToString();
+    }
+
+    // === Models ===
+    /// <summary>
+    /// Dynamic-shape row used by FDBGrid since the columns are determined at
+    /// runtime from whatever SQL <see cref="ShowForm"/> was handed. Inherits
+    /// <see cref="Dictionary{TKey, TValue}"/> of <c>string</c>→<c>object?</c>
+    /// so FlexKit's <c>GridControl.GetPropertyValue</c> (which calls
+    /// <c>TryGetDictionaryValue</c> on each row) can read cell values
+    /// directly — without this, the grid binds the column Field by name to
+    /// a CLR property, finds nothing on GridRow, and renders every cell
+    /// blank even though the row carries data. The case-insensitive comparer
+    /// matches VB6's <c>.ColIndex("Category")</c> /<c> .ColIndex("category")</c>
+    /// being interchangeable. GetValue / SetValue are kept as readable
+    /// wrappers; the inherited indexer <c>this[string]</c> serves grid binding.
+    /// </summary>
+    public class GridRow : Dictionary<string, object?>
+    {
+        public GridRow() : base(StringComparer.OrdinalIgnoreCase) { }
+
+        public object? GetValue(string fieldName) =>
+            TryGetValue(fieldName, out var v) ? v : null;
+
+        public void SetValue(string fieldName, object? value) =>
+            this[fieldName] = value;
     }
 
     public class ColumnDef
     {
         public string FieldName { get; set; } = "";
+        // Real underlying table column used in INSERT/UPDATE (VB6 BASECOLUMNNAME).
+        // Equals FieldName unless the SELECT aliased it (see mColumnAliases).
+        public string BaseColumnName { get; set; } = "";
         public string HeaderText { get; set; } = "";
         public string Width { get; set; } = "150px";
         public bool Visible { get; set; } = true;
@@ -750,9 +2829,11 @@
         public ColumnType ColumnType { get; set; } = ColumnType.Text;
         public TextAlign TextAlign { get; set; } = TextAlign.Left;
         public string? Format { get; set; }
+        public int? MaxLength { get; set; }
         public bool HasComboList { get; set; } = false;
         public List<ComboItem> ComboItems { get; set; } = new();
         public bool HasButtonColumn { get; set; } = false;
+        public bool IsIdentity { get; set; } = false;
     }
 
     public class ComboItem
@@ -761,4 +2842,3 @@
         public string Text { get; set; } = "";
     }
 }
-```

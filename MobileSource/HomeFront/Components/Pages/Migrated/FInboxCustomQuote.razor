@@ -1,104 +1,25 @@
-```razor
+@namespace HomeFront.Components.Pages
 @page "/inbox-custom-quote"
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Hf
+@using HomeFront.Models
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Notifications
 @using HomeFront.Data
 @using System.Data
+@using System.Reflection
+@using System.Text
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
+@inject ILogger<FInboxCustomQuote> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
 
 <PageTitle>Custom Requests - HomeFront</PageTitle>
-
-<style>
-    .wizard-header {
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
-    }
-    .wizard-header h3 { margin: 0; font-size: 18px; }
-    .wizard-header p { margin: 4px 0 0 0; color: #6c757d; font-size: 13px; }
-    .toolbar {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 8px 12px;
-        margin-bottom: 10px;
-    }
-    .toolbar label { font-weight: 600; font-size: 13px; }
-    .toolbar select {
-        padding: 4px 8px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-        background: #fff;
-    }
-    .toolbar .spacer { flex: 1; }
-    .dirty-indicator { color: #dc3545; font-weight: 600; font-size: 12px; }
-
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        overflow: hidden;
-        background: #fff;
-    }
-    .btn-bar {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 10px;
-    }
-    .btn-bar button {
-        padding: 6px 14px;
-        border-radius: 4px;
-        border: 1px solid #ced4da;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-    }
-    .btn-bar button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-    .btn-bar button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .cell-edit-btn {
-        padding: 1px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        background: #fff;
-        font-size: 11px;
-        cursor: pointer;
-        margin-left: 4px;
-    }
-    .cell-edit-btn:hover { background: #e9ecef; }
-
-    .loading-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 999;
-    }
-    .loading-panel {
-        background: #fff;
-        padding: 14px 20px;
-        border-radius: 6px;
-        box-shadow: 0 8px 28px rgba(0,0,0,0.2);
-        font-size: 14px;
-    }
-</style>
 
 @if (IsLoading)
 {
@@ -107,28 +28,31 @@
     </div>
 }
 
-<div class="wizard-header">
-    <h3>Prepare quotes for custom requests</h3>
-    <p>Double click on a request to build the quote. Requests can also be declined.</p>
-</div>
+<div class="inbox-custom-quote-page">
+    <div class="wizard-header">
+        <h3>Prepare quotes for custom requests</h3>
+        <p>Double click on a request to build the quote. Requests can also be declined.</p>
+    </div>
 
-<div class="toolbar">
-    <label>View:</label>
-    <select @onchange="OnViewChanged" value="@CurrentViewIndex">
-        @for (var i = 0; i < ViewOptions.Count; i++)
+    <div class="toolbar">
+        <label>View:</label>
+        <DropDownListControl TValue="int" TItem="ViewOptionItem"
+                             DataSource="@ViewChoices"
+                             Value="@CurrentViewIndex"
+                             ValueChanged="OnViewChanged"
+                             TextFieldName="@nameof(ViewOptionItem.Text)"
+                             ValueFieldName="@nameof(ViewOptionItem.Value)"
+                             Width="135px"
+                             CssClass="customquote-view-dropdown" />
+        <span class="spacer"></span>
+        @if (mDirty)
         {
-            <option value="@i">@ViewOptions[i]</option>
+            <span class="dirty-indicator">Unsaved changes</span>
         }
-    </select>
-    <span class="spacer"></span>
-    @if (mDirty)
-    {
-        <span class="dirty-indicator">Unsaved changes</span>
-    }
-</div>
+    </div>
 
-<div class="grid-container">
-    <HfGrid @ref="DataGrid"
+    <div class="grid-container">
+        <GridControl @ref="DataGrid"
             TValue="CustomQuoteRow"
             DataSource="@Rows"
             AllowPaging="true"
@@ -137,168 +61,318 @@
             AllowResizing="true"
             AllowSelection="true"
             EnableHover="true"
-            Height="calc(100vh - 310px)"
+            Height="100%"
             FilterSettingsRef="@filterSettings"
             PageSettingsRef="@pageSettings"
             SelectionSettingsRef="@selectionSettings"
             EditSettingsRef="@editSettings"
+            OnLayoutChanged="@OnGridLayoutChangedAsync"
             EventsRef="@gridEvents">
-        <HfGridColumnsBase>
-            <HfGridColumn HeaderText="Quote" Width="70px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <button class="cell-edit-btn" @onclick="() => OnBuildQuote(row)">Quote</button>
-                    }
-                </Template>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.CreationDate)" HeaderText="Date" Width="110px" Format="d" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.CommunityDesc)" HeaderText="Community" Width="140px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Customer_No)" HeaderText="Cust #" Width="90px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Customer)" HeaderText="Customer" Width="160px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Job_No)" HeaderText="Job" Width="90px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Model)" HeaderText="Model" Width="90px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.ChangeOrderNo)" HeaderText="CO #" Width="90px" AllowEditing="false" />
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Description)" HeaderText="Description" Width="260px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <span title="@row.Description">@Truncate(row.Description, 40)</span>
-                        @if (CanEdit)
-                        {
-                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Description), "Description", 200)'>✏️</button>
+        <GridColumnsBase @key="gDataLayoutVersion">
+            @if (HasGridLayout)
+            {
+                <GridColumn HeaderText="Quote" Width="70px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <ButtonControl BareStyle="true" CssClass="cell-edit-btn" OnClick="@(_ => OnBuildQuote(row))">Quote</ButtonControl>
                         }
+                    </Template>
+                </GridColumn>
+
+                foreach (var entry in GetOrderedGridLayout())
+                {
+                    var layout = entry.Layout;
+                    var fieldName = entry.Field;
+                    var columnType = entry.ColumnType;
+                    var textAlign = entry.TextAlign;
+                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                    if (fieldName == "Description")
+                    {
+                        <GridColumn Field="Description" HeaderText="@headerText" Width="@(width ?? "260px")" AllowEditing="false">
+                            <Template>
+                                @{
+                                    var row = (CustomQuoteRow)context;
+                                    <span title="@row.Description">@Truncate(row.Description, 40)</span>
+                                    @if (CanEdit)
+                                    {
+                                        <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit description" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Description), "Description", 200))">...</ButtonControl>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
                     }
-                </Template>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Qty)" HeaderText="Qty" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.UOM)" HeaderText="UOM" Width="70px" AllowEditing="@CanEdit" />
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Cost)" HeaderText="Cost" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Price)" HeaderText="Price" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Status)" HeaderText="Status" Width="90px" AllowEditing="@CanEdit" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Bldr_Declined_Reason)" HeaderText="Decline Reason" Width="200px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <span title="@row.Bldr_Declined_Reason">@Truncate(row.Bldr_Declined_Reason, 30)</span>
-                        @if (CanEdit)
-                        {
-                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Bldr_Declined_Reason), "Decline Reason", 500)'>✏️</button>
+                    else if (fieldName == "Bldr_Declined_Reason")
+                    {
+                        <GridColumn Field="Bldr_Declined_Reason" HeaderText="@headerText" Width="@(width ?? "200px")" AllowEditing="false">
+                            <Template>
+                                @{
+                                    var row = (CustomQuoteRow)context;
+                                    <span title="@row.Bldr_Declined_Reason">@Truncate(row.Bldr_Declined_Reason, 30)</span>
+                                    @if (CanEdit)
+                                    {
+                                        <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit decline reason" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Bldr_Declined_Reason), "Decline Reason", 500))">...</ButtonControl>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                    }
+                    else if (fieldName == "CategoryDesc")
+                    {
+                        <GridColumn Field="CategoryDesc" HeaderText="@headerText" Width="@(width ?? "160px")" AllowEditing="@CanEdit">
+                            <EditTemplate>
+                                @{
+                                    var row = (CustomQuoteRow)context;
+                                    <DropDownListControl TValue="string" TItem="CategoryItem"
+                                                         DataSource="@CategoryItems"
+                                                         Value="@row.CategoryDesc"
+                                                         ValueChanged="@(value => OnCategorySelected(row, value))"
+                                                         TextFieldName="@nameof(CategoryItem.Description)"
+                                                         ValueFieldName="@nameof(CategoryItem.Description)"
+                                                         Placeholder="-- Select --"
+                                                         Width="100%"
+                                                         CssClass="customquote-grid-dropdown" />
+                                }
+                            </EditTemplate>
+                        </GridColumn>
+                    }
+                    else if (fieldName == "Comments")
+                    {
+                        <GridColumn Field="Comments" HeaderText="@headerText" Width="@(width ?? "200px")" AllowEditing="false">
+                            <Template>
+                                @{
+                                    var row = (CustomQuoteRow)context;
+                                    <span title="@row.Comments">@Truncate(row.Comments, 30)</span>
+                                    @if (CanEdit)
+                                    {
+                                        <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit comments" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Comments), "Comments", 4000))">...</ButtonControl>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                    }
+                    else if (fieldName == "EstimatorNotes")
+                    {
+                        <GridColumn Field="EstimatorNotes" HeaderText="@headerText" Width="@(width ?? "200px")" AllowEditing="false">
+                            <Template>
+                                @{
+                                    var row = (CustomQuoteRow)context;
+                                    <span title="@row.EstimatorNotes">@Truncate(row.EstimatorNotes, 30)</span>
+                                    @if (CanEdit)
+                                    {
+                                        <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit estimator notes" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.EstimatorNotes), "Estimator Notes", 4000))">...</ButtonControl>
+                                    }
+                                }
+                            </Template>
+                        </GridColumn>
+                    }
+                    else
+                    {
+                        <GridColumn Field="@fieldName"
+                                      HeaderText="@headerText"
+                                      Width="@width"
+                                      Type="@columnType"
+                                      TextAlign="@textAlign"
+                                      AllowEditing="@CanEdit"
+                                      ClipMode="ClipMode.Ellipsis" />
+                    }
+                }
+            }
+            else
+            {
+                @* Fallback: hardcoded columns matching VB6 DataGrid *@
+                <GridColumn HeaderText="Quote" Width="70px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <ButtonControl BareStyle="true" CssClass="cell-edit-btn" OnClick="@(_ => OnBuildQuote(row))">Quote</ButtonControl>
                         }
-                    }
-                </Template>
-            </HfGridColumn>
+                    </Template>
+                </GridColumn>
 
-            <HfGridColumn Field="@nameof(CustomQuoteRow.CategoryDesc)" HeaderText="Category" Width="160px" AllowEditing="@CanEdit">
-                <EditTemplate>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <select @bind="row.CategoryDesc" @bind:after="() => OnCategorySelected(row)">
-                            <option value="">-- Select --</option>
-                            @foreach (var cat in CategoryItems)
+                <GridColumn Field="@nameof(CustomQuoteRow.CreationDate)" HeaderText="Date" Width="110px" Format="d" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.CommunityDesc)" HeaderText="Community" Width="140px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Customer_No)" HeaderText="Cust #" Width="90px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Customer)" HeaderText="Customer" Width="160px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Job_No)" HeaderText="Job" Width="90px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Model)" HeaderText="Model" Width="90px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.ChangeOrderNo)" HeaderText="CO #" Width="90px" AllowEditing="false" />
+
+                <GridColumn Field="@nameof(CustomQuoteRow.Description)" HeaderText="Description" Width="260px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <span title="@row.Description">@Truncate(row.Description, 40)</span>
+                            @if (CanEdit)
                             {
-                                <option value="@cat.Description">@cat.Description</option>
+                                <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit description" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Description), "Description", 200))">...</ButtonControl>
                             }
-                        </select>
-                    }
-                </EditTemplate>
-            </HfGridColumn>
-
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Comments)" HeaderText="Comments" Width="200px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <span title="@row.Comments">@Truncate(row.Comments, 30)</span>
-                        @if (CanEdit)
-                        {
-                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.Comments), "Comments", 4000)'>✏️</button>
                         }
-                    }
-                </Template>
-            </HfGridColumn>
+                    </Template>
+                </GridColumn>
 
-            <HfGridColumn Field="@nameof(CustomQuoteRow.EstimatorNotes)" HeaderText="Estimator Notes" Width="200px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CustomQuoteRow)context;
-                        <span title="@row.EstimatorNotes">@Truncate(row.EstimatorNotes, 30)</span>
-                        @if (CanEdit)
-                        {
-                            <button class="cell-edit-btn" @onclick='() => OpenTextDialog(row, nameof(CustomQuoteRow.EstimatorNotes), "Estimator Notes", 4000)'>✏️</button>
+                <GridColumn Field="@nameof(CustomQuoteRow.Qty)" HeaderText="Qty" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+                <GridColumn Field="@nameof(CustomQuoteRow.UOM)" HeaderText="UOM" Width="70px" AllowEditing="@CanEdit" />
+
+                <GridColumn Field="@nameof(CustomQuoteRow.Cost)" HeaderText="Cost" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Price)" HeaderText="Price" Width="90px" Format="C2" TextAlign="TextAlign.Right" AllowEditing="@CanEdit" />
+
+                <GridColumn Field="@nameof(CustomQuoteRow.Status)" HeaderText="Status" Width="90px" AllowEditing="@CanEdit" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Bldr_Declined_Reason)" HeaderText="Decline Reason" Width="200px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <span title="@row.Bldr_Declined_Reason">@Truncate(row.Bldr_Declined_Reason, 30)</span>
+                            @if (CanEdit)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit decline reason" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Bldr_Declined_Reason), "Decline Reason", 500))">...</ButtonControl>
+                            }
                         }
-                    }
-                </Template>
-            </HfGridColumn>
+                    </Template>
+                </GridColumn>
 
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Location)" HeaderText="Location" Width="110px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Sales_Person_Name)" HeaderText="Sales Rep" Width="140px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.TaxRate)" HeaderText="Tax %" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.CategoryDesc)" HeaderText="Category" Width="160px" AllowEditing="@CanEdit">
+                    <EditTemplate>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <DropDownListControl TValue="string" TItem="CategoryItem"
+                                                 DataSource="@CategoryItems"
+                                                 Value="@row.CategoryDesc"
+                                                 ValueChanged="@(value => OnCategorySelected(row, value))"
+                                                 TextFieldName="@nameof(CategoryItem.Description)"
+                                                 ValueFieldName="@nameof(CategoryItem.Description)"
+                                                 Placeholder="-- Select --"
+                                                 Width="100%"
+                                                 CssClass="customquote-grid-dropdown" />
+                        }
+                    </EditTemplate>
+                </GridColumn>
 
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Seq)" HeaderText="Seq" Width="80px" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Category)" HeaderText="Category Code" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Major_Group)" HeaderText="Major Group" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.AttachmentID)" HeaderText="AttachmentID" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Community)" HeaderText="CommunityCode" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.OptionID)" HeaderText="OptionID" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.CommunityPhase)" HeaderText="CommunityPhase" Visible="false" />
-            <HfGridColumn Field="@nameof(CustomQuoteRow.Extra)" HeaderText="Extra" Visible="false" />
-        </HfGridColumnsBase>
-    </HfGrid>
+                <GridColumn Field="@nameof(CustomQuoteRow.Comments)" HeaderText="Comments" Width="200px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <span title="@row.Comments">@Truncate(row.Comments, 30)</span>
+                            @if (CanEdit)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit comments" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.Comments), "Comments", 4000))">...</ButtonControl>
+                            }
+                        }
+                    </Template>
+                </GridColumn>
+
+                <GridColumn Field="@nameof(CustomQuoteRow.EstimatorNotes)" HeaderText="Estimator Notes" Width="200px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (CustomQuoteRow)context;
+                            <span title="@row.EstimatorNotes">@Truncate(row.EstimatorNotes, 30)</span>
+                            @if (CanEdit)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="cell-edit-btn" Title="Edit estimator notes" OnClick="@(_ => OpenTextDialog(row, nameof(CustomQuoteRow.EstimatorNotes), "Estimator Notes", 4000))">...</ButtonControl>
+                            }
+                        }
+                    </Template>
+                </GridColumn>
+
+                <GridColumn Field="@nameof(CustomQuoteRow.Location)" HeaderText="Location" Width="110px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Sales_Person_Name)" HeaderText="Sales Rep" Width="140px" AllowEditing="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.TaxRate)" HeaderText="Tax %" Width="70px" Format="N2" TextAlign="TextAlign.Right" AllowEditing="false" />
+
+                <GridColumn Field="@nameof(CustomQuoteRow.Seq)" HeaderText="Seq" Width="80px" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Category)" HeaderText="Category Code" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Major_Group)" HeaderText="Major Group" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.AttachmentID)" HeaderText="AttachmentID" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Community)" HeaderText="CommunityCode" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.OptionID)" HeaderText="OptionID" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.CommunityPhase)" HeaderText="CommunityPhase" Visible="false" />
+                <GridColumn Field="@nameof(CustomQuoteRow.Extra)" HeaderText="Extra" Visible="false" />
+            }
+        </GridColumnsBase>
+        </GridControl>
+    </div>
+    <div class="btn-bar">
+        <ButtonControl CssClass="customquote-nav-btn primary" Disabled="@(!CanEdit)" OnClick="@(_ => OnOkClick())">OK</ButtonControl>
+        <ButtonControl CssClass="customquote-nav-btn" OnClick="@(_ => OnCloseClick())">Close</ButtonControl>
+    </div>
 </div>
 
-<div class="btn-bar">
-    <button class="btn-primary" disabled="@(!CanEdit)" @onclick="OnOkClick">OK</button>
-    <button @onclick="OnCloseClick">Close</button>
-</div>
-
-<HfDialog @bind-Visible="IsTextDialogVisible" Width="600px" Header="@TextDialogTitle"
+<DialogControl @bind-Visible="IsTextDialogVisible" Width="600px" Header="@TextDialogTitle"
           IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
     <ChildContent>
-        <textarea @bind="EditingText" rows="8" style="width:100%; padding:8px; border:1px solid #c9c9c9; border-radius:4px;"></textarea>
+        <TextAreaControl @bind-Value="EditingText"
+                         Rows="8"
+                         MaxLength="@EditingMaxLength"
+                         CssClass="customquote-textarea" />
     </ChildContent>
     <FooterContent>
-        <button class="btn-primary" @onclick="OnTextDialogOk">OK</button>
-        <button @onclick="@(() => IsTextDialogVisible = false)">Cancel</button>
+        <ButtonControl CssClass="customquote-nav-btn primary" OnClick="@(_ => OnTextDialogOk())">OK</ButtonControl>
+        <ButtonControl CssClass="customquote-nav-btn" OnClick="@(_ => CloseTextDialog())">Cancel</ButtonControl>
     </FooterContent>
-</HfDialog>
+</DialogControl>
+
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
 
 @code {
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<CustomQuoteRow>? DataGrid;
+    private GridControl<CustomQuoteRow>? DataGrid;
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
 
     private bool IsLoading = false;
     private bool mReadOnly = true;
     private bool mDirty = false;
 
     private int CurrentViewIndex = 0;
-    private readonly List<string> ViewOptions = new()
+    private readonly List<ViewOptionItem> ViewChoices = new()
     {
-        "New requests", "180 days old", "1 year old", "All old requests"
+        new(0, "New requests"),
+        new(1, "180 days old"),
+        new(2, "1 year old"),
+        new(3, "All old requests")
     };
 
     private List<CustomQuoteRow> Rows = new();
     private List<CategoryItem> CategoryItems = new();
 
-    private HfFilterSettings filterSettings = new() { Type = FilterType.FilterBar };
-    private HfPageSettings pageSettings = new() { PageSize = 50 };
-    private HfSelectionSettings selectionSettings = new()
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private PageSettings pageSettings = new() { PageSize = 50 };
+    private SelectionSettings selectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowAdding = false,
         AllowDeleting = false,
         AllowEditing = true,
         ShowConfirmDialog = false
     };
-    private HfGridEvents<CustomQuoteRow> gridEvents = new();
+    private GridControlEvents<CustomQuoteRow> gridEvents = new();
+
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // Load/resolve/order/width boilerplate lives in the shared GridLayoutPresenter
+    // (Services/GridLayoutPresenter.cs); only the VB6 form/grid names stay here.
+    // gDataLayout / HasGridLayout / gDataLayoutVersion are thin delegations so the
+    // markup is unchanged. The keyed-then-unkeyed fallback is captured by
+    // instanceKey:"(0)".
+    private readonly GridLayoutPresenter<CustomQuoteRow> _dataGrid =
+        new("FInboxCustomQuote", "DataGrid", instanceKey: "(0)");
+
+    private Dictionary<string, GridLayoutColumn> gDataLayout => _dataGrid.Layout;
+    private bool HasGridLayout => _dataGrid.Has;
+    private int gDataLayoutVersion => _dataGrid.Version;
+
+    // ── Property Map for Field Resolution ─────────────────────
+    // NOTE (drift): kept locally because GetColumnTypeForField below maps
+    // bool→CheckBox (not the presenter's Boolean) and recognizes a narrower
+    // numeric set. See the flag in GetColumnTypeForField.
+    private static readonly Dictionary<string, PropertyInfo> _customQuoteRowPropMap =
+        typeof(CustomQuoteRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
     private bool CanEdit => CurrentViewIndex == 0;
 
@@ -309,10 +383,12 @@
     private CustomQuoteRow? EditingRow;
     private string EditingField = "";
     private int EditingMaxLength = 4000;
+    // VB6: when the decline-reason prompt is opened because Status was set to "Declined",
+    // cancelling it reverts Status to blank (VB6 gData_ValidateEdit Cancel = True).
+    private bool _declinePromptFromStatus = false;
 
-    private int DivisionID = 1;
-
-    private static readonly Dictionary<string, string> AppOptions = new()
+    // VB6: HFApp.Options("MaxUnQuotedOptions"), HFApp.Options("IncludeTax")
+    private Dictionary<string, string> AppOptions = new(StringComparer.OrdinalIgnoreCase)
     {
         { "MaxUnQuotedOptions", "5500" },
         { "IncludeTax", "True" }
@@ -321,8 +397,30 @@
     protected override async Task OnInitializedAsync()
     {
         gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CustomQuoteRow>>(this, OnCellSaved);
+        await LoadAppOptionsAsync();
+        await LoadGridLayoutAsync();
         await LoadCategoriesAsync();
         await LoadDataAsync();
+    }
+
+    // VB6: Reads app options from AppOptions table
+    private async Task LoadAppOptionsAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT OptionName, OptionValue FROM AppOptions WHERE OptionName IN ('MaxUnQuotedOptions','IncludeTax')");
+            foreach (var r in rows)
+            {
+                var name = r["OptionName"]?.ToString() ?? "";
+                var val = r["OptionValue"]?.ToString() ?? "";
+                if (!string.IsNullOrWhiteSpace(name))
+                    AppOptions[name] = val;
+            }
+        }
+        catch
+        {
+            // Use defaults if table doesn't exist
+        }
     }
 
     private async Task LoadCategoriesAsync()
@@ -392,15 +490,14 @@
                     o.finish AS Finish,
                     o.other AS Other,
                     o.bldr_declined_reason AS Bldr_Declined_Reason,
-                    o.OptionID AS OptionID,
-                    o.CommunityPhase AS CommunityPhase,
-                    o.Extra AS Extra,
+                    -- VB6 load (FInboxCustomQuote.frm) does NOT select OptionID/CommunityPhase/Extra:
+                    -- UnQuotedOptions/QuotedOptions have no such columns, so re-adding them errors at runtime.
                     {statusSelect}
                 FROM {fromTable} o
                 WHERE o.divisionid = @DivisionID {extraFilter}
                 ORDER BY o.creationdate DESC, o.communitydesc, o.customer_no, o.changeorderno, o.seq";
 
-            var result = await db.QueryAsync(sql, new { DivisionID });
+            var result = await db.QueryAsync(sql, new { SessionState.DivisionID });
 
             Rows = result.Select(r => new CustomQuoteRow
             {
@@ -436,9 +533,8 @@
                 Finish = GetString(r, "Finish"),
                 Other = GetString(r, "Other"),
                 Bldr_Declined_Reason = GetString(r, "Bldr_Declined_Reason"),
-                OptionID = GetString(r, "OptionID"),
-                CommunityPhase = GetString(r, "CommunityPhase"),
-                Extra = GetString(r, "Extra"),
+                // OptionID/CommunityPhase/Extra: blank design-time grid columns in VB6 (not on the source
+                // views), so they stay at the model's default "" — see the load SQL note above.
                 Status = GetString(r, "Status")
             }).ToList();
 
@@ -446,7 +542,7 @@
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+            Notifications.Error($"Error loading data: {ex.Message}");
         }
         finally
         {
@@ -455,13 +551,19 @@
         }
     }
 
-    private async Task OnViewChanged(ChangeEventArgs e)
+    private async Task OnViewChanged(int value)
     {
-        if (mDirty && !await SaveDataAsync(true))
+        var nextIndex = value;
+        if (nextIndex == CurrentViewIndex)
             return;
 
-        if (int.TryParse(e.Value?.ToString(), out var idx))
-            CurrentViewIndex = idx;
+        if (mDirty && !await SaveDataAsync(true))
+        {
+            StateHasChanged();
+            return;
+        }
+
+        CurrentViewIndex = Math.Clamp(nextIndex, 0, ViewChoices.Count - 1);
         await LoadDataAsync();
     }
 
@@ -470,10 +572,14 @@
         await SaveDataAsync(false);
     }
 
+    // VB6: cmdNav_Click(1) → SaveData(True) then Unload Me
     private async Task OnCloseClick()
     {
         if (await SaveDataAsync(true))
-            NavigationManager.NavigateTo("/");
+        {
+            // Navigate back to main menu (VB6: Unload Me returns to FMain)
+            NavigationManager.NavigateTo("/main");
+        }
     }
 
     private async Task<bool> SaveDataAsync(bool prompt)
@@ -482,9 +588,17 @@
 
         if (prompt)
         {
-            var save = await JSRuntime.InvokeAsync<bool>("confirm",
-                "This data has changed.\n\nDo you want to save these changes?");
-            if (!save) return true;
+            var result = _messageBox is not null
+                ? await _messageBox.ShowAsync(
+                    "This data has changed.\n\nDo you want to save these changes?",
+                    title: "Custom Requests",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNoCancel)
+                : Fx.ControlKit.Dialogs.MessageBoxResult.Yes;
+
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.Cancel)
+                return false;
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.No)
+                return true;
         }
 
         IsLoading = true;
@@ -566,8 +680,10 @@ WHERE seq = @Seq";
                     Seq = row.Seq
                 });
 
-                await RecalculateTotalsAsync(row.Location, row.Customer_No);
-                await SendSaleRepEmailAsync(row.Location, row.Seq);
+                var location = row.Location ?? "";
+                var customerNo = row.Customer_No ?? "";
+                await RecalculateTotalsAsync(location, customerNo);
+                await SendSaleRepEmailAsync(location, row.Seq);
 
                 row.RowState = "CLEAN";
             }
@@ -577,7 +693,7 @@ WHERE seq = @Seq";
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            Notifications.Error($"Error saving data: {ex.Message}");
             return false;
         }
         finally
@@ -606,44 +722,74 @@ WHERE seq = @Seq";
         await db.ExecuteAsync("Exec dbo.CustomerCalcTotals @Customer", new { Customer = customer });
     }
 
+    // VB6: Sub SendSaleRepEmail(Location, seq)
+    //   Sends email notification to sales rep when quote is completed or declined
+    //   Uses HFApp.SendMail(email, "", subject, body)
     private async Task SendSaleRepEmailAsync(string location, long seq)
     {
-        var sql = @"
-select
-  isnull(nullif(s.email,''),u.email) Email
- ,c.customer_no,c.Description CustDesc,c.Job_no,c.municipal_address
+        try
+        {
+            var sql = @"
+SELECT
+  ISNULL(NULLIF(s.email,''),u.email) Email
+ ,c.customer_no, c.Description CustDesc, c.Job_no, c.municipal_address
  ,o.changeorderno
- ,case when o.bldr_declined=1 then 'declined' else 'completed' end status
+ ,CASE WHEN o.bldr_declined=1 THEN 'declined' ELSE 'completed' END status
  ,o.description
  ,o.bldr_declined_reason reason
-from alloptions o
- join tblcustomers c on o.customer_no=c.customer_no
- left join tblsales_persons s on o.sales_person_id = s.sales_person_id
- left join user_manager u on o.sales_person_id = u.user_id
-where o.require_quote=0
-  and isnull(isnull(nullif(s.email,''),u.email),'') <> ''
-  and o.location=@Location
-  and o.seq=@Seq";
+FROM alloptions o
+ JOIN tblcustomers c ON o.customer_no=c.customer_no
+ LEFT JOIN tblsales_persons s ON o.sales_person_id = s.sales_person_id
+ LEFT JOIN user_manager u ON o.sales_person_id = u.user_id
+WHERE o.require_quote=0
+  AND ISNULL(ISNULL(NULLIF(s.email,''),u.email),'') <> ''
+  AND o.location=@Location
+  AND o.seq=@Seq";
 
-        var rows = await db.QueryAsync(sql, new { Location = location, Seq = seq });
-        var row = rows.FirstOrDefault();
-        if (row == null) return;
+            var rows = await db.QueryAsync(sql, new { Location = location, Seq = seq });
+            var row = rows.FirstOrDefault();
+            if (row == null) return;
 
-        var email = row["Email"]?.ToString() ?? "";
-        if (string.IsNullOrWhiteSpace(email)) return;
+            var email = row["Email"]?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(email)) return;
 
-        var status = row["status"]?.ToString() ?? "";
-        var body = $"Your price request has been {status}\n\n" +
-                   $"Job: {row["Job_No"]}  {row["municipal_address"]}\n" +
-                   $"Customer: {row["customer_no"]}  {row["CustDesc"]}\n" +
-                   $"ChangeOrder: {row["changeorderno"]}\n" +
-                   $"Description: {row["description"]}\n\n";
-        if (status == "declined")
-            body += $"Reason: {row["reason"]}";
+            var status = row["status"]?.ToString() ?? "";
+            var custDesc = row["CustDesc"]?.ToString() ?? "";
+            var jobNo = row["Job_no"]?.ToString() ?? "";
+            var address = row["municipal_address"]?.ToString() ?? "";
+            var custNo = row["customer_no"]?.ToString() ?? "";
+            var changeOrder = row["changeorderno"]?.ToString() ?? "";
+            var description = row["description"]?.ToString() ?? "";
+            var reason = row["reason"]?.ToString() ?? "";
 
-        await JSRuntime.InvokeVoidAsync("console.log", $"SendMail to {email}: {body}");
+            // VB6 (FInboxCustomQuote.frm:472): subject = "Custom Option Price Request " & status
+            var subject = $"Custom Option Price Request {status}";
+
+            // VB6 (FInboxCustomQuote.frm:464-471): body = "Your price request has been " & status & vbCrLf & ...
+            var body = $"Your price request has been {status}\r\n\r\n" +
+                       $"Job: {jobNo}  {address}\r\n" +
+                       $"Customer: {custNo}  {custDesc}\r\n" +
+                       $"ChangeOrder: {changeOrder}\r\n" +
+                       $"Description: {description}\r\n\r\n";
+            if (status == "declined")
+                body += $"Reason: {reason}";
+
+            // VB6: Call HFApp.SendMail(email, "", subject, body)
+            // Open mailto: link as a fallback for MAPI-style sending
+            var encodedSubject = Uri.EscapeDataString(subject);
+            var encodedBody = Uri.EscapeDataString(body);
+            var mailtoUrl = $"mailto:{email}?subject={encodedSubject}&body={encodedBody}";
+            await JSRuntime.InvokeVoidAsync("open", mailtoUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "SendSaleRepEmail error");
+
+        }
     }
 
+    // VB6: gData_ValidateEdit + gData_AfterEdit
+    // Handles cell-level business rules: Status changes, price/decline logic
     private async Task OnCellSaved(CellSaveArgs<CustomQuoteRow> args)
     {
         if (args.Data == null) return;
@@ -652,41 +798,54 @@ where o.require_quote=0
 
         switch (field)
         {
+            // VB6 (gData_ValidateEdit): Case "Status"
+            //   If .EditText = "Declined" And Bldr_Declined_Reason = "" Then
+            //     s = InputBox("Reason:")
+            //     If s = "" Then Cancel = True   ' edit reverted
+            //     Else Status = "Declined" : Bldr_Declined_Reason = s : Price = ".00"
             case nameof(CustomQuoteRow.Status):
                 if (string.Equals(row.Status, "Declined", StringComparison.OrdinalIgnoreCase))
                 {
                     if (string.IsNullOrWhiteSpace(row.Bldr_Declined_Reason))
                     {
-                        var reason = await JSRuntime.InvokeAsync<string>("prompt", "Reason:", row.Bldr_Declined_Reason ?? "");
-                        if (string.IsNullOrWhiteSpace(reason))
-                            row.Status = "";
-                        else
-                        {
-                            row.Bldr_Declined_Reason = reason;
-                            row.Price = 0;
-                        }
+                        // VB6 prompts InputBox; we use the text dialog. Cancelling it reverts
+                        // Status to blank (VB6 Cancel = True), so flag the originating field.
+                        _declinePromptFromStatus = true;
+                        OpenTextDialog(row, nameof(CustomQuoteRow.Bldr_Declined_Reason), "Reason:", 500);
+                        // Price zeroed when decline reason is confirmed (VB6 Price = ".00")
+                        row.Price = 0;
                     }
                 }
-                else
-                {
-                    row.Bldr_Declined_Reason = "";
-                }
                 break;
+
+            // VB6 (gData_ValidateEdit): Case "Bldr_Declined_Reason"
+            //   .TextMatrix(Row, "status") = "Declined"   ' unconditional in VB6
             case nameof(CustomQuoteRow.Bldr_Declined_Reason):
-                if (!string.IsNullOrWhiteSpace(row.Bldr_Declined_Reason))
-                    row.Status = "Declined";
+                row.Status = "Declined";
+                row.Price = 0;
                 break;
+
+            // VB6 (gData_ValidateEdit): Case "Price"
+            //   .EditText = Val(.EditText)
+            //   If Val(.EditText) <> 0 Then Status = "Approved"
             case nameof(CustomQuoteRow.Price):
                 if (row.Price != 0)
                     row.Status = "Approved";
                 break;
+
+            // VB6 (gData_ValidateEdit): Case "Cost": .EditText = Val(.EditText) — numeric coercion only
+            case nameof(CustomQuoteRow.Cost):
+                break;
         }
 
+        // VB6's trailing "clear reason unless Declined" rule is applied centrally in MarkDirty,
+        // which every edit path calls (mirrors VB6 setting RowData=Dirty right after that rule).
         MarkDirty(row);
     }
 
-    private void OnCategorySelected(CustomQuoteRow row)
+    private void OnCategorySelected(CustomQuoteRow row, string? value)
     {
+        row.CategoryDesc = value ?? "";
         var cat = CategoryItems.FirstOrDefault(c => c.Description == row.CategoryDesc);
         if (cat != null)
         {
@@ -738,30 +897,102 @@ where o.require_quote=0
                 EditingRow.EstimatorNotes = text;
                 break;
             case nameof(CustomQuoteRow.Bldr_Declined_Reason):
-                EditingRow.Bldr_Declined_Reason = text;
-                if (!string.IsNullOrWhiteSpace(text))
+                // VB6: an empty reason is treated as Cancel (Cancel = True). When the prompt
+                // was opened because Status went to "Declined", revert Status to blank. (The
+                // trailing "clear reason unless Declined" rule then runs in MarkDirty.)
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    if (_declinePromptFromStatus)
+                        EditingRow.Status = "";
+                }
+                else
+                {
+                    EditingRow.Bldr_Declined_Reason = text;
                     EditingRow.Status = "Declined";
+                    EditingRow.Price = 0;
+                }
                 break;
         }
 
         MarkDirty(EditingRow);
+        _declinePromptFromStatus = false;
         IsTextDialogVisible = false;
         StateHasChanged();
     }
 
+    private void CloseTextDialog()
+    {
+        // VB6: cancelling the decline-reason prompt reverts Status (Cancel = True) when it was
+        // opened from setting Status = "Declined" with no existing reason. MarkDirty then clears
+        // the (now-blank-Status) reason via the trailing rule.
+        if (_declinePromptFromStatus && EditingRow != null)
+        {
+            EditingRow.Status = "";
+            MarkDirty(EditingRow);
+        }
+        _declinePromptFromStatus = false;
+        IsTextDialogVisible = false;
+    }
+
+    // VB6 (gData_DblClick / gData_KeyDown vbKeyReturn): builds the quote for the selected row.
+    //   FCustomQuote.BuildQuote(ReadOnly:=cboView.ListIndex>0, AttachmentID, Location, Model,
+    //     OptionID, Job_No, Customer_No, Community, CommunityPhase, Extra, Description, Seq,
+    //     Category, Cost, Price, Qty, UOM)
+    // On success VB6 writes Cost=cost*qty, Price, Qty, UOM back into the grid row and marks it
+    // Dirty. That return-value write-back is NOT reproduced here: FCustomQuote is a routed page
+    // (not a value-returning modal), so it cannot hand cost/price/qty/uom back to this grid. See
+    // the `deferred` note — closing that loop needs FCustomQuote modal-hosting support, which lives
+    // outside this file.
     private async Task OnBuildQuote(CustomQuoteRow row)
     {
         if (!CanEdit) return;
-        var confirm = await JSRuntime.InvokeAsync<bool>("confirm", $"Build quote for {row.Customer_No}?");
-        if (!confirm) return;
 
-        // Placeholder: actual quote builder not implemented.
-        MarkDirty(row);
-        await JSRuntime.InvokeVoidAsync("alert", "Quote builder not implemented in this build.");
+        // VB6 gData_KeyDown: qty defaults to 1 when zero.
+        var qty = row.Qty == 0 ? 1m : row.Qty;
+
+        // Save pending changes before navigating (VB6: SaveData True at form unload / view change).
+        if (mDirty && !await SaveDataAsync(true))
+            return;
+
+        if (row.Seq <= 0) return;
+
+        // Pass the full VB6 BuildQuote argument list, named to match FCustomQuote's [Parameter]s.
+        // OptionID/CommunityPhase/Extra are blank here for the same reason they are blank in VB6 at
+        // runtime: the UnQuotedOptions/QuotedOptions views don't surface them (see LoadDataAsync).
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var qs = new (string Key, string Value)[]
+        {
+            ("readOnly", (CurrentViewIndex > 0).ToString()),
+            ("attachmentID", row.AttachmentID ?? ""),
+            ("location", row.Location ?? ""),
+            ("model", row.Model ?? ""),
+            ("opt", row.OptionID ?? ""),
+            ("job", row.Job_No ?? ""),
+            ("customer", row.Customer_No ?? ""),
+            ("community", row.Community ?? ""),
+            ("communityPhase", row.CommunityPhase ?? ""),
+            ("extra", row.Extra ?? ""),
+            ("description", row.Description ?? ""),
+            ("seq", row.Seq.ToString(inv)),
+            ("category", row.Category ?? ""),
+            ("costAmount", row.Cost.ToString(inv)),
+            ("sellAmount", row.Price.ToString(inv)),
+            ("salesQty", qty.ToString(inv)),
+            ("salesUOM", row.UOM ?? "")
+        };
+
+        var query = string.Join("&", qs.Select(p =>
+            $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
+        NavigationManager.NavigateTo($"/custom-quote?{query}");
     }
 
     private void MarkDirty(CustomQuoteRow row)
     {
+        // VB6 (gData_ValidateEdit, runs for EVERY edited row right before RowData = "Dirty"):
+        //   If .TextMatrix(Row, "Status") <> "Declined" Then Bldr_Declined_Reason = ""
+        if (!string.Equals(row.Status, "Declined", StringComparison.OrdinalIgnoreCase))
+            row.Bldr_Declined_Reason = "";
+
         row.RowState = "DIRTY";
         mDirty = true;
     }
@@ -803,15 +1034,108 @@ where o.require_quote=0
 
     private static string FormatJob(string job) => job?.Trim() ?? "";
 
-    private static int GetOptionInt(string key, int defaultValue)
+    private int GetOptionInt(string key, int defaultValue)
     {
         return AppOptions.TryGetValue(key, out var val) && int.TryParse(val, out var result) ? result : defaultValue;
     }
 
-    private static bool GetOptionBool(string key, bool defaultValue)
+    private bool GetOptionBool(string key, bool defaultValue)
     {
         if (!AppOptions.TryGetValue(key, out var val)) return defaultValue;
         return val.Equals("true", StringComparison.OrdinalIgnoreCase) || val == "1";
+    }
+
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // Presenter does the keyed-then-unkeyed fallback + Version bump
+            // (ctor holds the "FInboxCustomQuote"/"DataGrid" names + key "(0)").
+            await _dataGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // VB6: IniPutGrid. Column resize / reorder / hide / group / header-rename done by
+    // the user, written back under the same form/grid/instance key the load uses.
+    private async Task OnGridLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || !HasGridLayout) return;
+
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FInboxCustomQuote", "DataGrid", instanceKey: "(0)",
+                gDataLayout, snapshot, ResolveGridField);
+            _dataGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FInboxCustomQuote DataGrid layout");
+        }
+    }
+
+    // ── Grid Layout Helpers ──────────────────────────────────
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedGridLayout()
+    {
+        if (!HasGridLayout) yield break;
+
+        var ordered = gDataLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field) && !c.Hidden)
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = ResolveGridField(layout.Field);
+            var columnType = GetColumnTypeForField(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    private string ResolveGridField(string layoutField)
+        => _dataGrid.ResolveField(layoutField);
+
+    // DRIFT FLAG: body differs from the presenter's canonical ColumnTypeFor —
+    // bool maps to ColumnType.CheckBox (not Boolean) and only int/long/double/
+    // decimal are Number (presenter also covers byte/short/float). Kept verbatim
+    // to preserve the rendered <GridColumn Type="…">; not delegated to
+    // _dataGrid.GetOrdered() for the same reason.
+    private static ColumnType GetColumnTypeForField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (_customQuoteRowPropMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+            if (type == typeof(DateTime)) return ColumnType.Date;
+        }
+        return ColumnType.Text;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    private static string NormalizeGridKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
     }
 
     public class CustomQuoteRow
@@ -861,5 +1185,6 @@ where o.require_quote=0
         public string Category { get; set; } = "";
         public string MajorGroup { get; set; } = "";
     }
+
+    private sealed record ViewOptionItem(int Value, string Text);
 }
-```

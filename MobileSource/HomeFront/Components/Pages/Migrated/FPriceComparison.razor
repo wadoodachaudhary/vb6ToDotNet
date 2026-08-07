@@ -1,7 +1,3 @@
-```razor
-@page "/price-comparison"
-@rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
 
 @using System
@@ -9,117 +5,19 @@
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
-@inject NavigationManager NavigationManager
+@inject ILogger<FPriceComparison> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Price Comparison - HomeFront</PageTitle>
 
-<style>
-    .price-comparison-container {
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-        padding: 10px;
-        max-width: 700px;
-    }
-
-    .header-info {
-        display: grid;
-        grid-template-columns: auto 1fr 80px auto 1fr;
-        gap: 4px 8px;
-        margin-bottom: 12px;
-        align-items: center;
-    }
-
-    .header-info .lbl {
-        text-align: right;
-        font-size: 13px;
-        color: #333;
-    }
-
-    .header-info .val {
-        font-size: 13px;
-        color: #333;
-    }
-
-    .header-info .val-bold {
-        font-size: 13px;
-        font-weight: 700;
-        color: #333;
-    }
-
-    .legend-panel {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 10px 14px;
-        background: #f8f9fa;
-        margin-top: 12px;
-    }
-
-    .legend-title {
-        font-weight: 700;
-        font-size: 13px;
-        margin-bottom: 6px;
-    }
-
-    .legend-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2px 24px;
-    }
-
-    .legend-section-title {
-        font-weight: 700;
-        font-size: 13px;
-        margin-bottom: 4px;
-    }
-
-    .legend-item {
-        font-size: 12px;
-        padding: 1px 0;
-    }
-
-    .legend-item.alt-vendor {
-        color: #00007f; /* vbHighlight */
-    }
-
-    .legend-item.diff-assembly {
-        color: #808080; /* vbGrayText */
-    }
-
-    .legend-item.best-fit {
-        font-weight: 700;
-    }
-
-    .btn-cancel {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #f7f7f7;
-        cursor: pointer;
-        font-size: 13px;
-        float: right;
-        margin-top: 12px;
-    }
-
-    .btn-cancel:hover {
-        background: #e8e8e8;
-    }
-
-    /* Grid row styling */
-    .row-bold {
-        font-weight: 700;
-    }
-
-    .row-alt-vendor {
-        color: #00007f;
-    }
-
-    .row-gray {
-        color: #808080;
-    }
-</style>
-
+@if (IsVisible)
+{
 <div class="price-comparison-container">
     <h4 style="margin-bottom: 12px;">Price Comparison</h4>
 
@@ -145,7 +43,7 @@
     </div>
 
     <!-- Prices Grid -->
-    <HfGrid @ref="PricesGrid"
+    <GridControl @ref="PricesGrid"
             TValue="PriceRow"
             DataSource="@PriceData"
             AllowSorting="true"
@@ -153,15 +51,15 @@
             AllowSelection="true"
             SelectionSettingsRef="@selectionSettings"
             Height="300px">
-        <HfGridColumnsBase>
-            <HfGridColumn Field="@nameof(PriceRow.RateType)" HeaderText="Rate Type" Width="160px" />
-            <HfGridColumn Field="@nameof(PriceRow.VendorName)" HeaderText="Vendor" Width="180px" />
-            <HfGridColumn Field="@nameof(PriceRow.Cost)" HeaderText="Cost" Format="N10" Width="120px"
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(PriceRow.RateType)" HeaderText="Rate Type" Width="160px" />
+            <GridColumn Field="@nameof(PriceRow.VendorName)" HeaderText="Vendor" Width="180px" />
+            <GridColumn Field="@nameof(PriceRow.Cost)" HeaderText="Cost" Format="N10" Width="120px"
                           TextAlign="TextAlign.Right" Type="ColumnType.Number" />
-            <HfGridColumn Field="@nameof(PriceRow.CommunityDisplay)" HeaderText="Community" Width="180px" />
-            <HfGridColumn Field="@nameof(PriceRow.AssemblyDisplay)" HeaderText="Assembly" Width="200px" />
-        </HfGridColumnsBase>
-    </HfGrid>
+            <GridColumn Field="@nameof(PriceRow.CommunityDisplay)" HeaderText="Community" Width="180px" />
+            <GridColumn Field="@nameof(PriceRow.AssemblyDisplay)" HeaderText="Assembly" Width="200px" />
+        </GridColumnsBase>
+    </GridControl>
 
     <!-- Legend Panel -->
     <div class="legend-panel">
@@ -186,12 +84,15 @@
         </div>
     </div>
 
-    <button class="btn-cancel" @onclick="OnCancelClick">&amp;Cancel</button>
+    <button class="btn-cancel" @onclick="OnCancelClick">Cancel</button>
     <div style="clear:both;"></div>
 </div>
+}
 
 @code {
-    // === Parameters (passed when opening this form) ===
+    // === Parameters ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
     [Parameter] public string Vendor { get; set; } = "";
     [Parameter] public string Community { get; set; } = "";
     [Parameter] public string CommunityPhase { get; set; } = "";
@@ -202,14 +103,11 @@
     [Parameter] public string ItemDesc { get; set; } = "";
 
     // === Database ===
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // === Grid ===
-    private HfGrid<PriceRow>? PricesGrid;
+// === Grid ===
+    private GridControl<PriceRow>? PricesGrid;
     private List<PriceRow> PriceData = new();
 
-    private HfSelectionSettings selectionSettings = new()
+    private SelectionSettings selectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
@@ -223,15 +121,8 @@
     private string CommunityDisplay = "";
     private string AssemblyDisplay = "";
 
-    // === Lifecycle ===
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadDataAsync();
-    }
-
     /// <summary>
     /// Public method to show the form with parameters, mirroring VB6 ShowForm.
-    /// Can be called externally before or after initialization.
     /// </summary>
     public async Task ShowForm(string vendor, string community, string communityPhase,
                                 string assembly, string model, string phase, string item, string itemDesc)
@@ -244,6 +135,8 @@
         Phase = phase;
         Item = item;
         ItemDesc = itemDesc;
+        IsVisible = true;
+        await IsVisibleChanged.InvokeAsync(true);
         await LoadDataAsync();
     }
 
@@ -268,7 +161,7 @@
 
             var headerParams = new
             {
-                DivisionID,
+                SessionState.DivisionID,
                 Vendor,
                 Community,
                 CommunityPhase,
@@ -323,7 +216,7 @@
 
             var pricesParams = new
             {
-                DivisionID,
+                SessionState.DivisionID,
                 Community,
                 CommunityPhase,
                 Assembly,
@@ -385,13 +278,15 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[FPriceComparison.LoadDataAsync] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
         }
     }
 
-    private void OnCancelClick()
+    private async Task OnCancelClick()
     {
-        NavigationManager.NavigateTo("javascript:history.back()");
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
     }
 
     // === Helpers ===
@@ -420,4 +315,3 @@
         public PriceRowStyle Style { get; set; } = PriceRowStyle.Normal;
     }
 }
-```

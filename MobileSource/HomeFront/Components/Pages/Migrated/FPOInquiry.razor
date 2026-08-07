@@ -1,121 +1,25 @@
-```razor
 @page "/po-inquiry"
 @page "/po-inquiry/{PONumber}"
 @rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
+@layout HFComponent
 
 @using System
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject NavigationManager NavigationManager
 @inject IJSRuntime JSRuntime
+@inject ILogger<FPOInquiry> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>Purchase Order Inquiry</PageTitle>
-
-<style>
-    .po-inquiry-container {
-        font-family: 'MS Sans Serif', Arial, sans-serif;
-        font-size: 13px;
-        padding: 16px;
-    }
-
-    .po-header {
-        display: grid;
-        grid-template-columns: auto 1fr 1fr 1fr;
-        gap: 12px;
-        margin-bottom: 16px;
-        align-items: start;
-    }
-
-    .po-icon {
-        width: 48px;
-        height: 48px;
-    }
-
-    .field-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-    .field-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .field-row label {
-        min-width: 80px;
-        text-align: right;
-        font-size: 12px;
-        color: #333;
-        font-weight: 500;
-    }
-
-    .field-row .field-value {
-        flex: 1;
-        font-size: 12px;
-        padding: 2px 4px;
-        background: transparent;
-        color: #000;
-    }
-
-    .field-row .field-value.highlight {
-        color: #000080;
-        font-weight: 600;
-    }
-
-    .amount-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        align-items: flex-end;
-    }
-
-    .amount-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .amount-row label {
-        min-width: 70px;
-        text-align: right;
-        font-size: 12px;
-        color: #333;
-        font-weight: 500;
-    }
-
-    .amount-row .amount-value {
-        min-width: 120px;
-        text-align: right;
-        font-size: 12px;
-        padding: 2px 4px;
-    }
-
-    .cancelled-label {
-        font-size: 20px;
-        font-weight: 700;
-        font-style: italic;
-        color: #C00000;
-    }
-
-    .section-label {
-        font-size: 13px;
-        margin-bottom: 6px;
-        color: #333;
-    }
-
-    .grid-container {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-</style>
 
 <div class="po-inquiry-container">
     @* ── Header Section ─────────────────────────────────────────── *@
@@ -195,7 +99,7 @@
     @* ── Accounting Documents Grid ──────────────────────────────── *@
     <div class="section-label">Accounting Documents</div>
     <div class="grid-container">
-        <HfGrid @ref="DocumentsGrid"
+        <GridControl @ref="DocumentsGrid"
                 TValue="DocumentRow"
                 DataSource="@DocumentsData"
                 AllowSorting="true"
@@ -207,15 +111,15 @@
                 GroupColumns="@(new List<string> { "DocType", "DocID" })"
                 ShowGroupExpandCollapse="true"
                 AggregateRows="@aggregateRows">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(DocumentRow.DocType)" HeaderText="Doc Type" Width="120px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(DocumentRow.DocID)" HeaderText="Doc ID" Width="120px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(DocumentRow.DocDate)" HeaderText="Date" Width="150px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(DocumentRow.Description)" HeaderText="Description" Width="300px" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(DocumentRow.Amount)" HeaderText="Amount" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
-                <HfGridColumn Field="@nameof(DocumentRow.Tax)" HeaderText="Tax" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
-            </HfGridColumnsBase>
-        </HfGrid>
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(DocumentRow.DocType)" HeaderText="Doc Type" Width="120px" AllowEditing="false" />
+                <GridColumn Field="@nameof(DocumentRow.DocID)" HeaderText="Doc ID" Width="120px" AllowEditing="false" />
+                <GridColumn Field="@nameof(DocumentRow.DocDate)" HeaderText="Date" Width="150px" AllowEditing="false" />
+                <GridColumn Field="@nameof(DocumentRow.Description)" HeaderText="Description" Width="300px" AllowEditing="false" />
+                <GridColumn Field="@nameof(DocumentRow.Amount)" HeaderText="Amount" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                <GridColumn Field="@nameof(DocumentRow.Tax)" HeaderText="Tax" Width="120px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+            </GridColumnsBase>
+        </GridControl>
     </div>
 </div>
 
@@ -223,11 +127,8 @@
     [Parameter] public string? PONumber { get; set; }
 
     // Database
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
-
-    // Grid ref
-    private HfGrid<DocumentRow>? DocumentsGrid;
+// Grid ref
+    private GridControl<DocumentRow>? DocumentsGrid;
 
     // Header fields
     private string txtPONumber = "";
@@ -252,13 +153,13 @@
     private string mPO = "";
 
     // Aggregate rows for grid
-    private List<HfAggregateRow> aggregateRows = new()
+    private List<AggregateRow> aggregateRows = new()
     {
-        new HfAggregateRow
+        new AggregateRow
         {
             ShowInGroupFooter = true,
             ShowInFooter = true,
-            Columns = new List<HfAggregateColumn>
+            Columns = new List<AggregateColumn>
             {
                 new() { Field = "Amount", Type = AggregateType.Sum, Format = "N2", FooterTemplate = "Total: {value}", GroupFooterTemplate = "Sub Total: {value}" },
                 new() { Field = "Tax", Type = AggregateType.Sum, Format = "N2", FooterTemplate = "Total: {value}", GroupFooterTemplate = "Sub Total: {value}" }
@@ -338,7 +239,7 @@
                 ,p.Cancelled
                 ,p.CancelledDate";
 
-        var rows = await db.QueryAsync(sql, new { DivisionID, PO = mPO });
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, PO = mPO });
         if (rows.Any())
         {
             var rs = rows.First();
@@ -399,7 +300,7 @@
             WHERE m.divisionid=@DivisionID
               AND d.commitment=@PO";
 
-        var rows = await db.QueryAsync(sql, new { DivisionID, PO = mPO });
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, PO = mPO });
 
         var documents = new List<DocumentRow>();
         foreach (var row in rows)
@@ -471,4 +372,3 @@
         public decimal Tax { get; set; }
     }
 }
-```

@@ -1,84 +1,47 @@
-```razor
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Migrated from: HFEst/Source/CommunityStandards.frm
+   Changes     :
+     - Grid columns are now AppGridLayout-driven (VB6 IniGetGrid(Me,gData)
+       → gridname "FCommunityStandards.gData"), rendered DYNAMICALLY
+       instead of a hardcoded <GridColumn> list (mirrors FAssembly.gItems).
+     - Item pick (Phase/Item/ItemDesc cells) uses the canonical FPickList
+       component (VB6 gData_CellButtonClick → FPickList.Choose).
+     - Notes cell uses the FComments component, MaxLength 4000
+       (VB6 FComments.Edit(s, gData, , "Notes", 4000)).
+     - Save / Delete prompts use FlexKit MessageBoxControl (no JS confirm).
+     - CommunityStandardsArePhaseSpecific read from AppOptions; DivisionID
+       read from ISessionStateService (no hardcoded division).
+     - Delete-key clears Phase/Item/ItemDesc/Notes (VB6 gData_KeyDown).
+   ───────────────────────────────────────────────────────────────── *@
 @page "/community-standards"
+@namespace HomeFront.Components.Pages
 @rendermode InteractiveServer
+@layout HFComponent
 
-@using HomeFront.Components.Hf
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Notifications
 @using HomeFront.Data
-@using System.Linq
+@using HomeFront.Models
+@using HomeFront.Services
+@* FComments lives in the folder-derived HomeFront.Components.Pages.Migrated
+   namespace (no explicit @namespace); this page sits in
+   HomeFront.Components.Pages, so import the Migrated namespace to resolve it
+   (FPickList/MessageBoxControl already resolve via their own namespaces). *@
+@using HomeFront.Components.Pages.Migrated
+
 @inject IJSRuntime JSRuntime
+@inject ILogger<FCommunityStandards> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+@inject IGridLayoutService GridLayoutSvc
+@inject ISessionStateService SessionState
 
-<PageTitle>@($"{CommunityLabel} Standards - HomeFront")</PageTitle>
-
-<style>
-    .toolbar-cntr {
-        padding: 8px 12px;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: #f8f9fa;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-    }
-    .tbar-btn {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 12px;
-        min-width: 70px;
-    }
-    .tbar-btn:hover:not(:disabled) { background: #e9ecef; }
-    .tbar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .tbar-btn img { width: 24px; height: 24px; margin-bottom: 4px; }
-    .tbar-btn.btn-primary { background: #0d6efd; color: #fff; border-color: #0d6efd; }
-    .tbar-btn.btn-primary:hover { background: #0b5ed7; }
-    .tbar-separator { width: 1px; height: 30px; background: #ced4da; margin: 0 4px; }
-    .tool-label { font-size: 11px; }
-    .page-title { font-size: 20px; font-weight: 600; margin-bottom: 10px; }
-    .grid-container { border: 1px solid #dee2e6; border-radius: 4px; overflow: hidden; }
-    .cell-edit-btn {
-        padding: 1px 6px;
-        border: 1px solid #ced4da;
-        border-radius: 3px;
-        background: #fff;
-        font-size: 11px;
-        cursor: pointer;
-        margin-left: 6px;
-    }
-    .cell-edit-btn:hover { background: #e9ecef; }
-    .loading-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(255,255,255,0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-    .loading-spinner {
-        padding: 10px 16px;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        font-size: 13px;
-        font-weight: 600;
-    }
-    .picklist-header { margin-bottom: 8px; }
-    .search-box {
-        width: 100%;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-</style>
+<PageTitle>@($"{CommunityLabel} Standards - HomeFront")@(GridLayoutFallbackUsed ? " [gData FALLBACK]" : "")</PageTitle>
 
 @if (IsLoading)
 {
@@ -87,125 +50,151 @@
     </div>
 }
 
-<div class="toolbar-cntr">
-    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
-        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
-        <span class="tool-label">Save</span>
-    </button>
-    <div class="tbar-separator"></div>
-    <button class="tbar-btn" disabled="@(SelectedRow == null)" @onclick="() => OpenPickList(SelectedRow)">
-        <span class="tool-label">Pick Item</span>
-    </button>
-    <button class="tbar-btn" disabled="@(SelectedRow == null)" @onclick="() => OpenNotes(SelectedRow)">
-        <span class="tool-label">Edit Notes</span>
-    </button>
-    <button class="tbar-btn" @onclick="ReloadData">
-        <span class="tool-label">Refresh</span>
-    </button>
+<div class="community-standards-page">
+    @* ── TOOLBAR (VB6 Toolbar: single "Save" button) ─────────────── *@
+    <div class="toolbar-cntr">
+        <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+            <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+            <span class="tool-label">Save</span>
+        </button>
+    </div>
+
+    <h3 class="page-title">@($"{CommunityLabel} Standards")</h3>
+
+    <div class="grid-container">
+        @if (!HasGridLayout)
+        {
+            <div class="grid-fallback-note">
+                Grid layout for <code>FCommunityStandards.gData</code> could not be loaded from AppGridLayout.
+            </div>
+        }
+        <GridControl @ref="gData"
+                     TValue="CommunityStandardRow"
+                     DataSource="@Standards"
+                     AllowPaging="false"
+                     AllowSorting="true"
+                     AllowFiltering="true"
+                     AllowGrouping="true"
+                     AllowResizing="true"
+                     AllowSelection="true"
+                     EnableHover="true"
+                     Height="100%"
+                     RowHeight="20"
+                     GroupColumns="@GroupColumns"
+                     ShowGroupExpandCollapse="true"
+                     HideGroupedColumns="true"
+                     FilterSettingsRef="@filterSettings"
+                     PageSettingsRef="@pageSettings"
+                     SelectionSettingsRef="@selectionSettings"
+                     EditSettingsRef="@editSettings"
+                     EventsRef="@gridEvents">
+            <GridColumnsBase @key="GridLayoutVersion" DebugTag="FCommunityStandards-gData">
+                @foreach (var entry in GetOrderedGridLayout())
+                {
+                    var layout = entry.Layout;
+                    var fieldName = entry.Field;
+                    var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                        : null;
+                    var allowEdit = layout.IsEditable;
+
+                    @* Phase / Item / ItemDesc: picker-only cell + "…" item
+                       picker (VB6 gData_BeforeEdit .ComboList="..." +
+                       gData_CellButtonClick → FPickList.Choose "Item"). VB6's
+                       ComboList is picker-only (no free-text), so AllowEditing
+                       is false and all edits flow through the "…" button — the
+                       same gesture FAssembly uses for its Vendor/picker columns.
+                       The 'allowEdit' layout flag is still honored as the gate
+                       that shows/hides the button. *@
+                    if (fieldName.Equals(nameof(CommunityStandardRow.Phase), StringComparison.OrdinalIgnoreCase)
+                        || fieldName.Equals(nameof(CommunityStandardRow.Item), StringComparison.OrdinalIgnoreCase)
+                        || fieldName.Equals(nameof(CommunityStandardRow.ItemDesc), StringComparison.OrdinalIgnoreCase))
+                    {
+                        <GridColumn Field="@fieldName"
+                                    HeaderText="@headerText"
+                                    Width="@width"
+                                    Type="ColumnType.Text"
+                                    TextAlign="TextAlign.Left"
+                                    ClipMode="ClipMode.Ellipsis"
+                                    AllowEditing="false"
+                                    Visible="true">
+                            <Template>
+                                @{ var row = (CommunityStandardRow)context; }
+                                @{ var cellVal = GetCellValue(row, fieldName); }
+                                <div class="cs-pick-cell">
+                                    <span class="cs-pick-text" title="@cellVal">@cellVal</span>
+                                    @if (IsItemRow(row) && allowEdit)
+                                    {
+                                        <button class="cs-pick-btn fx-grid-popup-btn" title="Pick item"
+                                                @onclick="() => OpenItemPick(row)" @onclick:stopPropagation="true">…</button>
+                                        @if (fieldName.Equals(nameof(CommunityStandardRow.Item), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <button class="cs-clear-btn fx-grid-popup-btn" title="Clear item (Delete)"
+                                                    @onclick="() => ClearItem(row)" @onclick:stopPropagation="true">✕</button>
+                                        }
+                                    }
+                                </div>
+                            </Template>
+                        </GridColumn>
+                    }
+                    else if (fieldName.Equals(nameof(CommunityStandardRow.Notes), StringComparison.OrdinalIgnoreCase))
+                    {
+                        @* Notes: read-only display + the STANDARD FlexKit edit button
+                           (AlwaysShowEditButton, gated per-row by IsItemRow && Item<>"")
+                           opens FComments via OnEditButtonClick → OpenNotes (VB6
+                           gData_BeforeEdit .ComboList="|..." → gData_CellButtonClick).
+                           Replaces the hand-rolled div/span/button template; the cell
+                           still shows the raw Notes value (Ellipsis-clipped). *@
+                        <GridColumn Field="@fieldName"
+                                    HeaderText="@headerText"
+                                    Width="@width"
+                                    Type="ColumnType.Text"
+                                    TextAlign="TextAlign.Left"
+                                    ClipMode="ClipMode.Ellipsis"
+                                    AllowEditing="false"
+                                    ShowEditButton="true" AlwaysShowEditButton="true"
+                                    ShowEditButtonPredicate="@(o => o is CommunityStandardRow r && IsItemRow(r) && !string.IsNullOrEmpty(r.Item))"
+                                    Visible="true" />
+                    }
+                    else
+                    {
+                        @* StdItemDesc (outline/group col), StdPhase, StdItem,
+                           Community, CommunityPhase — read-only. Hidden ones
+                           are filtered out by GetOrderedGridLayout(). *@
+                        <GridColumn Field="@fieldName"
+                                    HeaderText="@headerText"
+                                    Width="@width"
+                                    Type="ColumnType.Text"
+                                    TextAlign="TextAlign.Left"
+                                    ClipMode="ClipMode.Ellipsis"
+                                    AllowEditing="false"
+                                    Visible="true" />
+                    }
+                }
+            </GridColumnsBase>
+        </GridControl>
+    </div>
 </div>
 
-<h3 class="page-title">@($"{CommunityLabel} Standards")</h3>
+@* ── Notes editor (VB6 FComments.Edit(s, gData, , "Notes", 4000)) ──── *@
+<FComments @bind-Visible="IsNotesDialogVisible"
+           @bind-Value="NotesEditText"
+           Title="Notes"
+           MaxLength="4000"
+           Editable="true"
+           OnSave="OnNotesCommitted" />
 
-<div class="grid-container">
-    <HfGrid @ref="CommunityGrid"
-            TValue="CommunityStandardRow"
-            DataSource="@Standards"
-            AllowPaging="true"
-            AllowSorting="true"
-            AllowFiltering="true"
-            AllowGrouping="true"
-            AllowResizing="true"
-            AllowSelection="true"
-            EnableHover="true"
-            Height="calc(100vh - 230px)"
-            GroupColumns="@(new List<string> { nameof(CommunityStandardRow.CommunityDesc) })"
-            ShowGroupExpandCollapse="true"
-            FilterSettingsRef="@filterSettings"
-            PageSettingsRef="@pageSettings"
-            SelectionSettingsRef="@selectionSettings"
-            EditSettingsRef="@editSettings"
-            EventsRef="@gridEvents">
-        <HfGridColumnsBase>
-            <HfGridColumn Field="@nameof(CommunityStandardRow.CommunityDesc)" Visible="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.Community)" HeaderText="@CommunityLabel" Visible="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.CommunityPhase)" HeaderText="@CommunityPhaseLabel" Visible="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.StdPhase)" HeaderText="Std Phase" Width="90px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.StdItem)" HeaderText="Std Item" Width="90px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.StdItemDesc)" HeaderText="Std Item Desc" Width="260px" AllowEditing="false" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.Phase)" HeaderText="Phase" Width="90px" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.Item)" HeaderText="Item" Width="90px" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.ItemDesc)" HeaderText="Item Desc" Width="260px" />
-            <HfGridColumn Field="@nameof(CommunityStandardRow.Notes)" HeaderText="Notes" Width="240px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CommunityStandardRow)context;
-                        <span title="@row.Notes">@TruncateText(row.Notes, 35)</span>
-                        <button class="cell-edit-btn" title="Edit notes"
-                                @onclick="() => OpenNotes(row)" @onclick:stopPropagation="true">✏️</button>
-                    }
-                </Template>
-            </HfGridColumn>
-            <HfGridColumn HeaderText="" Width="70px" AllowEditing="false">
-                <Template>
-                    @{
-                        var row = (CommunityStandardRow)context;
-                        <button class="cell-edit-btn" title="Pick item"
-                                @onclick="() => OpenPickList(row)" @onclick:stopPropagation="true">...</button>
-                    }
-                </Template>
-            </HfGridColumn>
-        </HfGridColumnsBase>
-    </HfGrid>
-</div>
+@* ── Item pick list (VB6 FPickList.Choose) ───────────────────────── *@
+<FPickList @ref="pickList" OnSelected="OnItemPicked" />
 
-<HfDialog @bind-Visible="IsNotesDialogVisible" Header="Edit Notes" Width="600px"
-          IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
-    <ChildContent>
-        <textarea @bind="NotesEditText" rows="8"
-                  style="width:100%; padding:8px; border:1px solid #c9c9c9; border-radius:4px; resize:vertical;"></textarea>
-    </ChildContent>
-    <FooterContent>
-        <button class="tbar-btn btn-primary" @onclick="SaveNotes">OK</button>
-        <button class="tbar-btn" @onclick="@(() => IsNotesDialogVisible = false)">Cancel</button>
-    </FooterContent>
-</HfDialog>
-
-<HfDialog @bind-Visible="IsPickDialogVisible" Header="Select Item" Width="820px"
-          IsModal="true" ShowCloseIcon="true" CloseOnEscape="true">
-    <ChildContent>
-        <div class="picklist-header">
-            <input class="search-box" @bind="PickSearchTerm" @bind:event="oninput"
-                   placeholder="Search phase, item, description..." />
-        </div>
-        <HfGrid @ref="PickGrid"
-                TValue="PhaseItemPick"
-                DataSource="@FilteredPickList"
-                AllowPaging="true"
-                AllowSorting="true"
-                AllowFiltering="false"
-                AllowSelection="true"
-                Height="400px"
-                PageSettingsRef="@pickPageSettings"
-                SelectionSettingsRef="@pickSelectionSettings"
-                EventsRef="@pickGridEvents">
-            <HfGridColumnsBase>
-                <HfGridColumn Field="@nameof(PhaseItemPick.Phase)" HeaderText="Phase" Width="90px" />
-                <HfGridColumn Field="@nameof(PhaseItemPick.Item)" HeaderText="Item" Width="90px" />
-                <HfGridColumn Field="@nameof(PhaseItemPick.Description)" HeaderText="Description" Width="320px" />
-                <HfGridColumn Field="@nameof(PhaseItemPick.Notes)" HeaderText="Notes" Width="260px" />
-            </HfGridColumnsBase>
-        </HfGrid>
-    </ChildContent>
-    <FooterContent>
-        <button class="tbar-btn btn-primary" disabled="@(SelectedPickItem == null)" @onclick="ApplyPickSelection">Select</button>
-        <button class="tbar-btn" @onclick="@(() => IsPickDialogVisible = false)">Cancel</button>
-    </FooterContent>
-</HfDialog>
+@* ── Unsaved-changes / message prompts (VB6 MsgBox) ──────────────── *@
+<MessageBoxControl @ref="messageBox" />
 
 @code {
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<CommunityStandardRow>? CommunityGrid;
-    private HfGrid<PhaseItemPick>? PickGrid;
+    private GridControl<CommunityStandardRow>? gData;
+    private FPickList? pickList;
+    private MessageBoxControl? messageBox;
 
     private bool IsLoading;
     private bool mDirty;
@@ -213,21 +202,29 @@
     private List<CommunityStandardRow> Standards = new();
 
     private string CommunityLabel = "Community";
-    private string CommunityPhaseLabel => $"{CommunityLabel} Phase";
-    private int DivisionId = 1;
-    private bool CommunityStandardsArePhaseSpecific = true;
+    private bool CommunityStandardsArePhaseSpecific;   // VB6 default = False (AppOptions)
 
-    private CommunityStandardRow? SelectedRow;
+    // ── Dynamic grid layout (AppGridLayout: FCommunityStandards.gData) ──
+    // Load/resolve/order/width boilerplate delegated to GridLayoutPresenter; the
+    // VB6 form/grid name strings stay here for fidelity. Form-specific glue (the
+    // editable-column gate and the CommunityDesc group-column fallback) remains.
+    private readonly GridLayoutPresenter<CommunityStandardRow> _grid =
+        new("FCommunityStandards", "gData");
+    private Dictionary<string, GridLayoutColumn> GridLayout => _grid.Layout;
+    private int GridLayoutVersion => _grid.Version;
+    private bool GridLayoutFallbackUsed => _grid.FallbackUsed;
+    private List<string> GroupColumns = new();
+    private bool HasGridLayout => _grid.Has;
 
-    private HfFilterSettings filterSettings = new() { Type = FilterType.Menu };
-    private HfPageSettings pageSettings = new() { PageSize = 50, PageSizes = new[] { 25, 50, 100, 200 } };
-    private HfSelectionSettings selectionSettings = new()
+    private FilterSettings filterSettings = new() { Type = FilterType.Menu };
+    private PageSettings pageSettings = new() { PageSize = 1000 };
+    private SelectionSettings selectionSettings = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Single,
         EnableToggle = true
     };
-    private HfEditSettings editSettings = new()
+    private EditSettings editSettings = new()
     {
         AllowEditing = true,
         AllowAdding = false,
@@ -235,64 +232,154 @@
         AllowEditOnDblClick = true,
         ShowConfirmDialog = false
     };
-    private HfGridEvents<CommunityStandardRow> gridEvents = new();
+    private GridControlEvents<CommunityStandardRow> gridEvents = new();
 
+    // ── Notes / pick dialog state ──────────────────────────────────────
     private bool IsNotesDialogVisible;
     private string NotesEditText = "";
     private CommunityStandardRow? NotesEditingRow;
-
-    private bool IsPickDialogVisible;
-    private string PickSearchTerm = "";
-    private List<PhaseItemPick> PickList = new();
-    private PhaseItemPick? SelectedPickItem;
     private CommunityStandardRow? PickTargetRow;
-
-    private HfPageSettings pickPageSettings = new() { PageSize = 20 };
-    private HfSelectionSettings pickSelectionSettings = new()
-    {
-        Mode = SelectionMode.Row,
-        Type = SelectionType.Single,
-        EnableToggle = true
-    };
-    private HfGridEvents<PhaseItemPick> pickGridEvents = new();
-
-    private List<PhaseItemPick> FilteredPickList =>
-        string.IsNullOrWhiteSpace(PickSearchTerm)
-            ? PickList
-            : PickList.Where(p =>
-                    ContainsIgnoreCase(p.Phase, PickSearchTerm) ||
-                    ContainsIgnoreCase(p.Item, PickSearchTerm) ||
-                    ContainsIgnoreCase(p.Description, PickSearchTerm))
-                .ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityStandardRow>>(this, OnRowSelected);
-        gridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<CommunityStandardRow>>(this, OnRowDeselected);
-        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<CommunityStandardRow>>(this, OnCellSaved);
-
-        pickGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<PhaseItemPick>>(this, OnPickRowSelected);
+        gridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<CommunityStandardRow>>(this, OnGridEditButtonClick);
 
         await LoadCustomDescriptionsAsync();
-        await LoadPickListAsync();
+        await LoadOptionsAsync();
+        await LoadGridLayoutAsync();
         await LoadDataAsync();
     }
 
+    // Grid edit-button dispatch (VB6 gData_CellButtonClick): routes the STANDARD
+    // FlexKit edit button by column to the same handler the hand-rolled cell
+    // button used. args.Data is the clicked row.
+    private async Task OnGridEditButtonClick(CellEditButtonArgs<CommunityStandardRow> args)
+    {
+        if (args.Data == null) return;
+        switch (args.ColumnName)
+        {
+            case nameof(CommunityStandardRow.Notes):
+                OpenNotes(args.Data);
+                break;
+        }
+        await Task.CompletedTask;
+    }
+
+    // VB6 LoadCustomDescriptions: Me.Caption = FMain.CD_Community & " Standards".
+    // FMain.CD_Community = GetCustomDesc("Community").
     private async Task LoadCustomDescriptionsAsync()
     {
         try
         {
             var label = await db.ExecuteScalarAsync<string>(
-                "SELECT ISNULL(NULLIF(custom_description,''),'Community') FROM customdescriptions WHERE item='Community'");
+                "SELECT ISNULL(NULLIF(custom_description,''),@DefaultVal) FROM customdescriptions WHERE item=@Item",
+                new { DefaultVal = "Community", Item = "Community" });
             if (!string.IsNullOrWhiteSpace(label))
                 CommunityLabel = label.Trim();
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Couldn't read Community custom description; defaulting to 'Community'");
             CommunityLabel = "Community";
         }
     }
 
+    // VB6 LoadData: 1 = IIf("True" = HFApp.Options.ValueByName(
+    //   "CommunityStandardsArePhaseSpecific"), 1, 2). Resolve the boolean
+    //   app-option the canonical way (system_setup col → appoptions fallback,
+    //   most-specific division wins). Default is False (= not phase specific).
+    private async Task LoadOptionsAsync()
+    {
+        CommunityStandardsArePhaseSpecific = await ReadBoolOption("CommunityStandardsArePhaseSpecific");
+    }
+
+    private async Task<bool> ReadBoolOption(string optionName)
+    {
+        string? raw = null;
+        try
+        {
+            // system_setup.<col> is a fixed VB6 option identifier (not user data),
+            // so it's a bracket-quoted identifier rather than a parameter.
+            raw = await db.ExecuteScalarAsync<string>(
+                $"SELECT TOP 1 [{optionName}] FROM system_setup WHERE id = @Div",
+                new { Div = SessionState.DivisionID });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "system_setup has no '{Option}' column; falling back to appoptions", optionName);
+        }
+        if (string.IsNullOrEmpty(raw))
+        {
+            raw = await db.ExecuteScalarAsync<string>(
+                @"SELECT TOP 1 optionvalue FROM appoptions
+                  WHERE ISNULL(divisionid,0) IN (0, @Div) AND optionname = @Name
+                  ORDER BY divisionid DESC",
+                new { Div = SessionState.DivisionID, Name = optionName });
+        }
+        return ToBool(raw);
+    }
+
+    private static bool ToBool(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var s = raw.Trim();
+        if (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(s, "false", StringComparison.OrdinalIgnoreCase)) return false;
+        if (decimal.TryParse(s, out var n)) return n != 0;          // 1 / -1 → true, 0 → false
+        return true;                                                // non-empty non-zero → true
+    }
+
+    // VB6 IniGetGrid(Me, gData) → AppGridLayout key "FCommunityStandards.gData".
+    private async Task LoadGridLayoutAsync()
+    {
+        await _grid.LoadAsync(GridLayoutSvc);
+
+        // VB6 default editable set (gData_BeforeEdit): Phase, Item, ItemDesc,
+        // Notes. Everything else (incl. the Std* / Community* columns and the
+        // StdItemDesc outline column) is read-only.
+        void Flip(string field)
+        {
+            if (GridLayout.TryGetValue(field, out var col)) col.IsEditable = true;
+        }
+        Flip(nameof(CommunityStandardRow.Phase));
+        Flip(nameof(CommunityStandardRow.Item));
+        Flip(nameof(CommunityStandardRow.ItemDesc));
+        Flip(nameof(CommunityStandardRow.Notes));
+
+        // VB6 OutlineCol = ColIndex("StdItemDesc") — the community-folder text
+        // and the standard description share this column, so we group on it.
+        GroupColumns = BuildGroupColumns();
+
+        Logger.LogInformation(
+            "FCommunityStandards.gData load: {Count} dict entries, fallback={Fallback}",
+            GridLayout.Count, GridLayoutFallbackUsed);
+    }
+
+    private List<string> BuildGroupColumns()
+    {
+        // Explicit grouped flags take priority (matches FAssembly), but the VB6
+        // form always groups by the community description (the IsSubtotal level-0
+        // rows). The layout itself doesn't store a grouped flag for gData, so
+        // fall back to CommunityDesc — the VB6 OutlineCol behavior.
+        var grouped = HasGridLayout ? _grid.GroupedFields() : new List<string>();
+        return grouped.Count > 0
+            ? grouped
+            : new List<string> { nameof(CommunityStandardRow.CommunityDesc) };
+    }
+
+    private IEnumerable<(GridLayoutColumn Layout, string Field)> GetOrderedGridLayout()
+        => _grid.GetOrdered().Select(e => (e.Layout, e.Field));
+
+    private string ResolveGridField(string layoutField)
+        => _grid.ResolveField(layoutField);
+
+    // VB6 grid widths are twips (15 twips per pixel at 96 DPI). FAssembly parity.
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ── LoadData (VB6 LoadData) ─────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════
     private async Task LoadDataAsync()
     {
         IsLoading = true;
@@ -300,6 +387,10 @@
 
         try
         {
+            // Verbatim port of VB6 LoadData two-part UNION. The phase-specific
+            // join is gated by 1=@PhaseSpecific (1 when phase-specific, else 2 so
+            // CommunityPhase joins nothing). Second arm covers communities with
+            // no phase (CommunityPhase = '').
             var sql = @"
                 SELECT c.Area Community,
                        p.CommunityPhase,
@@ -343,7 +434,7 @@
 
             var rows = await db.QueryAsync(sql, new
             {
-                DivisionID = DivisionId,
+                DivisionID = SessionState.DivisionID,
                 PhaseSpecific = CommunityStandardsArePhaseSpecific ? 1 : 2
             });
 
@@ -356,18 +447,20 @@
                 StdItem = r["StdItem"]?.ToString() ?? "",
                 StdItemDesc = r["StdItemDesc"]?.ToString() ?? "",
                 Phase = r["Phase"]?.ToString() ?? "",
+                // VB6 only copies ItemDesc when Item <> "".
                 Item = r["Item"]?.ToString() ?? "",
-                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
+                ItemDesc = string.IsNullOrEmpty(r["Item"]?.ToString())
+                    ? "" : (r["ItemDesc"]?.ToString() ?? ""),
                 Notes = r["Notes"]?.ToString() ?? "",
                 IsDirty = false
             }).ToList();
 
             mDirty = false;
-            SelectedRow = null;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading {CommunityLabel} standards: {ex.Message}");
+            Logger.LogError(ex, "Error loading {Community} standards", CommunityLabel);
+            Notifications.Error($"Error loading {CommunityLabel} standards: {ex.Message}");
         }
         finally
         {
@@ -376,48 +469,61 @@
         }
     }
 
-    private async Task LoadPickListAsync()
-    {
-        var sql = @"SELECT Phase, Item, Description, ISNULL(Notes,'') Notes
-                    FROM tblPhaseItem
-                    WHERE DivisionID = @DivisionID
-                    ORDER BY Phase, Item";
-        var rows = await db.QueryAsync(sql, new { DivisionID = DivisionId });
-        PickList = rows.Select(r => new PhaseItemPick
-        {
-            Phase = r["Phase"]?.ToString() ?? "",
-            Item = r["Item"]?.ToString() ?? "",
-            Description = r["Description"]?.ToString() ?? "",
-            Notes = r["Notes"]?.ToString() ?? ""
-        }).ToList();
-    }
-
-    private void OnRowSelected(RowSelectEventArgs<CommunityStandardRow> args) => SelectedRow = args.Data;
-    private void OnRowDeselected(RowSelectEventArgs<CommunityStandardRow> args) => SelectedRow = null;
-
-    private void OnCellSaved(CellSaveArgs<CommunityStandardRow> args)
-    {
-        if (args.Data == null) return;
-        MarkDirty(args.Data);
-    }
-
+    // ═══════════════════════════════════════════════════════════════════
+    // ── Cell edit / dirty (VB6 gData_AfterEdit) ─────────────────────────
+    // ═══════════════════════════════════════════════════════════════════
     private void MarkDirty(CommunityStandardRow row)
     {
+        // VB6 marks only level-1 (item) rows dirty; folder rows are never edited.
+        if (!IsItemRow(row)) return;
         row.IsDirty = true;
         mDirty = true;
     }
 
+    // A "level-1" item row has a standard (StdItem) attached; folder/group rows
+    // are synthesized by the grouping engine, so any real data row qualifies.
+    private static bool IsItemRow(CommunityStandardRow row) =>
+        row != null && !string.IsNullOrEmpty(row.StdItem);
+
+    private static string GetCellValue(CommunityStandardRow row, string field) => field switch
+    {
+        nameof(CommunityStandardRow.Phase) => row.Phase,
+        nameof(CommunityStandardRow.Item) => row.Item,
+        nameof(CommunityStandardRow.ItemDesc) => row.ItemDesc,
+        _ => ""
+    };
+
+    // VB6 gData_KeyDown vbKeyDelete on Phase/Item/ItemDesc: clears Phase, Item,
+    // ItemDesc AND Notes together, then marks dirty (gData_AfterEdit).
+    private async Task ClearItem(CommunityStandardRow? row)
+    {
+        if (row == null || !IsItemRow(row)) return;
+        row.Phase = "";
+        row.Item = "";
+        row.ItemDesc = "";
+        row.Notes = "";
+        MarkDirty(row);
+        if (gData != null) await gData.Refresh();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ── Save (VB6 SaveData) ─────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════
     private async Task OnSaveClick() => await SaveDataAsync(false);
 
     private async Task<bool> SaveDataAsync(bool prompt)
     {
+        // VB6: If Not mDirty Then SaveData = True : Exit Function.
         if (!mDirty) return true;
 
-        if (prompt)
+        if (prompt && messageBox != null)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
-                $"{CommunityLabel} Standards have changed. Do you want to save these changes?");
-            if (!confirm) return true;
+            // VB6 MsgBox(vbYesNoCancel): Yes=save, No=discard(true), Cancel=abort(false).
+            var result = await messageBox.ShowAsync(
+                $"{CommunityLabel} Standards have changed.\n\nDo you want to save these changes?\n",
+                "HomeFront", MessageBoxButtons.YesNoCancel);
+            if (result == MessageBoxResult.No) return true;
+            if (result == MessageBoxResult.Cancel) return false;
         }
 
         IsLoading = true;
@@ -425,8 +531,11 @@
 
         try
         {
-            foreach (var row in Standards.Where(r => r.IsDirty))
+            // VB6 iterates every level-1 row with RowData <> "" (dirty).
+            foreach (var row in Standards.Where(r => r.IsDirty && IsItemRow(r)))
             {
+                // (1) INSERT — duplicate-key is swallowed (VB6 eh: Resume Next on
+                //     "duplicate"), so the row is then UPDATEd whether new or not.
                 var insertSql = @"
                     INSERT INTO CommunityStandards(Community,CommunityPhase,StdPhase,StdItem,Phase,Item,Notes)
                     VALUES(@Community,@CommunityPhase,@StdPhase,@StdItem,@Phase,@Item,@Notes)";
@@ -449,7 +558,8 @@
                         throw;
                 }
 
-                var notes = string.IsNullOrWhiteSpace(row.Item) ? "" : row.Notes ?? "";
+                // (2) UPDATE — VB6 blanks Notes when this row's Item is "".
+                var notes = string.IsNullOrEmpty(row.Item) ? "" : row.Notes ?? "";
                 var updateSql = @"
                     UPDATE CommunityStandards
                        SET Phase=@Phase,
@@ -470,18 +580,20 @@
                     Notes = notes
                 });
 
-                row.IsDirty = false;
-            }
+                // (3) Prune empty mappings (VB6 runs this per dirty row).
+                await db.ExecuteAsync(
+                    "DELETE FROM CommunityStandards WHERE ISNULL(Phase,'')='' AND ISNULL(Item,'')='' AND ISNULL(StdPhase,'')<>'' AND ISNULL(Community,'')<>''");
 
-            await db.ExecuteAsync(
-                "DELETE FROM CommunityStandards WHERE ISNULL(Phase,'')='' AND ISNULL(Item,'')='' AND ISNULL(StdPhase,'')<>'' AND ISNULL(Community,'')<>''");
+                row.IsDirty = false;   // VB6 RowData(i) = ""
+            }
 
             mDirty = false;
             return true;
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            Logger.LogError(ex, "Error saving {Community} standards", CommunityLabel);
+            Notifications.Error($"Error saving: {ex.Message}");
             return false;
         }
         finally
@@ -491,71 +603,71 @@
         }
     }
 
-    private async Task ReloadData()
-    {
-        if (mDirty)
-        {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
-                "You have unsaved changes. Discard and reload?");
-            if (!confirm) return;
-        }
-        await LoadDataAsync();
-    }
-
+    // ═══════════════════════════════════════════════════════════════════
+    // ── Notes editor (VB6 gData_CellButtonClick "Notes" → FComments) ────
+    // ═══════════════════════════════════════════════════════════════════
     private void OpenNotes(CommunityStandardRow? row)
     {
-        var target = row ?? SelectedRow;
-        if (target == null) return;
-        NotesEditingRow = target;
-        NotesEditText = target.Notes ?? "";
+        if (row == null || !IsItemRow(row) || string.IsNullOrEmpty(row.Item)) return;
+        NotesEditingRow = row;
+        NotesEditText = row.Notes ?? "";
         IsNotesDialogVisible = true;
     }
 
-    private void SaveNotes()
+    // FComments OnSave: NotesEditText has already been committed back through
+    // @bind-Value. VB6 FComments.Edit returns the new text → write it to the row.
+    private async Task OnNotesCommitted()
     {
         if (NotesEditingRow != null)
         {
             NotesEditingRow.Notes = NotesEditText ?? "";
             MarkDirty(NotesEditingRow);
         }
-        IsNotesDialogVisible = false;
+        if (gData != null) await gData.Refresh();
     }
 
-    private void OpenPickList(CommunityStandardRow? row)
+    // ═══════════════════════════════════════════════════════════════════
+    // ── Item pick list (VB6 gData_CellButtonClick Phase/Item/ItemDesc) ──
+    // ═══════════════════════════════════════════════════════════════════
+    private async Task OpenItemPick(CommunityStandardRow? row)
     {
-        var target = row ?? SelectedRow;
-        if (target == null) return;
-        PickTargetRow = target;
-        SelectedPickItem = null;
-        PickSearchTerm = "";
-        IsPickDialogVisible = true;
+        if (row == null || !IsItemRow(row) || pickList == null) return;
+        PickTargetRow = row;
+        // VB6: "select phase,item,description,notes from tblphaseitem where DivisionID = " & HFApp.DivisionID
+        var sql = "SELECT Phase, Item, Description, Notes FROM tblPhaseItem WHERE DivisionID = @DivisionID";
+        await pickList.Open("Item", sql, parameters: new Dictionary<string, object>
+        {
+            ["DivisionID"] = SessionState.DivisionID
+        });
     }
 
-    private void OnPickRowSelected(RowSelectEventArgs<PhaseItemPick> args) => SelectedPickItem = args.Data;
-
-    private async Task ApplyPickSelection()
+    private async Task OnItemPicked(List<IDictionary<string, object>>? selected)
     {
-        if (PickTargetRow == null || SelectedPickItem == null) return;
+        if (PickTargetRow == null || selected == null || selected.Count == 0) return;
+        var pick = selected[0];
 
-        PickTargetRow.Phase = SelectedPickItem.Phase;
-        PickTargetRow.Item = SelectedPickItem.Item;
-        PickTargetRow.ItemDesc = SelectedPickItem.Description;
-        PickTargetRow.Notes = SelectedPickItem.Notes;
-        MarkDirty(PickTargetRow);
+        // VB6 copies Phase, Item, Description→ItemDesc, Notes from the picked row.
+        PickTargetRow.Phase = GetPickString(pick, "Phase");
+        PickTargetRow.Item = GetPickString(pick, "Item");
+        PickTargetRow.ItemDesc = GetPickString(pick, "Description");
+        PickTargetRow.Notes = GetPickString(pick, "Notes");
+        MarkDirty(PickTargetRow);   // VB6 calls gData_AfterEdit
 
-        IsPickDialogVisible = false;
-        if (CommunityGrid != null)
-            await CommunityGrid.Refresh();
+        if (gData != null) await gData.Refresh();
     }
 
-    private static bool ContainsIgnoreCase(string? source, string term) =>
-        !string.IsNullOrEmpty(source) &&
-        source.Contains(term, StringComparison.OrdinalIgnoreCase);
+    private static string GetPickString(IDictionary<string, object> row, string key)
+    {
+        if (row.TryGetValue(key, out var v) && v != null) return v.ToString() ?? "";
+        foreach (var kvp in row)
+            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+                return kvp.Value?.ToString() ?? "";
+        return "";
+    }
 
-    private static string TruncateText(string? text, int max) =>
-        string.IsNullOrWhiteSpace(text) ? "" :
-        text.Length <= max ? text : text.Substring(0, max) + "...";
-
+    // ═══════════════════════════════════════════════════════════════════
+    // ── Row model ───────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════
     public class CommunityStandardRow
     {
         public string Community { get; set; } = "";
@@ -570,13 +682,4 @@
         public string Notes { get; set; } = "";
         public bool IsDirty { get; set; }
     }
-
-    public class PhaseItemPick
-    {
-        public string Phase { get; set; } = "";
-        public string Item { get; set; } = "";
-        public string Description { get; set; } = "";
-        public string Notes { get; set; } = "";
-    }
 }
-```

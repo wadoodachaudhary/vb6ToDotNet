@@ -1,236 +1,26 @@
-```razor
-@page "/rfq-wizard"
-@page "/rfq-wizard/{Job}"
-@rendermode InteractiveServer
-
 @namespace HomeFront.Components.Pages
 
 @using System
 @using System.Data
 @using System.Collections.Generic
 @using System.Linq
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 
 @inject IJSRuntime JSRuntime
-@inject NavigationManager NavigationManager
+@inject ILogger<FRFPWizard> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
-<PageTitle>RFQ Wizard - HomeFront</PageTitle>
-
-<style>
-    .wizard-container {
-        max-width: 700px;
-        margin: 0 auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        display: flex;
-        flex-direction: column;
-        min-height: 500px;
-    }
-
-    .wizard-header {
-        background: linear-gradient(to right, #f8f9fa, #e9ecef);
-        border-bottom: 1px solid #dee2e6;
-        padding: 16px 20px;
-        border-radius: 8px 8px 0 0;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .wizard-header-icon {
-        width: 48px;
-        height: 48px;
-        background: #0d6efd;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #fff;
-        font-size: 22px;
-    }
-
-    .wizard-header-text h4 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #333;
-    }
-
-    .wizard-header-text p {
-        margin: 2px 0 0;
-        font-size: 13px;
-        color: #6c757d;
-    }
-
-    .wizard-body {
-        flex: 1;
-        padding: 20px;
-        overflow-y: auto;
-    }
-
-    .wizard-footer {
-        border-top: 1px solid #dee2e6;
-        padding: 12px 20px;
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        background: #f8f9fa;
-        border-radius: 0 0 8px 8px;
-    }
-
-    .wizard-footer button {
-        padding: 6px 20px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 14px;
-        min-width: 90px;
-    }
-
-    .wizard-footer button:hover:not(:disabled) {
-        background: #e9ecef;
-    }
-
-    .wizard-footer button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .wizard-footer button.btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
-    .wizard-footer button.btn-primary:hover:not(:disabled) {
-        background: #0b5ed7;
-    }
-
-    .wizard-footer button.btn-success {
-        background: #198754;
-        color: #fff;
-        border-color: #198754;
-    }
-
-    .wizard-footer button.btn-success:hover:not(:disabled) {
-        background: #157347;
-    }
-
-    .step-title {
-        font-weight: 700;
-        font-size: 15px;
-        margin-bottom: 8px;
-    }
-
-    .step-description {
-        font-size: 13px;
-        color: #495057;
-        margin-bottom: 12px;
-        line-height: 1.5;
-    }
-
-    .step-hint {
-        font-size: 13px;
-        color: #6c757d;
-        margin-bottom: 12px;
-    }
-
-    .step-icon {
-        width: 48px;
-        height: 48px;
-        margin-bottom: 8px;
-    }
-
-    .step-content-row {
-        display: flex;
-        gap: 16px;
-    }
-
-    .step-content-left {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-width: 60px;
-    }
-
-    .step-content-right {
-        flex: 1;
-    }
-
-    .field-checkbox-list {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        max-height: 250px;
-        overflow-y: auto;
-    }
-
-    .field-checkbox-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px;
-        border-bottom: 1px solid #f0f0f0;
-        font-size: 13px;
-    }
-
-    .field-checkbox-item:last-child {
-        border-bottom: none;
-    }
-
-    .field-checkbox-item input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .select-all-row {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 6px;
-    }
-
-    .select-all-row label {
-        font-size: 13px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-    }
-
-    .select-all-row input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        height: 100%;
-        width: 100%;
-        background-color: rgba(1,1,1,0.2);
-        z-index: 10000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .loading-spinner {
-        padding: 20px 40px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-        font-size: 16px;
-        font-weight: 500;
-        color: #333;
-    }
-</style>
-
+@if (IsVisible)
+{
 @if (IsLoading)
 {
     <div class="loading-overlay">
-        <div class="loading-spinner">⏳ Processing...</div>
+        <div class="loading-spinner">Processing...</div>
     </div>
 }
 
@@ -263,14 +53,18 @@
                         Click Next to continue, where you can choose which RFQ's you would like to produce.
                     </div>
 
+                    @if (!string.IsNullOrEmpty(StatusMessage))
+                    {
+                        <div style="color: #dc3545; font-size: 13px; margin-bottom: 8px; font-weight: 500;">@StatusMessage</div>
+                    }
+
                     <div class="field-checkbox-list">
                         @foreach (var field in GroupByFields)
                         {
                             <div class="field-checkbox-item">
-                                <input type="checkbox" id="@($"chk_{field.FieldName}")"
-                                       checked="@field.IsChecked"
-                                       @onchange="e => OnGroupByFieldChanged(field, (bool)(e.Value ?? false))" />
-                                <label for="@($"chk_{field.FieldName}")">@field.DisplayName</label>
+                                <CheckBoxControl Checked="@field.IsChecked"
+                                                 CheckedChanged="@(isChecked => OnGroupByFieldChanged(field, isChecked))"
+                                                 Label="@field.DisplayName" />
                             </div>
                         }
                     </div>
@@ -292,14 +86,12 @@
                     </div>
 
                     <div class="select-all-row">
-                        <label>
-                            <input type="checkbox" checked="@SelectAllChecked"
-                                   @onchange="OnSelectAllChanged" />
-                            Select All
-                        </label>
+                        <CheckBoxControl Checked="@SelectAllChecked"
+                                         CheckedChanged="OnSelectAllCheckedChanged"
+                                         Label="Select All" />
                     </div>
 
-                    <HfGrid @ref="RfqGrid"
+                    <GridControl @ref="RfqGrid"
                             TValue="RfqRow"
                             DataSource="@RfqData"
                             AllowSorting="true"
@@ -308,26 +100,32 @@
                             Height="300px"
                             EditSettingsRef="@rfqEditSettings"
                             SelectionSettingsRef="@rfqSelectionSettings">
-                        <HfGridColumnsBase>
-                            <HfGridColumn Field="@nameof(RfqRow.IsSelected)" HeaderText="" Width="50px"
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(RfqRow.IsSelected)" HeaderText="" Width="50px"
                                           Type="ColumnType.CheckBox" AllowEditing="true" />
                             @foreach (var col in DynamicColumns)
                             {
-                                <HfGridColumn Field="@col.Field" HeaderText="@col.HeaderText"
+                                <GridColumn Field="@col.Field" HeaderText="@col.HeaderText"
                                               Width="@col.Width" AllowEditing="false" />
                             }
-                            <HfGridColumn Field="@nameof(RfqRow.VendorNames)" HeaderText="Vendors" Width="200px">
+                            <GridColumn Field="@nameof(RfqRow.VendorNames)" HeaderText="Vendors" Width="200px">
                                 <Template>
                                     @{
                                         var row = (RfqRow)context;
                                         <span>@row.VendorNames</span>
                                         <button class="tbar-btn" style="padding:2px 6px; font-size:11px; margin-left:4px;"
                                                 @onclick="() => OnSelectVendors(row)" @onclick:stopPropagation="true">...</button>
+                                        @if (!string.IsNullOrEmpty(row.VendorNames))
+                                        {
+                                            <button class="tbar-btn" style="padding:2px 6px; font-size:11px; margin-left:2px; color:#dc3545;"
+                                                    title="Clear vendors"
+                                                    @onclick="() => OnClearVendors(row)" @onclick:stopPropagation="true">x</button>
+                                        }
                                     }
                                 </Template>
-                            </HfGridColumn>
-                        </HfGridColumnsBase>
-                    </HfGrid>
+                            </GridColumn>
+                        </GridColumnsBase>
+                    </GridControl>
                 </div>
             </div>
         }
@@ -335,12 +133,17 @@
 
     @* ── FOOTER ─────────────────────────────────────────── *@
     <div class="wizard-footer">
-        <button @onclick="OnCancelClick">Cancel</button>
-        <button disabled="@(CurrentFrame <= 0)" @onclick="OnBackClick">&lt; Back</button>
-        <button disabled="@(CurrentFrame >= MaxFrame)" @onclick="OnNextClick">Next &gt;</button>
-        <button class="btn-success" disabled="@(CurrentFrame < MaxFrame)" @onclick="OnFinishClick">Finish</button>
+        <ButtonControl BareStyle="true" CssClass="wizard-btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+        <ButtonControl BareStyle="true" CssClass="wizard-btn" Disabled="@(CurrentFrame <= 0)" OnClick="OnBackClick">&lt; Back</ButtonControl>
+        <ButtonControl BareStyle="true" CssClass="wizard-btn" Disabled="@(CurrentFrame >= MaxFrame)" OnClick="OnNextClick">Next &gt;</ButtonControl>
+        <ButtonControl BareStyle="true" CssClass="wizard-btn btn-success" Disabled="@(CurrentFrame < MaxFrame)" OnClick="OnFinishClick">Finish</ButtonControl>
     </div>
 </div>
+}
+
+<FPickList @ref="_vendorPickList"
+           OnSelected="OnVendorSelected"
+           OnCancel="OnVendorPickListCancelled" />
 
 @code {
     [Parameter] public string? Job { get; set; }
@@ -348,21 +151,24 @@
     private const string SRCFILE = "FRFPWizard::";
 
     // State
+    private bool IsVisible = false;
     private string mJob = "";
     private bool bInHere = false;
     private bool IsLoading = false;
     private int CurrentFrame = 0;
     private int MaxFrame = 1;
     private bool SelectAllChecked = false;
+    private string StatusMessage = "";
+
+    // Child dialog references
+    private FPickList? _vendorPickList;
+    private RfqRow? _vendorPickRow;
 
     // Database
-    private DbWrapperSqlServer db = new();
-    private int DivisionID = 1;
+// Grid refs and settings
+    private GridControl<RfqRow>? RfqGrid;
 
-    // Grid refs and settings
-    private HfGrid<RfqRow>? RfqGrid;
-
-    private HfEditSettings rfqEditSettings = new()
+    private EditSettings rfqEditSettings = new()
     {
         AllowEditing = true,
         AllowAdding = false,
@@ -370,7 +176,7 @@
         ShowConfirmDialog = false
     };
 
-    private HfSelectionSettings rfqSelectionSettings = new()
+    private SelectionSettings rfqSelectionSettings = new()
     {
         Type = SelectionType.Single,
         Mode = SelectionMode.Row
@@ -419,19 +225,21 @@
         public string Width { get; set; } = "150px";
     }
 
-    // Lifecycle
-    protected override async Task OnInitializedAsync()
-    {
-        mJob = Job ?? "";
-        await LoadGroupByFields();
-    }
-
+    // Public API
     public async Task ShowForm(string job)
     {
         mJob = job;
         bInHere = false;
         CurrentFrame = 0;
+        IsVisible = true;
         await LoadGroupByFields();
+        StateHasChanged();
+    }
+
+    public void Close()
+    {
+        IsVisible = false;
+        StateHasChanged();
     }
 
     // Load group-by fields from job definition
@@ -449,7 +257,7 @@
         try
         {
             var sql = "SELECT * FROM tbljobs WHERE DivisionID = @DivisionID AND job_no = @Job";
-            var dt = db.SqlExec(sql, new { DivisionID, Job = mJob });
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID, Job = mJob });
             if (dt.Rows.Count > 0)
             {
                 var row = dt.Rows[0];
@@ -473,7 +281,8 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[RFQWizard.LoadGroupByFields] Error: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
         }
     }
 
@@ -481,6 +290,12 @@
     private void OnGroupByFieldChanged(GroupByField field, bool isChecked)
     {
         field.IsChecked = isChecked;
+    }
+
+    // Thin bool adapter for CheckBoxControl (CheckedChanged passes bool, not ChangeEventArgs).
+    private async Task OnSelectAllCheckedChanged(bool isChecked)
+    {
+        await OnSelectAllChanged(new ChangeEventArgs { Value = isChecked });
     }
 
     private async Task OnSelectAllChanged(ChangeEventArgs e)
@@ -502,9 +317,9 @@
         return string.Join(",", selectedFields);
     }
 
-    private async Task OnCancelClick()
+    private void OnCancelClick()
     {
-        NavigationManager.NavigateTo("/");
+        Close();
     }
 
     private async Task OnBackClick()
@@ -529,8 +344,7 @@
         {
             if (await CreateRFPs())
             {
-                await JSRuntime.InvokeVoidAsync("alert", "RFQ's created successfully.");
-                NavigationManager.NavigateTo("/");
+                Close();
             }
         }
     }
@@ -539,8 +353,12 @@
     {
         if (frame == 1 && string.IsNullOrEmpty(GetGroupByClause(false)))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "You have to pick at least one field.");
+            StatusMessage = "You have to pick at least one field.";
             frame = 0;
+        }
+        else
+        {
+            StatusMessage = "";
         }
 
         CurrentFrame = frame;
@@ -598,7 +416,7 @@
                   AND job_no=@Job
                 ORDER BY {groupByClause}";
 
-            var dt = db.SqlExec(sql, new { DivisionID, Job = mJob });
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID, Job = mJob });
 
             RfqData.Clear();
             foreach (DataRow row in dt.Rows)
@@ -638,8 +456,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[RFQWizard.LoadRfqData] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading RFQ data: {ex.Message}");
+            Logger.LogError(ex, "Operation failed");
+
+            StatusMessage = $"Error loading RFQ data: {ex.Message}";
         }
         finally
         {
@@ -648,63 +467,75 @@
         }
     }
 
+    /// <summary>
+    /// Opens FPickList for vendor selection (VB6: gData_CellButtonClick).
+    /// </summary>
     private async Task OnSelectVendors(RfqRow row)
     {
-        // In VB6 this opened FPickList for vendor selection
-        // For now, prompt for vendor selection
-        var sql = @"SELECT vendorgroupid AS Type, vendor_id AS Vendor, Vendor_name AS Company
-                    FROM tblvendors
-                    WHERE inactive=0 AND divisionid=@DivisionID
-                    ORDER BY Vendor_name";
+        if (_vendorPickList == null) return;
+        _vendorPickRow = row;
 
-        try
+        var sql = $"SELECT vendorgroupid AS Type, vendor_id AS Vendor, Vendor_name AS Company FROM tblvendors WHERE inactive=0 AND divisionid={SessionState.DivisionID} ORDER BY Vendor_name";
+        await _vendorPickList.Open(
+            title: "Vendor",
+            queries: sql,
+            multiSelect: true,
+            hideColumns: "Type");
+    }
+
+    private void OnVendorSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        if (_vendorPickRow == null || selectedRows.Count == 0) return;
+
+        var names = new List<string>();
+        var quotedIds = new List<string>();
+        foreach (var r in selectedRows)
         {
-            var dt = db.SqlExec(sql, new { DivisionID });
-            if (dt.Rows.Count == 0)
-            {
-                await JSRuntime.InvokeVoidAsync("alert", "No vendors found.");
-                return;
-            }
-
-            // Build a simple vendor list for selection
-            var vendorList = new List<string>();
-            var vendorIdList = new List<string>();
-            foreach (DataRow dr in dt.Rows)
-            {
-                vendorList.Add(dr["Company"]?.ToString() ?? "");
-                vendorIdList.Add(dr["Vendor"]?.ToString() ?? "");
-            }
-
-            // Simple prompt - in production this would be a proper pick list dialog
-            var input = await JSRuntime.InvokeAsync<string>("prompt",
-                $"Enter vendor IDs (comma-separated) from available vendors:\n{string.Join("\n", vendorList.Take(20).Select((v, i) => $"{vendorIdList[i]}: {v}"))}");
-
-            if (!string.IsNullOrWhiteSpace(input))
-            {
-                var selectedIds = input.Split(',').Select(x => x.Trim()).Where(x => !string.IsNullOrEmpty(x)).ToList();
-                var selectedNames = new List<string>();
-                var quotedIds = new List<string>();
-
-                foreach (var id in selectedIds)
-                {
-                    var idx = vendorIdList.IndexOf(id);
-                    if (idx >= 0)
-                    {
-                        selectedNames.Add(vendorList[idx]);
-                        quotedIds.Add($"'{id}'");
-                    }
-                }
-
-                row.VendorNames = string.Join(", ", selectedNames);
-                row.VendorIds = string.Join(",", quotedIds);
-                row.IsSelected = true;
-                StateHasChanged();
-            }
+            if (r.TryGetValue("Company", out var company))
+                names.Add(company?.ToString() ?? "");
+            if (r.TryGetValue("Vendor", out var vendor))
+                quotedIds.Add($"'{EscapeSql(vendor?.ToString() ?? "")}'");
         }
-        catch (Exception ex)
+
+        _vendorPickRow.VendorNames = string.Join(", ", names);
+        _vendorPickRow.VendorIds = string.Join(",", quotedIds);
+        _vendorPickRow.IsSelected = true;
+        _vendorPickRow = null;
+        StateHasChanged();
+    }
+
+    private void OnVendorPickListCancelled()
+    {
+        _vendorPickRow = null;
+    }
+
+    /// <summary>
+    /// Clears vendor assignment for a row (VB6: gData_KeyDown delete on vendor column).
+    /// </summary>
+    private void OnClearVendors(RfqRow row)
+    {
+        row.VendorNames = "";
+        row.VendorIds = "";
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Syncs SelectAll checkbox state after individual row check changes (VB6: gData_AfterEdit).
+    /// </summary>
+    private void OnRowCheckChanged(RfqRow row, bool isChecked)
+    {
+        if (bInHere) return;
+        bInHere = true;
+        row.IsSelected = isChecked;
+
+        if (RfqData.Count > 0)
         {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading vendors: {ex.Message}");
+            bool allSame = RfqData.All(r => r.IsSelected == RfqData[0].IsSelected);
+            SelectAllChecked = allSame && RfqData[0].IsSelected;
         }
+
+        bInHere = false;
+        StateHasChanged();
     }
 
     private async Task<bool> CreateRFPs()
@@ -724,7 +555,7 @@
 
                 // INSERT RFP
                 var title = row.GroupKey.Length > 250 ? row.GroupKey.Substring(0, 250) : row.GroupKey;
-                sql += $"INSERT INTO RFPs(divisionid,Job,Title) VALUES({DivisionID},'{EscapeSql(mJob)}','{EscapeSql(title)}')\n\n";
+                sql += $"INSERT INTO RFPs(divisionid,Job,Title) VALUES({SessionState.DivisionID},'{EscapeSql(mJob)}','{EscapeSql(title)}')\n\n";
 
                 // UPDATE EstimateItems
                 sql += "UPDATE EstimateItems\n";
@@ -732,7 +563,7 @@
                 sql += " WHERE EstItemID IN(SELECT EstItemID\n";
                 sql += "                      FROM EstimatedItems\n";
                 sql += "                     WHERE ISNULL(RFP,0)=0\n";
-                sql += $"                       AND divisionid={DivisionID}\n";
+                sql += $"                       AND divisionid={SessionState.DivisionID}\n";
                 sql += $"                       AND job_no='{EscapeSql(mJob)}'\n";
 
                 foreach (var field in selectedFields)
@@ -748,7 +579,7 @@
                     sql += "INSERT INTO VendorBids(RFP,Vendor,CreatedDate)\n";
                     sql += "SELECT IDENT_CURRENT('RFPs'),vendor_id,getdate()\n";
                     sql += "FROM tblVendors\n";
-                    sql += $"WHERE divisionid={DivisionID}\n";
+                    sql += $"WHERE divisionid={SessionState.DivisionID}\n";
                     sql += $"AND vendor_id IN({vendors})\n\n";
 
                     sql += "INSERT INTO VendorBidItems(RFP,Vendor,EstItemID)\n";
@@ -756,7 +587,7 @@
                     sql += "FROM tblvendors v\n";
                     sql += "    ,estimateitems e\n";
                     sql += "WHERE e.rfp=IDENT_CURRENT('RFPs')\n";
-                    sql += $"  AND v.divisionid={DivisionID}\n";
+                    sql += $"  AND v.divisionid={SessionState.DivisionID}\n";
                     sql += $"  AND v.vendor_id IN({vendors})\n\n";
                 }
 
@@ -767,8 +598,9 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[{SRCFILE}CreateRFPs] Error: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error creating RFQ's: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}CreateRFPs]");
+
+            StatusMessage = $"Error creating RFQ's: {ex.Message}";
             return false;
         }
         finally
@@ -784,4 +616,3 @@
         return (value ?? "").Replace("'", "''");
     }
 }
-```

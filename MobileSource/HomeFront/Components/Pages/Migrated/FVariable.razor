@@ -1,130 +1,36 @@
-```razor
 @page "/variable"
 @page "/variable/{Name}"
+@namespace HomeFront.Components.Pages
+@layout HFComponent
 @rendermode InteractiveServer
 
-@using HomeFront.Components.Hf
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
 @using HomeFront.Data
 @using System.Linq
 
 @inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
 @inject NavigationManager NavigationManager
+@inject ILogger<FVariable> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 <PageTitle>Variable</PageTitle>
-
-<style>
-    .variable-card {
-        max-width: 720px;
-        margin: 20px auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        background: #fff;
-        padding: 16px 20px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .variable-card h3 { margin: 0 0 16px 0; }
-    .form-field {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 14px;
-        align-items: flex-start;
-    }
-    .form-field label {
-        width: 110px;
-        text-align: right;
-        font-weight: 600;
-        font-size: 13px;
-        padding-top: 6px;
-        color: #495057;
-    }
-    .form-field input, .form-field textarea {
-        flex: 1;
-        padding: 6px 10px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        font-size: 13px;
-    }
-    .radio-group {
-        display: flex;
-        gap: 16px;
-        align-items: center;
-        padding-top: 4px;
-        font-size: 13px;
-    }
-    .values-panel {
-        flex: 1;
-    }
-    .numeric-grid {
-        display: grid;
-        grid-template-columns: 80px 1fr 80px 1fr;
-        gap: 8px;
-        align-items: center;
-    }
-    .numeric-grid label {
-        text-align: right;
-        font-size: 12px;
-        color: #495057;
-    }
-    .condition-panel {
-        margin-top: 12px;
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-    }
-    .condition-link {
-        border: none;
-        background: none;
-        color: #0d6efd;
-        text-decoration: underline;
-        cursor: pointer;
-        font-size: 13px;
-        padding: 0;
-    }
-    .condition-text {
-        font-size: 12px;
-        color: #6c757d;
-        white-space: pre-line;
-    }
-    .button-row {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 10px;
-    }
-    .btn {
-        padding: 6px 18px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        background: #fff;
-        cursor: pointer;
-        font-size: 13px;
-    }
-    .btn-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-</style>
 
 <div class="variable-card">
     <h3>Variable</h3>
 
     <div class="form-field">
         <label>Name</label>
-        <input type="text" value="@NameText" @oninput="OnNameInput" placeholder="Variable name" />
+        <TextBoxControl Value="@NameText" @oninput="OnNameInput" Placeholder="Variable name" CssClass="vc-input" />
     </div>
 
     <div class="form-field">
         <label>Type</label>
         <div class="radio-group">
-            <label>
-                <input type="radio" name="vartype" checked="@(VariableType == 0)" @onchange="() => SetVariableType(0)" />
-                Numeric
-            </label>
-            <label>
-                <input type="radio" name="vartype" checked="@(VariableType == 1)" @onchange="() => SetVariableType(1)" />
-                List of values
-            </label>
+            <RadioControl TValue="int" Name="vartype" Value="0" @bind-SelectedValue="VariableType" Label="Numeric" />
+            <RadioControl TValue="int" Name="vartype" Value="1" @bind-SelectedValue="VariableType" Label="List of values" />
         </div>
     </div>
 
@@ -135,13 +41,13 @@
             {
                 <div class="numeric-grid">
                     <label>Min</label>
-                    <HfNumericTextBox TValue="decimal" @bind-Value="MinValue" Format="N0" Width="120px" />
+                    <NumericTextBoxControl TValue="decimal" @bind-Value="MinValue" Format="N0" Width="120px" />
                     <label>Default</label>
-                    <HfNumericTextBox TValue="decimal" @bind-Value="DefaultValue" Format="N0" Width="120px" />
+                    <NumericTextBoxControl TValue="decimal" @bind-Value="DefaultValue" Format="N0" Width="120px" />
                     <label>Max</label>
-                    <HfNumericTextBox TValue="decimal" @bind-Value="MaxValue" Format="N0" Width="120px" />
+                    <NumericTextBoxControl TValue="decimal" @bind-Value="MaxValue" Format="N0" Width="120px" />
                     <label>UOM</label>
-                    <HfDropDownList TValue="string" TItem="UomItem"
+                    <DropDownListControl TValue="string" TItem="UomItem"
                                     @bind-Value="SelectedUom"
                                     DataSource="@UomItems"
                                     TextFieldName="UOM"
@@ -152,35 +58,32 @@
                 @if (ShowConditionPanel)
                 {
                     <div class="condition-panel">
-                        <button class="condition-link" @onclick="OnConditionClick">Condition...</button>
+                        <ButtonControl BareStyle="true" CssClass="condition-link" OnClick="OnConditionClick">Condition...</ButtonControl>
                         <div class="condition-text">@ConditionDisplay</div>
                     </div>
                 }
             }
             else
             {
-                <textarea rows="6" value="@ListValuesText" @oninput="OnListValuesInput" placeholder="Enter values, one per line"></textarea>
+                <TextAreaControl Rows="6" Value="@ListValuesText" ValueChanged="OnListValuesValueChanged" Placeholder="Enter values, one per line" CssClass="vc-textarea" />
             }
         </div>
     </div>
 
     <div class="form-field">
         <label>Help Notes</label>
-        <textarea rows="4" @bind="HelpText" @bind:event="oninput" placeholder="Enter help notes..."></textarea>
+        <TextAreaControl Rows="4" @bind-Value="HelpText" Placeholder="Enter help notes..." CssClass="vc-textarea" />
     </div>
 
     <div class="button-row">
-        <button class="btn btn-primary" @onclick="OnOk">OK</button>
-        <button class="btn" @onclick="OnCancel">Cancel</button>
+        <ButtonControl BareStyle="true" CssClass="btn btn-primary" OnClick="OnOk">OK</ButtonControl>
+        <ButtonControl BareStyle="true" CssClass="btn" OnClick="OnCancel">Cancel</ButtonControl>
     </div>
 </div>
 
 @code {
     [Parameter] public string? Name { get; set; }
-
-    private readonly DbWrapperSqlServer db = new();
-
-    private bool _loading;
+private bool _loading;
     private bool mDirty;
     private string mName = "";
 
@@ -329,8 +232,25 @@
 
     private async Task OnCancel()
     {
-        if (await SaveDataAsync(true))
+        if (!mDirty)
+        {
             await CloseAsync();
+            return;
+        }
+
+        // VB6: vbYesNoCancel - Yes=save+close, No=discard+close, Cancel=stay
+        var save = await Dialogs.ConfirmAsync(
+            "This data has changed.\n\nDo you want to save these changes?\n(OK = Save, Cancel = Discard)");
+        if (save)
+        {
+            if (await SaveDataAsync(false))
+                await CloseAsync();
+        }
+        else
+        {
+            mDirty = false;
+            await CloseAsync();
+        }
     }
 
     private async Task CloseAsync()
@@ -345,7 +265,7 @@
 
         if (prompt)
         {
-            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            var confirm = await Dialogs.ConfirmAsync(
                 "This data has changed.\n\nDo you want to save these changes?");
             if (!confirm)
                 return true;
@@ -360,7 +280,7 @@
             var check = values.Replace("|", "").Replace(" ", "");
             if (string.IsNullOrWhiteSpace(check))
             {
-                await JSRuntime.InvokeVoidAsync("alert", "You must specify at least one value.");
+                Notifications.Info("You must specify at least one value.");
                 return false;
             }
         }
@@ -435,16 +355,16 @@
 
         if (CurrentTakeoffSystem == TakeoffSystemType.PlanSwift)
         {
-            var path = await JSRuntime.InvokeAsync<string>("prompt", "PlanSwift Path");
+            var path = await Dialogs.PromptAsync("PlanSwift Path");
             if (string.IsNullOrWhiteSpace(path)) return;
 
-            var variable = await JSRuntime.InvokeAsync<string>("prompt", "Variable Name");
+            var variable = await Dialogs.PromptAsync("Variable Name");
             if (string.IsNullOrWhiteSpace(variable)) return;
 
-            var valueName = await JSRuntime.InvokeAsync<string>("prompt", "Value Name");
+            var valueName = await Dialogs.PromptAsync("Value Name");
             if (string.IsNullOrWhiteSpace(valueName)) return;
 
-            var uom = await JSRuntime.InvokeAsync<string>("prompt", "UOM", mConditionUom ?? "");
+            var uom = await Dialogs.PromptAsync("UOM", "", mConditionUom ?? "");
 
             mConditionName = $"{path}{(char)1}{variable}{(char)1}{valueName}";
             mConditionType = "";
@@ -452,11 +372,11 @@
         }
         else
         {
-            var name = await JSRuntime.InvokeAsync<string>("prompt", "Condition Name");
+            var name = await Dialogs.PromptAsync("Condition Name");
             if (string.IsNullOrWhiteSpace(name)) return;
 
-            var type = await JSRuntime.InvokeAsync<string>("prompt", "Condition Type");
-            var uom = await JSRuntime.InvokeAsync<string>("prompt", "Condition UOM");
+            var type = await Dialogs.PromptAsync("Condition Type");
+            var uom = await Dialogs.PromptAsync("Condition UOM");
 
             mConditionName = name ?? "";
             mConditionType = type ?? "";
@@ -471,9 +391,9 @@
         NameText = SanitizeQuotes(e.Value?.ToString() ?? "");
     }
 
-    private void OnListValuesInput(ChangeEventArgs e)
+    private void OnListValuesValueChanged(string? value)
     {
-        ListValuesText = SanitizeQuotes(e.Value?.ToString() ?? "");
+        ListValuesText = SanitizeQuotes(value ?? "");
     }
 
     private string BuildConditionDisplay()
@@ -536,4 +456,3 @@
         public string UOM { get; set; } = "";
     }
 }
-```
