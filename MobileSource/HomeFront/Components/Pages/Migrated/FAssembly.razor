@@ -236,6 +236,7 @@
                                                  TextFieldName="Text"
                                                  ValueFieldName="Value"
                                                  Editable="@(mAssemblyType == AssemblyTypes.atModel && _modelEnabled)"
+                                                 MaxLength="@MasterColLen("Model")"
                                                  OpenOnArrowClickOnly="@(mAssemblyType == AssemblyTypes.atModel)"
                                                  Placeholder="@(mAssemblyType == AssemblyTypes.atModel ? "Model" : "Select Model")"
                                                  Enabled="@_modelEnabled" />
@@ -246,6 +247,7 @@
                         <div class="form-field">
                             <label>Option</label>
                             <TextBoxControl @bind-Value="OptionValue" @bind-Value:after="OnOptionChanged"
+                                            MaxLength="@MasterColLen("OptionID")"
                                             Enabled="@_optionEnabled"
                                             CssClass="hf-asm-field" />
                         </div>
@@ -254,7 +256,7 @@
                         <label>Assembly</label>
                         <div style="flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0;">
                             <TextBoxControl @bind-Value="AssemblyCode" @bind-Value:after="MarkDirty"
-                                            MaxLength="20"
+                                            MaxLength="@(MasterColLen("Assembly") ?? 20)"
                                             Enabled="@_assemblyEnabled"
                                             CssClass="hf-asm-field hf-asm-flex-field" />
                             @* HHM-107: box-left order via CheckBoxControl's own Label (VB6 chkActive). *@
@@ -266,7 +268,7 @@
                     <div class="form-field">
                         <label>Description</label>
                         <TextBoxControl @bind-Value="Description" @bind-Value:after="MarkDirty"
-                                        MaxLength="200"
+                                        MaxLength="@(MasterColLen("Description") ?? 200)"
                                         Enabled="@(!mReadOnly)"
                                         CssClass="hf-asm-field" />
                     </div>
@@ -298,6 +300,7 @@
                     <div class="form-field">
                         <label>Comments</label>
                         <TextAreaControl @bind-Value="Comments" @bind-Value:after="MarkDirty"
+                                         MaxLength="@MasterColLen("Comments")"
                                          Rows="1"
                                          Enabled="@(!mReadOnly)"
                                          UseClassicContextMenu="true"
@@ -435,42 +438,39 @@
                     }
                     else
                     {
-                        @* ── Option / Custom / DC layout: two-column flex ────────
-                           Legacy FAssembly.frm packs form fields on the left
-                           and the 4 option checkboxes (Included Option / DC
-                           Sales Only / Select By Room / Display Total Only)
-                           in a narrow column to their right. Stacking them
-                           vertically (the previous layout) gave us 13 rows
-                           vs Model's 8 — the form looked twice as tall as
-                           legacy. Splitting them back into two sub-columns
-                           drops the rendered height back to ~7 rows. *@
-                        <div style="display:flex; gap: 18px; align-items: flex-start;">
-                            @* ── Sub-column A: form fields ─────────────────── *@
-                            <div style="flex: 1 1 auto; min-width: 0;">
-                                @if (mAssemblyType == AssemblyTypes.atoption)
-                                {
-                                    @* VB6 frmSeriesFields visible for atOption only —
-                                       atGlobal / atDesignCenter have no per-Model
-                                       breakdown so Series + Elevation stay hidden. *@
-                                    <div class="form-field">
-                                        <label>Series</label>
-                                        <DropDownListControl TValue="string" TItem="ComboBoxItem"
-                                                             Value="@SeriesValue"
-                                                             ValueChanged="OnSeriesDropdownChanged"
-                                                             DataSource="@SeriesItems"
-                                                             TextFieldName="Text"
-                                                             ValueFieldName="Value"
-                                                             Placeholder="Select Series"
-                                                             Enabled="@(!mReadOnly)" />
-                                    </div>
-                                    <div class="form-field hf-asm-short-field">
-                                        <label>Elevation</label>
-                                        <TextBoxControl @bind-Value="Elevation" @bind-Value:after="MarkDirty"
-                                                        MaxLength="20"
-                                                        Enabled="@(!mReadOnly)"
-                                                        CssClass="hf-asm-field" />
-                                    </div>
-                                }
+                        @* VB6 keeps frmOptionFields two compact rows below the top
+                           of the header, level with Assembly. Model-specific options
+                           use those rows for Series/Elevation; Global and Design
+                           Center options retain the same space. *@
+                        @if (mAssemblyType == AssemblyTypes.atoption)
+                        {
+                            <div class="form-field">
+                                <label>Series</label>
+                                <DropDownListControl TValue="string" TItem="ComboBoxItem"
+                                                     Value="@SeriesValue"
+                                                     ValueChanged="OnSeriesDropdownChanged"
+                                                     DataSource="@SeriesItems"
+                                                     TextFieldName="Text"
+                                                     ValueFieldName="Value"
+                                                     Placeholder="Select Series"
+                                                     Width="220px"
+                                                     Enabled="@(!mReadOnly)" />
+                            </div>
+                            <div class="form-field">
+                                <label>Elevation</label>
+                                <TextBoxControl @bind-Value="Elevation" @bind-Value:after="MarkDirty"
+                                                MaxLength="20"
+                                                Enabled="@(!mReadOnly)"
+                                                CssClass="hf-asm-field hf-asm-option-elevation" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="hf-asm-option-alignment-spacer" aria-hidden="true"></div>
+                        }
+
+                        <div class="hf-asm-option-fields-frame">
+                            <div class="hf-asm-option-fields">
                                 <div class="form-field">
                                     @* VB6 FAssembly.frm:2458/2448 — Cat / Sub Cat
                                        split into TWO clickable links. lblGroup_Click
@@ -489,7 +489,14 @@
                                                          TextFieldName="Text"
                                                          ValueFieldName="Value"
                                                          Placeholder="Select Category"
+                                                         Width="220px"
                                                          Enabled="@(!mReadOnly)" />
+                                </div>
+                                <div class="form-field">
+                                    <label>JC Extra</label>
+                                    <TextBoxControl @bind-Value="JCExtra" @bind-Value:after="MarkDirty"
+                                                    Enabled="@(!mReadOnly)"
+                                                    CssClass="hf-asm-field hf-asm-jc-extra" />
                                 </div>
                                 <div class="form-field">
                                     @* HHM-593: VB6 FAssembly.frm:781 has ONE
@@ -503,7 +510,7 @@
                                                                Value="@AssemblyQty"
                                                                ValueChanged="OnAssemblyQtyChanged"
                                                                Min="@(0m)"
-                                                               Width="70px"
+                                                               Width="50px"
                                                                Enabled="@(!mReadOnly)"
                                                                CssClass="hf-asm-number" />
                                         <DropDownListControl TValue="string" TItem="string"
@@ -511,9 +518,19 @@
                                                              ValueChanged="OnUomDropdownChanged"
                                                              DataSource="@UomOptions"
                                                              Placeholder="Select UOM"
-                                                             Width="80px"
+                                                             Width="120px"
                                                              Enabled="@(!mReadOnly)" />
                                     </div>
+                                </div>
+                                <div class="form-field">
+                                    <label>Const Cutoff</label>
+                                    <NumericTextBoxControl TValue="double"
+                                                           Value="@(ConstCutoff ?? 0.0)"
+                                                           ValueChanged="OnConstCutoffChanged"
+                                                           Min="@(0m)"
+                                                           Width="36px"
+                                                           Enabled="@(!mReadOnly)"
+                                                           CssClass="hf-asm-number hf-asm-const-cutoff" />
                                 </div>
                                 <div class="form-field">
                                     @* VB6 FAssembly.frm:2463 lblLocation_Click — opens
@@ -528,29 +545,9 @@
                                                          TextFieldName="Text"
                                                          ValueFieldName="Value"
                                                          Placeholder="Select Location"
+                                                         Width="190px"
                                                          Enabled="@(!mReadOnly)" />
                                 </div>
-                                <div class="form-field">
-                                    <label>JC Extra</label>
-                                    <TextBoxControl @bind-Value="JCExtra" @bind-Value:after="MarkDirty"
-                                                    Enabled="@(!mReadOnly)"
-                                                    CssClass="hf-asm-field" />
-                                </div>
-                                @* VB6 FAssembly.frm:2863 — Const Cutoff is hidden
-                                   ONLY for atDesignCenter. *@
-                                @if (mAssemblyType != AssemblyTypes.atDesignCenter)
-                                {
-                                    <div class="form-field">
-                                        <label>Const Cutoff</label>
-                                        <NumericTextBoxControl TValue="double"
-                                                               Value="@(ConstCutoff ?? 0.0)"
-                                                               ValueChanged="OnConstCutoffChanged"
-                                                               Min="@(0m)"
-                                                               Width="70px"
-                                                               Enabled="@(!mReadOnly)"
-                                                               CssClass="hf-asm-number" />
-                                    </div>
-                                }
                                 @* VB6 FAssembly.frm:836 lblMoreAttributes — blue
                                    underlined link under the Cat/UOM/Qty/Location
                                    stack that opens FAssemblyAttributes.EditAttributes. *@
@@ -565,7 +562,7 @@
                                stretching to ~13. Matches the legacy layout
                                where these four checkboxes sit in their own
                                narrow column to the right of the form fields. *@
-                            <div style="flex: 0 0 auto; padding-top: 2px;">
+                            <div class="hf-asm-option-checkboxes">
                                 <div class="checkbox-row">
                                     <CheckBoxControl @bind-Checked="IsIncludedOption" @bind-Checked:after="MarkDirty"
                                                      Label="Included Option"
@@ -618,7 +615,7 @@
                 <div class="panel-section" style="align-self: stretch; padding-left: 4px; display: flex; flex-direction: column; min-width: 240px;">
                     @if (mAssemblyType != AssemblyTypes.atModel)
                     {
-                        <div class="form-field" style="align-items: flex-start; margin-bottom: 8px;">
+                        <div class="form-field hf-asm-estimator-notes">
                             <label>Estimator Notes</label>
                             <TextAreaControl @bind-Value="Notes" @bind-Value:after="MarkDirty"
                                              Rows="4"
@@ -938,6 +935,11 @@
                             // are easy. Driven off ColumnType so adding a new numeric
                             // column to the editable list automatically opts in.
                             var selectAllOnEdit = allowEdit && columnType == ColumnType.Number;
+                            var displayFormat = fieldName.Equals("PretaxAmount", StringComparison.OrdinalIgnoreCase)
+                                || fieldName.Equals("TaxAmount", StringComparison.OrdinalIgnoreCase)
+                                || fieldName.Equals("ExtendedAmount", StringComparison.OrdinalIgnoreCase)
+                                    ? "#,###.00"
+                                    : null;
                             if (fieldName.Equals("POIndex", StringComparison.OrdinalIgnoreCase))
                             {
                                 <GridColumn Field="@fieldName"
@@ -1184,6 +1186,7 @@
                                               ClipMode="ClipMode.Ellipsis"
                                               AllowEditing="@allowEdit"
                                               SelectAllOnEdit="@selectAllOnEdit"
+                                              Format="@displayFormat"
                                               Visible="true" />
                             }
                         }
@@ -1836,6 +1839,41 @@
     private static int _instanceCount;
     private int _instanceId;
 
+    // Field max length = the DB column, derived at load (HHM-670 rule; FCommunities pattern).
+    // Typing stops at the column's CHARACTER_MAXIMUM_LENGTH instead of failing at save with
+    // a raw "String or binary data would be truncated" error.
+    private readonly Dictionary<string, int> _masterColLen = new(StringComparer.OrdinalIgnoreCase);
+
+    private int? MasterColLen(string column) =>
+        _masterColLen.TryGetValue(column, out var len) ? len : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                @"SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH
+                  FROM INFORMATION_SCHEMA.COLUMNS
+                  WHERE TABLE_NAME = @TableName AND CHARACTER_MAXIMUM_LENGTH > 0",
+                new { TableName = "tblDBAssemblyMaster" });
+            foreach (var r in rows)
+            {
+                var col = r.TryGetValue("COLUMN_NAME", out var c) ? c?.ToString() ?? "" : "";
+                if (string.IsNullOrEmpty(col)) continue;
+                if (!r.TryGetValue("CHARACTER_MAXIMUM_LENGTH", out var raw) || raw == null || raw == DBNull.Value) continue;
+                if (int.TryParse(raw.ToString(), out var len) && len > 0) _masterColLen[col] = len;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Load tblDBAssemblyMaster column lengths");
+        }
+    }
+
+    // Non-IHandleEvent receiver: an EventCallback created on it skips Blazor's
+    // automatic post-event re-render of this page.
+    private static readonly object _nonRenderingReceiver = new();
+
     protected override void OnInitialized()
     {
         _instanceId = Interlocked.Increment(ref _instanceCount);
@@ -1881,9 +1919,13 @@
         // SelectionChangedDetailed fires during click, drag-select, Select All,
         // Clear, and Shift+Arrow. Use the source to keep the mouse-position
         // totals pill out of keyboard range selection.
-        gridEvents.SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(this, async args =>
+        // Created on a receiver that is NOT a component, so the callback does not
+        // trigger the implicit page-wide StateHasChanged — a drag-select fires this
+        // once per row crossed, and re-rendering all of FAssembly (header controls +
+        // both grids) per step is what made multi-select drag halt. The sum-tip path
+        // calls StateHasChanged itself when the pill actually appears or hides.
+        gridEvents.SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(_nonRenderingReceiver, async args =>
         {
-            StateHasChanged();
             if (args.Source == GridSelectionChangeSource.Keyboard)
             {
                 HideSumTip();
@@ -3090,15 +3132,40 @@ ORDER BY d.Phase, d.Item, d.itemchart, d.Sequence";
                     Notifications.Info("When copying an assembly you must change one of Community, Assembly, Model, or Option");
                     return false;
                 }
+            }
 
-                // Check if assembly already exists
+            // Duplicate key (DivisionID, Community, Assembly, Model, OptionID): a copy must
+            // pick a unique key (VB6 FAssembly.frm:3268); a plain save offers to replace the
+            // existing assembly (VB6 FAssembly.frm:3713-3718) and then updates that row.
+            if (mAssemblyID == 0)
+            {
+                var keyParams = new { DivisionID = divisionId, Community = CommunityValue ?? "", Model = ModelValue ?? "", OptionID = OptionValue ?? "", Assembly = AssemblyCode ?? "" };
                 var existCount = db.ExecuteScalar<int>(
-                    "SELECT COUNT(*) FROM tblDBAssemblyMaster WHERE DivisionID =@DivisionID AND Community=@Community AND Model=@Model AND OptionID=@OptionID AND Assembly=@Assembly",
-                    new { DivisionID = divisionId, Community = CommunityValue ?? "", Model = ModelValue ?? "", OptionID = OptionValue ?? "", Assembly = AssemblyCode ?? "" });
+                    "SELECT COUNT(*) FROM tblDBAssemblyMaster WHERE DivisionID=@DivisionID AND Community=@Community AND Model=@Model AND OptionID=@OptionID AND Assembly=@Assembly",
+                    keyParams);
                 if (existCount > 0)
                 {
-                    Notifications.Info("This assembly already exists. You must specify a unique set of Community, Assembly, Model and/or Option");
-                    return false;
+                    if (isCopyOfCurrent)
+                    {
+                        Notifications.Info("This assembly already exists. You must specify a unique set of Community, Assembly, Model and/or Option");
+                        return false;
+                    }
+
+                    var replaceResult = _messageBox != null
+                        ? await _messageBox.ShowAsync(
+                            "This assembly already exists. Do you want to replace it with this one?",
+                            title: "Assembly exists",
+                            buttons: MessageBoxButtons.YesNo)
+                        : (await Dialogs.ConfirmAsync(
+                                "This assembly already exists. Do you want to replace it with this one?")
+                            ? MessageBoxResult.Yes
+                            : MessageBoxResult.No);
+                    if (replaceResult != MessageBoxResult.Yes)
+                        return false;
+
+                    mAssemblyID = db.ExecuteScalar<int>(
+                        "SELECT AssemblyID FROM tblDBAssemblyMaster WHERE DivisionID=@DivisionID AND Community=@Community AND Model=@Model AND OptionID=@OptionID AND Assembly=@Assembly",
+                        keyParams);
                 }
             }
 
@@ -3360,6 +3427,14 @@ ORDER BY d.Phase, d.Item, d.itemchart, d.Sequence";
         catch (Exception ex)
         {
             Logger.LogError(ex, "Operation failed");
+
+            var sqlEx = ex as Microsoft.Data.SqlClient.SqlException
+                        ?? ex.InnerException as Microsoft.Data.SqlClient.SqlException;
+            if (sqlEx is { Number: 2601 or 2627 })
+            {
+                Notifications.Error("This assembly already exists. You must specify a unique set of Community, Assembly, Model and/or Option");
+                return false;
+            }
 
             Notifications.Error($"Error saving: {ex.Message}");
             return false;
