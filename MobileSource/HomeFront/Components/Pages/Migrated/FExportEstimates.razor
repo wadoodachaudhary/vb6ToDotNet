@@ -1,0 +1,635 @@
+@page "/export-estimates"
+@layout HFComponent
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FExportEstimates> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+<PageTitle>Estimate Export Wizard - HomeFront</PageTitle>
+
+@if (IsProcessing)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Processing estimates...</div>
+    </div>
+}
+
+<div class="wizard-container">
+    @* ── Wizard Header ─────────────────────────────────────── *@
+    <div class="wizard-head">
+        <h4>Export Timberline Estimates</h4>
+        <p>The export wizard will write customer estimates to your estimates folder</p>
+    </div>
+
+    @* ── Wizard Body ───────────────────────────────────────── *@
+    <div class="wizard-body">
+        @if (CurrentFrame == 0)
+        {
+            @* ── Frame 0: Select Estimates ─────────────────────── *@
+            <div class="frame-content">
+                <div class="frame-icon">📋</div>
+                <div class="frame-details">
+                    <label>Select which estimates you would like to produce.</label>
+                    <div class="grid-frame">
+                        <GridControl @ref="EstimatesGrid"
+                                TValue="EstimateRow"
+                                DataSource="@EstimatesData"
+                                AllowSelection="true"
+                                AllowSorting="true"
+                                AllowResizing="true"
+                                EnableHover="true"
+                                Height="280px"
+                                SelectionSettingsRef="@selectionSettings"
+                                EditSettingsRef="@editSettings">
+                            <GridColumnsBase>
+                                <GridColumn Field="@nameof(EstimateRow.Selected)" HeaderText="" Width="50px"
+                                              Type="ColumnType.CheckBox" AllowEditing="true" />
+                                @if (Rewrite)
+                                {
+                                    <GridColumn Field="@nameof(EstimateRow.EstimateIndex)" HeaderText="Est Index"
+                                                  Width="80px" AllowEditing="false" TextAlign="TextAlign.Right" />
+                                }
+                                <GridColumn Field="@nameof(EstimateRow.Community)" HeaderText="Community"
+                                              Width="100px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.CommunityDesc)" HeaderText="Community Desc"
+                                              Width="140px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.Job)" HeaderText="Job"
+                                              Width="80px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.JobDesc)" HeaderText="Job Desc"
+                                              Width="140px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.Customer)" HeaderText="Customer"
+                                              Width="100px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.CustomerDesc)" HeaderText="Customer Desc"
+                                              Width="160px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.Model)" HeaderText="Model"
+                                              Width="100px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.ModelDesc)" HeaderText="Model Desc"
+                                              Width="160px" AllowEditing="false" />
+                                <GridColumn Field="@nameof(EstimateRow.Series)" HeaderText="Series"
+                                              Width="100px" AllowEditing="false" />
+                            </GridColumnsBase>
+                        </GridControl>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (CurrentFrame == 1)
+        {
+            @* ── Frame 1: Export Progress ──────────────────────── *@
+            <div class="frame-content">
+                <div class="frame-icon">📁</div>
+                <div class="frame-details">
+                    <label>The selected estimates will be created in:</label>
+                    <TextBoxControl Value="@EstPath" CssClass="est-path-input" readonly="readonly" />
+
+                    @if (ShowProgress)
+                    {
+                        <div class="progress-section">
+                            <div class="progress-label">Saving:</div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" style="width: @(ProgressValue)%;">
+                                    @ProgressText
+                                </div>
+                            </div>
+
+                            @if (ShowAssemblyCount)
+                            {
+                                <div class="progress-label" style="margin-left: 12px;">@AssemblyCountText</div>
+                            }
+                            @if (ShowCustomerDesc)
+                            {
+                                <div class="progress-label" style="margin-left: 12px;">@CustomerDescText</div>
+                            }
+                            @if (ShowItemDesc)
+                            {
+                                <div class="progress-label" style="margin-left: 12px;">@ItemDescText</div>
+                            }
+                        </div>
+                    }
+
+                    <div class="options-section">
+                        @if (ShowOptions)
+                        {
+                            <label class="section-title">Options:</label>
+                        }
+                        <div class="checkbox-row">
+                            <CheckBoxControl @bind-Checked="ShowBatchReport" Label="Show summary report when finished." />
+                        </div>
+                        <div class="checkbox-row">
+                            <CheckBoxControl @bind-Checked="CloseWhenFinished" Label="Close this dialog when all estimates are completed." />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ── Wizard Footer ─────────────────────────────────────── *@
+    <div class="wizard-footer">
+        <ButtonControl OnClick="OnCancelClick">@CancelButtonText</ButtonControl>
+        <ButtonControl Disabled="@(!BackEnabled)" OnClick="OnBackClick">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(!NextEnabled)" OnClick="OnNextClick">@NextButtonText</ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!FinishEnabled)" OnClick="OnFinishClick">Finish</ButtonControl>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // === Parameters ===
+    [Parameter] public bool Rewrite { get; set; } = false;
+
+    // === Database ===
+// === Grid ===
+    private GridControl<EstimateRow>? EstimatesGrid;
+    private List<EstimateRow> EstimatesData = new();
+
+    private SelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+
+    private EditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        ShowConfirmDialog = false
+    };
+
+    // === Wizard State ===
+    private int CurrentFrame = 0;
+    private const int MaxFrame = 1;
+    private bool IsProcessing = false;
+
+    // === Navigation Buttons ===
+    private bool BackEnabled => CurrentFrame > 0 && !IsProcessing && !IsFinished;
+    private bool NextEnabled => CurrentFrame < MaxFrame && !IsProcessing && !IsFinished;
+    private bool FinishEnabled => CurrentFrame == MaxFrame && !IsProcessing && !IsFinished;
+    private string CancelButtonText => IsFinished ? "Close" : "Cancel";
+    private string NextButtonText => IsFinished ? "Close" : "Next >";
+    private bool IsFinished = false;
+
+    // === Frame 1 State ===
+    private string EstPath = "";
+    private bool ShowProgress = false;
+    private bool ShowAssemblyCount = false;
+    private bool ShowCustomerDesc = false;
+    private bool ShowItemDesc = false;
+    private bool ShowOptions = false;
+    private int ProgressValue = 0;
+    private string ProgressText = "  Preparing Estimate...";
+    private string AssemblyCountText = "";
+    private string CustomerDescText = "";
+    private string ItemDescText = "";
+
+    // === Options ===
+    private bool CloseWhenFinished = false;
+    private bool ShowBatchReport = false;
+
+    // === App Options (simulated) ===
+    private static Dictionary<string, string> AppOptions = new()
+    {
+        { "CloseAssemblyExportDialog", "false" },
+        { "ShowAssemblyExportReport", "false" },
+        { "CustomerPeeRootFolder", @"C:\Estimates\" }
+    };
+
+    private string LoginID = "admin";
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        CloseWhenFinished = AppOptions["CloseAssemblyExportDialog"] == "true";
+        ShowBatchReport = AppOptions["ShowAssemblyExportReport"] == "true";
+        EstPath = AppOptions["CustomerPeeRootFolder"];
+        await LoadData();
+    }
+
+    // === Load Data ===
+    private async Task LoadData()
+    {
+        EstimatesData.Clear();
+
+        string sql;
+        if (Rewrite)
+        {
+            sql = @"
+                SELECT 0 AS Selected
+                      ,e.EstimateIndex
+                      ,c.Community
+                      ,l.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       JOIN tblCustomerEstimates e ON(ISNULL(c.Customer_No,'')=ISNULL(e.Customer_No,''))
+                       LEFT JOIN tblLocality l ON(ISNULL(c.Community,'')=ISNULL(l.Area,''))
+                       LEFT JOIN tblJobs j ON(ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))";
+        }
+        else
+        {
+            sql = @"
+                SELECT 0 AS Selected
+                      ,0 AS EstimateIndex
+                      ,c.Community
+                      ,a.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       LEFT OUTER JOIN tblJobs j ON (ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))
+                      ,system_setup s
+                      ,tblLocality a
+                 WHERE ISNULL(c.community,'')=ISNULL(a.area,'')
+                  AND ((c.purchased=1 AND c.cancelled=0 AND c.inactive=0 AND ((s.accounting_approve=1 AND c.approved=1) OR (s.accounting_approve=0 AND c.contract_assigned=1)))
+                    OR (c.home_selection <>'PreSale' AND c.sold_to_Customer=''))
+                   AND c.Estimateindex=0
+                UNION
+                SELECT 0 AS Selected
+                      ,0 AS EstimateIndex
+                      ,c.Community
+                      ,l.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       LEFT OUTER JOIN tblJobs j ON (ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))
+                      ,tblLocality l
+                      ,TBLSCHEDULEB d
+                      ,system_setup s
+                WHERE c.Customer_No=d.Customer_No
+                  AND c.Community=l.Area
+                  AND d.estimateindex=0
+                  AND ((c.purchased=1 AND c.cancelled=0 AND c.inactive=0 AND ((s.accounting_approve=1 AND c.approved=1) OR (s.accounting_approve=0 AND c.contract_assigned=1)))
+                    OR (c.home_selection <>'PreSale' AND c.sold_to_Customer=''))
+                UNION
+                SELECT 0 AS Selected
+                      ,0 AS EstimateIndex
+                      ,c.Community
+                      ,l.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       LEFT OUTER JOIN tblJobs j ON (ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))
+                      ,tblLocality l
+                      ,ChangeOrderMaster co
+                      ,ChangeOrderDetails d
+                      ,system_setup s
+                 WHERE c.Community=l.Area
+                   AND c.Customer_No=co.Customer_No
+                   AND co.Customer_No=d.Customer_No
+                   AND co.Change_Order_No=d.Change_Order_No
+                   AND d.estimateindex=0
+                   AND co.bldr_approved=1
+                  AND ((c.purchased=1 AND c.cancelled=0 AND c.inactive=0 AND ((s.accounting_approve=1 AND c.approved=1) OR (s.accounting_approve=0 AND c.contract_assigned=1)))
+                    OR (c.home_selection <>'PreSale' AND c.sold_to_Customer=''))
+                UNION
+                SELECT 0 AS Selected
+                      ,0 AS EstimateIndex
+                      ,c.Community
+                      ,l.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       LEFT OUTER JOIN tblJobs j ON (ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))
+                      ,tblLocality l
+                      ,DesignCenterMaster dc
+                      ,DesignCenterDetails d
+                      ,system_setup s
+                 WHERE c.Community=l.Area
+                   AND c.Customer_No=dc.customer_No
+                   AND dc.customer_No=d.Customer_No
+                   AND dc.Change_Order_No=d.Change_Order_No
+                   AND d.estimateindex=0
+                   AND dc.bldr_approved=1
+                  AND ((c.purchased=1 AND c.cancelled=0 AND c.inactive=0 AND ((s.accounting_approve=1 AND c.approved=1) OR (s.accounting_approve=0 AND c.contract_assigned=1)))
+                    OR (c.home_selection <>'PreSale' AND c.sold_to_Customer=''))
+                UNION
+                SELECT 0 AS Selected
+                      ,0 AS EstimateIndex
+                      ,c.Community
+                      ,l.Description AS CommunityDesc
+                      ,c.Job_No AS Job
+                      ,j.Description AS JobDesc
+                      ,c.Customer_No AS Customer
+                      ,c.Description AS CustomerDesc
+                      ,c.Model
+                      ,m.Description AS ModelDesc
+                      ,c.Series
+                  FROM tblCustomers c
+                       LEFT OUTER JOIN tblJobs j ON (ISNULL(c.Job_No,'')=ISNULL(j.Job_No,''))
+                       LEFT OUTER JOIN tblModels m ON (ISNULL(c.Model,'')=ISNULL(m.Model,'') AND ISNULL(c.Community,'')=ISNULL(m.area,'') AND ISNULL(c.Series,'')=ISNULL(m.Series,'') AND ISNULL(c.Phase,'')=ISNULL(m.CommunityPhase,''))
+                      ,tblLocality l
+                      ,DeletedItemsMaster di
+                      ,tblDeletedItems d
+                      ,system_setup s
+                 WHERE c.Community = l.Area
+                   AND c.Customer_No = di.Customer_No
+                   AND di.Customer_No = d.Customer_No
+                   AND di.Change_Order_No = d.Change_Order_No
+                   AND d.EstimateIndex = 0
+                   AND di.Bldr_Approved = 1
+                  AND ((c.purchased=1 AND c.cancelled=0 AND c.inactive=0 AND ((s.accounting_approve=1 AND c.approved=1) OR (s.accounting_approve=0 AND c.contract_assigned=1)))
+                    OR (c.home_selection <>'PreSale' AND c.sold_to_Customer=''))";
+        }
+
+        try
+        {
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                EstimatesData.Add(new EstimateRow
+                {
+                    Selected = false,
+                    EstimateIndex = SafeInt(row.ContainsKey("EstimateIndex") ? row["EstimateIndex"] : 0),
+                    Community = row["Community"]?.ToString() ?? "",
+                    CommunityDesc = row["CommunityDesc"]?.ToString() ?? "",
+                    Job = row["Job"]?.ToString() ?? "",
+                    JobDesc = row["JobDesc"]?.ToString() ?? "",
+                    Customer = row["Customer"]?.ToString() ?? "",
+                    CustomerDesc = row["CustomerDesc"]?.ToString() ?? "",
+                    Model = row["Model"]?.ToString() ?? "",
+                    ModelDesc = row["ModelDesc"]?.ToString() ?? "",
+                    Series = row["Series"]?.ToString() ?? ""
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadData error");
+
+        }
+
+        StateHasChanged();
+    }
+
+    // === Save / Export Data ===
+    private async Task<bool> SaveData()
+    {
+        if (string.IsNullOrEmpty(AppOptions["CustomerPeeRootFolder"]))
+        {
+            // VB6: prompts user then opens FOptions modal
+            var result = await Dialogs.ConfirmAsync(
+                "Before using this feature you must specify\nthe root folder and naming convention.\n\nWould you like to do that now?");
+            if (result)
+            {
+                NavigationManager.NavigateTo("/options");
+            }
+            return false;
+        }
+
+        EstPath = AppOptions["CustomerPeeRootFolder"];
+        if (string.IsNullOrEmpty(EstPath)) return false;
+
+        var selectedRows = EstimatesData.Where(r => r.Selected).ToList();
+        if (selectedRows.Count == 0)
+        {
+            ProgressText = "No estimates selected.";
+            return false;
+        }
+
+        IsProcessing = true;
+        ShowProgress = true;
+        ShowAssemblyCount = true;
+        ShowCustomerDesc = true;
+        ShowItemDesc = true;
+        StateHasChanged();
+
+        try
+        {
+            long batch = 0;
+            if (!Rewrite)
+            {
+                // VB6: insert into tblCustomerEstBatches, then SqlIdentity("tblCustomerEstBatches")
+                await db.ExecuteAsync(
+                    "INSERT INTO tblCustomerEstBatches(UStmp,TStmp) VALUES(@LoginId,GETDATE())",
+                    new { LoginId = LoginID });
+                batch = await db.ExecuteScalarAsync<long>("SELECT IDENT_CURRENT('tblCustomerEstBatches')");
+            }
+
+            int totalRows = selectedRows.Count;
+            int j = 0;
+
+            foreach (var row in selectedRows)
+            {
+                j++;
+                AssemblyCountText = $"Customer {j} of {totalRows}...";
+                CustomerDescText = row.CustomerDesc;
+                ItemDescText = row.ModelDesc;
+                ProgressValue = (int)((double)j / totalRows * 100);
+                ProgressText = $"  Processing {j} of {totalRows}...";
+                StateHasChanged();
+                await Task.Delay(50); // Allow UI to update
+
+                if (Rewrite)
+                {
+                    await WriteCustomerPee(row.Customer, row.EstimateIndex);
+                }
+                else
+                {
+                    await WriteCustomerEstimate(batch, row.Customer);
+                }
+            }
+
+            // Finished
+            ProgressText = "";
+            ProgressValue = 100;
+            AssemblyCountText = "Finished";
+            ShowCustomerDesc = false;
+            ShowItemDesc = false;
+            IsFinished = true;
+
+            if (ShowBatchReport && batch > 0)
+            {
+                // VB6: f.ShowReport(HFApp.SystemFolder & "System\Reports\Estimating\exportestbatch.rpt", True, False, True, "BatchNo", Batch)
+                Console.WriteLine($"Report: exportestbatch.rpt, BatchNo={batch}");
+
+                // TODO: Integrate report viewer for exportestbatch.rpt
+            }
+
+            if (CloseWhenFinished)
+            {
+                ClosePage();
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error during export");
+
+            ProgressText = $"Error: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task WriteCustomerPee(string customerNo, int estimateIndex)
+    {
+        // Placeholder for actual PEE file writing logic
+        await Task.Delay(100);
+        Console.WriteLine($"WriteCustomerPee: Customer={customerNo}, EstimateIndex={estimateIndex}");
+
+    }
+
+    private async Task WriteCustomerEstimate(long batch, string customerNo)
+    {
+        // Placeholder for actual estimate writing logic
+        await Task.Delay(100);
+        Console.WriteLine($"WriteCustomerEstimate: Batch={batch}, Customer={customerNo}");
+
+    }
+
+    // === Navigation ===
+    private async Task OnCancelClick()
+    {
+        if (IsFinished)
+        {
+            ClosePage();
+            return;
+        }
+        await SaveOptions();
+        ClosePage();
+    }
+
+    private async Task OnBackClick()
+    {
+        if (CurrentFrame > 0)
+        {
+            CurrentFrame--;
+            if (CurrentFrame == 0)
+            {
+                await LoadData();
+            }
+        }
+    }
+
+    private async Task OnNextClick()
+    {
+        if (IsFinished)
+        {
+            ClosePage();
+            return;
+        }
+
+        if (CurrentFrame < MaxFrame)
+        {
+            CurrentFrame++;
+        }
+    }
+
+    private async Task OnFinishClick()
+    {
+        var success = await SaveData();
+        if (success)
+        {
+            if (CloseWhenFinished)
+            {
+                await SaveOptions();
+                ClosePage();
+            }
+        }
+    }
+
+    private async Task SaveOptions()
+    {
+        // VB6: HFApp.Options.Value(CloseAssemblyExportDialog) = chkCloseWhenFinished
+        //      HFApp.Options.Value(ShowAssemblyExportReport) = chkShowBatchReport
+        AppOptions["CloseAssemblyExportDialog"] = CloseWhenFinished ? "true" : "false";
+        AppOptions["ShowAssemblyExportReport"] = ShowBatchReport ? "true" : "false";
+        try
+        {
+            await db.ExecuteAsync($@"
+                UPDATE system_setup SET
+                    CloseAssemblyExportDialog = {(CloseWhenFinished ? 1 : 0)},
+                    ShowAssemblyExportReport = {(ShowBatchReport ? 1 : 0)}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error persisting options");
+
+        }
+    }
+
+    // === Helpers ===
+    private string EscapeSql(string value) => value?.Replace("'", "''") ?? "";
+
+    private int SafeInt(object? val, int def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? (int.TryParse(val.ToString(), out var r) ? r : def)
+            : def;
+
+    // === Model ===
+    public class EstimateRow
+    {
+        public bool Selected { get; set; }
+        public int EstimateIndex { get; set; }
+        public string Community { get; set; } = "";
+        public string CommunityDesc { get; set; } = "";
+        public string Job { get; set; } = "";
+        public string JobDesc { get; set; } = "";
+        public string Customer { get; set; } = "";
+        public string CustomerDesc { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string ModelDesc { get; set; } = "";
+        public string Series { get; set; } = "";
+    }
+}

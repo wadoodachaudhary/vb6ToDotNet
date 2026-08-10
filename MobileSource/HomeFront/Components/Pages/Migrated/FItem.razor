@@ -1,0 +1,600 @@
+@namespace HomeFront.Components.Pages
+
+@using HomeFront.Data
+@using System.Collections.Generic
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FItem> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+<DialogControl Visible="IsVisible"
+               Header="@DialogTitle"
+               Width="520px"
+               IsModal="true"
+               OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="fitem-caption">@CaptionText</div>
+
+        <div class="fitem-field">
+            <label>Phase Number</label>
+            <TextBoxControl @bind-Value="PhaseText" CssClass="fitem-input"
+                            MaxLength="PhaseMaxLength"
+                            @onkeydown="OnPhaseKeyDown"
+                            @onfocus="() => SelectAll(nameof(PhaseText))" />
+            <ButtonControl OnClick="OnBrowseClick" Title="Browse phases">...</ButtonControl>
+        </div>
+
+        <div class="fitem-field">
+            <label>Item Number</label>
+            <TextBoxControl @bind-Value="ItemText" CssClass="fitem-input"
+                            MaxLength="ItemMaxLength"
+                            @onfocus="() => SelectAll(nameof(ItemText))" />
+        </div>
+
+        @if (ShowDescription)
+        {
+            <div class="fitem-field">
+                <label>Description</label>
+                <TextBoxControl @bind-Value="DescriptionText" CssClass="fitem-input"
+                                MaxLength="DescriptionMaxLength"
+                                @onfocus="() => SelectAll(nameof(DescriptionText))" />
+            </div>
+        }
+
+        @if (ShowCostType)
+        {
+            <div class="fitem-field">
+                <label>Cost Type</label>
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="@CostTypes"
+                                     @bind-Value="SelectedCostType"
+                                     Width="100%" />
+            </div>
+        }
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@code {
+    // === Database ===
+// === Parameters ===
+    [Parameter] public int DivisionID { get; set; } = 1;
+    [Parameter] public string ProductName { get; set; } = "Precision Builder";
+
+    // === Callbacks ===
+    [Parameter] public EventCallback<FItemResult> OnCompleted { get; set; }
+
+    // === Dialog State ===
+    private bool IsVisible = false;
+    private string DialogTitle = "Item";
+    private string CaptionText = "";
+    private string Mode = ""; // "Add", "Renumber", "Duplicate"
+
+    // === Field State ===
+    private string PhaseText = "";
+    private string ItemText = "";
+    private string DescriptionText = "";
+    private string SelectedCostType = "M - Material";
+    private bool ShowDescription = true;
+    private bool ShowCostType = true;
+
+    // === Original values (for Renumber/Duplicate) ===
+    private string OriginalPhase = "";
+    private string OriginalItemNumber = "";
+
+    // === Field Sizes ===
+    private int PhaseMaxLength = 100;
+    private int ItemMaxLength = 100;
+    private int DescriptionMaxLength = 100;
+
+    // === Cost Types ===
+    private List<string> CostTypes = new()
+    {
+        "M - Material",
+        "L - Labor",
+        "S - Subcontract",
+        "E - Equipment",
+        "O - Other"
+    };
+
+    // === Public Methods (called by parent) ===
+
+    /// <summary>
+    /// Opens the dialog in Add mode.
+    /// </summary>
+    public async Task<FItemResult> Add(string phase = "", string item = "", string description = "")
+    {
+        Mode = "Add";
+        DialogTitle = "Add Item";
+        CaptionText = "Enter a phase, item number and description for the new item.";
+        ShowDescription = true;
+        ShowCostType = true;
+
+        OriginalPhase = phase;
+        OriginalItemNumber = item.Length > 0 ? item.Substring(0, item.Length - 1) : "";
+
+        PhaseText = phase;
+        ItemText = OriginalItemNumber;
+        DescriptionText = description;
+        SelectedCostType = CostTypes[0];
+
+        IsVisible = true;
+        StateHasChanged();
+
+        // Return a placeholder; actual result comes via OnCompleted callback
+        return new FItemResult { Cancelled = true };
+    }
+
+    /// <summary>
+    /// Opens the dialog in Renumber mode.
+    /// </summary>
+    public async Task<FItemResult> Renumber(string phase, string item)
+    {
+        Mode = "Renumber";
+        DialogTitle = "Renumber Item";
+        CaptionText = "Enter a new phase and item number for this item.";
+        ShowDescription = false;
+        ShowCostType = false;
+
+        OriginalPhase = phase;
+        OriginalItemNumber = item.Length > 0 ? item.Substring(0, item.Length - 1) : "";
+
+        PhaseText = phase;
+        ItemText = OriginalItemNumber;
+        DescriptionText = "";
+
+        IsVisible = true;
+        StateHasChanged();
+
+        return new FItemResult { Cancelled = true };
+    }
+
+    /// <summary>
+    /// Opens the dialog in Duplicate mode.
+    /// </summary>
+    public async Task<FItemResult> Duplicate(string phase, string item, string description)
+    {
+        Mode = "Duplicate";
+        DialogTitle = "Duplicate Item";
+        CaptionText = "Enter a new phase and item number for this item.";
+        ShowDescription = true;
+        ShowCostType = false;
+
+        OriginalPhase = phase;
+        OriginalItemNumber = item;
+
+        PhaseText = "";
+        ItemText = "";
+        DescriptionText = description;
+
+        IsVisible = true;
+        StateHasChanged();
+
+        return new FItemResult { Cancelled = true };
+    }
+
+    // === Event Handlers ===
+
+    private async Task OnOkClick()
+    {
+        if (await SaveData())
+        {
+            var costTypeChar = SelectedCostType.Length > 0 ? SelectedCostType.Substring(0, 1) : "";
+            var result = new FItemResult
+            {
+                Cancelled = false,
+                Phase = PhaseText,
+                ItemNumber = ItemText,
+                CostType = costTypeChar,
+                Item = Mode == "Add" ? ItemText + costTypeChar : ItemText,
+                Description = DescriptionText
+            };
+
+            IsVisible = false;
+            StateHasChanged();
+
+            if (OnCompleted.HasDelegate)
+                await OnCompleted.InvokeAsync(result);
+        }
+    }
+
+    private async Task OnCancelClick()
+    {
+        IsVisible = false;
+        StateHasChanged();
+
+        if (OnCompleted.HasDelegate)
+            await OnCompleted.InvokeAsync(new FItemResult { Cancelled = true });
+    }
+
+    private async Task OnPhaseKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "F4" && !e.ShiftKey && !e.CtrlKey && !e.AltKey)
+        {
+            await OnBrowseClick();
+        }
+    }
+
+    private async Task OnBrowseClick()
+    {
+        // Mirrors VB6: FPickList.Choose(db, "Phase", "select phase,description from tblEstPhases where DivisionID=... and groupphase=0", txtPhase.Text)
+        try
+        {
+            var sql = "SELECT phase, description FROM tblEstPhases WHERE DivisionID = @DivisionID AND groupphase = 0";
+            var rows = await db.QueryAsync(sql, new { DivisionID });
+            var phases = new List<string>();
+            foreach (var row in rows)
+            {
+                var dict = row as IDictionary<string, object>;
+                var phase = dict?.Values.FirstOrDefault()?.ToString()?.Trim() ?? "";
+                var desc = dict?.Values.Skip(1).FirstOrDefault()?.ToString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(phase))
+                    phases.Add($"{phase} -- {desc}");
+            }
+
+            if (phases.Count == 0)
+            {
+                Notifications.Info("No phases found.");
+                return;
+            }
+
+            // Show a selection prompt with available phases
+            var options = string.Join("\\n", phases);
+            var selected = await Dialogs.PromptAsync(
+                $"Select a Phase Number:\\n{options}", "", PhaseText);
+            if (!string.IsNullOrEmpty(selected))
+            {
+                // Extract phase number (before " -- ")
+                var dashIdx = selected.IndexOf(" -- ", StringComparison.Ordinal);
+                PhaseText = dashIdx >= 0 ? selected.Substring(0, dashIdx).Trim() : selected.Trim();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FItem::OnBrowseClick");
+
+        }
+    }
+
+    private async Task SelectAll(string fieldName)
+    {
+        // Select all text in the active element on focus
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "if(document.activeElement && document.activeElement.select) document.activeElement.select()");
+        }
+        catch { /* non-critical */ }
+    }
+
+    // === Save Logic ===
+
+    private async Task<bool> SaveData()
+    {
+        return Mode switch
+        {
+            "Add" => await SaveAdd(),
+            "Renumber" => await SaveRenumber(),
+            "Duplicate" => await SaveDuplicate(),
+            _ => false
+        };
+    }
+
+    private async Task<bool> SaveAdd()
+    {
+        if (string.IsNullOrWhiteSpace(PhaseText) || string.IsNullOrWhiteSpace(ItemText) || string.IsNullOrWhiteSpace(DescriptionText))
+        {
+            Notifications.Info("Phase, item and description are all required.");
+            return false;
+        }
+
+        try
+        {
+            // Check if phase exists
+            var phaseCheck = await db.QueryAsync(
+                "SELECT * FROM tblEstPhases WHERE DivisionID = @DivisionID AND Phase = @Phase",
+                new { DivisionID, Phase = PhaseText.Trim() });
+
+            if (!phaseCheck.Any())
+            {
+                var addPhase = await Dialogs.ConfirmAsync(
+                    $"Phase {PhaseText.Trim()} doesn't exist. Do you want to add it?");
+                if (!addPhase) return false;
+
+                await db.ExecuteAsync(
+                    @"INSERT INTO tblEstPhases (DivisionID, Phase, Description, GroupPhase, SortOrder)
+                      VALUES (@DivisionID, @Phase, 'untitled', 0, @SortOrder)",
+                    new
+                    {
+                        DivisionID,
+                        Phase = PhaseText.Trim(),
+                        SortOrder = int.TryParse(PhaseText.Trim(), out var so) ? so : 0
+                    });
+
+                await FixGroupPhaseValue();
+            }
+
+            var costTypeChar = SelectedCostType.Length > 0 ? SelectedCostType.Substring(0, 1) : "M";
+            var dontUseParts = false; // Simplified; in VB6 this checked AccountingSystem options
+
+            await db.ExecuteAsync(
+                @"INSERT INTO tblPhaseItem (DivisionID, Phase, Item, ItemNumber, CostCategory, PartNumber,
+                      Description, PhaseSortOrder, ItemSortOrder, OrderUOM, TakeoffUOM,
+                      ConversionFactor, WastePercent, RoundDir, RoundTo)
+                  VALUES (@DivisionID, @Phase, @Item, @ItemNumber, @CostCategory, @PartNumber,
+                      @Description, @PhaseSortOrder, @ItemSortOrder, 'EA', 'EA', 1, 0, 0, 0)",
+                new
+                {
+                    DivisionID,
+                    Phase = PhaseText.Trim(),
+                    Item = ItemText.Trim() + costTypeChar,
+                    ItemNumber = ItemText.Trim(),
+                    CostCategory = costTypeChar,
+                    PartNumber = dontUseParts ? "" : ItemText.Trim(),
+                    Description = DescriptionText.Trim(),
+                    PhaseSortOrder = int.TryParse(PhaseText.Trim(), out var pso) ? pso : 0,
+                    ItemSortOrder = int.TryParse(ItemText.Trim(), out var iso) ? iso : 0
+                });
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error($"{ProductName} already has an item numbered {PhaseText.Trim()}/{ItemText.Trim()}. Please specify a different value.");
+
+            }
+            else
+            {
+                Notifications.Warning($"Error saving item: {ex.Message}");
+                Logger.LogError(ex, "FItem::SaveAdd");
+
+            }
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveRenumber()
+    {
+        var oldPhase = OriginalPhase;
+        var oldItem = OriginalItemNumber;
+        var newPhase = PhaseText.Trim();
+        var newItem = ItemText.Trim();
+
+        if (string.IsNullOrWhiteSpace(newPhase) || string.IsNullOrWhiteSpace(newItem))
+        {
+            Notifications.Info("Phase and item are both required.");
+            return false;
+        }
+
+        try
+        {
+            // Check if phase exists
+            var phaseCheck = await db.QueryAsync(
+                "SELECT * FROM tblEstPhases WHERE DivisionID = @DivisionID AND Phase = @Phase",
+                new { DivisionID, Phase = newPhase });
+
+            if (!phaseCheck.Any())
+            {
+                var addPhase = await Dialogs.ConfirmAsync(
+                    $"Phase {newPhase} doesn't exist. Do you want to add it?");
+                if (!addPhase) return false;
+
+                await db.ExecuteAsync(
+                    @"INSERT INTO tblEstPhases (DivisionID, Phase, Description, GroupPhase, SortOrder)
+                      VALUES (@DivisionID, @Phase, 'untitled', 0, @SortOrder)",
+                    new
+                    {
+                        DivisionID,
+                        Phase = newPhase,
+                        SortOrder = int.TryParse(newPhase, out var so) ? so : 0
+                    });
+
+                await FixGroupPhaseValue();
+            }
+
+            // Update tblPhaseItem
+            await db.ExecuteAsync(
+                @"UPDATE tblPhaseItem
+                  SET ItemNumber = @NewItem,
+                      Item = @NewItem + CostCategory,
+                      Phase = @NewPhase
+                  WHERE DivisionID = @DivisionID
+                    AND Phase = @OldPhase
+                    AND ItemNumber = @OldItem",
+                new { DivisionID, NewItem = newItem, NewPhase = newPhase, OldPhase = oldPhase, OldItem = oldItem });
+
+            // Update tblDBAssemblyDetails
+            await db.ExecuteAsync(
+                @"UPDATE tblDBAssemblyDetails
+                  SET Phase = @NewPhase,
+                      Item = @NewItem + RIGHT(Item, 1)
+                  WHERE DivisionID = @DivisionID
+                    AND Phase = @OldPhase
+                    AND Item LIKE @OldItemPattern",
+                new { DivisionID, NewPhase = newPhase, NewItem = newItem, OldPhase = oldPhase, OldItemPattern = oldItem + "_" });
+
+            // Update tblSalesSheetCosts
+            await db.ExecuteAsync(
+                @"UPDATE tblSalesSheetCosts
+                  SET Phase = @NewPhase,
+                      Item = @NewItem + RIGHT(Item, 1)
+                  WHERE Phase = @OldPhase
+                    AND Item LIKE @OldItemPattern",
+                new { NewPhase = newPhase, NewItem = newItem, OldPhase = oldPhase, OldItemPattern = oldItem + "_" });
+
+            // Update tblVendorCost
+            await db.ExecuteAsync(
+                @"UPDATE tblVendorCost
+                  SET Phase = @NewPhase,
+                      Item = @NewItem + RIGHT(Item, 1)
+                  WHERE Phase = @OldPhase
+                    AND Item LIKE @OldItemPattern
+                    AND DivisionID = @DivisionID",
+                new { DivisionID, NewPhase = newPhase, NewItem = newItem, OldPhase = oldPhase, OldItemPattern = oldItem + "_" });
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error($"{ProductName} already has an item numbered {newPhase}/{newItem}. Please specify a different value.");
+            }
+            else
+            {
+                Notifications.Warning($"Error renumbering item: {ex.Message}");
+                Logger.LogError(ex, "FItem::SaveRenumber");
+
+            }
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveDuplicate()
+    {
+        var oldPhase = OriginalPhase;
+        var oldItem = OriginalItemNumber;
+        var newPhase = PhaseText.Trim();
+        var newItem = ItemText.Trim();
+        var newDesc = DescriptionText.Trim();
+
+        if (string.IsNullOrWhiteSpace(newPhase) || string.IsNullOrWhiteSpace(newItem) || string.IsNullOrWhiteSpace(newDesc))
+        {
+            Notifications.Info("Phase, item and description are all required.");
+            return false;
+        }
+
+        try
+        {
+            // Check if the NEW phase exists (VB6 checks oldPhase but inserts into newPhase)
+            var phaseCheck = await db.QueryAsync(
+                "SELECT * FROM tblEstPhases WHERE DivisionID = @DivisionID AND Phase = @Phase",
+                new { DivisionID, Phase = newPhase });
+
+            if (!phaseCheck.Any())
+            {
+                var addPhase = await Dialogs.ConfirmAsync(
+                    $"Phase {newPhase} doesn't exist. Do you want to add it?");
+                if (!addPhase) return false;
+
+                await db.ExecuteAsync(
+                    @"INSERT INTO tblEstPhases (DivisionID, Phase, Description, GroupPhase, SortOrder)
+                      VALUES (@DivisionID, @Phase, 'untitled', 0, @SortOrder)",
+                    new
+                    {
+                        DivisionID,
+                        Phase = newPhase,
+                        SortOrder = int.TryParse(newPhase, out var so) ? so : 0
+                    });
+
+                await FixGroupPhaseValue();
+            }
+
+            // Duplicate: insert into tblPhaseItem by selecting from existing record
+            await db.ExecuteAsync(
+                @"INSERT INTO tblPhaseItem (DivisionID, Phase, Item, PriceLink, Description, Notes, POIndex,
+                      JCCostCode, JCCategory, OrderUOM, TakeoffUOM, ConversionFactor, Price,
+                      TaxGroup, WastePercent, RoundDir, RoundTo)
+                  SELECT @DivisionID, @NewPhase, @NewItem, PriceLink, @NewDesc, Notes, POIndex,
+                      JCCostCode, JCCategory, OrderUOM, TakeoffUOM, ConversionFactor, Price,
+                      TaxGroup, WastePercent, RoundDir, RoundTo
+                  FROM tblPhaseItem
+                  WHERE DivisionID = @DivisionID
+                    AND Phase = @OldPhase
+                    AND Item = @OldItem",
+                new
+                {
+                    DivisionID,
+                    NewPhase = newPhase,
+                    NewItem = newItem,
+                    NewDesc = newDesc,
+                    OldPhase = oldPhase,
+                    OldItem = oldItem
+                });
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error($"{ProductName} already has an item numbered {newPhase}/{newItem}. Please specify a different value.");
+            }
+            else
+            {
+                Notifications.Warning($"Error duplicating item: {ex.Message}");
+                Logger.LogError(ex, "FItem::SaveDuplicate");
+
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Recalculates GroupPhaseValue for all phases in the current division.
+    /// Mirrors MMain.bas FixGroupPhaseValue from VB6.
+    /// </summary>
+    private async Task FixGroupPhaseValue()
+    {
+        try
+        {
+            // Step 1: For non-group phases, set GroupPhaseValue to the nearest preceding group phase
+            await db.ExecuteAsync(
+                @"UPDATE pp
+                  SET GroupPhaseValue = gg.phase
+                  FROM
+                  (
+                    SELECT p.divisionid, MAX(g.sortorder) AS groupsort, p.phase
+                    FROM tblestphases p
+                    JOIN estgroups g ON g.divisionid = p.divisionid AND g.sortorder < p.sortorder
+                    WHERE p.groupphase = 0
+                    GROUP BY p.divisionid, p.sortorder, p.phase
+                  ) x
+                  JOIN tblestphases pp ON pp.divisionid = x.divisionid AND pp.phase = x.phase
+                  JOIN estgroups gg ON gg.divisionid = x.divisionid AND gg.sortorder = x.groupsort
+                  WHERE x.DivisionID = @DivisionID",
+                new { DivisionID });
+
+            // Step 2: For group phases, GroupPhaseValue is the phase itself
+            await db.ExecuteAsync(
+                @"UPDATE tblestphases
+                  SET GroupPhaseValue = Phase
+                  WHERE DivisionID = @DivisionID AND GroupPhase = 1",
+                new { DivisionID });
+
+            // Step 3: Any remaining nulls get the first group phase
+            await db.ExecuteAsync(
+                @"UPDATE tblestphases
+                  SET groupphasevalue = (
+                      SELECT MIN(phase) FROM tblestphases
+                      WHERE divisionid = @DivisionID AND groupphase = 1
+                  )
+                  WHERE DivisionID = @DivisionID AND groupphasevalue IS NULL",
+                new { DivisionID });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FItem::FixGroupPhaseValue");
+
+        }
+    }
+
+    // === Result Model ===
+    public class FItemResult
+    {
+        public bool Cancelled { get; set; } = true;
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string ItemNumber { get; set; } = "";
+        public string CostType { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+}

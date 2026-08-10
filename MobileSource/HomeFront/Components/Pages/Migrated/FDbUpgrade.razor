@@ -1,0 +1,612 @@
+@page "/dbupgrade"
+@rendermode InteractiveServer
+@layout HFComponent
+@namespace HomeFront.Components.Pages
+@using System
+@using System.Collections.Generic
+@using System.Linq
+@using System.Threading.Tasks
+@using HomeFront.Services
+@using Fx.ControlKit.Notifications
+@inject DbUpgradeService UpgradeService
+@inject NotificationService Notifications
+@inject ILogger<FDbUpgrade> Logger
+@inject ISessionStateService SessionState
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+
+<PageTitle>Database Schema Upgrade</PageTitle>
+
+<div class="db-upgrade-container">
+    @* Page Header *@
+    <div class="db-header">
+        <div class="db-title-area">
+            <h1>Database Schema Upgrade Console</h1>
+            <p class="subtitle">Selectively execute SQL schema updates, verify definitions, and review execution logs.</p>
+        </div>
+        <div class="db-status-badge">
+            <span class="badge-label">Current DB Revision:</span>
+            <span class="badge-value">@CurrentDbRevision</span>
+        </div>
+    </div>
+
+    @* Main Body Grid *@
+    <div class="db-body">
+        @* Left sidebar - Tree list *@
+        <div class="sidebar-panel">
+            <div class="panel-header">
+                <h2>Upgrade Operations</h2>
+                <div class="panel-actions">
+                    <ButtonControl BareStyle="true" CssClass="action-btn text-btn" OnClick="SelectAll">Select All</ButtonControl>
+                    <span class="divider">|</span>
+                    <ButtonControl BareStyle="true" CssClass="action-btn text-btn" OnClick="DeselectAll">Deselect All</ButtonControl>
+                    <span class="divider">|</span>
+                    <ButtonControl BareStyle="true" CssClass="action-btn text-btn" OnClick="SelectPending">Select Pending</ButtonControl>
+                </div>
+            </div>
+
+            <div class="tree-container">
+                @if (IsLoading)
+                {
+                    <div class="tree-loading">
+                        <div class="spinner"></div>
+                        <p>Loading database upgrade operations...</p>
+                    </div>
+                }
+                else
+                {
+                    <ul class="revision-groups">
+                        @foreach (var group in Groups)
+                        {
+                            <li class="group-node">
+                                <div class="group-header">
+                                    <button class="expander-btn" @onclick="() => ToggleGroup(group)">
+                                        <span class="arrow @(group.IsExpanded ? "down" : "right")">▶</span>
+                                    </button>
+                                    <CheckBoxControl Checked="group.IsSelected"
+                                                     CheckedChanged="@((bool v) => ToggleGroupSelection(group, v))"
+                                                     Label="@group.Name"
+                                                     CssClass="group-check" />
+                                    <span class="count-badge">(@group.Operations.Count)</span>
+                                    <span class="group-status @group.Status.ToLower()">@group.Status</span>
+                                </div>
+
+                                @if (group.IsExpanded)
+                                {
+                                    <ul class="operation-list">
+                                        @foreach (var op in group.Operations)
+                                        {
+                                            <li class="operation-node @(SelectedOperation?.Id == op.Id ? "selected" : "")" 
+                                                @onclick="() => SelectOperation(op)">
+                                                <div class="op-checkbox-area" @onclick:stopPropagation>
+                                                    <CheckBoxControl @bind-Checked="op.IsSelected"
+                                                                     @bind-Checked:after="() => UpdateGroupSelectionState(group)" />
+                                                </div>
+                                                <div class="op-content">
+                                                    <span class="op-id">#@op.RevisionNumber</span>
+                                                    <span class="op-desc" title="@op.Description">@op.Description</span>
+                                                </div>
+                                                <div class="op-status-icon">
+                                                    @switch (op.Status)
+                                                    {
+                                                        case "Success":
+                                                            <span class="icon success" title="Completed Successfully">✔</span>
+                                                            break;
+                                                        case "Failed":
+                                                            <span class="icon failure" title="Failed: Click for Details">✖</span>
+                                                            break;
+                                                        case "Running":
+                                                            <span class="icon spinner-mini"></span>
+                                                            break;
+                                                        case "Skipped":
+                                                            <span class="icon skipped" title="Skipped">➖</span>
+                                                            break;
+                                                        default:
+                                                            <span class="icon pending" title="Pending">●</span>
+                                                            break;
+                                                    }
+                                                </div>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        @* Right workspace - Code details & Console logs *@
+        <div class="workspace-panel">
+            <div class="details-card">
+                <div class="panel-header">
+                    <h2>Operation Details</h2>
+                    <div class="control-actions">
+                        @if (!string.IsNullOrEmpty(ReturnUrl))
+                        {
+                            <ButtonControl BareStyle="true" CssClass="btn btn-success" OnClick="GoBack" Disabled="@IsExecuting" Style="margin-right: 8px;">
+                                ⬅ Return to Login
+                            </ButtonControl>
+                        }
+                        <ButtonControl BareStyle="true" CssClass="btn btn-secondary" OnClick="LoadRevisions" Disabled="@IsExecuting">
+                            🔄 Reload State
+                        </ButtonControl>
+                        <ButtonControl BareStyle="true" CssClass="btn btn-primary" OnClick="RunSelectedUpgrades" Disabled="@(IsExecuting || !Operations.Any(o => o.IsSelected))">
+                            ⚡ Run Selected
+                        </ButtonControl>
+                        <ButtonControl BareStyle="true" CssClass="btn btn-danger" OnClick="StopExecution" Disabled="@(!IsExecuting)">
+                            ⏹ Stop
+                        </ButtonControl>
+                    </div>
+                </div>
+
+                @if (IsExecuting && selectedOpsCount > 0)
+                {
+                    <div class="upgrade-progress-container">
+                        <div class="progress-bar-label">
+                            <span>Applying database schema updates...</span>
+                            <span class="progress-text">@runCount / @selectedOpsCount (@(runCount * 100 / selectedOpsCount)%)</span>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" style="width: @(runCount * 100 / selectedOpsCount)%;"></div>
+                        </div>
+                    </div>
+                }
+
+                <div class="details-body">
+                    @if (SelectedOperation == null)
+                    {
+                        <div class="empty-state">
+                            <p>Select a database operation from the list to view its SQL definition and script details.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="meta-section">
+                            <div class="meta-row">
+                                <span class="label">Revision Group:</span>
+                                <span class="value">@SelectedOperation.Revision</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Revision Number:</span>
+                                <span class="value font-mono">@SelectedOperation.RevisionNumber</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Description:</span>
+                                <span class="value text-highlight">@SelectedOperation.Description</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Ignore Errors:</span>
+                                <span class="value font-mono">@(SelectedOperation.IgnoreErrors ? "Yes" : "No")</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Status:</span>
+                                <span class="value status-text @SelectedOperation.Status.ToLower()">@SelectedOperation.Status</span>
+                            </div>
+                        </div>
+
+                        <div class="sql-viewer-container">
+                            <div class="sql-header">
+                                <span>SQL Script (SQL Server Syntax)</span>
+                                <ButtonControl BareStyle="true" CssClass="action-btn text-btn font-mono" OnClick="CopySqlToClipboard">Copy SQL</ButtonControl>
+                            </div>
+                            <pre class="sql-code"><code>@SelectedOperation.SqlScript</code></pre>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @* Console/Error Panel below details *@
+            <div class="console-card">
+                <div class="console-header">
+                    <h2>Terminal Execution Log</h2>
+                    <ButtonControl BareStyle="true" CssClass="action-btn text-btn" OnClick="ClearConsole">Clear Console</ButtonControl>
+                </div>
+                <div class="console-body" id="console-logs-container">
+                    @if (!ConsoleLogs.Any())
+                    {
+                        <p class="console-placeholder">Waiting for execution to start...</p>
+                    }
+                    else
+                    {
+                        @foreach (var log in ConsoleLogs)
+                        {
+                            <div class="console-line @log.Type.ToLower()">
+                                <span class="timestamp">[@log.Timestamp.ToString("HH:mm:ss")]</span>
+                                <span class="message">@log.Message</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "autoRun")]
+    public bool AutoRun { get; set; }
+
+    private void GoBack()
+    {
+        NavigationManager.NavigateTo(ReturnUrl ?? "/");
+    }
+
+    private int runCount = 0;
+    private int selectedOpsCount = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && AutoRun)
+        {
+            // Give a small delay so UI renders the loading spinner and operation details
+            await Task.Delay(1000);
+            
+            // Auto select pending operations and run
+            SelectPending();
+            StateHasChanged();
+            await RunSelectedUpgrades();
+        }
+    }
+
+    private bool IsLoading = true;
+    private bool IsExecuting = false;
+    private int CurrentDbRevision = 13447;
+    private bool CancelRequested = false;
+
+    private List<DbUpgradeOperation> Operations = new();
+    private List<RevisionGroup> Groups = new();
+    private DbUpgradeOperation? SelectedOperation;
+    private List<ConsoleLogLine> ConsoleLogs = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRevisions();
+    }
+
+    private async Task LoadRevisions()
+    {
+        IsLoading = true;
+        SelectedOperation = null;
+        ConsoleLogs.Clear();
+        StateHasChanged();
+
+        try
+        {
+            // Fetch current revision from the DB
+            CurrentDbRevision = await UpgradeService.GetCurrentRevisionAsync();
+            LogToConsole($"Queried current database schema revision: {CurrentDbRevision}", "Info");
+
+            // Load parsed operations from JSON
+            var rawOps = UpgradeService.LoadOperations();
+            
+            // Re-apply states based on current DB revision
+            foreach (var op in rawOps)
+            {
+                if (op.RevisionNumber <= CurrentDbRevision)
+                {
+                    op.Status = "Success";
+                    op.IsSelected = false; // already executed
+                }
+                else
+                {
+                    op.Status = "Pending";
+                    op.IsSelected = true; // pending, selected by default
+                }
+            }
+
+            Operations = rawOps;
+
+            // Group operations
+            var groupDict = new Dictionary<string, List<DbUpgradeOperation>>();
+            foreach (var op in Operations)
+            {
+                if (!groupDict.ContainsKey(op.Revision))
+                {
+                    groupDict[op.Revision] = new List<DbUpgradeOperation>();
+                }
+                groupDict[op.Revision].Add(op);
+            }
+
+            Groups = groupDict.Select(kvp => new RevisionGroup
+            {
+                Name = kvp.Key,
+                Operations = kvp.Value,
+                IsExpanded = kvp.Value.Any(o => o.Status != "Success"), // Expand if contains pending items
+                IsSelected = kvp.Value.Any(o => o.IsSelected)
+            }).ToList();
+
+            // Set default selected operation
+            SelectedOperation = Operations.FirstOrDefault(o => o.Status != "Success") ?? Operations.FirstOrDefault();
+            
+            // Recalculate group statuses
+            foreach (var group in Groups)
+            {
+                UpdateGroupStatus(group);
+            }
+
+            LogToConsole($"Successfully loaded {Operations.Count} total schema upgrade statements.", "Info");
+        }
+        catch (Exception ex)
+        {
+            LogToConsole($"Error loading database upgrade definitions: {ex.Message}", "Error");
+            Logger.LogError(ex, "Error loading database upgrade definitions");
+            Notifications.Error("Failed to initialize database upgrade console.");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleGroup(RevisionGroup group)
+    {
+        group.IsExpanded = !group.IsExpanded;
+    }
+
+    private void SelectOperation(DbUpgradeOperation op)
+    {
+        SelectedOperation = op;
+    }
+
+    private void ToggleGroupSelection(RevisionGroup group, bool select)
+    {
+        group.IsSelected = select;
+        foreach (var op in group.Operations)
+        {
+            op.IsSelected = select;
+        }
+    }
+
+    private void UpdateGroupSelectionState(RevisionGroup group)
+    {
+        group.IsSelected = group.Operations.Any(o => o.IsSelected);
+    }
+
+    private void UpdateGroupStatus(RevisionGroup group)
+    {
+        if (group.Operations.All(o => o.Status == "Success"))
+        {
+            group.Status = "Success";
+        }
+        else if (group.Operations.Any(o => o.Status == "Failed"))
+        {
+            group.Status = "Failed";
+        }
+        else if (group.Operations.Any(o => o.Status == "Running"))
+        {
+            group.Status = "Running";
+        }
+        else if (group.Operations.Any(o => o.Status == "Success") && group.Operations.Any(o => o.Status == "Pending"))
+        {
+            group.Status = "Running"; // running state
+        }
+        else
+        {
+            group.Status = "Pending";
+        }
+    }
+
+    private void SelectAll()
+    {
+        foreach (var group in Groups)
+        {
+            ToggleGroupSelection(group, true);
+        }
+    }
+
+    private void DeselectAll()
+    {
+        foreach (var group in Groups)
+        {
+            ToggleGroupSelection(group, false);
+        }
+    }
+
+    private void SelectPending()
+    {
+        foreach (var group in Groups)
+        {
+            bool hasPending = false;
+            foreach (var op in group.Operations)
+            {
+                op.IsSelected = (op.Status != "Success");
+                if (op.IsSelected) hasPending = true;
+            }
+            group.IsSelected = hasPending;
+            if (hasPending)
+            {
+                group.IsExpanded = true;
+            }
+        }
+    }
+
+    private void ClearConsole()
+    {
+        ConsoleLogs.Clear();
+    }
+
+    private void LogToConsole(string message, string type = "Info")
+    {
+        ConsoleLogs.Add(new ConsoleLogLine
+        {
+            Timestamp = DateTime.Now,
+            Message = message,
+            Type = type
+        });
+        
+        // Truncate logs if too large
+        if (ConsoleLogs.Count > 1000)
+        {
+            ConsoleLogs.RemoveRange(0, 200);
+        }
+    }
+
+    private async Task CopySqlToClipboard()
+    {
+        if (SelectedOperation != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", SelectedOperation.SqlScript);
+                Notifications.Info("SQL Script copied to clipboard.");
+            }
+            catch (Exception ex)
+            {
+                LogToConsole($"Failed to copy script to clipboard: {ex.Message}", "Warning");
+            }
+        }
+    }
+
+    private void StopExecution()
+    {
+        if (IsExecuting)
+        {
+            CancelRequested = true;
+            LogToConsole("Stop request received. Halting execution after the current operation finishes...", "Warning");
+        }
+    }
+
+    private async Task RunSelectedUpgrades()
+    {
+        if (IsExecuting) return;
+
+        IsExecuting = true;
+        CancelRequested = false;
+        StateHasChanged();
+
+        var selectedOps = Operations.Where(o => o.IsSelected).OrderBy(o => o.Id).ToList();
+        
+        LogToConsole($"Beginning batch execution of {selectedOps.Count} operations.", "Info");
+        LogToConsole("Disabling database triggers during schema updates...", "Info");
+        
+        await UpgradeService.DisableAuditAsync();
+
+        bool anyCompleted = false;
+        selectedOpsCount = selectedOps.Count;
+        runCount = 0;
+        int successCount = 0;
+        int failCount = 0;
+
+        try
+        {
+            foreach (var op in selectedOps)
+            {
+                if (CancelRequested)
+                {
+                    LogToConsole("Execution cancelled by user.", "Warning");
+                    break;
+                }
+
+                runCount++;
+                op.Status = "Running";
+                var group = Groups.First(g => g.Name == op.Revision);
+                UpdateGroupStatus(group);
+                
+                // Select in details panel so user sees what is running
+                SelectedOperation = op;
+                LogToConsole($"Executing step {runCount} of {selectedOps.Count}: ID #{op.RevisionNumber} ({op.Description})...", "Info");
+                StateHasChanged();
+
+                try
+                {
+                    await UpgradeService.ExecuteOperationAsync(op);
+                    successCount++;
+                    anyCompleted = true;
+                    LogToConsole($"Step #{op.RevisionNumber} executed successfully.", "Success");
+                }
+                catch (Exception ex)
+                {
+                    failCount++;
+                    LogToConsole($"Step #{op.RevisionNumber} failed with error: {ex.Message}", "Error");
+                    if (!string.IsNullOrEmpty(op.SqlScript))
+                    {
+                        LogToConsole($"Failing script detail:\n{op.SqlScript}", "Error");
+                    }
+                    
+                    // Stop execution upon first unhandled error
+                    LogToConsole("Execution halted due to error.", "Error");
+                    break;
+                }
+                finally
+                {
+                    UpdateGroupStatus(group);
+                    StateHasChanged();
+                    await Task.Delay(50); // slight breathing room for UI rendering
+                }
+            }
+        }
+        finally
+        {
+            LogToConsole("Re-enabling database triggers...", "Info");
+            await UpgradeService.EnableAuditAsync();
+
+            if (anyCompleted)
+            {
+                LogToConsole("Running ZYB_CreateDefaults baseline updates...", "Info");
+                try
+                {
+                    await UpgradeService.RunZYBCreateDefaultsAsync();
+                    LogToConsole("ZYB_CreateDefaults baseline executed successfully.", "Success");
+                }
+                catch (Exception ex)
+                {
+                    LogToConsole($"ZYB_CreateDefaults execution failed: {ex.Message}", "Error");
+                }
+            }
+
+            // Refresh current revision display
+            CurrentDbRevision = await UpgradeService.GetCurrentRevisionAsync();
+            
+            // Clean selection flags
+            foreach (var op in Operations)
+            {
+                if (op.Status == "Success")
+                {
+                    op.IsSelected = false;
+                }
+            }
+            foreach (var group in Groups)
+            {
+                UpdateGroupSelectionState(group);
+                UpdateGroupStatus(group);
+            }
+
+            IsExecuting = false;
+            StateHasChanged();
+            Notifications.Info($"Execution completed. Successes: {successCount}, Failures: {failCount}");
+            LogToConsole($"Batch finished. Total run: {runCount}, Succeeded: {successCount}, Failed: {failCount}.", "Info");
+
+            if (AutoRun && failCount == 0 && !string.IsNullOrEmpty(ReturnUrl))
+            {
+                LogToConsole("Auto-run completed successfully. Redirecting back to login in 2 seconds...", "Success");
+                StateHasChanged();
+                await Task.Delay(2000);
+                NavigationManager.NavigateTo(ReturnUrl);
+            }
+        }
+    }
+
+    public class RevisionGroup
+    {
+        public string Name { get; set; } = "";
+        public List<DbUpgradeOperation> Operations { get; set; } = new();
+        public bool IsExpanded { get; set; } = false;
+        public bool IsSelected { get; set; } = true;
+        public string Status { get; set; } = "Pending";
+    }
+
+    public class ConsoleLogLine
+    {
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; } = "";
+        public string Type { get; set; } = "Info"; // Info, Error, Success, Warning
+    }
+}

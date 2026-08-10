@@ -1,0 +1,345 @@
+@page "/home"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using HomeFront.Components.Layout
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject ILogger<FHome> Logger
+@inject NotificationService Notifications
+
+<PageTitle>Home - HomeFront</PageTitle>
+
+<div class="home-container">
+
+    @* ── Regions (background panels) ──────────────────────────────── *@
+    <div class="region region-0"></div>
+    <div class="region region-1"></div>
+    <div class="region region-2"></div>
+
+    @* ── Region Labels ────────────────────────────────────────────── *@
+    <div class="region-label" style="left: 0.1%; top: 1%;">Job</div>
+    <div class="region-label" style="left: 0.1%; top: 51%;">Job</div>
+
+    @* ── SVG Flow Lines ───────────────────────────────────────────── *@
+    <svg class="flow-lines">
+        @foreach (var flow in FlowLines.Where(f => f.Visible))
+        {
+            <line x1="@Pct(flow.X1, DesignWidth)" y1="@Pct(flow.Y1, DesignHeight)"
+                  x2="@Pct(flow.X2, DesignWidth)" y2="@Pct(flow.Y2, DesignHeight)" />
+        }
+    </svg>
+
+    @* ── Task Icons ───────────────────────────────────────────────── *@
+    @foreach (var task in Tasks)
+    {
+        var cssClass = "task-icon"
+            + (task.Visible ? "" : " hidden")
+            + (task.Enabled ? "" : " disabled")
+            + (task.IsUnavailable ? " unavailable" : "");
+
+        <div class="@cssClass"
+             style="left: @Pct(task.CenterX, DesignWidth); top: @Pct(task.CenterY, DesignHeight); transform: translate(-50%, -50%);"
+             title="@(task.ToolTipText ?? task.Tag)"
+             @onclick="() => OnTaskClick(task)">
+            <img src="@task.ImageUrl" alt="@task.Tag" onerror="this.style.display='none'" />
+            <span>@task.Tag</span>
+        </div>
+    }
+</div>
+
+@code {
+    // ── Design-time dimensions (from VB6 ScaleWidth/ScaleHeight in twips) ──
+    private const double DesignWidth = 15180.0;
+    private const double DesignHeight = 10590.0;
+
+    // ── Application State (simulated HFApp) ──
+    private SalesSystems SalesSystem = SalesSystems.asNone;
+    private AccountingSystems AccountingSystem = AccountingSystems.asNone;
+
+    public enum SalesSystems { asNone = 0, asBuilder1440 = 1, asHomeFront = 2 }
+    public enum AccountingSystems { asNone = 0, asTimberline = 1, asJDEdwards = 2 }
+
+    // ── Task and Flow models ──
+    private List<TaskItem> Tasks = new();
+    private List<FlowLine> FlowLines = new();
+
+    // ── Permissions (simulated) ──
+    private Dictionary<string, bool> Permissions = new()
+    {
+        { "SetupJobs", true },
+        { "EditAssemblies", true },
+        { "EditItemDb", true },
+        { "SetupVendorPricing", true },
+        { "SetupPOIndex", true },
+        { "OpenEstimatingWorkSheets", true },
+        { "SetupVendors", true },
+        { "SetupDefaultVendor", true },
+        { "SendPO", true },
+        { "PostCommitments", true },
+        { "PostBudgets", true },
+        { "SetupCommunity", true },
+        { "Setupseries", true },
+        { "SetupMajorGroup", true },
+        { "SetupCategory", true },
+        { "TaskEntQuote", true }
+    };
+
+    protected override void OnInitialized()
+    {
+        InitializeTasks();
+        InitializeFlowLines();
+        ConfigForm();
+    }
+
+    private void InitializeTasks()
+    {
+        // Index, Left, Top, Width, Height, Tag, ImageUrl, Visible, ToolTipText, IsUnavailable
+        Tasks = new List<TaskItem>
+        {
+            new(0,  13740, 600,  855,  975,  "job cost categories",           "images/home/task_00.png"),
+            new(1,  1440,  2550, 1320, 915,  "Retrieve Jobs from Sales Center","images/home/task_01.png"),
+            new(2,  3780,  1770, 690,  675,  "Job setup",                      "images/home/task_02.png"),
+            new(3,  5775,  870,  915,  765,  "issue budgets",                  "images/home/task_03.png"),
+            new(4,  7815,  300,  885,  915,  "post budgets",                   "images/home/task_04.png"),
+            new(5,  5700,  2550, 1065, 1005, "issue po's",                     "images/home/task_05.png"),
+            new(6,  9840,  1740, 885,  915,  "post purchase orders",           "images/home/task_06.png"),
+            new(7,  7950,  3420, 795,  855,  "send purchase orders",           "images/home/task_07.png"),
+            new(8,  7755,  6480, 705,  870,  "vendor setup",                   "images/home/task_08.png"),
+            new(9,  5520,  6480, 690,  930,  "edit item prices",               "images/home/task_09.png"),
+            new(10, 1425,  8400, 645,  870,  "purchase orders",                "images/home/task_10.png"),
+            new(11, 3540,  7440, 630,  765,  "edit item database",             "images/home/task_11.png"),
+            new(12, 5295,  8400, 1155, 990,  "edit models and options",        "images/home/task_12.png"),
+            new(13, 1230,  6480, 1020, 1035, "community standards",            "images/home/task_13.png"),
+            new(14, 7575,  8385, 1050, 1035, "open an estimating worksheet",   "images/home/task_14.png"),
+            new(15, 13830, 4020, 810,  960,  "project managers",               "images/home/task_15.png"),
+            new(16, 12240, 600,  690,  990,  "job cost codes",                 "images/home/task_16.png"),
+            new(17, 12120, 2340, 945,  720,  "community setup",                "images/home/task_17.png"),
+            new(18, 9630,  6480, 765,  960,  "default vendors",                "images/home/task_18.png"),
+            new(19, 12045, 4020, 960,  750,  "series",                         "images/home/task_19.png"),
+            new(20, 12240, 5760, 585,  915,  "option groups",                  "images/home/task_20.png"),
+            new(21, 13860, 5760, 915,  975,  "option categories",              "images/home/task_21.png"),
+            new(22, 13770, 2340, 795,  945,  "community phases setup",         "images/home/task_22.png"),
+            new(23, 1650,  795,  630,  915,  "Prepare Job Quote",              "images/home/task_23.png"),
+            new(24, 9375,  8355, 1260, 1080, "WriteToWeb",                     "images/home/task_24.png"),
+            new(25, 3705,  330,  840,  855,  "Send RFQ's",                     "images/home/task_25.png", visible: false),
+            new(26, 12067, 7380, 930,  915,  "Library Mass Change",            "images/home/task_26.png", visible: false),
+            new(27, 1440,  2550, 1320, 915,  "",                               "images/home/task_27_grey.png", visible: false, toolTip: "no sales system is configured", unavailable: true),
+            new(28, 7785,  300,  885,  915,  "",                               "images/home/task_28_grey.png", visible: false, toolTip: "no accounting system is configured", unavailable: true),
+            new(29, 9870,  1740, 885,  915,  "",                               "images/home/task_29_grey.png", visible: false, toolTip: "no accounting system is configured", unavailable: true),
+            new(30, 3795,  3420, 660,  720,  "Field PO's",                     "images/home/task_30.png"),
+            new(31, 1020,  3750, 690,  960,  "Custom Requests",                "images/home/task_31.png"),
+        };
+    }
+
+    private void InitializeFlowLines()
+    {
+        FlowLines = new List<FlowLine>
+        {
+            new(0,  2100, 8640, 3510, 7800),
+            new(1,  6540, 2910, 7920, 3690),
+            new(2,  4200, 7650, 5490, 6750),
+            new(3,  6300, 6720, 7710, 6720),
+            new(4,  4200, 7800, 5490, 8640),
+            new(5,  6270, 8670, 7650, 8670),
+            new(6,  2400, 2820, 3720, 2100),
+            new(7,  6510, 1110, 7770, 690),
+            new(8,  6540, 2760, 9870, 2040),
+            new(9,  4470, 2100, 5790, 2670),
+            new(10, 4500, 1890, 5670, 1260),
+            new(11, 2340, 1230, 3750, 1860),
+            new(12, 2130, 6840, 3510, 7620),
+            new(13, 8520, 6720, 9660, 6720),
+            new(14, 9570, 8670, 8430, 8670),
+            new(15, 2310, 1110, 3720, 600, visible: false),
+            new(16, 4080, 2580, 4080, 3330),
+        };
+    }
+
+    private void ConfigForm()
+    {
+        // Sales system visibility
+        bool hasSales = SalesSystem != SalesSystems.asNone;
+        SetTaskVisible(1, hasSales);
+        SetTaskVisible(27, !hasSales);
+
+        bool isBuilder1440 = SalesSystem == SalesSystems.asBuilder1440;
+        SetTaskVisible(24, isBuilder1440);
+        SetFlowVisible(14, isBuilder1440);
+
+        // Accounting system visibility
+        bool hasAccounting = AccountingSystem != AccountingSystems.asNone;
+        SetTaskVisible(4, hasAccounting);
+        SetTaskVisible(28, !hasAccounting);
+        SetTaskVisible(6, hasAccounting);
+        SetTaskVisible(29, !hasAccounting);
+
+        // Permissions
+        SetTaskEnabled(2, GetPermission("SetupJobs"));
+        SetTaskEnabled(12, GetPermission("EditAssemblies"));
+        SetTaskEnabled(11, GetPermission("EditItemDb"));
+        SetTaskEnabled(9, GetPermission("SetupVendorPricing"));
+        SetTaskEnabled(10, GetPermission("SetupPOIndex"));
+        SetTaskEnabled(14, GetPermission("OpenEstimatingWorkSheets"));
+        SetTaskEnabled(8, GetPermission("SetupVendors"));
+        SetTaskEnabled(18, GetPermission("SetupDefaultVendor"));
+        SetTaskEnabled(7, GetPermission("SendPO"));
+        SetTaskEnabled(6, GetPermission("PostCommitments"));
+        SetTaskEnabled(4, GetPermission("PostBudgets"));
+        SetTaskEnabled(17, GetPermission("SetupCommunity"));
+        SetTaskEnabled(22, GetPermission("SetupCommunity"));
+        SetTaskEnabled(19, GetPermission("Setupseries"));
+        SetTaskEnabled(20, GetPermission("SetupMajorGroup"));
+        SetTaskEnabled(21, GetPermission("SetupCategory"));
+        SetTaskEnabled(31, GetPermission("TaskEntQuote"));
+
+        if (GetPermission("EditAssemblies"))
+            SetTaskVisible(26, true);
+        SetTaskEnabled(26, GetPermission("EditAssemblies"));
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    private bool GetPermission(string key) =>
+        Permissions.TryGetValue(key, out var val) && val;
+
+    private void SetTaskVisible(int index, bool visible)
+    {
+        var task = Tasks.FirstOrDefault(t => t.Index == index);
+        if (task != null) task.Visible = visible;
+    }
+
+    private void SetTaskEnabled(int index, bool enabled)
+    {
+        var task = Tasks.FirstOrDefault(t => t.Index == index);
+        if (task != null) task.Enabled = enabled;
+    }
+
+    private void SetFlowVisible(int index, bool visible)
+    {
+        var flow = FlowLines.FirstOrDefault(f => f.Index == index);
+        if (flow != null) flow.Visible = visible;
+    }
+
+    /// <summary>Convert twips coordinate to CSS percentage string.</summary>
+    private string Pct(double twips, double designDimension) =>
+        $"{(twips / designDimension * 100.0):F2}%";
+
+    // ── Task Click Handler ───────────────────────────────────────────────
+
+    private async Task OnTaskClick(TaskItem task)
+    {
+        if (!task.Enabled || string.IsNullOrEmpty(task.Tag) || task.IsUnavailable)
+            return;
+
+        // Map VB6 task tags to Blazor routes
+        var route = task.Tag switch
+        {
+            "Job setup" => "/job-setup",
+            "Retrieve Jobs from Sales Center" => "/retrieve-jobs",
+            "Prepare Job Quote" => "/prepare-job-quote",
+            "issue budgets" => "/issue-budgets",
+            "post budgets" => "/post-budgets",
+            "issue po's" => "/issue-pos",
+            "post purchase orders" => "/post-purchase-orders",
+            "send purchase orders" => "/send-purchase-orders",
+            "vendor setup" => "/vendor-setup",
+            "edit item prices" => "/vendor-pricelist",
+            "purchase orders" => "/purchase-orders",
+            "edit item database" => "/items-db",
+            "edit models and options" => "/edit-model-assembly",
+            "community standards" => "/community-standards",
+            "open an estimating worksheet" => "/pricing-worksheet-opus",
+            "default vendors" => "/default-vendors",
+            "community setup" => "/community-setup",
+            "community phases setup" => "/community-phases-setup",
+            "job cost codes" => "/job-cost-codes",
+            "job cost categories" => "/job-cost-categories",
+            "series" => "/series-setup",
+            "option groups" => "/option-groups",
+            "option categories" => "/option-categories",
+            "project managers" => "/project-managers",
+            "Library Mass Change" => "/library-mass-change",
+            "WriteToWeb" => "/write-to-web",
+            "Send RFQ's" => "/send-rfqs",
+            "Field PO's" => "/field-pos",
+            "Custom Requests" => "/custom-requests",
+            _ => null
+        };
+
+        if (!string.IsNullOrEmpty(route))
+        {
+            NavigationManager.NavigateTo(route);
+        }
+        else
+        {
+            Notifications.Info($"Task '{task.Tag}' is not yet implemented.");
+        }
+    }
+
+    // ── Models ───────────────────────────────────────────────────────────
+
+    public class TaskItem
+    {
+        public int Index { get; set; }
+        public double Left { get; set; }
+        public double Top { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public string Tag { get; set; } = "";
+        public string ImageUrl { get; set; } = "";
+        public bool Visible { get; set; } = true;
+        public bool Enabled { get; set; } = true;
+        public string? ToolTipText { get; set; }
+        public bool IsUnavailable { get; set; }
+
+        /// <summary>Center X in design twips.</summary>
+        public double CenterX => Left + Width / 2.0;
+        /// <summary>Center Y in design twips.</summary>
+        public double CenterY => Top + Height / 2.0;
+
+        public TaskItem() { }
+
+        public TaskItem(int index, double left, double top, double width, double height,
+            string tag, string imageUrl, bool visible = true, string? toolTip = null, bool unavailable = false)
+        {
+            Index = index;
+            Left = left;
+            Top = top;
+            Width = width;
+            Height = height;
+            Tag = tag;
+            ImageUrl = imageUrl;
+            Visible = visible;
+            ToolTipText = toolTip;
+            IsUnavailable = unavailable;
+        }
+    }
+
+    public class FlowLine
+    {
+        public int Index { get; set; }
+        public double X1 { get; set; }
+        public double Y1 { get; set; }
+        public double X2 { get; set; }
+        public double Y2 { get; set; }
+        public bool Visible { get; set; } = true;
+
+        public FlowLine() { }
+
+        public FlowLine(int index, double x1, double y1, double x2, double y2, bool visible = true)
+        {
+            Index = index;
+            X1 = x1;
+            Y1 = y1;
+            X2 = x2;
+            Y2 = y2;
+            Visible = visible;
+        }
+    }
+}

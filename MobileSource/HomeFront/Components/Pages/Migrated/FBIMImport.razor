@@ -1,0 +1,1557 @@
+@page "/bim-import"
+@rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using System
+@using System.Data
+@using System.IO
+@using System.Collections.Generic
+@using System.Linq
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FBIMImport> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Import BIM Assemblies - HomeFront</PageTitle>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Processing BIM Import...</div>
+    </div>
+}
+
+<div class="wizard-container" style="position: relative;">
+
+    <!-- Wizard Header -->
+    <div class="wizard-header">
+        <div class="wizard-header-icon">📦</div>
+        <div class="wizard-header-text">
+            <h3>Import Assemblies from BIM Pipeline</h3>
+            <p>@WizardDescription</p>
+        </div>
+    </div>
+
+    <!-- Step Indicator -->
+    <div style="padding: 12px 24px; background: #f8f9fa; border: 1px solid #dee2e6; border-top: none;">
+        <div class="step-indicator">
+            <span class="step @(GetStepClass(0))">Upload</span>
+            @if (!IsModelFile)
+            {
+                <span class="step @(GetStepClass(1))">Conditions</span>
+            }
+            <span class="step @(GetStepClass(2))">Assemblies</span>
+            <span class="step @(GetStepClass(3))">Building Phases</span>
+            <span class="step @(GetStepClass(4))">Unknown Items</span>
+            <span class="step @(GetStepClass(5))">Finish</span>
+        </div>
+    </div>
+
+    <!-- Wizard Body -->
+    <div class="wizard-body">
+
+        @if (CurrentStep == WizardStep.Upload)
+        {
+            <div class="file-upload-area" @onclick="OnSelectFile">
+                <p style="font-size: 48px; margin: 0;">📁</p>
+                <p style="font-size: 16px; font-weight: 600;">Click to select a BIM Pipeline file</p>
+                <p style="font-size: 13px; color: #6c757d;">Supported formats: CSV, XLS, XLSX</p>
+                @if (!string.IsNullOrEmpty(SelectedFileName))
+                {
+                    <p style="color: #198754; font-weight: 600;">Selected: @SelectedFileName</p>
+                }
+            </div>
+        }
+        else if (CurrentStep == WizardStep.SizeErrors)
+        {
+            <p style="color: #dc3545; font-weight: 600;">
+                This file contains data that exceeds HomeFront field sizes. Please shrink the data before importing.
+            </p>
+            <GridControl @ref="SizeErrorsGrid"
+                    TValue="SizeErrorRow"
+                    DataSource="@SizeErrorsData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    Height="400px">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(SizeErrorRow.SizeError)" HeaderText="Size Error" Width="600px" />
+                </GridColumnsBase>
+            </GridControl>
+        }
+        else if (CurrentStep == WizardStep.Conditions)
+        {
+            <p style="font-size: 13px; color: #546e7a; margin-bottom: 12px;">
+                Check the conditions you would like to include in the import.
+            </p>
+            <GridControl @ref="ConditionsGrid"
+                    TValue="ConditionRow"
+                    DataSource="@ConditionsData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="400px"
+                    EditSettingsRef="@conditionsEditSettings"
+                    EventsRef="@conditionsGridEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(ConditionRow.DependentCondition)" HeaderText="Dependent Condition"
+                                  Width="400px" AllowEditing="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(ConditionRow.Include)" HeaderText="Include"
+                                  Width="100px" Type="ColumnType.CheckBox" />
+                </GridColumnsBase>
+            </GridControl>
+        }
+        else if (CurrentStep == WizardStep.Assemblies)
+        {
+            <p style="font-size: 13px; color: #546e7a; margin-bottom: 12px;">
+                Step 1 - These are the assemblies you are about to import. Please verify that they are correct.
+            </p>
+            <GridControl @ref="AssembliesGrid"
+                    TValue="AssemblyRow"
+                    DataSource="@AssembliesData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="400px"
+                    EditSettingsRef="@assembliesEditSettings"
+                    EventsRef="@assembliesGridEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(AssemblyRow.Model)" HeaderText="Model" Width="120px"
+                                  AllowEditing="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(AssemblyRow.OptionID)" HeaderText="Option ID" Width="120px"
+                                  AllowEditing="false" Visible="@(!IsModelFile)" />
+                    <GridColumn Field="@nameof(AssemblyRow.Description)" HeaderText="Description" Width="250px" />
+                    <GridColumn Field="@nameof(AssemblyRow.Series)" HeaderText="Series" Width="120px">
+                        <EditTemplate>
+                            @{
+                                var data = (AssemblyRow)context;
+                                <div style="display:flex; align-items:center; gap:4px;">
+                                    <input type="text" @bind="data.Series" style="flex:1; padding:4px;" />
+                                    <button style="padding:2px 8px; border:1px solid #ced4da; border-radius:3px; background:#fff; cursor:pointer;"
+                                            @onclick="() => OnPickSeries(data)">...</button>
+                                </div>
+                            }
+                        </EditTemplate>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(AssemblyRow.FloorArea)" HeaderText="Floor Area" Width="100px"
+                                  Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(AssemblyRow.Bedrooms)" HeaderText="Bedrooms" Width="100px"
+                                  Type="ColumnType.Number" Format="N0" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(AssemblyRow.Bathrooms)" HeaderText="Bathrooms" Width="100px"
+                                  Type="ColumnType.Number" Format="N1" TextAlign="TextAlign.Right" />
+                    <GridColumn Field="@nameof(AssemblyRow.Style)" HeaderText="Style" Width="150px" />
+                    <GridColumn Field="@nameof(AssemblyRow.AssemblyType)" HeaderText="Type" Width="80px"
+                                  Visible="false" />
+                </GridColumnsBase>
+            </GridControl>
+        }
+        else if (CurrentStep == WizardStep.BuildingPhases)
+        {
+            <p style="font-size: 13px; color: #546e7a; margin-bottom: 12px;">
+                Step 2 - Mark any BIM Pipeline building phases that you don't want to import into HomeFront.
+            </p>
+            <GridControl @ref="BuildingPhasesGrid"
+                    TValue="BuildingPhaseRow"
+                    DataSource="@BuildingPhasesData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="400px"
+                    EditSettingsRef="@buildingPhasesEditSettings"
+                    EventsRef="@buildingPhasesGridEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(BuildingPhaseRow.BuildingPhase)" HeaderText="Building Phase"
+                                  Width="400px" AllowEditing="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(BuildingPhaseRow.Ignore)" HeaderText="Ignore"
+                                  Width="100px" Type="ColumnType.CheckBox" />
+                </GridColumnsBase>
+            </GridControl>
+        }
+        else if (CurrentStep == WizardStep.UnknownItems)
+        {
+            <p style="font-size: 13px; color: #546e7a; margin-bottom: 12px;">
+                @if (EditItemDB)
+                {
+                    <text>Step 3 - These items don't exist in your HomeFront item database. Skip them, create new items, or map to an existing item?</text>
+                }
+                else
+                {
+                    <text>Step 3 - These items don't exist in your HomeFront item database. They cannot be imported. You must correct the import file or skip these items.</text>
+                }
+            </p>
+            <GridControl @ref="UnknownItemsGrid"
+                    TValue="UnknownItemRow"
+                    DataSource="@UnknownItemsData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    Height="400px"
+                    EditSettingsRef="@unknownItemsEditSettings"
+                    EventsRef="@unknownItemsGridEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(UnknownItemRow.Skip)" HeaderText="Skip" Width="70px"
+                                  Type="ColumnType.CheckBox" />
+                    <GridColumn Field="@nameof(UnknownItemRow.Create)" HeaderText="Create" Width="70px"
+                                  Type="ColumnType.CheckBox" Visible="@EditItemDB" />
+                    <GridColumn Field="@nameof(UnknownItemRow.Map)" HeaderText="Map" Width="70px"
+                                  Type="ColumnType.CheckBox" Visible="@EditItemDB" />
+                    <GridColumn Field="@nameof(UnknownItemRow.BuildingPhase)" HeaderText="Building Phase"
+                                  Width="150px" AllowEditing="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(UnknownItemRow.Product)" HeaderText="Product" Width="120px"
+                                  AllowEditing="false" />
+                    <GridColumn Field="@nameof(UnknownItemRow.POIndex)" HeaderText="PO Index" Width="100px">
+                        <EditTemplate>
+                            @{
+                                var data = (UnknownItemRow)context;
+                                <div style="display:flex; align-items:center; gap:4px;">
+                                    <input type="text" @bind="data.POIndex" style="flex:1; padding:4px;" />
+                                    <button style="padding:2px 8px; border:1px solid #ced4da; border-radius:3px; background:#fff; cursor:pointer;"
+                                            @onclick="() => OnPickPOIndex(data)">...</button>
+                                </div>
+                            }
+                        </EditTemplate>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(UnknownItemRow.Phase)" HeaderText="Phase" Width="100px">
+                        <EditTemplate>
+                            @{
+                                var data = (UnknownItemRow)context;
+                                <div style="display:flex; align-items:center; gap:4px;">
+                                    <input type="text" @bind="data.Phase" style="flex:1; padding:4px;" />
+                                    <button style="padding:2px 8px; border:1px solid #ced4da; border-radius:3px; background:#fff; cursor:pointer;"
+                                            @onclick="() => OnPickPhase(data)">...</button>
+                                </div>
+                            }
+                        </EditTemplate>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(UnknownItemRow.Item)" HeaderText="Item" Width="120px"
+                                  Visible="@EditItemDB">
+                        <EditTemplate>
+                            @{
+                                var data = (UnknownItemRow)context;
+                                <div style="display:flex; align-items:center; gap:4px;">
+                                    <input type="text" @bind="data.Item" style="flex:1; padding:4px;" />
+                                    <button style="padding:2px 8px; border:1px solid #ced4da; border-radius:3px; background:#fff; cursor:pointer;"
+                                            @onclick="() => OnPickItem(data)">...</button>
+                                </div>
+                            }
+                        </EditTemplate>
+                    </GridColumn>
+                    <GridColumn Field="@nameof(UnknownItemRow.Description)" HeaderText="Description" Width="200px" />
+                    <GridColumn Field="@nameof(UnknownItemRow.TakeoffUnit)" HeaderText="Takeoff Unit" Width="100px" />
+                </GridColumnsBase>
+            </GridControl>
+        }
+        else if (CurrentStep == WizardStep.Finish)
+        {
+            <div class="finish-panel">
+                <div class="finish-icon">✅</div>
+                <div class="finish-text">
+                    <p><strong>The BIM Pipeline import is ready to proceed.</strong></p>
+                    <p>This process will import <strong>@AssemblyCount</strong> assemblies into HomeFront's database.
+                        If they already exist they will be completely replaced with the BIM version.
+                        Once completed this import is irreversible and cannot be undone.</p>
+                    <p><strong>Are you sure you would like to proceed?</strong></p>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Wizard Footer -->
+    <div class="wizard-footer">
+        @if (CurrentStep == WizardStep.SizeErrors)
+        {
+            <ButtonControl CssClass="btn-danger" OnClick="OnCancel">Close</ButtonControl>
+        }
+        else
+        {
+            @if (ShowNextButton)
+            {
+                <ButtonControl CssClass="btn-primary" OnClick="OnNext">
+                    @(CurrentStep == WizardStep.Finish ? "Save" : "Next")
+                </ButtonControl>
+            }
+            <ButtonControl OnClick="OnCancel">Cancel</ButtonControl>
+        }
+    </div>
+</div>
+
+<!-- Pick List Dialog -->
+<DialogControl @bind-Visible="IsPickListVisible"
+               Header="@PickListTitle"
+               Width="700px"
+               IsModal="true">
+    <ChildContent>
+        <GridControl TValue="PickListItem"
+                DataSource="@PickListData"
+                AllowSorting="true"
+                AllowFiltering="true"
+                AllowSelection="true"
+                Height="400px"
+                FilterSettingsRef="@pickListFilterSettings">
+            <GridColumnsBase>
+                @foreach (var col in PickListColumns)
+                {
+                    <GridColumn Field="@col.Field" HeaderText="@col.Header" Width="@col.Width" />
+                }
+            </GridColumnsBase>
+        </GridControl>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-primary" OnClick="OnPickListSelect">Select</ButtonControl>
+        <ButtonControl OnClick="@(() => IsPickListVisible = false)">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // === Constants ===
+    private const string SRCFILE = "FBIMImport::";
+
+    // === Database ===
+// === State ===
+    private string SessionCode = "";
+    private bool IsLoading = false;
+    private bool IsModelFile = false;
+    private bool EditItemDB = false;
+    private bool ShowNextButton = true;
+    private string WizardDescription = "Select a BIM Pipeline file to import.";
+    private string SelectedFileName = "";
+    private int AssemblyCount = 0;
+
+    // === Wizard Steps ===
+    private enum WizardStep
+    {
+        Upload,
+        SizeErrors,
+        Conditions,
+        Assemblies,
+        BuildingPhases,
+        UnknownItems,
+        Finish
+    }
+
+    private WizardStep CurrentStep = WizardStep.Upload;
+
+    // === Grid Refs ===
+    private GridControl<SizeErrorRow>? SizeErrorsGrid;
+    private GridControl<ConditionRow>? ConditionsGrid;
+    private GridControl<AssemblyRow>? AssembliesGrid;
+    private GridControl<BuildingPhaseRow>? BuildingPhasesGrid;
+    private GridControl<UnknownItemRow>? UnknownItemsGrid;
+
+    // === Grid Data ===
+    private List<SizeErrorRow> SizeErrorsData = new();
+    private List<ConditionRow> ConditionsData = new();
+    private List<AssemblyRow> AssembliesData = new();
+    private List<BuildingPhaseRow> BuildingPhasesData = new();
+    private List<UnknownItemRow> UnknownItemsData = new();
+
+    // === Grid Settings ===
+    private EditSettings conditionsEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+    private EditSettings assembliesEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+    private EditSettings buildingPhasesEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+    private EditSettings unknownItemsEditSettings = new() { AllowEditing = true, AllowEditOnDblClick = true };
+
+    private GridControlEvents<ConditionRow> conditionsGridEvents = new();
+    private GridControlEvents<AssemblyRow> assembliesGridEvents = new();
+    private GridControlEvents<BuildingPhaseRow> buildingPhasesGridEvents = new();
+    private GridControlEvents<UnknownItemRow> unknownItemsGridEvents = new();
+
+    // === Pick List ===
+    private bool IsPickListVisible = false;
+    private string PickListTitle = "";
+    private List<PickListItem> PickListData = new();
+    private List<PickListColumnDef> PickListColumns = new();
+    private FilterSettings pickListFilterSettings = new() { Type = FilterType.FilterBar };
+    private Action<PickListItem>? PickListCallback;
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        SessionCode = Guid.NewGuid().ToString();
+
+        conditionsGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ConditionRow>>(this, (args) =>
+        {
+            if (args.Data != null) args.Data.IsDirty = true;
+        });
+        assembliesGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<AssemblyRow>>(this, (args) =>
+        {
+            if (args.Data != null)
+            {
+                args.Data.IsDirty = true;
+                // VB6: FloorArea/Bedrooms/Bathrooms are numeric validated
+                // VB6: Style/Series/FloorArea/Bedrooms/Bathrooms only editable for models (AssemblyType=0)
+                if (args.Data.AssemblyType != "0")
+                {
+                    // Revert non-description edits for option rows
+                    if (args.ColumnName != nameof(AssemblyRow.Description))
+                    {
+                        // The grid should prevent this, but enforce here too
+                    }
+                }
+            }
+        });
+        buildingPhasesGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<BuildingPhaseRow>>(this, (args) =>
+        {
+            if (args.Data != null) args.Data.IsDirty = true;
+        });
+        unknownItemsGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<UnknownItemRow>>(this, (args) =>
+        {
+            if (args.Data != null)
+            {
+                args.Data.IsDirty = true;
+
+                // Enforce mutual exclusivity of checkboxes (VB6 gData_ValidateEdit)
+                if (args.ColumnName == nameof(UnknownItemRow.Skip) && args.Data.Skip)
+                {
+                    args.Data.Create = false;
+                    args.Data.Map = false;
+                }
+                else if (args.ColumnName == nameof(UnknownItemRow.Create) && args.Data.Create)
+                {
+                    args.Data.Skip = false;
+                    args.Data.Map = false;
+                }
+                else if (args.ColumnName == nameof(UnknownItemRow.Map) && args.Data.Map)
+                {
+                    args.Data.Skip = false;
+                    args.Data.Create = false;
+                }
+                // VB6: Phase edit sets Create=true, Skip/Map=false
+                else if (args.ColumnName == nameof(UnknownItemRow.Phase))
+                {
+                    args.Data.Map = false;
+                    args.Data.Create = true;
+                    args.Data.Skip = false;
+                }
+                // VB6: Item validation - ensure item ends with cost type, uppercase, max 16 chars
+                else if (args.ColumnName == nameof(UnknownItemRow.Item))
+                {
+                    var item = (args.Data.Item ?? "").Trim();
+                    if (!string.IsNullOrEmpty(item))
+                    {
+                        var validCostTypes = new[] { 'L', 'E', 'M', 'S', 'O' };
+                        if (!validCostTypes.Contains(char.ToUpper(item[^1])))
+                            item += "M";
+                        // Ensure cost type is uppercase
+                        item = item[..^1] + char.ToUpper(item[^1]);
+                        // Max 16 chars
+                        if (item.Length > 16)
+                            item = item[..15] + item[^1];
+                        args.Data.Item = item;
+                    }
+                    args.Data.Map = false;
+                    args.Data.Create = true;
+                    args.Data.Skip = false;
+                }
+            }
+        });
+    }
+
+    // === Step Class Helper ===
+    private string GetStepClass(int stepIndex)
+    {
+        var currentIndex = GetCurrentStepIndex();
+        if (stepIndex < currentIndex) return "completed";
+        if (stepIndex == currentIndex) return "active";
+        return "";
+    }
+
+    private int GetCurrentStepIndex()
+    {
+        return CurrentStep switch
+        {
+            WizardStep.Upload => 0,
+            WizardStep.SizeErrors => 0,
+            WizardStep.Conditions => 1,
+            WizardStep.Assemblies => 2,
+            WizardStep.BuildingPhases => 3,
+            WizardStep.UnknownItems => 4,
+            WizardStep.Finish => 5,
+            _ => 0
+        };
+    }
+
+    // === File Selection ===
+    private async Task OnSelectFile()
+    {
+        // VB6: check permissions first, before opening the file dialog
+        var hasPermission = await CheckUserPermission("editassemblies");
+        if (!hasPermission)
+        {
+            Notifications.Info("You don't have permissions to update assemblies. Contact an administrator to change your permissions.");
+            return;
+        }
+        EditItemDB = await CheckUserPermission("edititemdb");
+
+        // In Blazor we cannot use native file dialogs directly like VB6.
+        // We simulate with a prompt. In production, use InputFile component.
+        var fileName = await Dialogs.PromptAsync(
+            "Enter the path to the BIM Pipeline file (CSV, XLS, or XLSX):");
+
+        if (string.IsNullOrWhiteSpace(fileName)) return;
+
+        SelectedFileName = fileName;
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            await LoadFileAsync(fileName);
+            await CheckSizeErrors();
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading file: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}OnSelectFile]");
+
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Load File into Staging ===
+    private async Task LoadFileAsync(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLower().TrimStart('.');
+
+        // Read CSV lines (VB6 converts XLS/XLSX to CSV first via SaveToCSV)
+        string csvPath = fileName;
+        // If not already CSV, the caller should convert. Here we assume CSV input.
+        if (!File.Exists(csvPath))
+            throw new FileNotFoundException($"File not found: {csvPath}");
+
+        var lines = await File.ReadAllLinesAsync(csvPath);
+        if (lines.Length < 2) return;
+
+        // Parse header row to get column keys (VB6: remove spaces, dots, underscores)
+        var headers = ParseCsvLine(lines[0]);
+        var colKeys = new string[headers.Length];
+        var colTypes = new string[headers.Length];
+
+        // Determine if model file based on first header (VB6: "Plan Name")
+        IsModelFile = headers[0].Replace("\uFEFF", "").Trim() == "Plan Name";
+
+        for (int c = 0; c < headers.Length; c++)
+        {
+            var key = headers[c].Replace(" ", "").Replace(".", "").Replace("_", "").Replace("\uFEFF", "");
+            if (key == "PlanNo") key = "PlanNumber";
+            // v3 changes
+            if (key == "ProductQty") key = "Qty";
+            if (key == "TotalQty") key = "AdjustedQty";
+            if (key == "WasteQty") key = "";
+            if (key == "RoundingQty") key = "";
+
+            colKeys[c] = key;
+
+            // Set data types (VB6 logic)
+            switch (key)
+            {
+                case "BasePrice": case "BasementSQF": case "FirstSQF": case "SecondSQF":
+                case "HeatedSQF": case "TotalSQF": case "Stories": case "Bedrooms":
+                case "Bathrooms": case "Qty": case "Waste": case "Accuracy": case "AdjustedQty":
+                    colTypes[c] = "numeric";
+                    break;
+                case "Style":
+                    colTypes[c] = "string:200";
+                    break;
+                case "Description":
+                    colTypes[c] = IsModelFile ? "string:200" : "string:150";
+                    break;
+                default:
+                    colTypes[c] = "string";
+                    break;
+            }
+        }
+
+        // Build column list for INSERT
+        var tableName = IsModelFile ? "BIMImportModels" : "BIMImportDetails";
+        var validCols = new List<int>();
+        for (int c = 0; c < colKeys.Length; c++)
+        {
+            if (!string.IsNullOrEmpty(colKeys[c])) validCols.Add(c);
+        }
+
+        var colList = string.Join(",", validCols.Select(c => $"[{colKeys[c]}]"));
+
+        // Batch insert rows (VB6 does batches of 150)
+        const int batchSize = 150;
+        var batch = new List<string>();
+
+        for (int r = 1; r < lines.Length; r++)
+        {
+            var cells = ParseCsvLine(lines[r]);
+            if (cells.Length == 0) continue;
+
+            // VB6: skip rows where PlanNumber is empty
+            var planIdx = Array.IndexOf(colKeys, "PlanNumber");
+            if (planIdx >= 0 && planIdx < cells.Length && string.IsNullOrWhiteSpace(cells[planIdx]))
+                continue;
+
+            var vals = new List<string>();
+            vals.Add(SessionState.DivisionID.ToString());
+            vals.Add($"'{SessionCode.Replace("'", "''")}'");
+
+            foreach (var c in validCols)
+            {
+                var val = c < cells.Length ? cells[c].Trim() : "";
+                if (colTypes[c] == "numeric")
+                {
+                    if (decimal.TryParse(val, out var num))
+                        vals.Add(num.ToString());
+                    else
+                        vals.Add("0");
+                }
+                else
+                {
+                    var maxLen = colTypes[c] switch
+                    {
+                        "string:200" => 200,
+                        "string:150" => 150,
+                        _ => 0
+                    };
+                    if (maxLen > 0 && val.Length > maxLen) val = val.Substring(0, maxLen);
+                    vals.Add($"'{val.Replace("'", "''")}'");
+                }
+            }
+
+            batch.Add($"({string.Join(",", vals)})");
+
+            if (batch.Count >= batchSize)
+            {
+                var insertSql = $"INSERT INTO {tableName}(divisionid,sessioncode,{colList}) VALUES\n{string.Join(",\n", batch)}";
+                await db.ExecuteAsync(insertSql);
+                batch.Clear();
+            }
+        }
+
+        // Insert remaining batch
+        if (batch.Count > 0)
+        {
+            var insertSql = $"INSERT INTO {tableName}(divisionid,sessioncode,{colList}) VALUES\n{string.Join(",\n", batch)}";
+            await db.ExecuteAsync(insertSql);
+        }
+
+        // VB6: extract models from details file
+        if (!IsModelFile)
+        {
+            var baseModel = "BASE0100"; // VB6: HFApp.Options.ValueByName("BIMBaseModelNumber")
+            try
+            {
+                var rows = await db.QueryAsync(
+                    "SELECT TOP 1 ValueData FROM tblOptions WHERE ValueName='BIMBaseModelNumber'");
+                if (rows.Any())
+                    baseModel = rows.First()["ValueData"]?.ToString() ?? baseModel;
+            }
+            catch { /* non-critical */ }
+
+            var extractSql = $@"
+                INSERT INTO BIMImportModels(DivisionID, SessionCode, PlanName, PlanNumber, SalesHouseName, Description)
+                SELECT TOP 1 x.divisionid, x.SessionCode, m.Assembly, m.Assembly, m.Assembly, m.Description
+                FROM bimimportdetails x
+                JOIN tbldbassemblymaster m ON m.assembly = x.PlanNumber AND AssemblyType = 0
+                WHERE x.sessioncode = '{SessionCode.Replace("'", "''")}'
+                AND x.Optionnumber = '{baseModel.Replace("'", "''")}'";
+            try { await db.ExecuteAsync(extractSql); } catch { /* non-critical */ }
+        }
+    }
+
+    // Helper to parse a CSV line respecting quoted fields
+    private static string[] ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        bool inQuotes = false;
+        var field = new System.Text.StringBuilder();
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                fields.Add(field.ToString());
+                field.Clear();
+            }
+            else
+            {
+                field.Append(c);
+            }
+        }
+        fields.Add(field.ToString());
+        return fields.ToArray();
+    }
+
+    // === Check Size Errors ===
+    private async Task CheckSizeErrors()
+    {
+        try
+        {
+            var sql = "SELECT SizeError FROM dbo.BIMImportSizeErrors WHERE sessioncode=@SessionCode";
+            var dt = db.SqlExec(sql, new { SessionCode });
+
+            if (dt.Rows.Count > 0)
+            {
+                SizeErrorsData = dt.AsEnumerable().Select(r => new SizeErrorRow
+                {
+                    SizeError = r["SizeError"]?.ToString() ?? ""
+                }).ToList();
+
+                WizardDescription = "This file contains data that exceeds HomeFront field sizes. Please shrink the data before importing.";
+                ShowNextButton = false;
+                CurrentStep = WizardStep.SizeErrors;
+            }
+            else
+            {
+                // No size errors, proceed to conditions or assemblies
+                if (!IsModelFile)
+                {
+                    await LoadConditions();
+                }
+                else
+                {
+                    await LoadAssemblies();
+                }
+            }
+        }
+        catch
+        {
+            // If the size errors table doesn't exist or query fails, proceed
+            if (!IsModelFile)
+            {
+                await LoadConditions();
+            }
+            else
+            {
+                await LoadAssemblies();
+            }
+        }
+    }
+
+    // === Load Conditions ===
+    private async Task LoadConditions()
+    {
+        try
+        {
+            var sql = @"
+                SELECT DISTINCT d.DependentCondition, 
+                       CAST(CASE WHEN c.condition IS NULL THEN 0 ELSE 1 END AS BIT) AS Include
+                FROM BIMImportDetails d
+                LEFT OUTER JOIN BIMImportIncludedConditions c ON d.DependentCondition = c.Condition
+                WHERE sessioncode = @SessionCode
+                ORDER BY Include DESC, DependentCondition";
+
+            var dt = db.SqlExec(sql, new { SessionCode });
+
+            if (dt.Rows.Count > 0)
+            {
+                ConditionsData = dt.AsEnumerable().Select(r => new ConditionRow
+                {
+                    DependentCondition = r["DependentCondition"]?.ToString() ?? "",
+                    Include = Convert.ToBoolean(r["Include"]),
+                    IsDirty = false
+                }).ToList();
+
+                WizardDescription = "Which BIM Pipeline conditions would you like to import into HomeFront?";
+                CurrentStep = WizardStep.Conditions;
+            }
+            else
+            {
+                await LoadAssemblies();
+            }
+        }
+        catch
+        {
+            await LoadAssemblies();
+        }
+    }
+
+    // === Save Conditions ===
+    private async Task SaveConditions()
+    {
+        foreach (var row in ConditionsData.Where(r => r.IsDirty))
+        {
+            try
+            {
+                if (row.Include)
+                {
+                    var sql = "INSERT INTO BIMImportIncludedConditions(Condition) VALUES(@Condition)";
+                    await db.ExecuteAsync(sql, new { Condition = row.DependentCondition });
+                }
+                else
+                {
+                    var sql = "DELETE BIMImportIncludedConditions WHERE Condition=@Condition";
+                    await db.ExecuteAsync(sql, new { Condition = row.DependentCondition });
+                }
+            }
+            catch { /* non-critical */ }
+        }
+    }
+
+    // === Load Assemblies ===
+    private async Task LoadAssemblies()
+    {
+        try
+        {
+            var sql = @"
+                SELECT Model, OptionID, Description, Series, FloorArea, Bedrooms, Bathrooms, Style, AssemblyType
+                FROM BIMImportAssemblyMasters
+                WHERE sessioncode = @SessionCode
+                ORDER BY Model, OptionID";
+
+            var dt = db.SqlExec(sql, new { SessionCode });
+
+            AssembliesData = dt.AsEnumerable().Select(r => new AssemblyRow
+            {
+                Model = r["Model"]?.ToString() ?? "",
+                OptionID = r["OptionID"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                Series = r["Series"]?.ToString() ?? "",
+                FloorArea = r["FloorArea"] != DBNull.Value ? Convert.ToDecimal(r["FloorArea"]) : 0,
+                Bedrooms = r["Bedrooms"] != DBNull.Value ? Convert.ToDecimal(r["Bedrooms"]) : 0,
+                Bathrooms = r["Bathrooms"] != DBNull.Value ? Convert.ToDecimal(r["Bathrooms"]) : 0,
+                Style = r["Style"]?.ToString() ?? "",
+                AssemblyType = r["AssemblyType"]?.ToString() ?? "0",
+                IsDirty = false
+            }).ToList();
+
+            WizardDescription = "Step 1 - These are the assemblies you are about to import. Please verify that they are correct.";
+            CurrentStep = WizardStep.Assemblies;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadAssemblies error");
+
+            WizardDescription = "Step 1 - These are the assemblies you are about to import. Please verify that they are correct.";
+            CurrentStep = WizardStep.Assemblies;
+        }
+    }
+
+    // === Save Assemblies ===
+    private async Task SaveAssemblies()
+    {
+        foreach (var row in AssembliesData.Where(r => r.IsDirty))
+        {
+            string sql;
+            if (row.AssemblyType == "0")
+            {
+                sql = @"
+                    UPDATE BIMImportModels
+                    SET description=@Description, style=@Style, series=@Series,
+                        totalsqf=@FloorArea, bedrooms=@Bedrooms, bathrooms=@Bathrooms
+                    WHERE sessioncode=@SessionCode AND plannumber=@Model";
+                await db.ExecuteAsync(sql, new
+                {
+                    row.Description, row.Style, row.Series,
+                    row.FloorArea, row.Bedrooms, row.Bathrooms,
+                    SessionCode, row.Model
+                });
+            }
+            else
+            {
+                sql = @"
+                    UPDATE BIMImportDetails
+                    SET optiondescription=@Description
+                    WHERE sessioncode=@SessionCode AND plannumber=@Model AND optionnumber=@OptionID";
+                await db.ExecuteAsync(sql, new
+                {
+                    row.Description, SessionCode, row.Model, row.OptionID
+                });
+            }
+        }
+    }
+
+    // === Load Building Phases ===
+    private async Task LoadBuildingPhases()
+    {
+        try
+        {
+            var sql = @"
+                SELECT DISTINCT BuildingPhase, IgnoreBuildingPhase AS Ignore
+                FROM BIMImportAssemblyDetails
+                WHERE sessioncode = @SessionCode
+                ORDER BY IgnoreBuildingPhase DESC, BuildingPhase";
+
+            var dt = db.SqlExec(sql, new { SessionCode });
+
+            if (dt.Rows.Count > 0)
+            {
+                BuildingPhasesData = dt.AsEnumerable().Select(r => new BuildingPhaseRow
+                {
+                    BuildingPhase = r["BuildingPhase"]?.ToString() ?? "",
+                    Ignore = Convert.ToBoolean(r["Ignore"]),
+                    IsDirty = false
+                }).ToList();
+
+                WizardDescription = "Step 2 - Mark any BIM Pipeline building phases that you don't want to import into HomeFront.";
+                CurrentStep = WizardStep.BuildingPhases;
+            }
+            else
+            {
+                await LoadUnknownItems();
+            }
+        }
+        catch
+        {
+            await LoadUnknownItems();
+        }
+    }
+
+    // === Save Building Phases ===
+    private async Task SaveBuildingPhases()
+    {
+        foreach (var row in BuildingPhasesData.Where(r => r.IsDirty))
+        {
+            try
+            {
+                if (row.Ignore)
+                {
+                    var sql = "INSERT INTO BIMImortIgnoreBuildingPhases(BuildingPhase) VALUES(@BuildingPhase)";
+                    await db.ExecuteAsync(sql, new { row.BuildingPhase });
+                }
+                else
+                {
+                    var sql = "DELETE BIMImortIgnoreBuildingPhases WHERE BuildingPhase=@BuildingPhase";
+                    await db.ExecuteAsync(sql, new { row.BuildingPhase });
+                }
+            }
+            catch { /* non-critical */ }
+        }
+    }
+
+    // === Load Unknown Items ===
+    private async Task LoadUnknownItems()
+    {
+        try
+        {
+            var sql = @"
+                SELECT DISTINCT Skip, [Create], Map, BuildingPhase, Product, POIndex, Phase, Item, Description, TakeoffUnit
+                FROM BIMImportAssemblyDetails
+                WHERE UnknownItem = 1 AND IgnoreBuildingPhase = 0 AND ISNULL(Skip, 0) = 0
+                AND sessioncode = @SessionCode
+                ORDER BY POIndex, Item";
+
+            var dt = db.SqlExec(sql, new { SessionCode });
+
+            if (dt.Rows.Count > 0)
+            {
+                UnknownItemsData = dt.AsEnumerable().Select(r => new UnknownItemRow
+                {
+                    Skip = r["Skip"] != DBNull.Value && Convert.ToBoolean(r["Skip"]),
+                    Create = r["Create"] != DBNull.Value && Convert.ToBoolean(r["Create"]),
+                    Map = r["Map"] != DBNull.Value && Convert.ToBoolean(r["Map"]),
+                    BuildingPhase = r["BuildingPhase"]?.ToString() ?? "",
+                    Product = r["Product"]?.ToString() ?? "",
+                    POIndex = r["POIndex"]?.ToString() ?? "",
+                    Phase = r["Phase"]?.ToString() ?? "",
+                    Item = r["Item"]?.ToString() ?? "",
+                    Description = r["Description"]?.ToString() ?? "",
+                    TakeoffUnit = r["TakeoffUnit"]?.ToString() ?? "",
+                    IsDirty = false
+                }).ToList();
+
+                WizardDescription = EditItemDB
+                    ? "Step 3 - These items don't exist in your HomeFront item database. Skip them, create new items, or map to an existing item?"
+                    : "Step 3 - These items don't exist in your HomeFront item database. They cannot be imported. You must correct the import file or skip these items.";
+                CurrentStep = WizardStep.UnknownItems;
+            }
+            else
+            {
+                await GoToFinish();
+            }
+        }
+        catch
+        {
+            await GoToFinish();
+        }
+    }
+
+    // === Validate Unknown Items ===
+    private async Task<bool> ValidateItems()
+    {
+        foreach (var row in UnknownItemsData)
+        {
+            if (row.Create)
+            {
+                if (string.IsNullOrWhiteSpace(row.POIndex) || string.IsNullOrWhiteSpace(row.Phase) || string.IsNullOrWhiteSpace(row.Item))
+                {
+                    Notifications.Info("POIndex, Phase, and Item are all required to create a new item.");
+                    return false;
+                }
+            }
+            else if (row.Map)
+            {
+                if (string.IsNullOrWhiteSpace(row.Phase) || string.IsNullOrWhiteSpace(row.Item))
+                {
+                    Notifications.Info("Phase and Item are required to map an item.");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // === Save Unknown Items ===
+    private async Task SaveUnknownItems()
+    {
+        foreach (var row in UnknownItemsData.Where(r => r.IsDirty))
+        {
+            var sql = @"
+                UPDATE BIMImportDetails
+                SET map=@Map, skip=@Skip, [create]=@Create,
+                    poindex=@POIndex, phase=@Phase, item=@Item,
+                    description=@Description, unit=@TakeoffUnit
+                WHERE sessioncode=@SessionCode
+                AND buildingphase=@BuildingPhase AND product=@Product";
+            await db.ExecuteAsync(sql, new
+            {
+                row.Map, row.Skip, row.Create,
+                row.POIndex, row.Phase, row.Item,
+                row.Description, row.TakeoffUnit,
+                SessionCode, row.BuildingPhase, row.Product
+            });
+        }
+
+        // Map items
+        var mapSql = @"
+            UPDATE tblphaseitem SET partnumber = d.product
+            FROM bimimportassemblydetails d
+            JOIN tblphaseitem i ON d.phase = i.phase AND d.item = i.item AND i.divisionid = @DivisionID
+            WHERE d.sessioncode = @SessionCode
+            AND d.unknownitem = 1 AND d.ignorebuildingphase = 0 AND d.map = 1";
+        await db.ExecuteAsync(mapSql, new { SessionState.DivisionID, SessionCode });
+
+        // Create items
+        if (EditItemDB)
+        {
+            var createSql = @"
+                INSERT INTO tblphaseitem(partnumber, poindex, Phase, ItemNumber, Item, CostCategory, Description,
+                    OrderUOM, TakeoffUOM, ConversionFactor, WastePercent, RoundDir, Roundto, IsQuote, DivisionID)
+                SELECT DISTINCT d.product, d.poindex, d.phase, LEFT(d.item, LEN(d.item)-1), d.item,
+                    RIGHT(RTRIM(d.item), 1), d.Description, d.TakeoffUnit, d.TakeoffUnit, 1, 0, 0, 0, 0, @DivisionID
+                FROM bimimportassemblydetails d
+                WHERE d.sessioncode = @SessionCode
+                AND d.unknownitem = 1 AND d.ignorebuildingphase = 0 AND d.[create] = 1";
+            try
+            {
+                await db.ExecuteAsync(createSql, new { SessionState.DivisionID, SessionCode });
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                {
+                    Notifications.Error("Unable to create a new item because the phase/item number has already been used.\n\n" + ex.Message);
+                }
+                else throw;
+            }
+        }
+    }
+
+    // === Go to Finish ===
+    private async Task GoToFinish()
+    {
+        try
+        {
+            var countResult = db.SqlExec(
+                "SELECT COUNT(*) AS Cnt FROM bimimportassemblymasters WHERE sessioncode=@SessionCode",
+                new { SessionCode });
+            AssemblyCount = countResult.Rows.Count > 0 ? Convert.ToInt32(countResult.Rows[0]["Cnt"]) : 0;
+        }
+        catch
+        {
+            AssemblyCount = 0;
+        }
+
+        WizardDescription = "Ready to proceed.";
+        CurrentStep = WizardStep.Finish;
+    }
+
+    // === Execute Final Import ===
+    private async Task ExecuteImport()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var sql = "";
+
+            // UPDATE EXISTING MASTERS
+            sql += @"
+                UPDATE tbldbassemblymaster
+                SET description = CASE WHEN x.Description = '' THEN m.description ELSE x.Description END,
+                    series = CASE WHEN x.Series = '' THEN m.series ELSE x.Series END,
+                    floorarea = CASE WHEN ISNULL(x.FloorArea, 0) = 0 THEN m.floorarea ELSE ISNULL(x.FloorArea, 0) END,
+                    bedrooms = CASE WHEN ISNULL(x.Bedrooms, 0) = 0 THEN m.bedrooms ELSE ISNULL(x.Bedrooms, 0) END,
+                    bathrooms = CASE WHEN ISNULL(x.Bathrooms, 0) = 0 THEN m.bathrooms ELSE ISNULL(x.Bathrooms, 0) END,
+                    style = CASE WHEN x.Style = '' THEN m.style ELSE x.Style END
+                FROM bimimportassemblymasters x
+                JOIN tbldbassemblymaster m ON m.community = '' AND m.assembly = x.assembly
+                    AND m.model = x.model AND m.optionid = x.optionid AND m.divisionid = @DivisionID
+                WHERE x.sessioncode = @SessionCode
+            ";
+
+            // CREATE NEW MASTERS
+            sql += @"
+                INSERT INTO tblDBAssemblyMaster(Community, Assembly, Description, OptionID, Model, Series,
+                    AssemblyType, FloorArea, Bedrooms, Bathrooms, Style, DivisionID)
+                SELECT '', x.Assembly, x.Description, x.OptionID, x.Model, x.Series, x.AssemblyType,
+                    ISNULL(x.FloorArea, 0), ISNULL(x.Bedrooms, 0), ISNULL(x.Bathrooms, 0), x.Style, @DivisionID
+                FROM bimimportassemblymasters x
+                LEFT OUTER JOIN tbldbassemblymaster m ON m.community = '' AND m.assembly = x.assembly
+                    AND m.model = x.model AND m.optionid = x.optionid AND m.divisionid = @DivisionID
+                WHERE m.assembly IS NULL AND sessioncode = @SessionCode
+            ";
+
+            if (!IsModelFile)
+            {
+                // REMOVE ALL DETAILS
+                sql += @"
+                    DELETE tbldbassemblydetails
+                    FROM bimimportassemblymasters x
+                    JOIN tbldbassemblydetails m ON m.community = ''
+                        AND m.assembly = x.assembly
+                        AND m.model = CASE WHEN SUBSTRING(x.OptionID, 1, 4) = '9999' THEN '' ELSE x.model END
+                        AND m.optionid = x.optionid
+                        AND m.divisionid = @DivisionID
+                    WHERE x.sessioncode = @SessionCode
+                ";
+
+                // CREATE NEW DETAILS
+                sql += @"
+                    INSERT INTO tbldbassemblydetails(Community, Assembly, Model, OptionID, Phase, Item,
+                        TakeoffQty, OrderQty, POIndex, Notes, DivisionID, AssemblyID)
+                    SELECT '', m.Assembly, m.Model, m.OptionID, d.Phase, d.Item, d.TakeoffQty, d.TakeoffQty,
+                        d.POIndex, d.Notes, m.divisionid, m.AssemblyID
+                    FROM bimimportassemblydetails d
+                    JOIN tbldbassemblymaster m ON m.community = ''
+                        AND m.assembly = d.assembly
+                        AND m.model = CASE WHEN SUBSTRING(d.OptionID, 1, 4) = '9999' THEN '' ELSE d.model END
+                        AND m.optionid = d.optionid
+                        AND m.divisionid = ISNULL(d.divisionid, @DivisionID)
+                    WHERE d.ignorebuildingphase = 0 AND ISNULL(d.skip, 0) = 0
+                    AND d.sessioncode = @SessionCode
+                ";
+            }
+
+            await db.ExecuteAsync(sql, new { SessionState.DivisionID, SessionCode });
+
+            Notifications.Info("BIM import completed successfully.");
+            await CleanupAndClose();
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error("Unable to create a new item because the phase/item number has already been used.\n\n" + ex.Message);
+            }
+            else
+            {
+                Notifications.Info($"Error during import: {ex.Message}");
+                Logger.LogError(ex, "[{SRCFILE}ExecuteImport]");
+
+            }
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Cleanup ===
+    private async Task CleanupAndClose()
+    {
+        try
+        {
+            var sql = @"
+                DELETE BIMImportModels WHERE SessionCode = @SessionCode
+                DELETE BIMImportDetails WHERE SessionCode = @SessionCode";
+            await db.ExecuteAsync(sql, new { SessionCode });
+        }
+        catch { /* non-critical */ }
+
+        ClosePage();
+    }
+
+    // === Navigation ===
+    private async Task OnNext()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            switch (CurrentStep)
+            {
+                case WizardStep.Upload:
+                    // File should already be selected and loaded
+                    if (string.IsNullOrEmpty(SelectedFileName))
+                    {
+                        Notifications.Info("Please select a file first.");
+                        return;
+                    }
+                    break;
+
+                case WizardStep.Conditions:
+                    await SaveConditions();
+                    await LoadAssemblies();
+                    break;
+
+                case WizardStep.Assemblies:
+                    await SaveAssemblies();
+                    await LoadBuildingPhases();
+                    break;
+
+                case WizardStep.BuildingPhases:
+                    await SaveBuildingPhases();
+                    await LoadUnknownItems();
+                    break;
+
+                case WizardStep.UnknownItems:
+                    if (!await ValidateItems()) return;
+                    await SaveUnknownItems();
+                    // Reload unknown items to check if any remain
+                    await LoadUnknownItemsCheck();
+                    break;
+
+                case WizardStep.Finish:
+                    await ExecuteImport();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error: {ex.Message}");
+            Logger.LogError(ex, "[{SRCFILE}OnNext]");
+
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadUnknownItemsCheck()
+    {
+        try
+        {
+            var sql = @"
+                SELECT COUNT(*) AS Cnt
+                FROM BIMImportAssemblyDetails
+                WHERE UnknownItem = 1 AND IgnoreBuildingPhase = 0 AND ISNULL(Skip, 0) = 0
+                AND sessioncode = @SessionCode";
+            var dt = db.SqlExec(sql, new { SessionCode });
+            var count = dt.Rows.Count > 0 ? Convert.ToInt32(dt.Rows[0]["Cnt"]) : 0;
+
+            if (count > 0)
+            {
+                // Still have unknown items, reload the grid
+                await LoadUnknownItems();
+            }
+            else
+            {
+                await GoToFinish();
+            }
+        }
+        catch
+        {
+            await GoToFinish();
+        }
+    }
+
+    private async Task OnCancel()
+    {
+        await CleanupAndClose();
+    }
+
+    // === Permission Check ===
+    private async Task<bool> CheckUserPermission(string permission)
+    {
+        try
+        {
+            var sql = @"SELECT COUNT(*) AS Cnt FROM tblUserPermissions
+                        WHERE PermissionName = @Permission AND Allowed = 1";
+            var dt = db.SqlExec(sql, new { Permission = permission });
+            if (dt.Rows.Count > 0 && Convert.ToInt32(dt.Rows[0]["Cnt"]) > 0)
+                return true;
+            // Fallback: if the permission table doesn't have the entry, allow by default
+            return await Task.FromResult(true);
+        }
+        catch
+        {
+            // If permission table doesn't exist or query fails, allow by default
+            return true;
+        }
+    }
+
+    // === Pick List Helpers ===
+    private async Task OnPickSeries(AssemblyRow row)
+    {
+        try
+        {
+            var sql = "SELECT series, description FROM tblSeries WHERE divisionid = @DivisionID ORDER BY series";
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID });
+
+            PickListData = dt.AsEnumerable().Select(r => new PickListItem
+            {
+                Values = new Dictionary<string, string>
+                {
+                    { "Series", r["series"]?.ToString() ?? "" },
+                    { "Description", r["description"]?.ToString() ?? "" }
+                }
+            }).ToList();
+
+            PickListColumns = new List<PickListColumnDef>
+            {
+                new() { Field = "Series", Header = "Series", Width = "150px" },
+                new() { Field = "Description", Header = "Description", Width = "300px" }
+            };
+
+            PickListTitle = "Select Series";
+            PickListCallback = (selected) =>
+            {
+                row.Series = selected.Values.GetValueOrDefault("Series", "");
+                row.IsDirty = true;
+            };
+            IsPickListVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading series: {ex.Message}");
+        }
+    }
+
+    private async Task OnPickPOIndex(UnknownItemRow row)
+    {
+        try
+        {
+            var sql = "SELECT poindex, description FROM tblpoindex WHERE divisionid = @DivisionID ORDER BY poindex";
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID });
+
+            PickListData = dt.AsEnumerable().Select(r => new PickListItem
+            {
+                Values = new Dictionary<string, string>
+                {
+                    { "POIndex", r["poindex"]?.ToString() ?? "" },
+                    { "Description", r["description"]?.ToString() ?? "" }
+                }
+            }).ToList();
+
+            PickListColumns = new List<PickListColumnDef>
+            {
+                new() { Field = "POIndex", Header = "PO Index", Width = "150px" },
+                new() { Field = "Description", Header = "Description", Width = "300px" }
+            };
+
+            PickListTitle = "Select PO Index";
+            PickListCallback = (selected) =>
+            {
+                row.POIndex = selected.Values.GetValueOrDefault("POIndex", "");
+                row.IsDirty = true;
+            };
+            IsPickListVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading PO indexes: {ex.Message}");
+        }
+    }
+
+    private async Task OnPickPhase(UnknownItemRow row)
+    {
+        try
+        {
+            var sql = "SELECT Phase, Description FROM estphases WHERE GroupPhase = 0 AND divisionid = @DivisionID ORDER BY Phase";
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID });
+
+            PickListData = dt.AsEnumerable().Select(r => new PickListItem
+            {
+                Values = new Dictionary<string, string>
+                {
+                    { "Phase", r["Phase"]?.ToString() ?? "" },
+                    { "Description", r["Description"]?.ToString() ?? "" }
+                }
+            }).ToList();
+
+            PickListColumns = new List<PickListColumnDef>
+            {
+                new() { Field = "Phase", Header = "Phase", Width = "150px" },
+                new() { Field = "Description", Header = "Description", Width = "300px" }
+            };
+
+            PickListTitle = "Select Phase";
+            PickListCallback = (selected) =>
+            {
+                row.Phase = selected.Values.GetValueOrDefault("Phase", "");
+                row.Map = false;
+                row.Skip = false;
+                row.Create = true;
+                row.IsDirty = true;
+            };
+            IsPickListVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading phases: {ex.Message}");
+        }
+    }
+
+    private async Task OnPickItem(UnknownItemRow row)
+    {
+        try
+        {
+            var sql = @"SELECT POIndex, Phase, Item, Description, PartNumber, TakeoffUOM 
+                        FROM tblphaseitem WHERE divisionid = @DivisionID ORDER BY Phase, Item";
+            var dt = db.SqlExec(sql, new { SessionState.DivisionID });
+
+            PickListData = dt.AsEnumerable().Select(r => new PickListItem
+            {
+                Values = new Dictionary<string, string>
+                {
+                    { "POIndex", r["POIndex"]?.ToString() ?? "" },
+                    { "Phase", r["Phase"]?.ToString() ?? "" },
+                    { "Item", r["Item"]?.ToString() ?? "" },
+                    { "Description", r["Description"]?.ToString() ?? "" },
+                    { "PartNumber", r["PartNumber"]?.ToString() ?? "" },
+                    { "TakeoffUOM", r["TakeoffUOM"]?.ToString() ?? "" }
+                }
+            }).ToList();
+
+            PickListColumns = new List<PickListColumnDef>
+            {
+                new() { Field = "POIndex", Header = "PO Index", Width = "100px" },
+                new() { Field = "Phase", Header = "Phase", Width = "100px" },
+                new() { Field = "Item", Header = "Item", Width = "100px" },
+                new() { Field = "Description", Header = "Description", Width = "200px" },
+                new() { Field = "PartNumber", Header = "Part Number", Width = "100px" },
+                new() { Field = "TakeoffUOM", Header = "Takeoff UOM", Width = "100px" }
+            };
+
+            PickListTitle = "Select Item";
+            PickListCallback = (selected) =>
+            {
+                row.POIndex = selected.Values.GetValueOrDefault("POIndex", "");
+                row.Phase = selected.Values.GetValueOrDefault("Phase", "");
+                row.Item = selected.Values.GetValueOrDefault("Item", "");
+                row.Description = selected.Values.GetValueOrDefault("Description", "");
+                row.TakeoffUnit = selected.Values.GetValueOrDefault("TakeoffUOM", "");
+                row.Map = true;
+                row.Skip = false;
+                row.Create = false;
+                row.IsDirty = true;
+            };
+            IsPickListVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading items: {ex.Message}");
+        }
+    }
+
+    private PickListItem? SelectedPickListItem;
+
+    private void OnPickListRowSelected(PickListItem item)
+    {
+        SelectedPickListItem = item;
+    }
+
+    private void OnPickListSelect()
+    {
+        var selected = SelectedPickListItem ?? PickListData.FirstOrDefault();
+        if (selected != null && PickListCallback != null)
+        {
+            PickListCallback(selected);
+        }
+        IsPickListVisible = false;
+        SelectedPickListItem = null;
+        StateHasChanged();
+    }
+
+    // === Model Classes ===
+    public class SizeErrorRow
+    {
+        public string SizeError { get; set; } = "";
+    }
+
+    public class ConditionRow
+    {
+        public string DependentCondition { get; set; } = "";
+        public bool Include { get; set; }
+        public bool IsDirty { get; set; }
+    }
+
+    public class AssemblyRow
+    {
+        public string Model { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Series { get; set; } = "";
+        public decimal FloorArea { get; set; }
+        public decimal Bedrooms { get; set; }
+        public decimal Bathrooms { get; set; }
+        public string Style { get; set; } = "";
+        public string AssemblyType { get; set; } = "0";
+        public bool IsDirty { get; set; }
+    }
+
+    public class BuildingPhaseRow
+    {
+        public string BuildingPhase { get; set; } = "";
+        public bool Ignore { get; set; }
+        public bool IsDirty { get; set; }
+    }
+
+    public class UnknownItemRow
+    {
+        public bool Skip { get; set; }
+        public bool Create { get; set; }
+        public bool Map { get; set; }
+        public string BuildingPhase { get; set; } = "";
+        public string Product { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string TakeoffUnit { get; set; } = "";
+        public bool IsDirty { get; set; }
+    }
+
+    public class PickListItem
+    {
+        public Dictionary<string, string> Values { get; set; } = new();
+    }
+
+    public class PickListColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public string Width { get; set; } = "";
+    }
+}

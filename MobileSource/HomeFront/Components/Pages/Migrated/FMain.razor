@@ -658,8 +658,19 @@
     private bool AccountingConnected = false;
     private bool UseEstimatingWorksheetsOnly = false;
     private bool UseCommunityStandards = false;
-    private string AppVersion = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "Unknown";
+    private string AppVersion => GetCleanVersion(Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+
+    private static string GetCleanVersion(string? rawVersion)
+    {
+        if (string.IsNullOrWhiteSpace(rawVersion) || rawVersion == "Unknown")
+            return DateTime.Now.ToString("yyyy.MM");
+        var idx = rawVersion.IndexOf('+');
+        if (idx >= 0) rawVersion = rawVersion.Substring(0, idx);
+        if (rawVersion.StartsWith("1.0.0"))
+            return DateTime.Now.ToString("yyyy.MM");
+        return rawVersion;
+    }
 
     // === Dynamic Menu Items (Inquiries & Reports) ===
     private List<MenuFileItem> InquiryItems = new();
@@ -2815,16 +2826,38 @@
         await FlushPendingGridLayoutsAsync(notify: true);
     }
 
+    // VB6 forms with MDIChild=True — the only windows that could exist alongside the
+    // FMain menu, so the only ones a VB6 division change (mcFILE_CHANGEDIV,
+    // FMain.frm:2535-2547, which closes NOTHING) could leave open. Every other form
+    // was shown vbModal and could never be open at that moment; the web equivalent
+    // is to close them before switching. Survivors keep their old-division data on
+    // purpose — that is the legacy cross-division copy workflow (HHM-618).
+    private static readonly HashSet<Type> _vb6NonModalPages = new()
+    {
+        typeof(FAssembly),        // FAssembly.frm:14
+        typeof(FItems),           // FItems.frm:12
+        typeof(FIntersection),    // FIntersection.frm:14
+        typeof(FPriceList),       // FPriceList.frm MDIChild=True
+        typeof(FPricingWorkSheet),// FPricingWorksheet.frm MDIChild=True
+        typeof(FrmUser),          // frmuser.frm MDIChild=True
+        typeof(FPurchaseOrder),   // Tasks launch is bare Me.Show (FPurchaseOrder.frm:2432)
+        typeof(FEstimateItems),   // FEstimateItems.frm:14 MDIChild=True
+        typeof(FFieldPOs),        // FFieldPOs.frm:12 MDIChild=True
+        typeof(FExportPOs),       // bare .Show (FMain.frm:2243)
+    };
+
     private async Task OnMenuChangeDivision()
     {
         openMenu = "";
 
-        if (_windows.Count > 0)
+        var vb6ModalWindows = _windows.Where(w => !_vb6NonModalPages.Contains(w.PageType)).ToList();
+        if (vb6ModalWindows.Count > 0)
         {
             if (_mdiCloseMessageBox != null)
             {
+                var names = string.Join(", ", vb6ModalWindows.Select(w => w.Title).Distinct());
                 var result = await _mdiCloseMessageBox.ShowAsync(
-                    "There are open windows.\n\nAll open windows must be closed before changing divisions. Would you like to close all opened windows and proceed?",
+                    $"These windows must be closed before changing divisions:\n\n{names}\n\nClose them and proceed?",
                     title: "Change Division",
                     buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo,
                     icon: "warning");
@@ -2835,10 +2868,14 @@
                 }
             }
 
-            // Close all windows directly to ensure they are fully closed
-            _windows.Clear();
-            _activeWindowId = null;
-            _lastRoute = "";
+            foreach (var w in vb6ModalWindows)
+                _windows.Remove(w);
+            if (_activeWindowId != null && _windows.All(w => w.Id != _activeWindowId))
+            {
+                var next = _windows.LastOrDefault();
+                _activeWindowId = next?.Id;
+                _lastRoute = next?.Route ?? "";
+            }
             SaveUIState();
             await InvokeAsync(StateHasChanged);
         }

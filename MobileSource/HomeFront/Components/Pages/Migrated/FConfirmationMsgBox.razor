@@ -1,0 +1,129 @@
+@namespace HomeFront.Components.Pages
+
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+@rendermode InteractiveServer
+
+@inject IJSRuntime JSRuntime
+@inject ILogger<FConfirmationMsgBox> Logger
+@inject NotificationService Notifications
+
+<DialogControl Visible="IsVisible"
+               Header="@WindowCaption"
+               Width="500px"
+               IsModal="false"
+               ShowCloseIcon="false"
+               CssClass="confirmation-dialog">
+    <ChildContent>
+        <div class="confirmation-body">
+            <div class="confirmation-icon">⚠️</div>
+            <div class="confirmation-content">
+                <div class="confirmation-title">@Title</div>
+                <div class="confirmation-message">@Warning</div>
+                <CheckBoxControl @bind-Checked="IsConfirmed" Label="@Confirmation" CssClass="confirmation-checkbox" />
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn btn-primary" Disabled="@(!IsConfirmed)" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@code {
+    /// <summary>
+    /// Controls visibility of the confirmation dialog.
+    /// </summary>
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    /// <summary>
+    /// Callback invoked when the user confirms or cancels.
+    /// Returns true if OK was clicked (confirmed), false if Cancel was clicked.
+    /// </summary>
+    [Parameter] public EventCallback<bool> OnResult { get; set; }
+
+    /// <summary>
+    /// The warning message body text.
+    /// </summary>
+    [Parameter] public string Warning { get; set; } = "Whoa! Thats scary! Are you sure?";
+
+    /// <summary>
+    /// The dialog window caption (title bar).
+    /// </summary>
+    [Parameter] public string WindowCaption { get; set; } = "WARNING!!";
+
+    /// <summary>
+    /// The bold title label inside the dialog body.
+    /// </summary>
+    [Parameter] public string Title { get; set; } = "Warning!!";
+
+    /// <summary>
+    /// The confirmation checkbox label text.
+    /// </summary>
+    [Parameter] public string Confirmation { get; set; } = "I understand and wish to proceed.";
+
+    // Internal state
+    private bool IsConfirmed = false;
+    private bool mCancel = true;
+
+    // TaskCompletionSource for imperative ShowWarning usage
+    private TaskCompletionSource<bool>? _tcs;
+
+    /// <summary>
+    /// Imperative method to show the warning dialog and await the user's response.
+    /// Returns true if the user clicked OK (confirmed), false if they clicked Cancel.
+    /// </summary>
+    public async Task<bool> ShowWarning(
+        string warning = "Whoa! Thats scary! Are you sure?",
+        string windowCaption = "WARNING!!",
+        string title = "Warning!!",
+        string confirmation = "I understand and wish to proceed.")
+    {
+        Warning = warning;
+        WindowCaption = windowCaption;
+        Title = title;
+        Confirmation = confirmation;
+        IsConfirmed = false;
+        mCancel = true;
+
+        _tcs = new TaskCompletionSource<bool>();
+
+        IsVisible = true;
+        await IsVisibleChanged.InvokeAsync(true);
+        StateHasChanged();
+
+        var result = await _tcs.Task;
+        return result;
+    }
+
+    private async Task OnOkClick()
+    {
+        mCancel = false;
+        await CloseDialog();
+    }
+
+    private async Task OnCancelClick()
+    {
+        mCancel = true;
+        await CloseDialog();
+    }
+
+    private async Task CloseDialog()
+    {
+        IsVisible = false;
+        IsConfirmed = false;
+        await IsVisibleChanged.InvokeAsync(false);
+
+        var result = !mCancel;
+
+        // Notify via EventCallback
+        await OnResult.InvokeAsync(result);
+
+        // Complete the TaskCompletionSource if ShowWarning was used imperatively
+        _tcs?.TrySetResult(result);
+        _tcs = null;
+
+        StateHasChanged();
+    }
+}

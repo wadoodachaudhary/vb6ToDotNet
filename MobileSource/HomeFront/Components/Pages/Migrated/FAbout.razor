@@ -1,0 +1,338 @@
+@page "/about"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Collections.Generic
+@using System.Data
+@using System.Text
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ILogger<FAbout> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+<PageTitle>About - HomeFront</PageTitle>
+
+<div class="about-dialog" @onkeydown="OnKeyDown" tabindex="0">
+    <div class="about-background">
+        @if (JobSimplicity)
+        {
+            <img src="images/about_jobsimplicity.png" alt="About Background" onerror="this.style.display='none'" />
+        }
+        else
+        {
+            <img src="images/about_homefront.png" alt="About Background" onerror="this.style.display='none'" />
+        }
+
+        <div class="about-content">
+            @* Module Name *@
+            <div class="about-row" style="margin-top: 10px;">
+                <span class="about-label">Module</span>
+                <span class="about-value module-name">@lblModuleName</span>
+            </div>
+
+            @* System Version *@
+            <div class="about-row">
+                <span class="about-label">System Version</span>
+                <span class="about-value">@lblSystemVersion</span>
+            </div>
+
+            @* Database *@
+            <div class="about-row">
+                <span class="about-label">Database</span>
+                <span class="about-value">@lblDatabase</span>
+            </div>
+
+            @* Server *@
+            <div class="about-row">
+                <span class="about-label"></span>
+                <span class="about-value">@lblServer</span>
+            </div>
+
+            @* Revision *@
+            <div class="about-row">
+                <span class="about-label"></span>
+                <span class="about-value">@lblRevision</span>
+            </div>
+
+            <div class="section-spacer"></div>
+
+            @* Developed By *@
+            <div class="about-row">
+                <span class="about-label">Developed by</span>
+                <span class="about-value">Hyphen Solutions</span>
+            </div>
+
+            @* Copyright *@
+            <div class="about-row">
+                <span class="about-label"></span>
+                <span class="about-value">@lblCopyright</span>
+            </div>
+
+            @* Email *@
+            <div class="about-row">
+                <span class="about-label"></span>
+                <a class="about-link" @onclick="OnInfoEmailClick">@lblInfoEmail</a>
+            </div>
+
+            @* Web URL *@
+            <div class="about-row">
+                <span class="about-label"></span>
+                <a class="about-link" @onclick="OnWebUrlClick">@lblWebUrl</a>
+            </div>
+
+            <div class="section-spacer"></div>
+
+            @* Client ID *@
+            <div class="about-row">
+                <span class="about-label">Client ID</span>
+                <span class="about-value">@lblClientID</span>
+            </div>
+
+            @* Company *@
+            <div class="about-row">
+                <span class="about-label">Company</span>
+                <span class="about-value bold">@lblCompanyName</span>
+            </div>
+
+            @* Serial Number *@
+            <div class="about-row">
+                <span class="about-label">Serial Number</span>
+                <span class="about-value">@lblSerialNumber</span>
+            </div>
+
+            @* Licensed For *@
+            <div class="about-row">
+                <span class="about-label">Licensed for</span>
+                <span class="about-value">@lblLicensedFor</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="about-footer">
+        <div class="about-footer-text">
+            @FooterText
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+            <div class="about-footer-links">
+                <a class="@(LockedRecordsEnabled ? "" : "disabled")"
+                   @onclick="OnLockedRecordsClick">locked records?</a>
+                <a class="@(LoggedInUsersEnabled ? "" : "disabled")"
+                   @onclick="OnLoggedInUsersClick">who is logged in?</a>
+            </div>
+            <button class="btn-ok" @onclick="OnOkClick">OK</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    // Database
+// Display fields
+    private string lblModuleName = "";
+    private string lblSystemVersion = "";
+    private string lblDatabase = "";
+    private string lblServer = "";
+    private string lblRevision = "";
+    private string lblCopyright = "";
+    private string lblInfoEmail = "info@HyphenSolutions.com";
+    private string lblWebUrl = "www.HyphenSolutions.com";
+    private string lblClientID = "";
+    private string lblCompanyName = "";
+    private string lblSerialNumber = "";
+    private string lblLicensedFor = "";
+    private string FooterText = "";
+
+    // State
+    private bool JobSimplicity = false;
+    private bool LoggedInUsersEnabled = false;
+    private bool LockedRecordsEnabled = false;
+    private bool DatabaseOpen = false;
+    private int DivisionID = 0;
+
+    // App configuration (would come from app state / config in real app)
+    private string mModuleName = "HomeFront";
+    private string mSystemVersion = "1.0.0";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAboutInfo();
+    }
+
+    private async Task LoadAboutInfo()
+    {
+        try
+        {
+            lblModuleName = mModuleName;
+            lblSystemVersion = mSystemVersion;
+
+            // Try to load database info
+            try
+            {
+                // Check if database is accessible
+                var testDt = await db.QueryAsync("SELECT 1 AS Test");
+                if (testDt.Any())
+                {
+                    DatabaseOpen = true;
+
+                    // Get database info
+                    try
+                    {
+                        var dbInfo = await db.QueryAsync("SELECT SERVERPROPERTY('ProductVersion') AS DbmsVersion, SERVERPROPERTY('Edition') AS DbmsName, DB_NAME() AS CurrentCatalog, @@SERVERNAME AS ServerName");
+                        if (dbInfo.Any())
+                        {
+                            var row = dbInfo.First();
+                            var dbmsName = row["DbmsName"]?.ToString() ?? "";
+                            var dbmsVersion = row["DbmsVersion"]?.ToString() ?? "";
+                            var currentCatalog = row["CurrentCatalog"]?.ToString() ?? "";
+                            var serverName = row["ServerName"]?.ToString() ?? "";
+
+                            lblDatabase = $"{dbmsName} ({dbmsVersion})";
+                            lblServer = $"{currentCatalog}@{serverName}";
+                        }
+                    }
+                    catch
+                    {
+                        lblDatabase = "";
+                        lblServer = "";
+                    }
+
+                    // Get revision
+                    try
+                    {
+                        var revision = await db.ExecuteScalarAsync<string>("SELECT CAST(MAX(revision) AS VARCHAR) FROM dbrevisions");
+                        lblRevision = !string.IsNullOrEmpty(revision) ? $"Revision: {revision}" : "";
+                    }
+                    catch
+                    {
+                        lblRevision = "";
+                    }
+
+                    // Get client/license info
+                    try
+                    {
+                        var sysInfo = await db.QueryAsync("SELECT TOP 1 ClientID, LicensedOwner, LicenseNumber, LicensedUsers, DivisionID FROM system_setup");
+                        if (sysInfo.Any())
+                        {
+                            var info = sysInfo.First();
+                            lblClientID = info["ClientID"]?.ToString() ?? "";
+                            lblCompanyName = info["LicensedOwner"]?.ToString() ?? "";
+                            lblSerialNumber = info["LicenseNumber"]?.ToString() ?? "";
+                            var licensedUsers = info["LicensedUsers"]?.ToString() ?? "0";
+                            lblLicensedFor = $"{licensedUsers} concurrent users";
+                            DivisionID = info["DivisionID"] != null && info["DivisionID"] != DBNull.Value
+                                ? Convert.ToInt32(info["DivisionID"]) : 0;
+                        }
+                    }
+                    catch
+                    {
+                        lblClientID = "";
+                        lblCompanyName = "";
+                        lblSerialNumber = "";
+                        lblLicensedFor = "";
+                    }
+                }
+            }
+            catch
+            {
+                DatabaseOpen = false;
+                lblDatabase = "";
+                lblServer = "";
+                lblRevision = "";
+            }
+
+            lblCopyright = $"{DateTime.Now.Year} © Copyright Hyphen Solutions";
+
+            LoggedInUsersEnabled = DatabaseOpen;
+            LockedRecordsEnabled = DivisionID != 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            OnOkClick();
+        }
+    }
+
+    private void OnOkClick()
+    {
+        ClosePage();
+    }
+
+    private async Task OnInfoEmailClick()
+    {
+        await JSRuntime.InvokeVoidAsync("open", "mailto:info@HomeFrontSoftware.com", "_blank");
+    }
+
+    private async Task OnWebUrlClick()
+    {
+        await JSRuntime.InvokeVoidAsync("open", "https://www.HomeFrontSoftware.com", "_blank");
+    }
+
+    private void OnLockedRecordsClick()
+    {
+        if (!LockedRecordsEnabled) return;
+        // VB6: FTableLocks.Show vbModal
+        NavigationManager.NavigateTo("/table-locks");
+    }
+
+    private async Task OnLoggedInUsersClick()
+    {
+        if (!LoggedInUsersEnabled) return;
+        // VB6: FInquiry.ShowInquiry("Logged In Users", "select * from loggedinusers order by module")
+        try
+        {
+            var rows = await db.QueryAsync("SELECT * FROM loggedinusers ORDER BY module");
+            if (!rows.Any())
+            {
+                Notifications.Info("No users are currently logged in.");
+                return;
+            }
+
+            var lines = new System.Text.StringBuilder();
+            lines.AppendLine("Logged In Users");
+            lines.AppendLine(new string('-', 40));
+            foreach (var row in rows)
+            {
+                var parts = new List<string>();
+                foreach (var col in row.Keys)
+                {
+                    var val = row[col]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(val))
+                        parts.Add($"{col}: {val}");
+                }
+                lines.AppendLine(string.Join(", ", parts));
+            }
+            Notifications.Info(lines.ToString());
+
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error retrieving logged in users: {ex.Message}");
+        }
+    }
+}

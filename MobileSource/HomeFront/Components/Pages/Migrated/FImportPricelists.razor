@@ -1,0 +1,1156 @@
+@page "/import-pricelists"
+@rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using System
+@using System.Data
+@using System.IO
+@using System.Collections.Generic
+@using System.Linq
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FImportPricelists> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Import Pricelist Wizard</PageTitle>
+
+<div class="wizard-container" style="position: relative;">
+
+    @if (IsProcessing)
+    {
+        <div class="loading-overlay">
+            <span>⏳ Processing...</span>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div style="padding: 8px 16px; background: #f8d7da; color: #842029; border-bottom: 1px solid #f5c2c7; font-size: 13px;">
+            @ErrorMessage
+            <ButtonControl Style="float:right; border:none; background:none; cursor:pointer; font-weight:bold;" OnClick='() => ErrorMessage = ""'>X</ButtonControl>
+        </div>
+    }
+
+    @* ── Wizard Header ─────────────────────────────────────── *@
+    <div class="wiz-head">
+        <span class="wiz-head-icon">📋</span>
+        <div class="wiz-head-text">
+            <h3>Import Vendor Pricelists</h3>
+            <p>The vendor pricelist import wizard will help you update your pricing database</p>
+        </div>
+    </div>
+
+    @* ── Wizard Body ───────────────────────────────────────── *@
+    <div class="wiz-body">
+
+        @* ── File Selection (initial screen) ──────────────── *@
+        @if (CurrentFrame == -1)
+        {
+            <div style="text-align: center; padding: 60px 20px;">
+                <div style="font-size: 48px; margin-bottom: 16px;">📂</div>
+                <h4 style="margin: 0 0 8px;">Select Vendor Pricelist File</h4>
+                <p style="color: #6c757d; font-size: 13px; margin-bottom: 24px;">
+                    Choose an Excel (.xls/.xlsx) or ProfitMaster (.txt) file to import.
+                </p>
+                @if (!string.IsNullOrEmpty(FileName))
+                {
+                    <div style="margin-bottom: 16px; font-size: 13px;">
+                        <strong>Selected:</strong> @FileName
+                    </div>
+                }
+                <div style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+                    <InputFile OnChange="OnFileSelected" accept=".xls,.xlsx,.txt,.csv"
+                               style="display:none" id="pricelistFileInput" />
+                    <ButtonControl CssClass="btn-primary" Style="padding: 8px 24px; font-size: 14px; border: 1px solid #0d6efd; border-radius: 4px; background: #0d6efd; color: #fff; cursor: pointer;"
+                                   OnClick="OnBrowseFile">📁 Open File...</ButtonControl>
+                </div>
+            </div>
+        }
+
+        @* ── Frame 0: File Preview ─────────────────────────── *@
+        @if (CurrentFrame == 0)
+        {
+            <div class="file-info">
+                <label>File name: <span class="filename">@FileName</span></label>
+                <label>Last Modified: @FileLastModified</label>
+            </div>
+
+            <GridControl @ref="PreviewGrid"
+                    TValue="Dictionary<string, object>"
+                    DataSource="@PreviewData"
+                    AllowSorting="false"
+                    AllowResizing="true"
+                    Height="350px">
+                <GridColumnsBase>
+                    @foreach (var col in PreviewColumns)
+                    {
+                        <GridColumn Field="@col.Field" HeaderText="@col.Header" Width="@col.Width" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
+
+            @if (ShowProgressBar)
+            {
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" style="width: @(ProgressValue)%;">
+                        @(ProgressValue)%
+                    </div>
+                </div>
+            }
+        }
+
+        @* ── Frame 1: Validation & Options ─────────────────── *@
+        @if (CurrentFrame == 1)
+        {
+            <div class="validation-panel">
+                @if (ValidationPassed)
+                {
+                    <span class="validation-icon ok">✅</span>
+                }
+                else
+                {
+                    <span class="validation-icon error">❌</span>
+                }
+                <div class="validation-text">
+                    <h4>@ValidationTitle</h4>
+                    <p>@ValidationMessage</p>
+                </div>
+            </div>
+
+            @if (ValidationPassed)
+            {
+                <div style="margin-left: 48px;">
+                    <span class="link-label" @onclick="OnShowImportSummary">Open the import summary.</span><br />
+                    <span class="link-label" @onclick="OnShowPricingComparison">Open the pricing comparison report.</span>
+                </div>
+            }
+
+            @* Error Options *@
+            @if (!ValidationPassed)
+            {
+                <div class="options-section" style="margin-top: 12px;">
+                    <h5>Options:</h5>
+
+                    <div class="option-row">
+                        <CheckBoxControl @bind-Checked="IgnoreErrors" @bind-Checked:after="OnIgnoreErrorsChanged" Label="Import anyway (invalid records will be written to the reject file)" />
+                    </div>
+
+                    @if (IgnoreErrors)
+                    {
+                        <div class="reject-file-row" style="margin-left: 24px;">
+                            <label style="min-width: 80px; text-align: right;">Reject File:</label>
+                            <TextBoxControl @bind-Value="RejectFilePath" @bind-Value:after="OnRejectFileChanged" Placeholder="Select reject file..." CssClass="reject-file-input" />
+                            <ButtonControl CssClass="wiz-foot" Style="padding:4px 10px; min-width:auto;" OnClick="OnChooseRejectFile">📁</ButtonControl>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* Import Options (always shown when validation passed, or below error options) *@
+            <div class="options-section" style="margin-top: 16px;">
+                @if (ShowDestinationOptions)
+                {
+                    <h5>Destination:</h5>
+                    <div class="option-row">
+                        <label>Import into:</label>
+                        <DropDownListControl TValue="int" TItem="SelOpt"
+                                             DataSource="@ImportColumnSelOptions"
+                                             ValueFieldName="Value" TextFieldName="Text"
+                                             @bind-Value="ImportColumnIndex" @bind-Value:after="OnImportColumnChanged"
+                                             Width="200px" />
+                    </div>
+
+                    @if (ShowEffectiveDate)
+                    {
+                        <div class="option-row">
+                            <label>Effective:</label>
+                            <DatePickerControl @bind-Value="EffectiveDate" Style="width: 200px;" />
+                        </div>
+                    }
+                }
+
+                <div class="option-row">
+                    <CheckBoxControl @bind-Checked="IgnoreZeroValues" Label="Ignore records with no price info (items priced at $0.00)" />
+                </div>
+            </div>
+        }
+    </div>
+
+    @* ── Wizard Footer ─────────────────────────────────────── *@
+    <div class="wiz-foot">
+        <ButtonControl OnClick="OnCancel">Cancel</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoBack)" OnClick="OnBack">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoNext)" OnClick="OnNext">Next &gt;</ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!CanFinish)" OnClick="OnFinish">Finish</ButtonControl>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        // Return to FMain's home screen instead of navigating to login
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");   // empty route = close active page
+        else
+            NavigationManager.NavigateTo("/");
+    }
+
+    // === Database ===
+// === Session / State ===
+    private string SessionID = "";
+    private string FileName = "";
+    private string TempFile = "";
+    private string FileLastModified = "";
+    private bool IsProcessing = false;
+    private bool bCorporate = false;
+    private string ErrorMessage = "";
+
+    // === Wizard Navigation ===
+    private int CurrentFrame = -1; // -1 = not yet shown (file picker)
+    private int FrameCount = 2; // 0 and 1
+
+    private bool CanGoBack => CurrentFrame > 0;
+    private bool CanGoNext => CurrentFrame < FrameCount - 1;
+    private bool CanFinish => CurrentFrame == FrameCount - 1 && FinishEnabled;
+    private bool FinishEnabled = false;
+
+    // === Frame 0: Preview ===
+    private GridControl<Dictionary<string, object>>? PreviewGrid;
+    private List<Dictionary<string, object>> PreviewData = new();
+    private List<GridColumnDef> PreviewColumns = new();
+    private bool ShowProgressBar = false;
+    private int ProgressValue = 0;
+    private bool Frame0Loaded = false;
+    private bool Frame1Loaded = false;
+
+    // === Frame 1: Validation ===
+    private bool ValidationPassed = false;
+    private string ValidationTitle = "";
+    private string ValidationMessage = "";
+
+    // === Options ===
+    private bool IgnoreErrors = false;
+    private string RejectFilePath = "";
+    private bool IgnoreZeroValues = true;
+    private int ImportColumnIndex = 0;
+    private List<string> ImportColumnOptions = new() { "Current", "Next 1", "Next 2" };
+    // SelOpt = value≠text option; index-keyed source for the "Import into" dropdown (mirrors the old <option value="@i">).
+    private sealed record SelOpt(string Value, string Text);
+    private IEnumerable<SelOpt> ImportColumnSelOptions =>
+        ImportColumnOptions.Select((text, i) => new SelOpt(i.ToString(), text));
+    private bool ShowDestinationOptions = false;
+    private bool ShowEffectiveDate = false;
+    private DateTime? EffectiveDate = null;
+
+    // === Parsed Grid Data ===
+    private List<string[]> ParsedRows = new();
+    private string[] HeaderRow = Array.Empty<string>();
+    private Dictionary<string, int> ColIndexMap = new();
+
+    // === Models ===
+    public class GridColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public string Width { get; set; } = "120px";
+    }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        SessionID = $"{Environment.MachineName}_{Guid.NewGuid():N}";
+        await LoadImportColumnOptions();
+        await ShowFilePickerAsync();
+    }
+
+    private async Task LoadImportColumnOptions()
+    {
+        ImportColumnOptions = new List<string> { "Current", "Next 1", "Next 2" };
+
+        try
+        {
+            var sql = @"SELECT Item, MAX(Custom_Description), 'Forecast 1' FROM CustomDescriptions WHERE Item='Forecast1' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 2' FROM CustomDescriptions WHERE Item='Forecast2' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 3' FROM CustomDescriptions WHERE Item='Forecast3' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 4' FROM CustomDescriptions WHERE Item='Forecast4' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 5' FROM CustomDescriptions WHERE Item='Forecast5' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 6' FROM CustomDescriptions WHERE Item='Forecast6' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 7' FROM CustomDescriptions WHERE Item='Forecast7' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 8' FROM CustomDescriptions WHERE Item='Forecast8' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 9' FROM CustomDescriptions WHERE Item='Forecast9' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 10' FROM CustomDescriptions WHERE Item='Forecast10' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 11' FROM CustomDescriptions WHERE Item='Forecast11' GROUP BY Item UNION ALL
+                        SELECT Item, MAX(Custom_Description), 'Forecast 12' FROM CustomDescriptions WHERE Item='Forecast12' GROUP BY Item
+                        ORDER BY 3";
+            var rows = await db.QueryAsync(sql, null);
+            foreach (var row in rows)
+            {
+                var customDesc = row.Values.Skip(1).First()?.ToString() ?? "";
+                var defaultDesc = row.Values.Skip(2).First()?.ToString() ?? "";
+                ImportColumnOptions.Add(string.IsNullOrWhiteSpace(customDesc) ? defaultDesc : customDesc);
+            }
+        }
+        catch
+        {
+            // If forecast columns can't be loaded, the 3 base options are sufficient
+        }
+    }
+
+    // === File Selection ===
+    private async Task OnBrowseFile()
+    {
+        // Trigger the hidden InputFile element's native file browser
+        await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('pricelistFileInput').click()");
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+
+        IsProcessing = true;
+        ErrorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            FileName = file.Name;
+            TempFile = "";
+
+            // Save uploaded file to a temp location for processing
+            var tempDir = Path.GetTempPath();
+            var tempPath = Path.Combine(tempDir, $"hf_import_{Guid.NewGuid():N}_{file.Name}");
+            await using (var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024)) // 50 MB
+            await using (var fs = new FileStream(tempPath, FileMode.Create))
+            {
+                await stream.CopyToAsync(fs);
+            }
+            TempFile = tempPath;
+
+            // Determine file type by extension
+            var ext = Path.GetExtension(FileName).ToLowerInvariant();
+            if (ext == ".txt")
+            {
+                await ConvertProfitMasterFileAsync();
+            }
+
+            CurrentFrame = 0;
+            await LoadFrame(0);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error loading file: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowFilePickerAsync()
+    {
+        // Show the file selection screen (CurrentFrame = -1)
+        CurrentFrame = -1;
+        StateHasChanged();
+    }
+
+    // === Frame Navigation ===
+    private async Task OnCancel()
+    {
+        await CleanupSession();
+        if (CurrentFrame == -1)
+        {
+            // Already on file selection — nothing to close
+            return;
+        }
+        // Return to file selection screen
+        CurrentFrame = -1;
+        FileName = "";
+        TempFile = "";
+        PreviewData.Clear();
+        PreviewColumns.Clear();
+        Frame0Loaded = false;
+        Frame1Loaded = false;
+        StateHasChanged();
+    }
+
+    private async Task OnBack()
+    {
+        if (CurrentFrame > 0)
+        {
+            CurrentFrame--;
+            await LoadFrame(CurrentFrame);
+        }
+    }
+
+    private async Task OnNext()
+    {
+        if (CurrentFrame < FrameCount - 1)
+        {
+            CurrentFrame++;
+            await LoadFrame(CurrentFrame);
+        }
+    }
+
+    private async Task OnFinish()
+    {
+        if (await SaveData())
+        {
+            await CleanupSession();
+            ClosePage();
+        }
+    }
+
+    private async Task LoadFrame(int frame)
+    {
+        IsProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            FinishEnabled = frame == FrameCount - 1;
+
+            switch (frame)
+            {
+                case 0:
+                    if (!Frame0Loaded)
+                    {
+                        Frame0Loaded = true;
+                        await LoadFilePreviewAsync();
+                    }
+                    FinishEnabled = false;
+                    break;
+
+                case 1:
+                    if (!Frame1Loaded)
+                    {
+                        Frame1Loaded = true;
+                        if (ValidateGrid())
+                        {
+                            await ImportDataToTempTableAsync();
+                            await ValidateTableAsync();
+                        }
+                    }
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Frame 0: Load File Preview ===
+    private async Task LoadFilePreviewAsync()
+    {
+        try
+        {
+            if (File.Exists(FileName))
+            {
+                var fi = new FileInfo(FileName);
+                FileLastModified = fi.LastWriteTime.ToString("D");
+            }
+            else
+            {
+                FileLastModified = "(file not found)";
+            }
+
+            // For demo/migration purposes, attempt to read as CSV/tab-delimited
+            var filePath = string.IsNullOrEmpty(TempFile) ? FileName : TempFile;
+            if (!File.Exists(filePath))
+            {
+                ErrorMessage = $"File not found: {filePath}";
+                return;
+            }
+
+            var lines = await File.ReadAllLinesAsync(filePath);
+            ParsedRows.Clear();
+            PreviewColumns.Clear();
+            PreviewData.Clear();
+
+            // Determine delimiter
+            var delimiter = ',';
+            if (lines.Length > 0 && lines[0].Contains('\t'))
+                delimiter = '\t';
+
+            foreach (var line in lines)
+            {
+                ParsedRows.Add(line.Split(delimiter));
+            }
+
+            // Build columns from first data row or header
+            if (ParsedRows.Count > 0)
+            {
+                var maxCols = ParsedRows.Max(r => r.Length);
+                if (maxCols > 19) maxCols = 19;
+
+                for (int c = 0; c < maxCols; c++)
+                {
+                    PreviewColumns.Add(new GridColumnDef
+                    {
+                        Field = $"Col{c}",
+                        Header = $"Column {c + 1}",
+                        Width = "120px"
+                    });
+                }
+
+                foreach (var row in ParsedRows)
+                {
+                    var dict = new Dictionary<string, object>();
+                    for (int c = 0; c < maxCols; c++)
+                    {
+                        dict[$"Col{c}"] = c < row.Length ? row[c] : "";
+                    }
+                    PreviewData.Add(dict);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error loading file: {ex.Message}";
+        }
+    }
+
+    // === Validate Grid Columns ===
+    private bool ValidateGrid()
+    {
+        bCorporate = false;
+        ColIndexMap.Clear();
+
+        // Find header row
+        int headerRowIdx = -1;
+        for (int r = 0; r < ParsedRows.Count; r++)
+        {
+            for (int c = 0; c < ParsedRows[r].Length; c++)
+            {
+                var val = ParsedRows[r][c]?.Trim() ?? "";
+                if (string.Equals(val, "Community", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(val, "Group", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (string.Equals(val, "Group", StringComparison.OrdinalIgnoreCase))
+                        bCorporate = true;
+                    headerRowIdx = r;
+                    break;
+                }
+            }
+            if (headerRowIdx >= 0) break;
+        }
+
+        if (headerRowIdx < 0)
+        {
+            ValidationPassed = false;
+            ValidationTitle = "The pricelist import wizard is not able to import this file.";
+            ValidationMessage = "Unable to find header row with Community or Group column.";
+            FinishEnabled = false;
+            return false;
+        }
+
+        // Build column index map
+        HeaderRow = ParsedRows[headerRowIdx];
+        for (int c = 0; c < HeaderRow.Length; c++)
+        {
+            var key = HeaderRow[c]?.Trim() ?? "";
+            if (string.Equals(key, "Specification", StringComparison.OrdinalIgnoreCase))
+                key = "Assembly";
+            if (!string.IsNullOrEmpty(key) && !ColIndexMap.ContainsKey(key))
+                ColIndexMap[key] = c;
+        }
+
+        // Verify required columns
+        var missing = new List<string>();
+        if (bCorporate)
+        {
+            foreach (var col in new[] { "Group", "Item", "Item Description", "Part Number", "UOM", "Price" })
+                if (!ColIndexMap.ContainsKey(col)) missing.Add(col);
+        }
+        else
+        {
+            foreach (var col in new[] { "Community", "Community Name", "Phase", "Model", "Assembly", "Assembly Description", "Group", "Item", "Item Description", "Part Number", "UOM", "Price" })
+                if (!ColIndexMap.ContainsKey(col)) missing.Add(col);
+        }
+
+        // Determine destination options visibility
+        ShowDestinationOptions = !ColIndexMap.ContainsKey("Next Price 1") &&
+                                  !ColIndexMap.ContainsKey("Next Price 2") &&
+                                  !ColIndexMap.ContainsKey("Effective 1") &&
+                                  !ColIndexMap.ContainsKey("Effective 2");
+
+        if (!ShowDestinationOptions)
+            ImportColumnIndex = 0; // default to Current
+
+        if (missing.Count > 0)
+        {
+            ValidationPassed = false;
+            ValidationTitle = "The pricelist import wizard is not able to import this file.";
+            ValidationMessage = $"The file does not conform to Precision Builder specifications.\nUnable to find columns ({string.Join(", ", missing)})";
+            FinishEnabled = false;
+            return false;
+        }
+
+        return true;
+    }
+
+    // === Import Data to Temp Table ===
+    private async Task ImportDataToTempTableAsync()
+    {
+        ShowProgressBar = true;
+        StateHasChanged();
+
+        try
+        {
+            string vendor = "";
+            string vendorDesc = "";
+
+            // Find header row index
+            int headerRowIdx = 0;
+            for (int r = 0; r < ParsedRows.Count; r++)
+            {
+                for (int c = 0; c < ParsedRows[r].Length; c++)
+                {
+                    var val = ParsedRows[r][c]?.Trim() ?? "";
+                    if (string.Equals(val, "Community", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(val, "Group", StringComparison.OrdinalIgnoreCase))
+                    {
+                        headerRowIdx = r;
+                        break;
+                    }
+                }
+                if (headerRowIdx > 0) break;
+            }
+
+            int totalRows = ParsedRows.Count;
+            for (int r = headerRowIdx + 1; r < totalRows; r++)
+            {
+                ProgressValue = (int)((double)r / (totalRows - 1) * 100);
+
+                var row = ParsedRows[r];
+                if (row.Length < 2) continue;
+
+                // Check for vendor row
+                if (row.Length > 1 && string.Equals(row[0]?.Trim(), "Vendor", StringComparison.OrdinalIgnoreCase))
+                {
+                    vendor = row.Length > 1 ? row[1]?.Trim() ?? "" : "";
+                    if (r + 1 < totalRows)
+                        vendorDesc = ParsedRows[r + 1].Length > 1 ? ParsedRows[r + 1][1]?.Trim() ?? "" : "";
+                    continue;
+                }
+
+                var priceStr = GetColValue(row, "Price");
+                if (string.IsNullOrWhiteSpace(priceStr) || string.Equals(priceStr, "Price", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var sql = @"INSERT INTO ImportedCosts(SessionID, FileName, Community, CommunityDesc, CommunityPhase,
+                            Vendor, VendorDesc, Model, Assembly, AssemblyDesc, Phase, Item, ItemDesc,
+                            PartNumber, OrderUOM, Current_Cost, Next_Cost1, Next_Effective1, Next_Cost2,
+                            Next_Effective2, PriceLink, DivisionID)
+                            VALUES(@SessionID, @FileName, @Community, @CommunityDesc, @CommunityPhase,
+                            @Vendor, @VendorDesc, @Model, @Assembly, @AssemblyDesc, @Phase, @Item, @ItemDesc,
+                            @PartNumber, @OrderUOM, @CurrentCost, @NextCost1, @NextEffective1, @NextCost2,
+                            @NextEffective2, @PriceLink, @DivisionID)";
+
+                var groupVal = GetColValue(row, "Group");
+                var itemVal = GetColValue(row, "Item");
+                var priceLinkVal = string.IsNullOrEmpty(groupVal) && !string.IsNullOrEmpty(itemVal) ? itemVal : "0";
+
+                try
+                {
+                    await db.ExecuteAsync(sql, new
+                    {
+                        SessionID,
+                        FileName = Path.GetFileName(FileName),
+                        Community = bCorporate ? "" : GetColValue(row, "Community"),
+                        CommunityDesc = bCorporate ? "" : GetColValue(row, "Community Name"),
+                        CommunityPhase = bCorporate ? "" : GetColValue(row, "Phase"),
+                        Vendor = vendor,
+                        VendorDesc = vendorDesc,
+                        Model = bCorporate ? "" : GetColValue(row, "Model"),
+                        Assembly = bCorporate ? "" : GetColValue(row, "Assembly"),
+                        AssemblyDesc = bCorporate ? "" : GetColValue(row, "Assembly Description"),
+                        Phase = groupVal,
+                        Item = itemVal,
+                        ItemDesc = GetColValue(row, "Item Description"),
+                        PartNumber = GetColValue(row, "Part Number"),
+                        OrderUOM = GetColValue(row, "UOM"),
+                        CurrentCost = ParseDecimal(priceStr),
+                        NextCost1 = ParseDecimal(GetColValue(row, "Next Price 1")),
+                        NextEffective1 = ParseNullableDate(GetColValue(row, "Effective 1")),
+                        NextCost2 = ParseDecimal(GetColValue(row, "Next Price 2")),
+                        NextEffective2 = ParseNullableDate(GetColValue(row, "Effective 2")),
+                        PriceLink = priceLinkVal,
+                        SessionState.DivisionID
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Skip duplicate rows
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        throw;
+                }
+            }
+        }
+        finally
+        {
+            ShowProgressBar = false;
+            ProgressValue = 0;
+        }
+    }
+
+    // === Validate Imported Table ===
+    private async Task ValidateTableAsync()
+    {
+        // If from ProfitMaster, resolve part numbers
+        if (!string.IsNullOrEmpty(TempFile))
+        {
+            var resolvePartsSql = @"
+                UPDATE ImportedCosts
+                SET Phase = pi.Phase, Item = pi.Item
+                FROM ImportedCosts ic
+                JOIN tblPhaseItem pi ON pi.DivisionID = @DivisionID AND ic.PartNumber = pi.PartNumber
+                WHERE ISNULL(ic.PartNumber,'') <> '' AND ISNULL(ic.Phase,'') = '' AND ISNULL(ic.Item,'') = ''
+                  AND SessionID = @SessionID";
+            await db.ExecuteAsync(resolvePartsSql, new { SessionState.DivisionID, SessionID });
+        }
+
+        // Update validation flags
+        var updateSql = @"
+            UPDATE ImportedCosts
+            SET UnknownVendor = CASE WHEN v.vendor_id IS NULL THEN 1 ELSE 0 END,
+                UnknownCommunity = CASE WHEN c.Community <> '' AND l.area IS NULL THEN 1 ELSE 0 END,
+                UnknownAssembly = CASE WHEN c.Assembly <> '' AND a.Assembly IS NULL THEN 1 ELSE 0 END,
+                UnknownItem = CASE WHEN i.Phase IS NULL THEN 1 ELSE 0 END,
+                UnknownUOM = CASE WHEN UPPER(RTRIM(LTRIM(c.OrderUOM))) <> UPPER(RTRIM(LTRIM(i.OrderUOM))) THEN 1 ELSE 0 END,
+                ExpectedUOM = CASE WHEN UPPER(RTRIM(LTRIM(c.OrderUOM))) <> UPPER(RTRIM(LTRIM(i.OrderUOM))) THEN i.OrderUOM ELSE '' END,
+                UnknownExpiryDate = CASE WHEN ((Next_Cost1 <> 0 AND Next_Effective1 IS NULL) OR (Next_Cost2 <> 0 AND Next_Effective2 IS NULL)) THEN 1 ELSE 0 END
+            FROM ImportedCosts c
+            LEFT OUTER JOIN tblVendors v ON c.Vendor = v.Vendor_ID AND v.DivisionID = @DivisionID
+            LEFT OUTER JOIN tblLocality l ON c.Community = l.Area
+            LEFT OUTER JOIN DistinctAssemblies a ON c.Assembly = a.Assembly
+            LEFT OUTER JOIN tblPhaseItem i ON i.DivisionID = @DivisionID AND c.Phase = i.Phase AND c.Item = i.Item
+            WHERE SessionID = @SessionID
+              AND ((c.Phase <> '') OR (c.Phase = '' AND c.Item = ''))";
+        await db.ExecuteAsync(updateSql, new { SessionState.DivisionID, SessionID });
+
+        // Check for errors
+        var errorsSql = @"
+            SELECT DISTINCT 'The file contains unrecognized vendor(s)' FROM ImportedCosts WHERE UnknownVendor = 1 AND SessionID = @SessionID
+            UNION ALL
+            SELECT DISTINCT 'The file contains unrecognized community(s)' FROM ImportedCosts WHERE UnknownCommunity = 1 AND SessionID = @SessionID
+            UNION ALL
+            SELECT DISTINCT 'The file contains unrecognized assembly(s)' FROM ImportedCosts WHERE UnknownAssembly = 1 AND SessionID = @SessionID
+            UNION ALL
+            SELECT DISTINCT 'The file contains unrecognized item(s)' FROM ImportedCosts WHERE UnknownItem = 1 AND SessionID = @SessionID
+            UNION ALL
+            SELECT DISTINCT 'The file contains conflicting units' FROM ImportedCosts WHERE UnknownUOM = 1 AND SessionID = @SessionID
+            UNION ALL
+            SELECT DISTINCT 'The file contains future pricing with no effective date(s)' FROM ImportedCosts WHERE UnknownExpiryDate = 1 AND SessionID = @SessionID";
+
+        var errorRows = await db.QueryAsync(errorsSql, new { SessionID });
+        var errors = errorRows.Select(r => r.Values.First()?.ToString() ?? "").ToList();
+
+        if (errors.Count > 0)
+        {
+            ValidationPassed = false;
+            FinishEnabled = false;
+            ValidationTitle = "The pricelist import wizard is not able to import this data.";
+            ValidationMessage = string.Join("\n", errors);
+        }
+        else
+        {
+            ValidationPassed = true;
+            FinishEnabled = true;
+            ValidationTitle = "The pricelist import wizard is ready to process the file.";
+            ValidationMessage = "View the reports listed below to see how this will change your vendor pricing\n" +
+                                "database. If you are satisfied with the changes and would like to commit them\n" +
+                                "to the database click \"Finish\". If you are not satisfied click \"Cancel\" to\n" +
+                                "exit the wizard without updating your database.";
+        }
+    }
+
+    // === Save Data (Finish) ===
+    private async Task<bool> SaveData()
+    {
+        IsProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            var updateSql = "UPDATE tblVendorCost \n";
+
+            switch (ImportColumnIndex)
+            {
+                case 0: // Current
+                    if (IgnoreZeroValues)
+                    {
+                        updateSql += @"SET Current_Cost = CASE WHEN ic.Current_Cost <> 0 THEN ic.Current_Cost ELSE vc.Current_Cost END,
+                            Next_Cost1 = CASE WHEN ic.Next_Cost1 <> 0 AND ic.Next_Effective1 IS NOT NULL THEN ic.Next_Cost1 ELSE vc.Next_Cost1 END,
+                            Next_Effective1 = CASE WHEN ic.Next_Cost1 <> 0 AND ic.Next_Effective1 IS NOT NULL THEN ic.Next_Effective1 ELSE vc.Next_Effective1 END,
+                            Next_Cost2 = CASE WHEN ic.Next_Cost2 <> 0 AND ic.Next_Effective2 IS NOT NULL THEN ic.Next_Cost2 ELSE vc.Next_Cost2 END,
+                            Next_Effective2 = CASE WHEN ic.Next_Cost2 <> 0 AND ic.Next_Effective2 IS NOT NULL THEN ic.Next_Effective2 ELSE vc.Next_Effective2 END";
+                    }
+                    else
+                    {
+                        updateSql += @"SET Current_Cost = ic.Current_Cost,
+                            Next_Cost1 = CASE WHEN ic.Next_Effective1 IS NOT NULL THEN ic.Next_Cost1 ELSE vc.Next_Cost1 END,
+                            Next_Effective1 = CASE WHEN ic.Next_Effective1 IS NOT NULL THEN ic.Next_Effective1 ELSE vc.Next_Effective1 END,
+                            Next_Cost2 = CASE WHEN ic.Next_Effective2 IS NOT NULL THEN ic.Next_Cost2 ELSE vc.Next_Cost2 END,
+                            Next_Effective2 = CASE WHEN ic.Next_Effective2 IS NOT NULL THEN ic.Next_Effective2 ELSE vc.Next_Effective2 END";
+                    }
+                    break;
+
+                case 1: // Next 1
+                    if (EffectiveDate == null)
+                    {
+                        ErrorMessage = "You must specify an effective date.";
+                        return false;
+                    }
+                    if (IgnoreZeroValues)
+                        updateSql += $"SET Next_Cost1 = CASE WHEN ic.Current_Cost <> 0 THEN ic.Current_Cost ELSE vc.Next_Cost1 END";
+                    else
+                        updateSql += "SET Next_Cost1 = ic.Current_Cost";
+                    updateSql += $", Next_Effective1 = @EffectiveDate";
+                    break;
+
+                case 2: // Next 2
+                    if (EffectiveDate == null)
+                    {
+                        ErrorMessage = "You must specify an effective date.";
+                        return false;
+                    }
+                    if (IgnoreZeroValues)
+                        updateSql += $"SET Next_Cost2 = CASE WHEN ic.Current_Cost <> 0 THEN ic.Current_Cost ELSE vc.Next_Cost2 END";
+                    else
+                        updateSql += "SET Next_Cost2 = ic.Current_Cost";
+                    updateSql += $", Next_Effective2 = @EffectiveDate";
+                    break;
+
+                default: // Forecast columns
+                    var forecastIdx = ImportColumnIndex - 2;
+                    if (IgnoreZeroValues)
+                        updateSql += $"SET Forecast{forecastIdx} = CASE WHEN ic.Current_Cost <> 0 THEN ic.Current_Cost ELSE vc.Current_Cost END";
+                    else
+                        updateSql += $"SET Forecast{forecastIdx} = ic.Current_Cost";
+                    break;
+            }
+
+            var divId = bCorporate ? 0 : SessionState.DivisionID;
+
+            updateSql += @"
+                ,Last_Cost3 = vc.Last_Cost2
+                ,Last_Cost2 = vc.Last_Cost1
+                ,Last_Cost1 = vc.Current_Cost
+                ,Last3_Expiry = vc.Last2_Expiry
+                ,Last2_Expiry = vc.Last1_Expiry
+                ,Last1_Expiry = DATEADD(day, -1, GETDATE())
+                ,PartNumber = ic.PartNumber
+            FROM ImportedCosts ic
+            JOIN tblPhaseItem pi ON pi.DivisionID = @PIDivisionID
+                AND ((ic.Phase = pi.Phase AND ic.Item = pi.Item) OR (ISNULL(ic.Phase,'') = '' AND ic.Item = CAST(pi.PriceLink AS VARCHAR)))
+            JOIN tblVendorCost vc ON vc.DivisionID = @VCDivisionID
+                AND ic.Community = vc.Community
+                AND ic.CommunityPhase = vc.CommunityPhase
+                AND ic.Assembly = vc.Assembly
+                AND ic.Model = vc.Model
+                AND pi.Phase = vc.Phase
+                AND pi.Item = vc.Item
+                AND ic.Vendor = vc.Vendor
+                AND ic.UnknownVendor = 0
+                AND ic.UnknownCommunity = 0
+                AND ic.UnknownAssembly = 0
+                AND ic.UnknownItem = 0
+                AND ic.UnknownUOM = 0
+                AND ic.UnknownExpiryDate = 0
+                AND ic.SessionID = @SessionID";
+
+            await db.ExecuteAsync(updateSql, new
+            {
+                SessionID,
+                PIDivisionID = SessionState.DivisionID,
+                VCDivisionID = divId,
+                EffectiveDate
+            });
+
+            // Insert new vendor cost records
+            var insertSql = $@"
+                INSERT INTO tblVendorCost(Community, DivisionID, CommunityPhase, Assembly, Model, Phase, Item, PriceLink, Vendor,
+                    Current_Cost, Next_Cost1, Next_Effective1, Next_Cost2, Next_Effective2, PartNumber,
+                    Forecast1, Forecast2, Forecast3, Forecast4, Forecast5, Forecast6,
+                    Forecast7, Forecast8, Forecast9, Forecast10, Forecast11, Forecast12)
+                SELECT ic.Community, @VCDivisionID, ic.CommunityPhase, ic.Assembly, ic.Model, pi.Phase, pi.Item,
+                    CASE WHEN ISNULL(ic.Assembly,'') <> '' THEN 0 ELSE pi.PriceLink END, ic.Vendor,
+                    MAX(ic.Current_Cost),
+                    MAX(ic.Next_Cost1),
+                    CASE WHEN MAX(ic.Next_Cost1) <> 0 THEN MIN(ic.Next_Effective1) ELSE NULL END,
+                    MAX(ic.Next_Cost2),
+                    CASE WHEN MAX(ic.Next_Cost2) <> 0 THEN MIN(ic.Next_Effective2) ELSE NULL END,
+                    MAX(ic.PartNumber),
+                    MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost),
+                    MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost),
+                    MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost), MAX(ic.Current_Cost)
+                FROM ImportedCosts ic
+                JOIN tblPhaseItem pi ON pi.DivisionID = @PIDivisionID
+                    AND ((ic.Phase = pi.Phase AND ic.Item = pi.Item) OR (ISNULL(ic.Phase,'') = '' AND ic.Item = CAST(pi.PriceLink AS VARCHAR)))
+                LEFT OUTER JOIN tblVendorCost vc ON vc.DivisionID = @VCDivisionID
+                    AND ic.Community = vc.Community
+                    AND ic.CommunityPhase = vc.CommunityPhase
+                    AND ic.Assembly = vc.Assembly
+                    AND ic.Model = vc.Model
+                    AND pi.Phase = vc.Phase
+                    AND pi.Item = vc.Item
+                    AND ic.Vendor = vc.Vendor
+                    AND ic.SessionID = @SessionID
+                WHERE vc.Vendor IS NULL
+                    AND ic.SessionID = @SessionID
+                    AND ic.UnknownVendor = 0
+                    AND ic.UnknownCommunity = 0
+                    AND ic.UnknownAssembly = 0
+                    AND ic.UnknownItem = 0
+                    AND ic.UnknownUOM = 0
+                    AND ic.UnknownExpiryDate = 0
+                GROUP BY ic.Community, ic.CommunityPhase, ic.Model, ic.Assembly, pi.PriceLink, pi.Phase, pi.Item, ic.Vendor";
+
+            await db.ExecuteAsync(insertSql, new
+            {
+                SessionID,
+                PIDivisionID = SessionState.DivisionID,
+                VCDivisionID = divId
+            });
+
+            // Write reject file if needed
+            if (IgnoreErrors && !string.IsNullOrWhiteSpace(RejectFilePath))
+            {
+                await WriteRejectFileAsync();
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error saving data: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            IsProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Write Reject File ===
+    private async Task WriteRejectFileAsync()
+    {
+        try
+        {
+            var sql = @"
+                SELECT Vendor, VendorDesc AS CompanyName, Community, CommunityPhase AS Phase,
+                    CommunityDesc AS CommunityName, Assembly, AssemblyDesc AS AssemblyDescription,
+                    Phase AS gGroup, Item, ItemDesc AS ItemDescription, PartNumber,
+                    OrderUOM AS UOM, Current_Cost AS Price,
+                    Next_Cost1 AS NextPrice1, Next_Effective1 AS Effective1,
+                    Next_Cost2 AS NextPrice2, Next_Effective2 AS Effective2,
+                    SUBSTRING(
+                        CASE WHEN UnknownVendor = 1 THEN '; unknown vendor' ELSE '' END
+                        + CASE WHEN UnknownCommunity = 1 THEN '; unknown community' ELSE '' END
+                        + CASE WHEN UnknownAssembly = 1 THEN '; unknown assembly' ELSE '' END
+                        + CASE WHEN UnknownItem = 1 THEN '; unknown phase/item' ELSE '' END
+                        + CASE WHEN UnknownUOM = 1 THEN '; HF expects UOM to be ""' + ISNULL(ExpectedUOM,'') + '""' ELSE '' END
+                        + CASE WHEN UnknownExpiryDate = 1 THEN '; effective date is required' ELSE '' END, 3, 9999) AS Comments
+                FROM ImportedCosts
+                WHERE SessionID = @SessionID
+                    AND (UnknownVendor = 1 OR UnknownCommunity = 1 OR UnknownAssembly = 1
+                        OR UnknownItem = 1 OR UnknownUOM = 1 OR UnknownExpiryDate = 1)
+                ORDER BY Vendor, Community, Phase, gGroup, Item";
+
+            var rows = await db.QueryAsync(sql, new { SessionID });
+
+            if (rows.Any())
+            {
+                var lines = new List<string>();
+                lines.Add("Vendor\tCompanyName\tCommunity\tPhase\tCommunityName\tAssembly\tAssemblyDescription\tGroup\tItem\tItemDescription\tPartNumber\tUOM\tPrice\tNextPrice1\tEffective1\tNextPrice2\tEffective2\tComments");
+
+                foreach (var row in rows)
+                {
+                    var vals = new[]
+                    {
+                        row["Vendor"]?.ToString() ?? "",
+                        row["CompanyName"]?.ToString() ?? "",
+                        row["Community"]?.ToString() ?? "",
+                        row["Phase"]?.ToString() ?? "",
+                        row["CommunityName"]?.ToString() ?? "",
+                        row["Assembly"]?.ToString() ?? "",
+                        row["AssemblyDescription"]?.ToString() ?? "",
+                        row["gGroup"]?.ToString() ?? "",
+                        row["Item"]?.ToString() ?? "",
+                        row["ItemDescription"]?.ToString() ?? "",
+                        row["PartNumber"]?.ToString() ?? "",
+                        row["UOM"]?.ToString() ?? "",
+                        row["Price"]?.ToString() ?? "",
+                        row["NextPrice1"]?.ToString() ?? "",
+                        row["Effective1"]?.ToString() ?? "",
+                        row["NextPrice2"]?.ToString() ?? "",
+                        row["Effective2"]?.ToString() ?? "",
+                        row["Comments"]?.ToString() ?? ""
+                    };
+                    lines.Add(string.Join("\t", vals));
+                }
+
+                await File.WriteAllLinesAsync(RejectFilePath, lines);
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error writing reject file: {ex.Message}";
+        }
+    }
+
+    // === Convert ProfitMaster File ===
+    private async Task ConvertProfitMasterFileAsync()
+    {
+        try
+        {
+            var vendor = await Dialogs.PromptAsync("Enter Vendor ID:");
+            if (string.IsNullOrWhiteSpace(vendor)) return;
+
+            var vendorName = "";
+            var vendorRows = await db.QueryAsync(
+                "SELECT vendor_name FROM tblVendors WHERE DivisionID = @DivisionID AND vendor_id = @Vendor",
+                new { SessionState.DivisionID, Vendor = vendor.Trim() });
+            if (vendorRows.Any())
+                vendorName = vendorRows.First()["vendor_name"]?.ToString() ?? "";
+
+            TempFile = Path.GetTempFileName();
+            var lines = new List<string>();
+            lines.Add($"Vendor,{vendor.Trim()}");
+            lines.Add($"Company Name,{vendorName}");
+            lines.Add("Community,Phase,Community Name,Model,Specification,Assembly Description,Group,Item,Item Description,Part Number,UOM,Price");
+
+            // Read fixed-width ProfitMaster records
+            var sourceLines = await File.ReadAllLinesAsync(FileName);
+            foreach (var line in sourceLines)
+            {
+                if (line.Length < 140) continue;
+                // Parse fixed-width fields
+                var productNumber = SafeSubstring(line, 68, 16).Trim().Replace("\0", "");
+                if (string.IsNullOrWhiteSpace(productNumber)) continue;
+
+                var cost = SafeSubstring(line, 0, 8).Trim();
+                var desc1 = SafeSubstring(line, 86, 30).Trim();
+                var uom = SafeSubstring(line, 117, 3).Trim();
+
+                decimal costVal = 0;
+                if (decimal.TryParse(cost, out var parsed))
+                    costVal = parsed / 100m;
+
+                lines.Add($",,,,,,,,{desc1},{productNumber},{uom},{costVal}");
+            }
+
+            await File.WriteAllLinesAsync(TempFile, lines);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error converting ProfitMaster file: {ex.Message}";
+        }
+    }
+
+    // === Cleanup ===
+    private async Task CleanupSession()
+    {
+        try
+        {
+            await db.ExecuteAsync("DELETE FROM ImportedCosts WHERE SessionID = @SessionID", new { SessionID });
+
+            if (!string.IsNullOrEmpty(TempFile) && File.Exists(TempFile))
+                File.Delete(TempFile);
+        }
+        catch { /* non-critical */ }
+    }
+
+    // === Event Handlers ===
+    private void OnIgnoreErrorsChanged()
+    {
+        FinishEnabled = IgnoreErrors && !string.IsNullOrWhiteSpace(RejectFilePath);
+        StateHasChanged();
+    }
+
+    private void OnRejectFileChanged()
+    {
+        FinishEnabled = IgnoreErrors && !string.IsNullOrWhiteSpace(RejectFilePath);
+        StateHasChanged();
+    }
+
+    private async Task OnChooseRejectFile()
+    {
+        var path = await Dialogs.PromptAsync("Enter the reject file path (.xls):", "", RejectFilePath);
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            RejectFilePath = path.Trim();
+            FinishEnabled = IgnoreErrors && !string.IsNullOrWhiteSpace(RejectFilePath);
+        }
+    }
+
+    private void OnImportColumnChanged()
+    {
+        ShowEffectiveDate = ImportColumnIndex == 1 || ImportColumnIndex == 2;
+        StateHasChanged();
+    }
+
+    private async Task OnShowImportSummary()
+    {
+        // VB6: Crystal report PriceImportSummary.rpt with params SessionID, ImportDestination
+        ErrorMessage = "Import Summary report is not yet available in the web application.";
+        await Task.CompletedTask;
+    }
+
+    private async Task OnShowPricingComparison()
+    {
+        // VB6: Crystal report PriceImportComparison.rpt with params SessionID, ImportDestination
+        ErrorMessage = "Pricing Comparison report is not yet available in the web application.";
+        await Task.CompletedTask;
+    }
+
+    // === Helpers ===
+    private string GetColValue(string[] row, string colName)
+    {
+        if (ColIndexMap.TryGetValue(colName, out var idx) && idx < row.Length)
+            return row[idx]?.Trim() ?? "";
+        return "";
+    }
+
+    private decimal ParseDecimal(string? val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return 0;
+        val = val.Replace("$", "").Replace(",", "").Trim();
+        return decimal.TryParse(val, out var result) ? result : 0;
+    }
+
+    private DateTime? ParseNullableDate(string? val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return null;
+        return DateTime.TryParse(val, out var result) ? result : null;
+    }
+
+    private string SafeSubstring(string s, int start, int length)
+    {
+        if (string.IsNullOrEmpty(s) || start >= s.Length) return "";
+        if (start + length > s.Length) length = s.Length - start;
+        return s.Substring(start, length);
+    }
+}

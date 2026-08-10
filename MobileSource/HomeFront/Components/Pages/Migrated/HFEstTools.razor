@@ -1,0 +1,206 @@
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Diagnostics
+@using System.Collections.Generic
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject ILogger<HFEstTools> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+@code {
+    // === Database ===
+// === State ===
+    private int DivisionID = 0;
+    private string ConnectionString = "";
+    private string HFUser = "";
+
+    /// <summary>
+    /// Returns the current process ID (equivalent to VB6 GetCurrentProcessId).
+    /// </summary>
+    public long GetProcessID()
+    {
+        return Environment.ProcessId;
+    }
+
+    /// <summary>
+    /// Creates a single Purchase Order for the given job, vendor, and PO number.
+    /// Equivalent to VB6 HFEstTools.CreateSinglePO.
+    /// </summary>
+    /// <param name="divisionID">The division ID to operate under.</param>
+    /// <param name="connectionString">The database connection string.</param>
+    /// <param name="hfUser">The HomeFront user name.</param>
+    /// <param name="job">The job identifier.</param>
+    /// <param name="vendor">The vendor identifier.</param>
+    /// <param name="poNumber">The PO number to create.</param>
+    /// <returns>The created PO number or result string; empty on failure.</returns>
+    public async Task<string> CreateSinglePO(long divisionID, string connectionString, string hfUser, string job, string vendor, string poNumber)
+    {
+        try
+        {
+            // Set division
+            DivisionID = (int)divisionID;
+            ConnectionString = connectionString ?? "";
+            HFUser = hfUser ?? "";
+
+            // Perform trusted login
+            if (!await PerformTrustedLogin(connectionString, hfUser))
+            {
+                return "";
+            }
+
+            // Read user permissions
+            await ReadUserPermissions(hfUser);
+
+            // Create the single PO
+            var result = await CreateSinglePOInternal(job, vendor, poNumber);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"CreateSinglePO\n{ex.Message}");
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Performs a trusted login using the provided connection string and user.
+    /// </summary>
+    private async Task<bool> PerformTrustedLogin(string connectionString, string hfUser)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(connectionString) || string.IsNullOrWhiteSpace(hfUser))
+                return false;
+
+            // Validate user exists in the system
+            var sql = @"SELECT COUNT(*) FROM tblUsers WHERE UserName = @UserName AND ISNULL(Inactive, 0) = 0";
+            var userCount = await db.ExecuteScalarAsync<int>(sql, new { UserName = hfUser });
+
+            if (userCount == 0)
+                return false;
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Operation failed: {ex.Message}");
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reads user permissions from the database.
+    /// </summary>
+    private async Task ReadUserPermissions(string hfUser)
+    {
+        try
+        {
+            var sql = @"SELECT * FROM tblUserPermissions WHERE DivisionID = @DivisionID AND UserName = @UserName";
+            var dt = db.SqlExec(sql, new { DivisionID, UserName = hfUser });
+
+            // Permissions loaded — in a full implementation these would be stored
+            // in a shared state/service for use across the application.
+            Console.WriteLine($"Loaded {dt.Rows.Count} permission row(s) for user '{hfUser}'.");
+
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Operation failed: {ex.Message}");
+
+        }
+    }
+
+    /// <summary>
+    /// Internal method to create a single purchase order.
+    /// Mirrors VB6 FPurchaseOrder.CreateSinglePO logic.
+    /// </summary>
+    private async Task<string> CreateSinglePOInternal(string job, string vendor, string poNumber)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(job))
+            {
+                Notifications.Info("Job is required to create a Purchase Order.");
+                return "";
+            }
+
+            if (string.IsNullOrWhiteSpace(vendor))
+            {
+                Notifications.Warning("Vendor is required to create a Purchase Order.");
+                return "";
+            }
+
+            // Validate job exists
+            var jobCheckSql = @"SELECT COUNT(*) FROM tblJobs WHERE DivisionID = @DivisionID AND Job = @Job";
+            var jobExists = await db.ExecuteScalarAsync<int>(jobCheckSql, new { DivisionID, Job = job });
+            if (jobExists == 0)
+            {
+                Notifications.Info($"Job '{job}' not found.");
+                return "";
+            }
+
+            // Validate vendor exists
+            var vendorCheckSql = @"SELECT COUNT(*) FROM tblVendors WHERE DivisionID = @DivisionID AND Vendor_ID = @Vendor";
+            var vendorExists = await db.ExecuteScalarAsync<int>(vendorCheckSql, new { DivisionID, Vendor = vendor });
+            if (vendorExists == 0)
+            {
+                Notifications.Info($"Vendor '{vendor}' not found.");
+                return "";
+            }
+
+            // Generate PO number if not provided
+            var finalPONumber = poNumber;
+            if (string.IsNullOrWhiteSpace(finalPONumber))
+            {
+                var nextPOSql = @"SELECT ISNULL(MAX(CAST(PONumber AS INT)), 0) + 1 
+                                  FROM tblPurchaseOrders 
+                                  WHERE DivisionID = @DivisionID AND ISNUMERIC(PONumber) = 1";
+                var nextPO = await db.ExecuteScalarAsync<int>(nextPOSql, new { DivisionID });
+                finalPONumber = nextPO.ToString();
+            }
+
+            // Check if PO already exists
+            var poExistsSql = @"SELECT COUNT(*) FROM tblPurchaseOrders 
+                                WHERE DivisionID = @DivisionID AND PONumber = @PONumber";
+            var poExists = await db.ExecuteScalarAsync<int>(poExistsSql, new { DivisionID, PONumber = finalPONumber });
+            if (poExists > 0)
+            {
+                Notifications.Info($"PO Number '{finalPONumber}' already exists.");
+                return "";
+            }
+
+            // Create the purchase order
+            var insertSql = @"
+                INSERT INTO tblPurchaseOrders 
+                    (DivisionID, PONumber, Job, Vendor_ID, PODate, Status, CreatedBy, CreatedDate)
+                VALUES 
+                    (@DivisionID, @PONumber, @Job, @Vendor, GETDATE(), 'Open', @CreatedBy, GETDATE())";
+
+            await db.ExecuteAsync(insertSql, new
+            {
+                DivisionID,
+                PONumber = finalPONumber,
+                Job = job,
+                Vendor = vendor,
+                CreatedBy = HFUser
+            });
+
+            Console.WriteLine($"Created PO '{finalPONumber}' for Job='{job}', Vendor='{vendor}'.");
+
+            return finalPONumber;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Operation failed: {ex.Message}");
+
+            throw;
+        }
+    }
+}

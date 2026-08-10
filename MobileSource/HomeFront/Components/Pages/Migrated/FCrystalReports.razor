@@ -1,0 +1,455 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@page "/crystal-reports"
+
+@namespace HomeFront.Components.Pages
+
+@using System.IO
+@using HomeFront.Services
+@using Fx.ControlKit.Notifications
+@using Fx.ControlKit.Reports
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+
+@inject NavigationManager NavigationManager
+@inject IWebHostEnvironment Env
+@inject ILogger<FCrystalReports> Logger
+@inject NotificationService Notifications
+@inject RptToXmlConverter RptConverter
+@inject CustomReportRouter Router
+
+@layout HFComponent
+
+<PageTitle>Crystal Reports</PageTitle>
+
+<div class="crystal-reports">
+    <div class="crystal-header">
+        <h3>Crystal Reports</h3>
+        <p class="subtitle">Pick a report to view. The list is populated from
+            <code>wwwroot/resources/Estimating/Reports/xml/*.xml</code> — only reports
+            whose XML export is present here are runnable through the cross-platform
+            viewer.</p>
+    </div>
+
+    @if (_loadError != null)
+    {
+        <div class="alert alert-danger">@_loadError</div>
+    }
+
+    <div class="report-toolbar">
+        <TextBoxControl Value="@SearchText" CssClass="search-box" Placeholder="Filter reports…"
+                        @oninput="OnSearchInput" />
+        <span class="count">@FilteredReports.Count of @_reports.Count</span>
+
+        <ButtonControl BareStyle="true" CssClass="open-btn designer-btn"
+                       Title="Open a blank report designer" OnClick="OpenBlankDesigner">
+            <span class="open-btn-icon designer-icon"></span>
+            <span>Designer</span>
+        </ButtonControl>
+
+        @* Three upload modes — single .rpt, multiple .rpts, or an entire folder
+           (browser walks the directory, we keep only .rpt entries). All three
+           feed the unified OnRptFilesSelected handler; the converter falls
+           through to ConvertAsync for a single file and uses ConvertBatchAsync
+           for two or more. *@
+        <label class="open-btn @(_isConverting ? "disabled" : "")" title="Convert one .rpt file">
+            @if (_isConverting)
+            {
+                <span class="open-btn-spinner"></span>
+                <span>@_progressLabel</span>
+            }
+            else
+            {
+                <span class="open-btn-icon">📂</span>
+                <span>Open .rpt…</span>
+            }
+            <InputFile OnChange="OnRptFilesSelected" accept=".rpt" disabled="@_isConverting" />
+        </label>
+
+        <label class="open-btn @(_isConverting ? "disabled" : "")" title="Convert several .rpt files at once">
+            <span class="open-btn-icon">🗂️</span>
+            <span>Open multiple…</span>
+            <InputFile OnChange="OnRptFilesSelected" accept=".rpt" multiple disabled="@_isConverting" />
+        </label>
+
+        <label class="open-btn @(_isConverting ? "disabled" : "")" title="Convert every .rpt in a folder">
+            <span class="open-btn-icon">📁</span>
+            <span>Open folder…</span>
+            @* webkitdirectory + directory attributes turn the file picker into
+               a folder picker. Standard HTML on the underlying <input>;
+               Blazor's InputFile passes additional attributes through. *@
+            <InputFile OnChange="OnRptFilesSelected" disabled="@_isConverting"
+                       webkitdirectory="" directory="" multiple />
+        </label>
+    </div>
+
+    @if (_reports.Count == 0 && _loadError == null)
+    {
+        <div class="alert alert-info">No reports found.</div>
+    }
+    else
+    {
+        <div class="report-list">
+            @foreach (var report in FilteredReports)
+            {
+                <div class="report-card"
+                     role="button"
+                     tabindex="0"
+                     @onclick="() => OnReportClick(report)"
+                     @oncontextmenu="(e) => OnReportContextMenu(e, report)"
+                     @oncontextmenu:preventDefault="true"
+                     @onkeydown="@(e => { if (e.Key == "Enter" || e.Key == " ") OnReportClick(report); })">
+                    <img src="images/16/crystal.ico" alt="" class="report-icon" />
+                    <div class="report-text">
+                        <span class="report-name">@report.Name</span>
+                        <span class="report-path">@report.RelativePath</span>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_contextReport is not null)
+    {
+        <div class="report-context-overlay" @onclick="CloseReportContextMenu"></div>
+        <div class="report-context-menu" style="left:@_contextMenuXpx;top:@_contextMenuYpx;">
+            <button type="button" @onclick="OpenContextReport">
+                <span>Open</span>
+                <em>Viewer</em>
+            </button>
+            <button type="button" @onclick="DesignContextReport">
+                <span>Design</span>
+                <em>Designer</em>
+            </button>
+            <button type="button" class="delete" @onclick="DeleteContextReport">
+                <span>Delete</span>
+                <em>XML</em>
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    // Cascading delegate from FMain shell — lets us navigate inline without
+    // a full route change so the shell chrome (tab strip, sidebar) stays put.
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private List<ReportEntry> _reports = new();
+    private string? _loadError;
+    private string SearchText { get; set; } = "";
+    private bool _isConverting;
+    private string _progressLabel = "";
+    private ReportEntry? _contextReport;
+    private double _contextMenuX;
+    private double _contextMenuY;
+
+    // 64 MiB upload cap. .rpt files are typically tens-to-hundreds of KB, so
+    // this is well over a comfortable ceiling without exposing us to a denial-
+    // of-service via giant uploads.
+    private const long MaxRptUploadBytes = 64L * 1024 * 1024;
+
+    private IReadOnlyList<ReportEntry> FilteredReports => string.IsNullOrWhiteSpace(SearchText)
+        ? _reports
+        : _reports.Where(r => r.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private record ReportEntry(string Name, string FullPath, string RelativePath);
+
+    private string XmlDir => Path.Combine(Env.WebRootPath, "resources", "Estimating", "Reports", "xml");
+    private string _contextMenuXpx => $"{_contextMenuX:0}px";
+    private string _contextMenuYpx => $"{_contextMenuY:0}px";
+
+    protected override void OnInitialized() => RefreshList();
+
+    // TextBoxControl renders InputText which only commits on change/blur, so the
+    // live "filter-as-you-type" behavior of the original <input @bind:event="oninput">
+    // is preserved by handling oninput directly and writing back to SearchText.
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        SearchText = e.Value?.ToString() ?? "";
+    }
+
+    private void RefreshList()
+    {
+        _loadError = null;
+        try
+        {
+            // Single source of truth: the XML exports under
+            // wwwroot/resources/Estimating/Reports/xml/. The matching .rpt
+            // binaries live alongside but only the XML is needed by the
+            // cross-platform viewer (FRptViewer / ReportWriterControl).
+            if (!Directory.Exists(XmlDir))
+            {
+                _loadError = $"Report directory not found: {XmlDir}";
+                Logger.LogWarning("Crystal Reports XML directory missing: {Dir}", XmlDir);
+                _reports = new();
+                return;
+            }
+
+            _reports = Directory.GetFiles(XmlDir, "*.xml")
+                .OrderBy(f => Path.GetFileNameWithoutExtension(f), StringComparer.OrdinalIgnoreCase)
+                .Select(f => new ReportEntry(
+                    Name: Path.GetFileNameWithoutExtension(f),
+                    FullPath: f,
+                    RelativePath: Path.GetRelativePath(Env.WebRootPath, f)))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to enumerate reports: {ex.Message}";
+            Logger.LogError(ex, "Failed to enumerate Crystal Reports XML directory");
+        }
+    }
+
+    private async Task OnRptFilesSelected(InputFileChangeEventArgs e)
+    {
+        // Filter to .rpt only — folder pickers return EVERY entry the browser
+        // can see, including .txt notes / .bak siblings / OS metadata. Silently
+        // dropping non-.rpt is friendlier than nagging on every stray file.
+        var rptFiles = e.GetMultipleFiles(maximumFileCount: int.MaxValue)
+            .Where(f => string.Equals(Path.GetExtension(f.Name), ".rpt", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (rptFiles.Count == 0)
+        {
+            Notifications.Warning("No .rpt files in the selection.");
+            return;
+        }
+
+        // Stage each upload to a server-local temp file so the converter can
+        // open the .rpt and write a new XML output file.
+        var staged = new List<(string TempRpt, string TempDirectory, string FinalXml, string DisplayName)>(rptFiles.Count);
+
+        _isConverting = true;
+        _progressLabel = rptFiles.Count == 1 ? "Converting…" : $"Uploading {rptFiles.Count}…";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            Directory.CreateDirectory(XmlDir);
+
+            foreach (var f in rptFiles)
+            {
+                var tempDirectory = Path.Combine(Path.GetTempPath(), $"hf-rpt-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(tempDirectory);
+
+                var temp = Path.Combine(tempDirectory, Path.GetFileName(f.Name));
+                await using (var src = f.OpenReadStream(MaxRptUploadBytes))
+                await using (var dst = File.Create(temp))
+                {
+                    await src.CopyToAsync(dst);
+                }
+                var baseName = Path.GetFileNameWithoutExtension(f.Name);
+                staged.Add((temp, tempDirectory, Path.Combine(XmlDir, baseName + ".xml"), f.Name));
+            }
+
+            _progressLabel = rptFiles.Count == 1
+                ? $"Converting {staged[0].DisplayName}…"
+                : $"Converting batch of {rptFiles.Count}…";
+            await InvokeAsync(StateHasChanged);
+
+            Logger.LogInformation(
+                "Submitting {Count} .rpt file(s) to report converter: {Files}",
+                staged.Count, string.Join(";", staged.Select(s => s.DisplayName)));
+
+            await RptConverter.ConvertBatchAsync(
+                staged.Select(s => (s.TempRpt, s.FinalXml)).ToList());
+
+            var summary = rptFiles.Count == 1
+                ? $"Converted '{staged[0].DisplayName}'."
+                : $"Converted {rptFiles.Count} reports.";
+            Notifications.Info(summary);
+
+            // Surface the first newly-imported file by filtering to its name —
+            // most users want to launch what they just imported.
+            SearchText = Path.GetFileNameWithoutExtension(staged[0].DisplayName);
+            RefreshList();
+        }
+        catch (TimeoutException ex)
+        {
+            Logger.LogWarning(ex, "RPT conversion timed out on batch ({Count} files)", staged.Count);
+            Notifications.Error(
+                $"Conversion timed out while preparing the report XML. Details: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogError(ex, "RPT converter reported failure on batch ({Count} files)", staged.Count);
+            Notifications.Error($"Report converter couldn't convert the batch: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to convert RPT batch ({Count} files)", staged.Count);
+            Notifications.Error($"Failed to convert batch: {ex.Message}");
+        }
+        finally
+        {
+            foreach (var s in staged)
+            {
+                try { if (File.Exists(s.TempRpt)) File.Delete(s.TempRpt); }
+                catch (Exception ex) { Logger.LogWarning(ex, "Could not delete temp file {Temp}", s.TempRpt); }
+
+                try { if (Directory.Exists(s.TempDirectory)) Directory.Delete(s.TempDirectory, recursive: true); }
+                catch (Exception ex) { Logger.LogWarning(ex, "Could not delete temp directory {TempDirectory}", s.TempDirectory); }
+            }
+
+            _isConverting = false;
+            _progressLabel = "";
+        }
+    }
+
+    private void OnReportClick(ReportEntry report)
+    {
+        CloseReportContextMenu();
+
+        // Reports that ship a custom Blazor-native parameter screen (e.g.
+        // FModelCostsParams for "Model Costs v1") have their own route in
+        // CustomReportRouter. Honor that mapping here so the workflow
+        // page launches reports the same way the menu does — same param
+        // dialog, same drill-down, same UX. Without this delegation, the
+        // workflow path would land in FRptViewer with the generic
+        // ReportParamDialogControl while the menu path uses the custom
+        // dialog, giving the user two visibly different parameter UIs
+        // for the same report.
+        // Pass both name AND full path — the XML-driven dispatch in
+        // CustomReportRouter needs the path to peek for <PickListSql>
+        // annotations; the legacy name-based fallback uses the name.
+        if (Router.TryGetCustomReportRoute(report.Name, report.FullPath, out var customRoute))
+        {
+            Logger.LogInformation(
+                "Opening report '{Name}' via custom route {Route}", report.Name, customRoute);
+            if (ParentNavigate != null)
+                ParentNavigate.Invoke(customRoute);
+            else
+                NavigationManager.NavigateTo(customRoute);
+            return;
+        }
+
+        // Generic path: FRptViewer's route is /report-viewer/{ReportFile}.
+        // The handler Uri.UnescapeDataString's the segment, so we encode the
+        // full path here. FRptViewer.ResolveXmlPath then loads it.
+        var encoded = Uri.EscapeDataString(report.FullPath);
+        var url = $"/report-viewer/{encoded}";
+
+        Logger.LogInformation("Opening report '{Name}' at {Path}", report.Name, report.FullPath);
+
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(url);
+        else
+            NavigationManager.NavigateTo(url);
+    }
+
+    private void OpenBlankDesigner()
+    {
+        const string url = "/report-designer";
+        Logger.LogInformation("Opening blank report designer");
+
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(url);
+        else
+            NavigationManager.NavigateTo(url);
+    }
+
+    private void OnReportContextMenu(MouseEventArgs e, ReportEntry report)
+    {
+        _contextReport = report;
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+    }
+
+    private void CloseReportContextMenu()
+    {
+        _contextReport = null;
+    }
+
+    private void OpenContextReport()
+    {
+        if (_contextReport is null)
+            return;
+
+        var report = _contextReport;
+        CloseReportContextMenu();
+        OnReportClick(report);
+    }
+
+    private void DesignContextReport()
+    {
+        if (_contextReport is null)
+            return;
+
+        var report = _contextReport;
+        CloseReportContextMenu();
+
+        var url = $"/report-designer/{Uri.EscapeDataString(report.FullPath)}";
+        Logger.LogInformation("Designing report '{Name}' at {Path}", report.Name, report.FullPath);
+
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(url);
+        else
+            NavigationManager.NavigateTo(url);
+    }
+
+    private void DeleteContextReport()
+    {
+        if (_contextReport is null)
+            return;
+
+        var report = _contextReport;
+        CloseReportContextMenu();
+
+        try
+        {
+            if (!TryResolveDeletableReportPath(report, out var fullPath, out var reason))
+            {
+                Notifications.Warning(reason ?? "Report cannot be deleted.");
+                Logger.LogWarning("Rejected Crystal Reports XML delete for {Path}: {Reason}", report.FullPath, reason);
+                return;
+            }
+
+            if (!File.Exists(fullPath))
+            {
+                Notifications.Warning($"Report '{report.Name}' no longer exists.");
+                RefreshList();
+                return;
+            }
+
+            File.Delete(fullPath);
+            Logger.LogInformation("Deleted Crystal Reports XML report '{Name}' at {Path}", report.Name, fullPath);
+            Notifications.Info($"Deleted report '{report.Name}'.");
+            RefreshList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete Crystal Reports XML report '{Name}' at {Path}", report.Name, report.FullPath);
+            Notifications.Error($"Could not delete report '{report.Name}': {ex.Message}");
+        }
+    }
+
+    private bool TryResolveDeletableReportPath(ReportEntry report, out string fullPath, out string? reason)
+    {
+        fullPath = Path.GetFullPath(report.FullPath);
+        reason = null;
+
+        var root = Path.GetFullPath(XmlDir);
+        var rootPrefix = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "Only reports in the Crystal Reports XML folder can be deleted.";
+            return false;
+        }
+
+        if (!string.Equals(Path.GetExtension(fullPath), ".xml", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "Only XML report exports can be deleted from this list.";
+            return false;
+        }
+
+        return true;
+    }
+}

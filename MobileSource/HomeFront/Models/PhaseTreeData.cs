@@ -40,15 +40,8 @@ public class PhaseTreeData
         int root = -1;
         int TreeID = 0;
         int ChildCount = -1;
-        int SubTaskCount = -1;
-        int t = 0;
         int rootItem = root + 1;
         var prevGrpPhase = "";
-        var prevGrpDesc = "";
-        var prevGrpSortOrder = "";
-        var prevPhase = "";
-        var prevPhaseDesc = "";
-        var prevPhaseSortOrder = "";
         foreach (DataRow row in dt.Rows)
         {
             var GrpPhase = row["GrpPhase"]?.ToString();

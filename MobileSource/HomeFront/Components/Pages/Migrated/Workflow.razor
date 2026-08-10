@@ -1,0 +1,115 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@page "/workflow"
+@rendermode InteractiveServer
+
+@using Fx.ControlKit.Notifications
+
+@inject NavigationManager NavigationManager
+@inject ILogger<Workflow> Logger
+@inject NotificationService Notifications
+
+<PageTitle>Workflow</PageTitle>
+
+<div class="workflow-tabs-shell">
+    <div class="workflow-tabs-header">
+        <button class="workflow-tab @(SelectedTab == WorkflowTab.Estimating ? "active" : "")"
+                @onclick="() => OpenTab(WorkflowTab.Estimating)">
+            Estimating
+        </button>
+        <button class="workflow-tab @(SelectedTab == WorkflowTab.ProjectManagement ? "active" : "")"
+                disabled
+                @onclick="() => OpenTab(WorkflowTab.ProjectManagement)">
+            Project Management
+        </button>
+        <button class="workflow-tab @(SelectedTab == WorkflowTab.JobAccounting ? "active" : "")"
+                disabled
+                @onclick="() => OpenTab(WorkflowTab.JobAccounting)">
+            Job Accounting
+        </button>
+    </div>
+    @if (Embedded)
+    {
+        <div class="workflow-tabs-content">
+            <DynamicComponent Type="@ActiveTabType" />
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public bool Embedded { get; set; }
+
+    /// <summary>
+    /// Initial tab name passed by the parent (e.g. restored from saved UI state).
+    /// Valid values: "Estimating", "ProjectManagement", "JobAccounting".
+    /// </summary>
+    [Parameter] public string? SelectedTabName { get; set; }
+
+    /// <summary>
+    /// Notifies the parent when the user switches tabs, so it can persist the choice.
+    /// </summary>
+    [Parameter] public EventCallback<string> OnTabChanged { get; set; }
+
+    private WorkflowTab SelectedTab = WorkflowTab.Estimating;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrEmpty(SelectedTabName) &&
+            Enum.TryParse<WorkflowTab>(SelectedTabName, true, out var parsed))
+        {
+            SelectedTab = parsed;
+        }
+    }
+
+    /// <summary>
+    /// Maps the selected workflow tab to its component type for inline rendering.
+    /// Replaces the previous iframe-based approach so that child navigation stays
+    /// within FMain's Blazor context (preserving menu bar, status bar, task panel).
+    /// </summary>
+    private Type ActiveTabType => SelectedTab switch
+    {
+        WorkflowTab.Estimating => typeof(WorkflowEstimating),
+        WorkflowTab.ProjectManagement => typeof(WorkflowProjectManagement),
+        WorkflowTab.JobAccounting => typeof(WorkflowJobAccounting),
+        _ => typeof(WorkflowEstimating)
+    };
+
+    private async Task OpenTab(WorkflowTab tab)
+    {
+        SelectedTab = tab;
+
+        if (Embedded)
+        {
+            // Notify parent so it can persist the tab choice
+            await OnTabChanged.InvokeAsync(tab.ToString());
+        }
+        else
+        {
+            NavigationManager.NavigateTo(ResolveRoute(tab));
+        }
+    }
+
+    private static string ResolveRoute(WorkflowTab tab)
+    {
+        return tab switch
+        {
+            WorkflowTab.Estimating => "/workflow-estimating",
+            WorkflowTab.ProjectManagement => "/workflow-project-management",
+            WorkflowTab.JobAccounting => "/workflow-job-accounting",
+            _ => "/workflow-estimating"
+        };
+    }
+
+    private enum WorkflowTab
+    {
+        Estimating,
+        ProjectManagement,
+        JobAccounting
+    }
+}
+

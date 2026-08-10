@@ -1,0 +1,381 @@
+/* FFormulaEditor — VB6 FFormulaEditor.frm layout: three list panes on top (Variables /
+   Formulas / grouped function library), the large formula editor filling the lower half,
+   Test bottom-left, OK/Cancel bottom-right (HHM-211). */
+
+.ffe-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: 6px;
+}
+
+/* Three side-by-side panes, each independently scrollable (the legacy panes scroll). */
+.ffe-panes {
+    flex: 0 0 42%;
+    display: flex;
+    gap: 6px;
+    min-height: 0;
+}
+
+.ffe-pane {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #9a9a9a;
+    padding: 2px 0;
+    font: 400 11px Tahoma, "MS Sans Serif", "Segoe UI", sans-serif;
+}
+
+/* Root/group rows — bold with the legacy −/+ box; click toggles. */
+.ffe-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 6px;
+    cursor: default;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.ffe-group b {
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.ffe-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 9px;
+    height: 9px;
+    border: 1px solid #808080;
+    background: #fff;
+    color: #000;
+    font-size: 9px;
+    font-family: monospace;
+    font-weight: bold;
+    line-height: 1;
+    margin-right: 4px;
+}
+
+/* Leaf rows — indented under their group; double-click inserts. */
+.ffe-leaf {
+    padding: 1px 6px 1px 20px;
+    cursor: default;
+    user-select: none;
+    white-space: pre;
+    font-size: 11px;
+}
+
+/* HHM-615: the Formulas pane's current row (VB6 grid cursor) — right-click
+   actions on the "Formulas" root target this leaf. */
+.ffe-leaf.selected {
+    background: #000080;
+    color: #fff;
+}
+
+/* Keyboard focus & navigation (owner directive 2026-08-01). */
+.ffe-focus-sentinel {
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    outline: none;
+}
+
+.ffe-pane:focus {
+    outline: 1px dotted #666;
+    outline-offset: -1px;
+}
+
+/* The pane's keyboard cursor — lighter than the committed .selected row so
+   both states stay distinguishable (VB6 focus rect vs selection). */
+.ffe-group.kb-active,
+.ffe-leaf.kb-active {
+    background: #c2dbff;
+    color: #000;
+}
+
+/* The large formula area — fills the lower half with both scrollbars, like txtFormula. */
+.ffe-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    resize: none;
+    overflow: scroll;
+    border: 1px solid #9a9a9a;
+    padding: 6px;
+    box-sizing: border-box;
+    font: 400 13px Consolas, "Courier New", monospace;
+}
+
+/* Footer: Test pinned left, OK/Cancel right (VB6 cmdNav layout). */
+.ffe-footer-left { margin-right: auto; display: flex; }
+.ffe-footer-right { display: flex; gap: 8px; margin-left: auto; }
+
+::deep .ffe-btn {
+    font-family: Tahoma, "MS Sans Serif", sans-serif !important;
+    font-size: 11px !important;
+    font-weight: normal !important;
+    height: 22px !important;
+    min-width: 75px !important;
+    border-radius: 0px !important;
+    border: 1px solid #808080 !important;
+    background: #e0e0e0 !important;
+    color: #000 !important;
+    box-shadow: inset 1px 1px 0px #fff, inset -1px -1px 0px #a0a0a0 !important;
+    padding: 0 10px !important;
+    cursor: pointer;
+}
+
+::deep .ffe-btn:hover {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+}
+
+::deep .ffe-btn:active {
+    box-shadow: inset 1px 1px 0px #000, inset -1px -1px 0px #fff !important;
+    background: #d0d0d0 !important;
+    color: #000 !important;
+}
+
+/* Window icon styling for Formula Editor */
+.ffe-dialog ::deep .fx-dialog-window-icon {
+    display: block !important;
+    background: url('/images/24/calc.ico') no-repeat center center !important;
+    background-size: 16px 16px !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin-right: 6px !important;
+}
+
+/* HHM-610: Formula Test window icon (VB6 FFormulaTest.frm Icon property) —
+   same calc.ico chrome treatment as the main .ffe-dialog above. */
+.ffe-test-dialog ::deep .fx-dialog-window-icon {
+    display: block !important;
+    background: url('/images/24/calc.ico') no-repeat center center !important;
+    background-size: 16px 16px !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin-right: 6px !important;
+}
+
+/* Test dialog: variable-name / value rows (VB6 FFormulaTest gVariables).
+   The value box is a FlexKit NumericTextBoxControl (HHM-610 numeric-only),
+   so the rule pierces the child component via ::deep. */
+.ffe-test-grid {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 8px 4px;
+    font: 400 11px Tahoma, "Segoe UI", sans-serif;
+}
+
+.ffe-test-grid ::deep .ffe-test-value {
+    border: 1px solid #9a9a9a;
+    padding: 3px 6px;
+    font: inherit;
+    box-sizing: border-box;
+    width: 120px;
+}
+
+/* Focus overrides to maintain classic flat VB6 rectangular input styling */
+.ffe-editor:focus,
+.ffe-editor:focus-visible,
+.ffe-dialog ::deep textarea:focus,
+.ffe-dialog ::deep textarea:focus-visible,
+.ic-var-body ::deep input:focus,
+.ic-var-body ::deep textarea:focus,
+.ic-var-body ::deep select:focus {
+    outline: none !important;
+    border: 1px solid #9a9a9a !important;
+    box-shadow: none !important;
+}
+
+/* Variable Editor Dialog Styling mirrored from FItemChart.razor.css */
+.ic-var-body {
+    padding: 10px 12px;
+}
+
+.ic-var-body ::deep input,
+.ic-var-body ::deep select,
+.ic-var-body ::deep textarea {
+    padding: 2px 4px;
+    font-size: 12px;
+    border-radius: 2px;
+}
+
+.ic-var-group-label {
+    display: block;
+    font-weight: 700;
+    font-size: 12px;
+    color: #000080;
+    margin: 0 0 2px 0;
+}
+
+.ic-var-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.ic-var-name-row .ic-var-group-label {
+    margin: 0;
+    flex: 0 0 auto;
+}
+
+.ic-var-name-row ::deep input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ic-var-columns {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 8px;
+}
+
+.ic-var-type-col {
+    flex: 0 0 auto;
+}
+
+.ic-var-radios {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 0 0 10px;
+    font-size: 12px;
+}
+
+.ic-var-props-col {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ic-var-props-grid {
+    display: grid;
+    grid-template-columns: auto 56px auto 56px;
+    gap: 4px 6px;
+    align-items: center;
+}
+
+.ic-var-props-grid > label {
+    font-size: 12px;
+    font-weight: 400;
+    color: #495057;
+    text-align: right;
+    margin: 0;
+}
+
+.ic-var-props-grid ::deep input {
+    width: 56px;
+    text-align: right;
+}
+
+.ic-var-help {
+    margin: 0;
+}
+
+.ic-var-help ::deep textarea {
+    width: 100%;
+}
+
+.ic-readonly-input {
+    background: #f1f3f5 !important;
+}
+
+.ic-monospace-area {
+    font-family: Consolas, monospace !important;
+}
+
+/* Dialog header overrides for VB6 window parity (MS Sans Serif grey headers, black text, flat borders) */
+::deep .fx-dialog.ffe-dialog,
+::deep .fx-dialog.ffe-test-dialog,
+::deep .fx-dialog.ffe-variable-dialog {
+    border: 1px solid #9f9f9f !important;
+    border-radius: 0 !important;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.24) !important;
+    background: #f0f0f0 !important;
+    font-family: "MS Sans Serif", Tahoma, Arial, sans-serif !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-header,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-header,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-header {
+    min-height: 24px !important;
+    padding: 0 0 0 5px !important;
+    border-bottom: 1px solid #c8c8c8 !important;
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    font-size: 10px !important;
+    font-weight: 400 !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-title,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-title,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-title {
+    flex: 1 1 auto !important;
+    font-size: 10px !important;
+    font-weight: 400 !important;
+    color: #000 !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-close,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-close,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-close {
+    align-self: stretch !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 25px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 16px !important;
+    font-weight: 400 !important;
+    color: #000 !important;
+    background: transparent !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-close:hover,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-close:hover,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-close:hover {
+    background: #e81123 !important;
+    color: #fff !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-body,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-body,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-body {
+    background: #f0f0f0 !important;
+}
+
+::deep .fx-dialog.ffe-dialog .fx-dialog-footer,
+::deep .fx-dialog.ffe-test-dialog .fx-dialog-footer,
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-footer {
+    border-top: none !important;
+    background: #f0f0f0 !important;
+}
+
+::deep .fx-dialog.ffe-variable-dialog .fx-dialog-window-icon {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: url('/images/16/vb6form.png') no-repeat center center !important;
+    background-size: 16px 16px !important;
+    display: block !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin-right: 6px !important;
+}
+

@@ -187,7 +187,7 @@
                                 var fieldName = entry.Field;
                                 var columnType = entry.ColumnType;
                                 var textAlign = entry.TextAlign;
-                                var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                                var headerText = GetItemsGridHeaderText(layout.Caption, layout.Field, fieldName);
                                 var width = layout.Width.HasValue && layout.Width.Value > 0
                                     ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
                                     : null;
@@ -222,7 +222,7 @@
                                 @* ── Lookup fields with … button: POIndex, JCCostCode, JCCategory, TaxGroup ─── *@
                                 else if (_lookupPickerFields.Contains(fieldName))
                                 {
-                                    <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="@allowEdit" AllowCellDragSelection="true" ShowEditButton="true" Visible="@initialVisible">
+                                    <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="@allowEdit" AllowCellDragSelection="true" ShowEditButton="true" MaxLength="@(fieldName.Equals("OptionCategory", StringComparison.OrdinalIgnoreCase) ? 15 : (int?)null)" Visible="@initialVisible">
                                         <Template>
                                             @{ var data = (ItemRow)context; }
                                             <div class="poindex-cell"
@@ -441,7 +441,7 @@
     <ContextMenuItemControl Text="New Item..." OnClick="OnCtxNewItem" />
     <ContextMenuItemControl Text="Make a Copy..." Disabled="@(_ctxItem == null)" OnClick="OnCtxDuplicateItem" />
     <ContextMenuSeparatorControl />
-    <ContextMenuItemControl Text="Attachments..." Disabled="@(_ctxItem == null)" OnClick="OnCtxAttachments" />
+    <ContextMenuItemControl Text="Attachments... (Descoped)" Disabled="true" />
     <ContextMenuSeparatorControl />
     <ContextMenuItemControl Text="Delete" Disabled="@(_ctxItem == null)" OnClick="OnCtxDeleteItem" />
     <ContextMenuSeparatorControl />
@@ -980,7 +980,14 @@
             OnRecordClick = EventCallback.Factory.Create<CellClickEventArgs<ItemRow>>(this, OnItemsGridRecordClicked),
             CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<ItemRow>>(this, OnItemsGridCellSelected),
             SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(this, OnItemsGridSelectionChanged),
-            OnCellEdit = EventCallback.Factory.Create<CellEditArgs<ItemRow>>(this, args => _activeItemsEditColumn = args.ColumnName),
+            OnCellEdit = EventCallback.Factory.Create<CellEditArgs<ItemRow>>(this, args =>
+            {
+                _activeItemsEditColumn = args.ColumnName;
+                // VB6 FItems.frm:451-455 — editable only when the row has an OptionID.
+                if ((args.ColumnName is "OptionCategory" or "RetailPretax")
+                    && string.IsNullOrEmpty(args.Data?.OptionID))
+                    args.Cancel = true;
+            }),
             OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ItemRow>>(this, OnGridCellSave),
             OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<ItemRow>>(this, OnItemsTypeAheadCommit),
             OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<ItemRow>>(this, OnItemsGridEditButtonClick)
@@ -2196,6 +2203,8 @@
     private async Task OnPickLookupField(ItemRow row, string field)
     {
         if (pickList == null) return;
+        if (field == "OptionCategory" && string.IsNullOrEmpty(row.OptionID))
+            return;
         _pickListEditRow = row;
         _pickListEditField = field;
         _pickListEditTargets = ResolveItemsGridEditTargets(row, field);
@@ -3681,7 +3690,7 @@
             .Select(c => new ChooseColumnDescriptor
             {
                 Field = ResolveItemsGridField(c.Field),
-                Header = c.Caption,
+                Header = GetItemsGridHeaderText(c.Caption, c.Field, ResolveItemsGridField(c.Field)),
                 Visible = !c.Hidden
             })
             .ToList();
@@ -3703,7 +3712,7 @@
             .Select(c => new ChooseColumnDescriptor
             {
                 Field = ResolveItemsGridField(c.Field),
-                Header = string.IsNullOrWhiteSpace(c.Caption) ? c.Field : c.Caption,
+                Header = GetItemsGridHeaderText(c.Caption, c.Field, ResolveItemsGridField(c.Field)),
                 Visible = !c.Hidden
             })
             .ToList();
@@ -3816,15 +3825,27 @@
 
     private static bool IsEditableField(string field, GridLayoutColumn layout)
     {
+        if (field.Equals("UseInFieldPO", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         if (layout.IsEditable)
             return true;
 
         return !_readOnlyFields.Contains(field);
     }
 
+    private static string GetItemsGridHeaderText(string? caption, string fallbackField, string resolvedField)
+    {
+        var header = string.IsNullOrWhiteSpace(caption) ? fallbackField : caption;
+        return resolvedField.Equals("UseInFieldPO", StringComparison.OrdinalIgnoreCase)
+            && !header.Contains("(Descoped)", StringComparison.OrdinalIgnoreCase)
+                ? $"{header} (Descoped)"
+                : header;
+    }
+
     private static readonly HashSet<string> _readOnlyFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Phase", "PhaseDesc", "Item", "ItemNumber",
+        "Phase", "PhaseDesc", "Item", "ItemNumber", "CostCategory", "UseInFieldPO",
         "POIndexDescription", "JCCostCodeDesc", "JCCategoryDesc",
         "AltJCCostCodeDesc", "AltJCCategoryDesc",
         "InverseItemDesc", "PriceGroupDesc", "PriceLink", "RowState"

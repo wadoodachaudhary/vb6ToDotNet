@@ -1,0 +1,652 @@
+@page "/po-status-by-job-report"
+@rendermode InteractiveServer
+@implements IDisposable
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using System
+@using System.Data
+@using System.Globalization
+@using System.IO
+@using System.Linq
+@using System.Text
+@using System.Text.RegularExpressions
+@using System.Web
+@using HomeFront.Data
+@using HomeFront.Services
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+@using Fx.ControlKit.Reports
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject IWebHostEnvironment Hosting
+@inject ILogger<FPOStatusByJobReport> Logger
+@inject NotificationService Notifications
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+@inject POStatusByJobReportRequestService ReportRequest
+@inject CrystalXmlReportLoader XmlLoader
+
+<PageTitle>PO Status by Job Report - HomeFront</PageTitle>
+
+@*
+   PO Status by Job Report — same plumbing as FGlobalOptionCostsReport but
+   with a single multi-value Crystal parameter (?Job_No) and the auto-injected
+   ?DivisionID.
+
+   The Crystal XML's RecordSelectionFormula has a scalar `=` predicate against
+   ?Job_No. ApplyMultiValueRewrite widens it to `IN (...)` so the user's
+   multi-pick selection from the param screen actually filters correctly.
+*@
+
+<div class="rpt-viewer-container" style="position: relative;">
+
+    @if (IsLoading)
+    {
+        <div class="rpt-loading-overlay">
+            <div class="rpt-loading-spinner">⏳ Loading Report...</div>
+        </div>
+    }
+
+    <ToolbarControl>
+        <div class="rpt-nav">
+            <button disabled="@(CurrentPage <= 1)" @onclick="OnFirstPage" title="First Page">⏮</button>
+            <button disabled="@(CurrentPage <= 1)" @onclick="OnPreviousPage" title="Previous Page">◀</button>
+            <NumericTextBoxControl TValue="int" Value="CurrentPage" ValueChanged="OnPageNumberChanged"
+                                   Min="1" Max="@TotalPages" Width="60px" CssClass="rpt-page-input" />
+            <span>of @TotalPages</span>
+            <button disabled="@(CurrentPage >= TotalPages)" @onclick="OnNextPage" title="Next Page">▶</button>
+            <button disabled="@(CurrentPage >= TotalPages)" @onclick="OnLastPage" title="Last Page">⏭</button>
+        </div>
+
+        <ToolbarSeparatorControl />
+
+        <ToolbarButtonControl Vertical="true" OnClick="OnClose">
+            <span style="font-size:18px;">✕</span>
+            <span class="rpt-toolbar-label">Close</span>
+        </ToolbarButtonControl>
+
+        <ToolbarSeparatorControl />
+
+        <ToolbarButtonControl Vertical="true" OnClick="OnPrint">
+            <span style="font-size:18px;">🖨️</span>
+            <span class="rpt-toolbar-label">Print</span>
+        </ToolbarButtonControl>
+
+        <div class="rpt-export-menu @(ExportMenuOpen ? "open" : "")">
+            <ToolbarButtonControl Vertical="true" OnClick="ToggleExportMenu">
+                <span style="font-size:18px;">📤</span>
+                <span class="rpt-toolbar-label">Export ▾</span>
+            </ToolbarButtonControl>
+            <div class="rpt-export-items">
+                <button @onclick='() => OnExport("PDF")'>📄 PDF</button>
+                <button @onclick='() => OnExport("Excel")'>📊 Excel</button>
+                <button @onclick='() => OnExport("CSV")'>📋 CSV</button>
+            </div>
+        </div>
+
+        <ToolbarSeparatorControl />
+
+        <ToolbarButtonControl Vertical="true" OnClick="OnRefresh">
+            <span style="font-size:18px;">🔄</span>
+            <span class="rpt-toolbar-label">Refresh</span>
+        </ToolbarButtonControl>
+
+        <ToolbarSeparatorControl />
+
+        <div class="rpt-zoom-controls">
+            <ToolbarButtonControl OnClick="OnZoomOut">
+                <span style="font-size:16px;">🔍−</span>
+            </ToolbarButtonControl>
+            <DropDownListControl TValue="int" TItem="ZoomOption" DataSource="ZoomOptions"
+                                 Value="ZoomLevel" ValueChanged="OnZoomLevelChanged"
+                                 TextFieldName="Text" ValueFieldName="Value"
+                                 CssClass="rpt-zoom-select" />
+            <ToolbarButtonControl OnClick="OnZoomIn">
+                <span style="font-size:16px;">🔍+</span>
+            </ToolbarButtonControl>
+        </div>
+
+        <ToolbarSeparatorControl />
+
+        <ToolbarButtonControl Vertical="true" OnClick="ToggleGroupTree">
+            <span style="font-size:18px;">🌳</span>
+            <span class="rpt-toolbar-label">@(ShowGroupTree ? "Hide Tree" : "Show Tree")</span>
+        </ToolbarButtonControl>
+
+        <ToolbarSeparatorControl />
+
+        <div class="rpt-tree-mode" role="radiogroup" aria-label="Tree click behavior" title="What happens when you click a group node">
+            <span class="rpt-tree-mode-label">Tree:</span>
+            <RadioControl TValue="TreeNavigationMode" Name="psbj-tree-mode" CssClass="rpt-tree-mode-radio"
+                          Value="TreeNavigationMode.Group" SelectedValue="TreeMode"
+                          SelectedValueChanged="OnTreeModeSelected">
+                <span title="Click a node to scroll to that group on the current tab and highlight its header in red.">Group</span>
+            </RadioControl>
+            <RadioControl TValue="TreeNavigationMode" Name="psbj-tree-mode" CssClass="rpt-tree-mode-radio"
+                          Value="TreeNavigationMode.DrillDown" SelectedValue="TreeMode"
+                          SelectedValueChanged="OnTreeModeSelected">
+                <span title="Click a node to open a new drill-down tab filtered to that group.">Drill Down</span>
+            </RadioControl>
+        </div>
+
+        <ToolbarSeparatorControl />
+
+        <ToolbarButtonControl Vertical="true" OnClick="OnEditParams">
+            <span style="font-size:18px;">⚙️</span>
+            <span class="rpt-toolbar-label">Parameters</span>
+        </ToolbarButtonControl>
+    </ToolbarControl>
+
+    <div class="rpt-content-area">
+        @if (ShowGroupTree)
+        {
+            <div class="rpt-group-tree">
+                <strong style="font-size: 13px; display: block; margin-bottom: 8px;">Report Groups</strong>
+                @if (GroupTreeNodes.Any())
+                {
+                    <ul>
+                        @foreach (var node in GroupTreeNodes)
+                        {
+                            @RenderGroupTreeNode(node)
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p style="color: #999; font-size: 12px;">No groups available.</p>
+                }
+            </div>
+        }
+
+        <div class="rpt-viewer-panel" style="transform: scale(@ZoomScale); transform-origin: top left;">
+            <ReportWriterControl @ref="_reportWriter" />
+        </div>
+    </div>
+
+    <div class="rpt-status-bar">
+        <span>@StatusMessage</span>
+        <span>@(ReportLoaded ? $"Zoom: {ZoomLevel}%" : "")</span>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "jobs")] public string? JobsParam { get; set; }
+
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    /// <summary>Cascading delegate from FMain — call to override the child-form title.</summary>
+    [CascadingParameter(Name = "SetPageTitle")]
+    private Action<string?>? SetPageTitle { get; set; }
+
+    private const string SRCFILE = "FPOStatusByJobReport::";
+    private const string ReportXmlName = "PO Status by Job v1.xml";
+
+    private bool IsLoading;
+    private bool ReportLoaded;
+    private bool ShowGroupTree = true;
+    private bool ExportMenuOpen;
+    private string StatusMessage = "Ready";
+
+    private TreeNavigationMode TreeMode { get; set; } = TreeNavigationMode.Group;
+
+    private int ZoomLevel = 100;
+    private double ZoomScale => ZoomLevel > 0 ? ZoomLevel / 100.0 : 1.0;
+
+    private sealed record ZoomOption(int Value, string Text);
+    private static readonly List<ZoomOption> ZoomOptions = new()
+    {
+        new(25, "25%"), new(50, "50%"), new(75, "75%"), new(100, "100%"),
+        new(125, "125%"), new(150, "150%"), new(200, "200%")
+    };
+
+    private int CurrentPage = 1;
+    private int TotalPages = 1;
+
+    private ReportWriterControl? _reportWriter;
+    private List<FxGroupNode> GroupTreeNodes = new();
+    private FxGroupNode? SelectedGroupNode;
+    private bool _renderSubscribed;
+
+    private List<string> _selectedJobs = new();
+    private string? _loadedSignature;
+
+    private void Navigate(string route)
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(route);
+        else
+            NavigationManager.NavigateTo(route);
+    }
+
+    private bool _initialLoadStarted;
+
+    protected override void OnInitialized()
+    {
+        SetPageTitle?.Invoke(Path.GetFileNameWithoutExtension(ReportXmlName));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _reportWriter != null && !_renderSubscribed)
+        {
+            _reportWriter.OnRenderComplete += OnReportRenderComplete;
+            // Apply the multi-value rewrite to drill-down definitions too —
+            // otherwise drill-downs re-emit `= @Job_No` and SQL Server fails
+            // because we now bind @j0..@jN.
+            _reportWriter.DefinitionPostProcessor = def =>
+            {
+                ApplyMultiValueRewrite(def, _selectedJobs.Count);
+            };
+            _renderSubscribed = true;
+        }
+
+        if (!_initialLoadStarted
+            && _reportWriter != null
+            && _selectedJobs.Count > 0)
+        {
+            _initialLoadStarted = true;
+            await LoadReportAsync();
+        }
+    }
+
+    private async void OnReportRenderComplete()
+    {
+        if (_reportWriter == null) return;
+        GroupTreeNodes = _reportWriter.GroupTree;
+        TotalPages = Math.Max(1, _reportWriter.PageCount);
+        CurrentPage = _reportWriter.CurrentPage;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        if (_reportWriter != null && _renderSubscribed)
+        {
+            _reportWriter.OnRenderComplete -= OnReportRenderComplete;
+            _renderSubscribed = false;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var jobsFromSvc = ReportRequest.HasSelection ? ReportRequest.Jobs.ToList() : new();
+        var jobsFromUrl = ParseList(JobsParam);
+        var resolvedJobs = jobsFromSvc.Count > 0 ? jobsFromSvc : jobsFromUrl;
+
+        var sig = string.Join("|", resolvedJobs);
+        if (sig == _loadedSignature) return;
+
+        _selectedJobs = resolvedJobs;
+
+        if (_selectedJobs.Count == 0)
+        {
+            Navigate("/po-status-by-job-params");
+            return;
+        }
+
+        _loadedSignature = sig;
+        if (_reportWriter != null)
+            await LoadReportAsync();
+    }
+
+    private static List<string> ParseList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new();
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                  .Select(s => Uri.UnescapeDataString(s.Trim()))
+                  .Where(s => s.Length > 0)
+                  .ToList();
+    }
+
+    private async Task LoadReportAsync()
+    {
+        if (_reportWriter == null)
+        {
+            Logger.LogWarning("{Src}LoadReportAsync called before writer @ref was ready.", SRCFILE);
+            return;
+        }
+
+        IsLoading = true;
+        StatusMessage = "Generating PO Status by Job Report...";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var xmlPath = ResolveReportXmlPath();
+            if (xmlPath == null)
+            {
+                throw new FileNotFoundException(
+                    $"Could not find {ReportXmlName} under wwwroot/resources/Estimating/Reports/xml.");
+            }
+
+            var definition = XmlLoader.Load(xmlPath);
+
+            var sqlParams = new Dictionary<string, object>
+            {
+                ["DivisionID"] = SessionState.DivisionID
+            };
+            for (var i = 0; i < _selectedJobs.Count; i++) sqlParams["j" + i] = _selectedJobs[i];
+
+            ApplyMultiValueRewrite(definition, _selectedJobs.Count);
+            definition.Parameters = new();
+
+            _reportWriter.SetXmlSource(xmlPath);
+            await _reportWriter.ShowSqlReport(definition, sqlParams);
+
+            ReportLoaded = true;
+            TotalPages = Math.Max(1, _reportWriter.PageCount);
+            CurrentPage = _reportWriter.CurrentPage;
+            GroupTreeNodes = _reportWriter.GroupTree;
+            StatusMessage = $"Print Preview - PO Status by Job Report ({_selectedJobs.Count} job(s))";
+        }
+        catch (Exception ex)
+        {
+            await HandleError($"{SRCFILE}LoadReportAsync", ex);
+        }
+        finally
+        {
+            IsLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string? ResolveReportXmlPath()
+    {
+        var root = Hosting.WebRootPath;
+        if (string.IsNullOrEmpty(root)) return null;
+        var xmlPath = Path.Combine(root, "resources", "Estimating", "Reports", "xml", ReportXmlName);
+        return File.Exists(xmlPath) ? xmlPath : null;
+    }
+
+    /// <summary>
+    /// Rewrites the loaded definition's SQL so the single-value Crystal
+    /// parameter (?Job_No) becomes a multi-value <c>IN (...)</c> clause, and
+    /// strips it from the prompt list. Idempotent.
+    /// </summary>
+    private static void ApplyMultiValueRewrite(ReportDefinition definition, int jobCount)
+    {
+        if (string.IsNullOrEmpty(definition.Sql)) return;
+
+        var jobPlaceholders = string.Join(", ", Enumerable.Range(0, jobCount).Select(i => "@j" + i));
+        var jobPattern = new Regex(@"(?<expr>[\[\]\w\.]+)\s*=\s*@Job_No\b", RegexOptions.IgnoreCase);
+
+        string Apply(string sql) =>
+            jobPattern.Replace(sql, m => $"{m.Groups["expr"].Value} IN ({jobPlaceholders})");
+
+        definition.Sql = Apply(definition.Sql);
+        if (!string.IsNullOrEmpty(definition.TreeSql))
+            definition.TreeSql = Apply(definition.TreeSql);
+
+        definition.Parameters = definition.Parameters
+            .Where(p => !string.Equals(p.Name, "Job_No", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    // === Group Tree Rendering ───────────────────────────────────
+    private RenderFragment RenderGroupTreeNode(FxGroupNode node) => __builder =>
+    {
+        <li>
+            <span class="tree-node @(SelectedGroupNode == node ? "selected" : "")"
+                  @onclick="() => OnGroupNodeClicked(node)"
+                  @onclick:stopPropagation="true">
+                @if (node.Children?.Any() == true)
+                {
+                    <span class="tree-toggle" @onclick="() => ToggleGroupNode(node)" @onclick:stopPropagation="true">
+                        @(node.Expanded ? "▼" : "▶")
+                    </span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+                @node.Label
+            </span>
+            @if (node.Expanded && node.Children?.Any() == true)
+            {
+                <ul>
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderGroupTreeNode(child)
+                    }
+                </ul>
+            }
+        </li>
+    };
+
+    private void ToggleGroupNode(FxGroupNode node) => node.Expanded = !node.Expanded;
+
+    private async Task OnGroupNodeClicked(FxGroupNode node)
+    {
+        SelectedGroupNode = node;
+
+        if (TreeMode == TreeNavigationMode.Group)
+        {
+            await NavigateToGroupHeader(node);
+            return;
+        }
+
+        if (node.Level >= 1 && _reportWriter != null)
+        {
+            var path = BuildPathToNode(GroupTreeNodes, node, new());
+            if (path != null)
+            {
+                StatusMessage = $"Opening drill-down: {node.Label}...";
+                await InvokeAsync(StateHasChanged);
+                await _reportWriter.OpenDrillDown(node, path);
+                TotalPages = Math.Max(1, _reportWriter.PageCount);
+                CurrentPage = _reportWriter.CurrentPage;
+                StatusMessage = $"Drill-down: {node.Label}";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+
+        await NavigateToGroupHeader(node);
+    }
+
+    private async Task NavigateToGroupHeader(FxGroupNode node)
+    {
+        StatusMessage = $"Group: {node.Label} (page {node.PageIndex} of {TotalPages})";
+        if (_reportWriter != null && node.PageIndex > 0)
+        {
+            _reportWriter.GoToPage(node.PageIndex);
+            CurrentPage = node.PageIndex;
+        }
+        await InvokeAsync(StateHasChanged);
+
+        if (string.IsNullOrEmpty(node.AnchorId)) return;
+
+        try
+        {
+            var jsFn = TreeMode == TreeNavigationMode.Group
+                ? "hfHighlightGroup"
+                : "hfScrollToAnchor";
+            await JSRuntime.InvokeVoidAsync(jsFn, node.AnchorId);
+        }
+        catch { /* JS not ready — silently ignore */ }
+    }
+
+    // Adapter for RadioControl's SelectedValueChanged (EventCallback<TreeNavigationMode?>)
+    // — forwards to the original SetTreeMode (which keeps its own "already this mode?"
+    // guard + JS clear), so behavior matches the raw radios exactly.
+    private async Task OnTreeModeSelected(TreeNavigationMode mode)
+    {
+        await SetTreeMode(mode);
+    }
+
+    private async Task SetTreeMode(TreeNavigationMode mode)
+    {
+        if (TreeMode == mode) return;
+        TreeMode = mode;
+        if (mode != TreeNavigationMode.Group)
+        {
+            try { await JSRuntime.InvokeVoidAsync("hfClearGroupHighlight"); }
+            catch { /* JS not ready — silently ignore */ }
+        }
+        StatusMessage = mode == TreeNavigationMode.Group
+            ? "Tree click: navigate to group + highlight."
+            : "Tree click: open drill-down tab.";
+    }
+
+    private static List<DrillDownFilter>? BuildPathToNode(
+        IEnumerable<FxGroupNode> nodes, FxGroupNode target, List<DrillDownFilter> prefix)
+    {
+        foreach (var n in nodes)
+        {
+            var step = new DrillDownFilter(n.Field, n.Value);
+            var path = new List<DrillDownFilter>(prefix) { step };
+            if (ReferenceEquals(n, target)) return path;
+            if (n.Children?.Count > 0)
+            {
+                var deeper = BuildPathToNode(n.Children, target, path);
+                if (deeper != null) return deeper;
+            }
+        }
+        return null;
+    }
+
+    // === Toolbar Handlers ───────────────────────────────────────
+    private void OnFirstPage()    => JumpTo(1);
+    private void OnPreviousPage() => JumpTo(CurrentPage - 1);
+    private void OnNextPage()     => JumpTo(CurrentPage + 1);
+    private void OnLastPage()     => JumpTo(TotalPages);
+    private void OnPageChanged()  => JumpTo(CurrentPage);
+
+    // Adapter for NumericTextBoxControl (no @bind:after): set field, then run the
+    // original @bind:after handler so paging behaves exactly as the raw <input>.
+    // ValueChanged is EventCallback<int?>; a null (cleared box) maps to page 1,
+    // and JumpTo clamps to [1..TotalPages] just like before.
+    private void OnPageNumberChanged(int value)
+    {
+        CurrentPage = value < 1 ? 1 : value;
+        OnPageChanged();
+    }
+
+    private void JumpTo(int target)
+    {
+        if (target < 1) target = 1;
+        if (target > TotalPages) target = TotalPages;
+        CurrentPage = target;
+        _reportWriter?.GoToPage(target);
+    }
+
+    private void OnClose() => Navigate("/");
+    private void OnEditParams() => Navigate("/po-status-by-job-params");
+
+    private async Task OnPrint()
+    {
+        try { await JSRuntime.InvokeVoidAsync("window.print"); }
+        catch (Exception ex) { await HandleError($"{SRCFILE}OnPrint", ex); }
+    }
+
+    private void ToggleExportMenu() => ExportMenuOpen = !ExportMenuOpen;
+
+    private async Task OnExport(string format)
+    {
+        ExportMenuOpen = false;
+        try
+        {
+            if (string.Equals(format, "CSV", StringComparison.OrdinalIgnoreCase))
+                await ExportCsvAsync();
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("window.print");
+                StatusMessage = "Use browser Save as PDF.";
+            }
+        }
+        catch (Exception ex)
+        {
+            await HandleError($"{SRCFILE}OnExport", ex);
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            var xmlPath = ResolveReportXmlPath();
+            if (xmlPath == null) return;
+            var def = XmlLoader.Load(xmlPath);
+            ApplyMultiValueRewrite(def, _selectedJobs.Count);
+
+            var args = new Dictionary<string, object> { ["DivisionID"] = SessionState.DivisionID };
+            for (var i = 0; i < _selectedJobs.Count; i++) args["j" + i] = _selectedJobs[i];
+
+            var dt = db.SqlExec(def.Sql, args);
+            var visible = def.Columns.Where(c => !c.Hidden).ToList();
+
+            var sb = new StringBuilder();
+            sb.AppendLine(string.Join(",", visible.Select(c => Csv(c.HeaderText))));
+            foreach (DataRow r in dt.Rows)
+                sb.AppendLine(string.Join(",", visible.Select(c => Csv(FormatCell(r, c)))));
+
+            var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+            var base64 = Convert.ToBase64String(bytes);
+            await JSRuntime.InvokeVoidAsync("hfDownloadFile", "POStatusByJob.csv", base64, "text/csv");
+            StatusMessage = "CSV export saved.";
+        }
+        catch (Exception ex)
+        {
+            await HandleError($"{SRCFILE}ExportCsvAsync", ex);
+        }
+    }
+
+    private static string Csv(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        if (s.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0)
+            return "\"" + s.Replace("\"", "\"\"") + "\"";
+        return s;
+    }
+
+    private static string FormatCell(DataRow r, ReportColumn col)
+    {
+        if (!r.Table.Columns.Contains(col.Field)) return "";
+        var v = r[col.Field];
+        if (v == null || v == DBNull.Value) return "";
+        if (!string.IsNullOrEmpty(col.Format) && v is IFormattable f)
+            return f.ToString(col.Format, CultureInfo.CurrentCulture);
+        return v.ToString() ?? "";
+    }
+
+    private async Task OnRefresh() => await LoadReportAsync();
+
+    private void OnZoomChanged()  => StatusMessage = $"Zoom: {ZoomLevel}%";
+
+    // Adapter for DropDownListControl (no @bind:after): set field, then run the
+    // original @bind:after handler. ValueChanged is EventCallback<int?>; the list
+    // only offers concrete zoom levels so null shouldn't occur — guard anyway.
+    private void OnZoomLevelChanged(int value)
+    {
+        ZoomLevel = value;
+        OnZoomChanged();
+    }
+    private void OnZoomIn()
+    {
+        var levels = new[] { 25, 50, 75, 100, 125, 150, 200 };
+        var next = levels.FirstOrDefault(l => l > ZoomLevel);
+        ZoomLevel = next > 0 ? next : 200;
+        OnZoomChanged();
+    }
+    private void OnZoomOut()
+    {
+        var levels = new[] { 25, 50, 75, 100, 125, 150, 200 };
+        var prev = levels.LastOrDefault(l => l < ZoomLevel);
+        ZoomLevel = prev > 0 ? prev : 25;
+        OnZoomChanged();
+    }
+
+    private void ToggleGroupTree() => ShowGroupTree = !ShowGroupTree;
+
+    private async Task HandleError(string source, Exception ex)
+    {
+        var message = $"Error in {source}: {ex.Message}";
+        Logger.LogError(ex, "{Source}", source);
+        StatusMessage = message;
+        try { Notifications.Error(message); } catch { }
+        await InvokeAsync(StateHasChanged);
+    }
+}

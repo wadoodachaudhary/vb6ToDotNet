@@ -1,0 +1,219 @@
+/* FAddPricelist — VB6 "Add Vendor Pricing" dialog, rendered as a FlexKit
+   DialogControl (.addpl-dialog). The DialogControl supplies the title bar, the
+   single managed body scroller, and the footer; everything below styles the
+   BODY content so it matches the VB6 form (WizHead, 2-column cards, PO/Items
+   split with internally-scrolling grids). */
+
+/* Dialog shell. VB6 form ≈ 941×482, but the chrome (title bar + footer) plus the
+   two 300px internal grids needs more vertical room than 540px gave — at 540 the
+   body content exceeded the body height and grew a SECOND scrollbar on top of the
+   grids' own. Height bumped +25% (540 → 675) so the body fits without scrolling:
+   the grids are the only scrollers (single scroller, VB6 fixed-form behaviour).
+   Width 1200 so the full Item Prices column set (Phase+Item+Description+Price+SKU
+   +Assembly ≈ 841px + the vertical-scrollbar gutter) fits WITHOUT a horizontal
+   scrollbar — the Assembly column is now visible without scrolling. */
+.addpl-dialog {
+    width: 1200px;
+    max-width: 96vw;
+    height: 675px;
+    max-height: 92vh;
+}
+.addpl-dialog ::deep .fx-dialog-body {
+    padding: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* WizHead — bold blue sub-title + grey description on the left, the Pricebook
+   icon top-right INSIDE the window (VB6 WizHead icon, beneath the title bar). */
+.addpl-wizhead {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
+    border-bottom: 1px solid #dee2e6;
+    padding: 10px 16px;
+}
+.addpl-wizhead-title { font-weight: 700; font-size: 15px; color: #1b1b1b; margin-bottom: 2px; }
+.addpl-wizhead-desc  { font-size: 12px; color: #6c757d; }
+.addpl-wizhead-icon  { width: 40px; height: 40px; flex: 0 0 auto; }
+
+/* Card layout: column 1 = Vendor + Community, column 2 = "Assemblies" section. */
+.addpl-cards {
+    display: flex;
+    gap: 28px;
+    padding: 10px 16px;
+}
+.addpl-card-col { flex: 1; min-width: 0; }
+
+.addpl-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.addpl-field > label {
+    width: 84px;
+    min-width: 84px;
+    text-align: right;
+    font-size: 12px;
+    color: #495057;
+    padding-right: 6px;
+}
+.addpl-field-input {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+/* Read-only value box (Vendor / Assembly) — VB6 locked textbox look. The "…"
+   pick button (addpl-pick-btn) follows it on the same line. */
+.addpl-value {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    line-height: 20px;
+    padding: 0 6px;
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    background: #f3f3f3;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* "…" picker buttons (Vendor / Assembly) — VB6 combo-button look: a small square
+   button showing only the ellipsis, NOT a wide rectangle. The ButtonControl gets
+   BareStyle="true" (suppresses FlexKit's 75px min-width); this sizes it to a
+   compact square aligned with the 22px value box. ::deep crosses into the
+   ButtonControl-rendered <button>. */
+.addpl-field-input ::deep .addpl-pick-btn {
+    min-width: 0;
+    width: 24px;
+    height: 22px;
+    padding: 0;
+    line-height: 20px;
+    flex: 0 0 auto;
+    font-size: 13px;
+    text-align: center;
+}
+
+/* gAssemblies grid (NEW VB6 multi-assembly model). A compact bounded grid whose only
+   visible column is "Description"; each row carries its own "…" picker + (for real
+   rows) an "✕" delete affordance. The buttons are raw <button>s the GridControl renders
+   inside the column <Template>, so ::deep reaches them. */
+.addpl-asm-grid {
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+}
+.addpl-asm-grid.addpl-asm-disabled {
+    opacity: 0.55;
+    pointer-events: none; /* VB6 cboCommunity_Click: Corporate disables gAssemblies */
+}
+.addpl-asm-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
+}
+.addpl-asm-text {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+}
+.addpl-asm-cell ::deep .addpl-asm-pick,
+.addpl-asm-cell .addpl-asm-pick,
+.addpl-asm-cell ::deep .addpl-asm-del,
+.addpl-asm-cell .addpl-asm-del {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    line-height: 18px;
+    font-size: 13px;
+    text-align: center;
+    border: 1px solid #c9c9c9;
+    border-radius: 3px;
+    background: #f3f3f3;
+    cursor: pointer;
+}
+.addpl-asm-cell .addpl-asm-del,
+.addpl-asm-cell ::deep .addpl-asm-del {
+    color: #b02a37;
+    font-weight: 700;
+}
+.addpl-asm-cell .addpl-asm-pick:disabled,
+.addpl-asm-cell ::deep .addpl-asm-pick:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Section titles — bold blue (VB6 label style): "Assemblies", "PO Index",
+   "Item Prices". */
+.addpl-section-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #0d6efd;
+    margin-bottom: 6px;
+}
+
+/* Split: PO Index grid (left, fixed width) + Item Prices grid (right, fills). */
+.addpl-split {
+    display: flex;
+    gap: 12px;
+    padding: 4px 16px 12px 16px;
+    align-items: flex-start;
+}
+.addpl-po { width: 240px; flex: 0 0 auto; }
+.addpl-items { flex: 1; min-width: 0; }
+
+/* VB6 gPOIndexes shows no caption row — suppress the GridControl header for the PO
+   Index checklist ONLY (the Item Prices grid keeps its header). ::deep crosses into
+   the GridControl. HHM-604 class of bug (2026-07-28): display:none is NOT safe here
+   anymore — with GridControl row-windowing, the spacer row (one td colspan=999)
+   becomes the width-defining first row under table-layout:fixed, collapsing every
+   column to a sliver ("blank grid"). Render the header 0px tall instead so its
+   inline per-column widths keep sizing the table while staying invisible — same
+   pattern as FPOFormats.razor.css. */
+.addpl-po ::deep .fx-grid-header {
+    border-bottom: 0;
+}
+.addpl-po ::deep .fx-grid-header .fx-header-cell {
+    height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none;
+    font-size: 0;
+    line-height: 0;
+    overflow: hidden;
+}
+.addpl-po ::deep .fx-grid-header .fx-header-cell > * {
+    display: none;
+}
+.addpl-items-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 6px;
+}
+
+/* Loading overlay (covers the dialog body while items load). */
+.loading-overlay {
+    position: absolute; inset: 0;
+    background-color: rgba(1,1,1,0.2); z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+}
+.loading-spinner {
+    padding: 20px 40px; background: #fff; border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2); font-size: 16px;
+    font-weight: 500; color: #333;
+}

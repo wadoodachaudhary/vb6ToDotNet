@@ -1,0 +1,296 @@
+@page "/calculator"
+@rendermode InteractiveServer
+
+<PageTitle>Calculator</PageTitle>
+
+<div class="calculator">
+    <div class="display-container">
+        <input type="text" class="display" value="@displayText" readonly />
+    </div>
+    
+    <div class="button-grid">
+        <button class="btn btn-function" @onclick="ClearAll">C</button>
+        <button class="btn btn-function" @onclick="ClearEntry">CE</button>
+        <button class="btn btn-function" @onclick="Backspace">←</button>
+        <button class="btn btn-function" @onclick="ToggleSign">+/-</button>
+        
+        <button class="btn btn-number" @onclick="() => NumberClick(7)">7</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(8)">8</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(9)">9</button>
+        <button class="btn btn-operator" @onclick="() => OperatorClick(3)">/</button>
+        
+        <button class="btn btn-number" @onclick="() => NumberClick(4)">4</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(5)">5</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(6)">6</button>
+        <button class="btn btn-operator" @onclick="() => OperatorClick(2)">*</button>
+        
+        <button class="btn btn-number" @onclick="() => NumberClick(1)">1</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(2)">2</button>
+        <button class="btn btn-number" @onclick="() => NumberClick(3)">3</button>
+        <button class="btn btn-operator" @onclick="() => OperatorClick(1)">-</button>
+        
+        <button class="btn btn-number" @onclick="() => NumberClick(0)">0</button>
+        <button class="btn btn-function" @onclick="DecimalClick">.</button>
+        <button class="btn btn-equals" @onclick="EqualsClick">=</button>
+        <button class="btn btn-operator" @onclick="() => OperatorClick(0)">+</button>
+    </div>
+</div>
+
+<style>
+    .calculator {
+        width: 360px;
+        margin: 20px auto;
+        padding: 12px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .display-container {
+        margin-bottom: 12px;
+    }
+
+    .display {
+        width: 100%;
+        height: 60px;
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 18px;
+        text-align: right;
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: white;
+        box-sizing: border-box;
+    }
+
+    .button-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    .btn {
+        height: 60px;
+        font-size: 16px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.1s;
+    }
+
+    .btn-number {
+        background: white;
+    }
+
+    .btn-number:hover {
+        background: #f0f0f0;
+    }
+
+    .btn-operator {
+        background: #e6e6e6;
+    }
+
+    .btn-operator:hover {
+        background: #d0d0d0;
+    }
+
+    .btn-function {
+        background: #e6e6e6;
+    }
+
+    .btn-function:hover {
+        background: #d0d0d0;
+    }
+
+    .btn-equals {
+        background: #007acc;
+        color: white;
+    }
+
+    .btn-equals:hover {
+        background: #005a9e;
+    }
+
+    .btn:active {
+        transform: translateY(1px);
+    }
+</style>
+
+@code {
+    private double accumulator = 0;
+    private double currentValue = 0;
+    private string currentOp = string.Empty;
+    private bool newEntry = true;
+    private bool decimalUsed = false;
+    private bool hasError = false;
+    private string displayText = "0";
+
+    protected override void OnInitialized()
+    {
+        ClearAll();
+    }
+
+    private void ClearAll()
+    {
+        accumulator = 0;
+        currentValue = 0;
+        currentOp = string.Empty;
+        newEntry = true;
+        decimalUsed = false;
+        hasError = false;
+        displayText = "0";
+    }
+
+    private void ClearEntry()
+    {
+        currentValue = 0;
+        newEntry = true;
+        decimalUsed = false;
+        displayText = "0";
+    }
+
+    private void Backspace()
+    {
+        if (hasError) return;
+        if (newEntry) return;
+
+        string text = displayText;
+
+        if (text.Length > 1)
+        {
+            // Check if we are removing the decimal point
+            if (text.EndsWith('.'))
+            {
+                decimalUsed = false;
+            }
+            displayText = text[..^1];
+        }
+        else
+        {
+            displayText = "0";
+            newEntry = true;
+        }
+
+        currentValue = double.Parse(displayText);
+    }
+
+    private void ToggleSign()
+    {
+        if (hasError) return;
+
+        currentValue = -currentValue;
+        displayText = currentValue.ToString();
+    }
+
+    private void NumberClick(int number)
+    {
+        if (hasError) ClearAll();
+
+        if (newEntry)
+        {
+            displayText = string.Empty;
+            newEntry = false;
+            decimalUsed = false;
+        }
+
+        displayText += number.ToString();
+        currentValue = double.Parse(displayText);
+    }
+
+    private void DecimalClick()
+    {
+        if (hasError) ClearAll();
+
+        if (decimalUsed) return;
+
+        if (newEntry)
+        {
+            displayText = "0";
+            newEntry = false;
+        }
+
+        displayText += ".";
+        decimalUsed = true;
+    }
+
+    private void OperatorClick(int opIndex)
+    {
+        if (hasError) return;
+
+        // If there is a pending operation, compute it first
+        if (!string.IsNullOrEmpty(currentOp) && !newEntry)
+        {
+            PerformCalculation();
+            if (hasError) return;
+        }
+
+        accumulator = currentValue;
+        newEntry = true;
+
+        currentOp = opIndex switch
+        {
+            0 => "+",
+            1 => "-", 
+            2 => "*",
+            3 => "/",
+            _ => string.Empty
+        };
+    }
+
+    private void EqualsClick()
+    {
+        if (hasError) return;
+        if (string.IsNullOrEmpty(currentOp)) return;
+
+        PerformCalculation();
+        currentOp = string.Empty;
+    }
+
+    private void PerformCalculation()
+    {
+        try
+        {
+            double result = currentOp switch
+            {
+                "+" => accumulator + currentValue,
+                "-" => accumulator - currentValue,
+                "*" => accumulator * currentValue,
+                "/" when currentValue == 0 => throw new DivideByZeroException(),
+                "/" => accumulator / currentValue,
+                _ => currentValue
+            };
+
+            currentValue = result;
+            accumulator = result;
+            displayText = FormatResult(result);
+            newEntry = true;
+            decimalUsed = displayText.Contains('.');
+        }
+        catch (DivideByZeroException)
+        {
+            displayText = "Error: Div/0";
+            hasError = true;
+        }
+        catch
+        {
+            displayText = "Error";
+            hasError = true;
+        }
+    }
+
+    private static string FormatResult(double value)
+    {
+        // If the result is very large or very small, use scientific notation
+        if (Math.Abs(value) >= 1E+15 || (Math.Abs(value) < 0.000001 && value != 0))
+        {
+            return value.ToString("0.########E+0");
+        }
+        
+        if (value == Math.Truncate(value))
+        {
+            return ((long)value).ToString();
+        }
+
+        return value.ToString();
+    }
+}

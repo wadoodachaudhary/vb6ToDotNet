@@ -1,0 +1,1617 @@
+@page "/option-intersections"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using HomeFront.Models
+@using HomeFront.Data
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using Fx.ControlKit.Notifications
+
+@inject NavigationManager NavigationManager
+@inject IDialogService Dialogs
+@inject ILogger<FIntersection> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject IUserPreferencesService Prefs
+@inject DbWrapperSqlServer db
+
+<PageTitle>Option Intersections - HomeFront</PageTitle>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading...</div>
+    </div>
+}
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!CanDelete)" @onclick="OnDeleteClick">
+        <img src="images/32/delete.ico" alt="Delete" onerror="this.style.display='none'" />
+        <span class="tool-label">Delete</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(mIntersectID == 0)" @onclick="OnAddAssemblyClick">
+        <img src="images/32/Add.ico" alt="Add" onerror="this.style.display='none'" />
+        <span class="tool-label">Add</span>
+    </button>
+    <div class="tbar-separator"></div>
+    <button class="tbar-btn" disabled="@(mAssemblyID == 0)" @onclick="OnTakeoffItemClick">
+        <img src="images/32/TakeoffItem.ico" alt="Item" onerror="this.style.display='none'" />
+        <span class="tool-label">Item</span>
+    </button>
+    <button class="tbar-btn" disabled="@(mAssemblyID == 0)" @onclick="OnTakeoffAssemblyClick">
+        <img src="images/32/TakeoffAssembly.ico" alt="Assembly" onerror="this.style.display='none'" />
+        <span class="tool-label">Assembly</span>
+    </button>
+</div>
+
+
+@* ── MAIN LAYOUT ─────────────────────────────────────── *@
+<div class="main-layout" @onmousemove="OnSplitterDrag" @onmouseup="EndSplitterDrag" @onmouseleave="EndSplitterDrag">
+    @* ── LEFT PANEL: Intersections List ──────────────── *@
+    <div class="left-panel" style="width:@(LeftPanelWidthPx)px;">
+        @* Standard FlexKit GridControl for VB6 gIntersections. The grid owns the
+           editable cell and trailing blank-row behavior; the wrapper only catches
+           Delete/Ctrl+Delete like the old list did. *@
+        <div class="intersections-grid-wrap" tabindex="0"
+             @onkeydown="OnIntersectionsKeyDown"
+             @oncontextmenu:preventDefault="true">
+            <GridControl @ref="IntersectionsGrid"
+                         TValue="IntersectionItem"
+                         DataSource="@IntersectionsList"
+                         AllowSorting="true"
+                         AllowResizing="true"
+                         AllowSelection="true"
+                         EnableHover="true"
+                         Height="100%"
+                         WidthMode="GridWidthMode.FillAvailable"
+                         RowHeight="22"
+                         MinRowHeight="22"
+                         HighlightSelectedRows="false"
+                         AvailableColumns="@IntersectionsChooseColumns"
+                         SelectionSettingsRef="@intersectionSelectionSettings"
+                         EditSettingsRef="@intersectionEditSettings"
+                         NewItemFactory="CreateIntersectionRowFromGrid"
+                         EnsureTrailingNewRow="true"
+                         IsTrailingNewRow="IsIntersectionTrailingNewRow"
+                         AddNewRowOnLastCellExit="true"
+                         CanAddNewRowOnLastCellExit="CanAppendIntersectionNewRowAfter"
+                         BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                         EventsRef="@intersectionGridEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(IntersectionItem.IntersectID)" Visible="false" IsPrimaryKey="true" AllowEditing="false" />
+                    <GridColumn Field="@nameof(IntersectionItem.IsNewRow)" Visible="false" AllowEditing="false" />
+                    <GridColumn Field="@nameof(IntersectionItem.Description)"
+                                HeaderText="Intersection Description"
+                                Width="100%"
+                                AllowEditing="true"
+                                ClipMode="ClipMode.Ellipsis" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+    </div>
+
+    @* ── VERTICAL SPLITTER (between Left and Right Panels) ── *@
+    <div class="v-splitter @(_vSplitterDragging ? "dragging" : "")"
+         @onmousedown="StartVSplitterDrag" @onmousedown:preventDefault="true"></div>
+
+    @* ── RIGHT PANEL ─────────────────────────────────── *@
+    <div class="right-panel">
+        @* ── ASSEMBLIES GRID ─────────────────────────── *@
+        @* HHM-580: keydown bubbles from the focused grid cell to this wrapper
+           (FItems/FDimensionCategories pattern) — VB6 gAssemblies_KeyDown
+           (FIntersection.frm:493) deletes the selected assembly on
+           Delete + any modifier.
+           REOPEN: unlike the editable Items grid, this read-only grid never
+           mounts an in-cell editor, so nothing inside it reliably holds focus
+           when the keystroke arrives. tabindex makes the panel itself
+           focusable (a click on any child focuses it) so Ctrl+Delete always
+           reaches OnAssembliesGridKeyDown. *@
+        <div class="assemblies-panel" tabindex="0" @onkeydown="OnAssembliesGridKeyDown" style="height:@(AssembliesPanelHeightPx)px; flex: 0 0 auto;">
+            <div class="section-header">Assemblies</div>
+            <GridControl @ref="AssembliesGrid"
+                    TValue="AssemblyRow"
+                    DataSource="@VisibleAssembliesData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    EnableHover="true"
+                    Height="100%"
+                    RowHeight="20"
+                    MinRowHeight="20"
+                    AvailableColumns="@GetAssembliesChooseColumnsSchema()"
+                    OnColumnsChosen="@OnAssembliesColumnsChosenAsync"
+                    OnLayoutChanged="@OnAssembliesLayoutChangedAsync"
+                    SelectionSettingsRef="@assemblySelectionSettings"
+                    EventsRef="@assemblyGridEvents">
+                <GridColumnsBase @key="gAssembliesLayoutVersion">
+                    <GridColumn Field="@nameof(AssemblyRow.AssemblyID)" Visible="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(AssemblyRow.RowState)" Visible="false" />
+                    @if (HasAssembliesGridLayout)
+                    {
+                        foreach (var entry in GetOrderedAssembliesGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                            <GridColumn Field="@fieldName"
+                                          HeaderText="@headerText"
+                                          Width="@width"
+                                          Type="@columnType"
+                                          TextAlign="@textAlign"
+                                          AllowEditing="false"
+                                          ClipMode="ClipMode.Ellipsis" />
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(AssemblyRow.AssemblyType)" HeaderText="Type" Width="100px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(AssemblyRow.Community)" HeaderText="Community" Width="100px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(AssemblyRow.Assembly)" HeaderText="Assembly" Width="120px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(AssemblyRow.Model)" HeaderText="Model" Width="100px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(AssemblyRow.Option)" HeaderText="Option" Width="100px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(AssemblyRow.Description)" HeaderText="Description" Width="250px"
+                                      AllowEditing="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+
+        @* ── HORIZONTAL SPLITTER (between Assemblies and Items Grids) ── *@
+        <div class="h-splitter @(_hSplitterDragging ? "dragging" : "")"
+             @onmousedown="StartHSplitterDrag" @onmousedown:preventDefault="true"></div>
+
+        @* ── ITEMS GRID ──────────────────────────────── *@
+        @* HHM-641: no body-row context menu here — VB6 gItems_BeforeMouseDown
+           (FIntersection.frm:551) only pops the header COLUMN menu; the HHM-573
+           Edit Item Chart/Attachments menu was removed to match legacy. *@
+        @* HHM-580: @onkeydown — VB6 gItems_KeyDown (FIntersection.frm:579) marks the
+           current item row "delete" on Delete + any modifier. *@
+        <div class="items-panel"
+             @onkeydown="OnItemsGridKeyDown">
+            <div class="section-header">Items</div>
+            <GridControl @ref="ItemsGrid"
+                    TValue="IntersectItemRow"
+                    DataSource="@VisibleItemsData"
+                    AllowSorting="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    EnableHover="true"
+                    Height="100%"
+                    RowHeight="20"
+                    MinRowHeight="20"
+                    AvailableColumns="@GetItemsChooseColumnsSchema()"
+                    OnColumnsChosen="@OnItemsColumnsChosenAsync"
+                    OnLayoutChanged="@OnItemsLayoutChangedAsync"
+                    SelectionSettingsRef="@itemSelectionSettings"
+                    EditSettingsRef="@itemEditSettings"
+                    BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                    AllowSingleCellColumnMassEdit="true"
+                    EventsRef="@itemGridEvents">
+                <GridColumnsBase @key="gItemsLayoutVersion">
+                    <GridColumn Field="@nameof(IntersectItemRow.ItemID)" Visible="false" IsPrimaryKey="true" />
+                    <GridColumn Field="@nameof(IntersectItemRow.AssemblyID)" Visible="false" />
+                    <GridColumn Field="@nameof(IntersectItemRow.RowState)" Visible="false" />
+                    @if (HasItemsGridLayout)
+                    {
+                        foreach (var entry in GetOrderedItemsGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+                            var allowEdit = IsItemFieldEditable(fieldName);
+
+                            if (fieldName == "POIndex")
+                            {
+                                @* VB6 gItems_CellButtonClick "PO Index": the STANDARD FlexKit edit
+                                   button (AlwaysShowEditButton) opens FPickList via OnEditButtonClick
+                                   → OnPickPOIndex. Replaces the hand-rolled span+… template; the cell
+                                   shows the raw POIndex value (same Field binding), Ellipsis-clipped. *@
+                                <GridColumn Field="POIndex" HeaderText="@headerText" Width="@(width ?? "90px")"
+                                              AllowEditing="false"
+                                              ShowEditButton="true"
+                                              ClipMode="ClipMode.Ellipsis" />
+                            }
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="@allowEdit"
+                                              ClipMode="ClipMode.Ellipsis" />
+                            }
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(IntersectItemRow.AssemblyDesc)" HeaderText="Assembly" Width="180px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.Phase)" HeaderText="Phase" Width="80px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.Item)" HeaderText="Item" Width="100px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.ItemDesc)" HeaderText="Description" Width="200px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.TakeoffQty)" HeaderText="Takeoff Qty" Width="100px"
+                                      Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right"
+                                      AllowEditing="true" />
+                        <GridColumn Field="@nameof(IntersectItemRow.ConversionFactor)" HeaderText="Conv Factor" Width="100px"
+                                      Format="N4" Type="ColumnType.Number" TextAlign="TextAlign.Right"
+                                      AllowEditing="true" />
+                        <GridColumn Field="@nameof(IntersectItemRow.OrderQty)" HeaderText="Order Qty" Width="100px"
+                                      Format="N2" Type="ColumnType.Number" TextAlign="TextAlign.Right"
+                                      AllowEditing="true" />
+                        <GridColumn Field="@nameof(IntersectItemRow.TakeoffUOM)" HeaderText="Takeoff UOM" Width="80px"
+                                      AllowEditing="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.OrderUOM)" HeaderText="Order UOM" Width="80px"
+                                      AllowEditing="false" />
+                        @* VB6 gItems_CellButtonClick "PO Index" — STANDARD FlexKit edit button
+                           opens FPickList via OnEditButtonClick → OnPickPOIndex. *@
+                        <GridColumn Field="@nameof(IntersectItemRow.POIndex)" HeaderText="PO Index" Width="90px"
+                                      AllowEditing="false"
+                                      ShowEditButton="true"
+                                      ClipMode="ClipMode.Ellipsis" />
+                        <GridColumn Field="@nameof(IntersectItemRow.Notes)" HeaderText="Notes" Width="150px"
+                                      AllowEditing="true" />
+                        <GridColumn Field="@nameof(IntersectItemRow.WastePercent)" HeaderText="Waste %" Width="70px"
+                                      Visible="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.RoundDir)" HeaderText="Round Dir" Width="70px"
+                                      Visible="false" />
+                        <GridColumn Field="@nameof(IntersectItemRow.RoundTo)" HeaderText="Round To" Width="70px"
+                                      Visible="false" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+    </div>
+</div>
+
+@* ── ADD ASSEMBLY PICKER (VB6 AddAssembly → FPickList.Choose "Assembly", multiSelect) ──
+   FIntersection.frm:718. The four assembly-type views (Models / Model Options /
+   Global Options / Design Center Options) are presented as picklist views; the
+   user switches between them with the picklist's own View dropdown. ── *@
+<FPickList @ref="pickList" OnSelected="OnPickListSelected" OnCancel="OnPickListCancelled" />
+
+@* VB6 FTakeoff.Takeoff(Me, …) opens FTakeoff MODALLY over FIntersection.
+   Rendered inline with IsModal=true so the FMain MDI shell stays mounted
+   (fixes "Item by Group and Phase opens outside the application"). *@
+@if (_showTakeoffModal)
+{
+    <FTakeoff IsModal="true"
+              mode="@_takeoffMode"
+              isChangeOrder="false"
+              assemblyType="option"
+              description="@mAssemblyDesc"
+              OnClose="OnTakeoffModalClosed"
+              OnItemsCommitted="OnTakeoffItemsCommitted" />
+}
+
+
+@code {
+    private const string SRCFILE = "FIntersection::";
+
+    // Database
+// UI State
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private long mIntersectID = 0;
+    private long mAssemblyID = 0;
+    private string mAssemblyDesc = "";
+
+    // FTakeoff modal state (VB6 opens FTakeoff modally over the current form).
+    private bool _showTakeoffModal;
+    private string _takeoffMode = "Item";
+
+    // Intersections list
+    private List<IntersectionItem> IntersectionsList = new();
+    private int SelectedIntersectionIndex = -1;
+
+    // Grids
+    private GridControl<IntersectionItem>? IntersectionsGrid;
+    private GridControl<AssemblyRow>? AssembliesGrid;
+    private GridControl<IntersectItemRow>? ItemsGrid;
+    private List<AssemblyRow> AssembliesData = new();
+    private List<IntersectItemRow> ItemsData = new();
+
+    // Pick list (VB6 FPickList) — shared between the Add-Assembly picker and the
+    // in-cell PO Index picker. _pickContext routes OnPickListSelected.
+    private FPickList? pickList;
+    private string _pickContext = "";
+    private IntersectItemRow? _poPickRow;   // the row a PO Index pick targets
+
+    // Computed
+    private bool CanDelete => mIntersectID != 0 || SelectedAssemblyRow != null || SelectedItemRow != null;
+    private AssemblyRow? SelectedAssemblyRow;
+    private IntersectItemRow? SelectedItemRow;
+    private string? ActiveGridName;
+
+    // Grid Settings
+    private SelectionSettings assemblySelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single
+    };
+    private SelectionSettings intersectionSelectionSettings = new()
+    {
+        Mode = SelectionMode.Cell,
+        Type = SelectionType.Single
+    };
+    private EditSettings intersectionEditSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch,
+        NewRowPosition = NewRowPosition.Bottom
+    };
+    private SelectionSettings itemSelectionSettings = new()
+    {
+        Mode = SelectionMode.Cell,
+        Type = SelectionType.Multiple,
+        EnableToggle = true
+    };
+    private EditSettings itemEditSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+    private GridControlEvents<IntersectionItem> intersectionGridEvents = new();
+    private GridControlEvents<AssemblyRow> assemblyGridEvents = new();
+    private GridControlEvents<IntersectItemRow> itemGridEvents = new();
+
+    // === Grid layout via the shared GridLayoutPresenter ===
+    // The load/resolve/order/width boilerplate lives in GridLayoutPresenter<TRow>;
+    // only the VB6 form/grid name strings stay here (fidelity). The members named
+    // gAssembliesLayout / HasAssembliesGridLayout / …Version below are thin
+    // delegations, so the markup and the rest of this file are unchanged.
+    // HHM-528: the AppGridLayout tags are the VB6 grid NAMES — IniPutGrid
+    // (FIntersection.frm Form_Load/Unload) stores "FIntersection.gAssemblies" /
+    // "FIntersection.gItems". The presenters were constructed with invented
+    // names ("AssembliesGrid"/"ItemsGrid") that match no AppGridLayout row, so
+    // the layout never loaded, the grids ran on hardcoded fallback columns and
+    // the Insert-a-Column dialog listed the rendered utility columns
+    // (RowState/ItemID/AssemblyID) instead of the legacy column set.
+    private readonly GridLayoutPresenter<AssemblyRow> _assembliesGrid =
+        new("FIntersection", "gAssemblies", instanceKey: "(0)");
+    private readonly GridLayoutPresenter<IntersectItemRow> _itemsGrid =
+        new("FIntersection", "gItems", instanceKey: "(0)");
+
+    private Dictionary<string, GridLayoutColumn> gAssembliesLayout => _assembliesGrid.Layout;
+    private bool HasAssembliesGridLayout => _assembliesGrid.Has;
+    private int gAssembliesLayoutVersion => _assembliesGrid.Version;
+
+    private Dictionary<string, GridLayoutColumn> gItemsLayout => _itemsGrid.Layout;
+    private bool HasItemsGridLayout => _itemsGrid.Has;
+    private int gItemsLayoutVersion => _itemsGrid.Version;
+
+    // Dirty property
+    private bool Dirty
+    {
+        get => mDirty;
+        set => mDirty = value;
+    }
+
+    // ── Splitter / Slider Dragging ─────────────────────────────────────
+    private const string PrefsSection = "FIntersection";
+    private const int LeftPanelMinPx = 180;
+    private const int AssembliesPanelMinPx = 120;
+
+    private bool _vSplitterDragging;
+    private bool _hSplitterDragging;
+    private double _dragStartX;
+    private double _dragStartY;
+    private int _dragStartWidth;
+    private int _dragStartHeight;
+
+    private int _leftPanelWidthPx = 320;
+    private int _assembliesPanelHeightPx = 280;
+
+    private int LeftPanelWidthPx => Math.Max(_leftPanelWidthPx, LeftPanelMinPx);
+    private int AssembliesPanelHeightPx => Math.Max(_assembliesPanelHeightPx, AssembliesPanelMinPx);
+
+    private void InitSplitterPrefs()
+    {
+        if (int.TryParse(Prefs.Get(PrefsSection, "LeftPanelWidthPx"), out var savedLeft) && savedLeft >= LeftPanelMinPx)
+            _leftPanelWidthPx = savedLeft;
+
+        if (int.TryParse(Prefs.Get(PrefsSection, "AssembliesPanelHeightPx"), out var savedTop) && savedTop >= AssembliesPanelMinPx)
+            _assembliesPanelHeightPx = savedTop;
+    }
+
+    private void StartVSplitterDrag(MouseEventArgs e)
+    {
+        _vSplitterDragging = true;
+        _dragStartX = e.ClientX;
+        _dragStartWidth = LeftPanelWidthPx;
+    }
+
+    private void StartHSplitterDrag(MouseEventArgs e)
+    {
+        _hSplitterDragging = true;
+        _dragStartY = e.ClientY;
+        _dragStartHeight = AssembliesPanelHeightPx;
+    }
+
+    private void OnSplitterDrag(MouseEventArgs e)
+    {
+        if (!_vSplitterDragging && !_hSplitterDragging) return;
+        if ((e.Buttons & 1) == 0) { EndSplitterDrag(); return; }
+
+        if (_vSplitterDragging)
+        {
+            var target = _dragStartWidth + (int)(e.ClientX - _dragStartX);
+            _leftPanelWidthPx = Math.Max(target, LeftPanelMinPx);
+        }
+        else if (_hSplitterDragging)
+        {
+            var target = _dragStartHeight + (int)(e.ClientY - _dragStartY);
+            _assembliesPanelHeightPx = Math.Max(target, AssembliesPanelMinPx);
+        }
+    }
+
+    private void EndSplitterDrag()
+    {
+        if (!_vSplitterDragging && !_hSplitterDragging) return;
+
+        if (_vSplitterDragging)
+        {
+            _vSplitterDragging = false;
+            Prefs.Put(PrefsSection, "LeftPanelWidthPx", _leftPanelWidthPx.ToString());
+        }
+
+        if (_hSplitterDragging)
+        {
+            _hSplitterDragging = false;
+            Prefs.Put(PrefsSection, "AssembliesPanelHeightPx", _assembliesPanelHeightPx.ToString());
+        }
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        InitSplitterPrefs();
+        intersectionGridEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<IntersectionItem>>(this, OnIntersectionCellSelected);
+        intersectionGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<IntersectionItem>>(this, OnIntersectionCellSaved);
+        assemblyGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<AssemblyRow>>(this, OnAssemblyRowSelected);
+        assemblyGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<AssemblyRow>>(this, OnAssemblyRowDeselected);
+        itemGridEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<IntersectItemRow>>(this, OnItemCellSelected);
+        itemGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<IntersectItemRow>>(this, OnItemRowSelected);
+        itemGridEvents.RowDeselected = EventCallback.Factory.Create<RowSelectEventArgs<IntersectItemRow>>(this, OnItemRowDeselected);
+        itemGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<IntersectItemRow>>(this, OnItemCellSaved);
+        itemGridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<IntersectItemRow>>(this, OnItemEditButtonClick);
+
+        await LoadGridLayoutAsync();
+        await LoadIntersections();
+    }
+
+    // ── Load Grid Layout ────────────────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // The keyed/unkeyed "(0)" fallback + Version bump live in the presenter
+            // (its ctor was given the form/grid names and instanceKey "(0)").
+            await _assembliesGrid.LoadAsync(GridLayoutSvc);
+            await _itemsGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    // ── Load Intersections ───────────────────────────────────────────────
+    private async Task LoadIntersections()
+    {
+        try
+        {
+            IntersectionsList.Clear();
+            var sql = $"SELECT IntersectID, Description FROM tblDBAssemblyIntersections WHERE DivisionID = {SessionState.DivisionID} ORDER BY Description";
+            var rows = await db.QueryAsync(sql);
+            foreach (var row in rows)
+            {
+                IntersectionsList.Add(new IntersectionItem
+                {
+                    IntersectID = Convert.ToInt64(row["IntersectID"]),
+                    Description = row["Description"]?.ToString() ?? "",
+                    IsNewRow = false
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadIntersections error");
+
+        }
+    }
+
+    private IntersectionItem CreateIntersectionRowFromGrid() => new() { IsNewRow = true };
+
+    private static bool IsIntersectionTrailingNewRow(IntersectionItem row) => row.IsNewRow;
+
+    private static bool CanAppendIntersectionNewRowAfter(IntersectionItem row) =>
+        !row.IsNewRow || !string.IsNullOrWhiteSpace(row.Description);
+
+    // ── Intersection selection/editing ───────────────────────────────────
+    private async Task OnIntersectionCellSelected(CellSelectEventArgs<IntersectionItem> args)
+    {
+        if (args.Data == null)
+            return;
+
+        ActiveGridName = "Intersections";
+        SelectedIntersectionIndex = args.RowIndex;
+
+        var item = args.Data;
+        if (mDirty && (item.IsNewRow || mIntersectID != item.IntersectID))
+        {
+            var saved = await SaveData(true);
+            if (!saved) return;
+        }
+
+        if (item.IsNewRow || mIntersectID == item.IntersectID)
+            return;
+
+        await LoadIntersect(item.IntersectID);
+    }
+
+    private async Task OnIntersectionCellSaved(CellSaveArgs<IntersectionItem> args)
+    {
+        if (args.Data == null
+            || !string.Equals(args.ColumnName, nameof(IntersectionItem.Description), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var row = args.Data;
+        var text = (args.Value?.ToString() ?? row.Description ?? "").Trim();
+        row.Description = text;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            if (!row.IsNewRow && row.IntersectID != 0)
+                await RestoreIntersectionDescriptionAsync(row);
+            return;
+        }
+
+        if (row.IsNewRow || row.IntersectID == 0)
+        {
+            await InsertIntersectionRowAsync(row, text);
+            return;
+        }
+
+        await UpdateIntersectionRowAsync(row, text);
+    }
+
+    private async Task RestoreIntersectionDescriptionAsync(IntersectionItem row)
+    {
+        try
+        {
+            row.Description = await db.ExecuteScalarAsync<string>(
+                "SELECT Description FROM tblDBAssemblyIntersections WHERE IntersectID = @IntersectID",
+                new { row.IntersectID }) ?? "";
+            if (IntersectionsGrid != null) await IntersectionsGrid.Refresh();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "RestoreIntersectionDescription error");
+        }
+    }
+
+    private async Task UpdateIntersectionRowAsync(IntersectionItem row, string text)
+    {
+        try
+        {
+            // VB6: update tbldbassemblyintersections set description=... where intersectid=...
+            await db.ExecuteAsync(
+                "UPDATE tblDBAssemblyIntersections SET Description = @Description WHERE IntersectID = @IntersectID",
+                new { Description = text, row.IntersectID });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "UpdateIntersectionRow error");
+
+        }
+    }
+
+    private async Task InsertIntersectionRowAsync(IntersectionItem row, string text)
+    {
+        try
+        {
+            // HHM-561: SCOPE_IDENTITY() is batch/connection-scoped and the db wrapper
+            // opens a fresh connection per call, so a separate "SELECT SCOPE_IDENTITY()"
+            // always returned NULL → newId=0, leaving the Add/Delete toolbar buttons
+            // disabled (they gate on mIntersectID != 0, mirroring VB6 FIntersection.frm:
+            // 851-852). Fold the identity select into the SAME batch as the INSERT —
+            // VB6 fetches the identity immediately after its insert too (frm:605-607,
+            // HFApp.SqlIdentity). DivisionID is also parameterized (was interpolated).
+            var newId = await db.ExecuteScalarAsync<long>(
+                "INSERT INTO tblDBAssemblyIntersections (DivisionID, Description) VALUES (@DivisionID, @Description); " +
+                "SELECT CAST(SCOPE_IDENTITY() AS bigint);",
+                new { DivisionID = SessionState.DivisionID, Description = text });
+
+            row.IntersectID = newId;
+            row.Description = text;
+            row.IsNewRow = false;
+            SelectedIntersectionIndex = IntersectionsList.IndexOf(row);
+            await LoadIntersect(newId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}InsertIntersectionRow error");
+
+            await Dialogs.ConfirmAsync($"Error creating intersection: {ex.Message}");
+        }
+    }
+
+    // ── Load Intersect Detail ────────────────────────────────────────────
+    private async Task LoadIntersect(long intersectID)
+    {
+        mIntersectID = intersectID;
+        mAssemblyID = 0;
+        mAssemblyDesc = "";
+        SelectedAssemblyRow = null;
+        SelectedItemRow = null;
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Load assemblies
+            var assemblySql = @"
+                SELECT m.AssemblyID, m.Community, m.Assembly, m.Model, m.OptionID, m.Description, m.AssemblyTypeDesc
+                FROM tblDBAssemblyIntersectAssemblies xa
+                JOIN tblDBAssemblyMaster m ON xa.AssemblyID = m.AssemblyID
+                WHERE xa.IntersectID = @IntersectID
+                ORDER BY m.Description";
+            var assemblyRows = await db.QueryAsync(assemblySql, new { IntersectID = intersectID });
+            AssembliesData = assemblyRows.Select(r => new AssemblyRow
+            {
+                AssemblyID = Convert.ToInt64(r["AssemblyID"]),
+                Community = r["Community"]?.ToString() ?? "",
+                AssemblyType = r["AssemblyTypeDesc"]?.ToString() ?? "",
+                Assembly = r["Assembly"]?.ToString() ?? "",
+                Model = r["Model"]?.ToString() ?? "",
+                Option = r["OptionID"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                RowState = "CLEAN"
+            }).ToList();
+
+            // Load items
+            // HHM-573: d.ItemChart feeds the Edit Item Chart… context-menu entry.
+            // tblDBAssemblyIntersectItems has no ItemChart column (VB6
+            // FIntersection.frm:915 insert list), so it comes from the assembly's
+            // detail row in tblDBAssemblyDetails — the same source FTakeoff reads
+            // (d.itemchart, FTakeoff LoadModelOrOption). OUTER APPLY TOP 1 instead
+            // of LEFT JOIN because the detail table keys on Sequence and can hold
+            // the same Phase+Item more than once per assembly — a join would
+            // duplicate intersect item rows.
+            var itemsSql = @"
+                SELECT m.Description AS AssemblyDesc, i.ItemDesc, i.WastePercent, i.RoundDir, i.RoundTo, d.ItemChart, xi.*
+                FROM tblDBAssemblyIntersections x
+                JOIN tblDBAssemblyIntersectItems xi ON x.IntersectID = xi.IntersectID
+                JOIN tblDBAssemblyMaster m ON xi.AssemblyID = m.AssemblyID
+                JOIN EstimatingItems i ON i.DivisionID = x.DivisionID AND i.Phase = xi.Phase AND i.Item = xi.Item
+                OUTER APPLY (SELECT TOP 1 dd.ItemChart
+                             FROM tblDBAssemblyDetails dd
+                             WHERE dd.DivisionID = x.DivisionID AND dd.Community = m.Community
+                               AND dd.Model = m.Model AND dd.OptionID = m.OptionID
+                               AND dd.Assembly = m.Assembly AND dd.Phase = xi.Phase AND dd.Item = xi.Item
+                             ORDER BY dd.Sequence) d
+                WHERE x.IntersectID = @IntersectID
+                ORDER BY xi.ItemID";
+            var itemRows = await db.QueryAsync(itemsSql, new { IntersectID = intersectID });
+            ItemsData = itemRows.Select(r => new IntersectItemRow
+            {
+                ItemID = Convert.ToInt64(r["ItemID"]),
+                AssemblyID = Convert.ToInt64(r["AssemblyID"]),
+                AssemblyDesc = r["AssemblyDesc"]?.ToString() ?? "",
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
+                TakeoffQty = SafeDouble(r["TakeoffQty"]),
+                OrderQty = SafeDouble(r["OrderQty"]),
+                ConversionFactor = SafeDouble(r["ConversionFactor"]),
+                WastePercent = SafeDouble(r["WastePercent"]),
+                RoundDir = SafeInt(r["RoundDir"]),
+                RoundTo = SafeDouble(r["RoundTo"]),
+                TakeoffUOM = r["TakeoffUOM"]?.ToString() ?? "",
+                OrderUOM = r["OrderUOM"]?.ToString() ?? "",
+                POIndex = r["POIndex"]?.ToString() ?? "",
+                Notes = r["Notes"]?.ToString() ?? "",
+                ItemChart = r["ItemChart"]?.ToString() ?? "", // HHM-573
+                RowState = "CLEAN"
+            }).ToList();
+
+            Dirty = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}LoadIntersect error");
+
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Assembly Row Selected ────────────────────────────────────────────
+    private void OnAssemblyRowSelected(RowSelectEventArgs<AssemblyRow> args)
+    {
+        SelectedAssemblyRow = args.Data;
+        ActiveGridName = "Assemblies";
+        if (args.Data != null)
+        {
+            mAssemblyID = args.Data.AssemblyID;
+            mAssemblyDesc = args.Data.Description;
+        }
+    }
+
+    private void OnAssemblyRowDeselected(RowSelectEventArgs<AssemblyRow> args)
+    {
+        SelectedAssemblyRow = null;
+        mAssemblyID = 0;
+        mAssemblyDesc = "";
+    }
+
+    // ── Item Row Selected ────────────────────────────────────────────────
+    private void OnItemCellSelected(CellSelectEventArgs<IntersectItemRow> args)
+    {
+        SelectedItemRow = args.Data;
+        ActiveGridName = "Items";
+    }
+
+    private void OnItemRowSelected(RowSelectEventArgs<IntersectItemRow> args)
+    {
+        SelectedItemRow = args.Data;
+        ActiveGridName = "Items";
+    }
+
+    private void OnItemRowDeselected(RowSelectEventArgs<IntersectItemRow> args)
+    {
+        SelectedItemRow = null;
+    }
+
+    // ── Item Cell Saved (AfterEdit) ──────────────────────────────────────
+    private void OnItemCellSaved(CellSaveArgs<IntersectItemRow> args)
+    {
+        if (args.Data == null) return;
+        var row = args.Data;
+
+        if (row.RowState == "CLEAN") row.RowState = "dirty";
+        Dirty = true;
+
+        var colName = args.ColumnName ?? "";
+        switch (colName)
+        {
+            case nameof(IntersectItemRow.TakeoffQty):
+            case nameof(IntersectItemRow.ConversionFactor):
+                row.OrderQty = RoundTo(
+                    row.TakeoffQty * (100 + row.WastePercent) / 100 * row.ConversionFactor,
+                    row.RoundTo, row.RoundDir);
+                break;
+            case nameof(IntersectItemRow.OrderQty):
+                if (row.ConversionFactor != 0)
+                    row.TakeoffQty = row.OrderQty / row.ConversionFactor;
+                break;
+        }
+    }
+
+    // ── Toolbar: Save ────────────────────────────────────────────────────
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            // VB6 used Yes/No/Cancel: Yes=save, No=discard, Cancel=abort
+            var answer = await Dialogs.ConfirmCancelAsync(
+                "This data has changed.\n\nDo you want to save these changes?");
+            if (answer == MessageBoxResult.Cancel) return false;
+            if (answer == MessageBoxResult.No)
+            {
+                Dirty = false;
+                return true;
+            }
+        }
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            // Process assembly deletes
+            for (int r = AssembliesData.Count - 1; r >= 0; r--)
+            {
+                if (AssembliesData[r].RowState == "delete")
+                {
+                    await db.ExecuteAsync(
+                        "DELETE FROM tblDBAssemblyIntersectAssemblies WHERE IntersectID = @IntersectID AND AssemblyID = @AssemblyID",
+                        new { IntersectID = mIntersectID, AssemblyID = AssembliesData[r].AssemblyID });
+                    await db.ExecuteAsync(
+                        "DELETE FROM tblDBAssemblyIntersectItems WHERE IntersectID = @IntersectID AND AssemblyID = @AssemblyID",
+                        new { IntersectID = mIntersectID, AssemblyID = AssembliesData[r].AssemblyID });
+                    AssembliesData.RemoveAt(r);
+                }
+            }
+
+            // Process assembly inserts
+            foreach (var row in AssembliesData.Where(a => a.RowState == "new"))
+            {
+                await db.ExecuteAsync(
+                    "INSERT INTO tblDBAssemblyIntersectAssemblies (IntersectID, AssemblyID) VALUES (@IntersectID, @AssemblyID)",
+                    new { IntersectID = mIntersectID, AssemblyID = row.AssemblyID });
+                row.RowState = "CLEAN";
+            }
+
+            // Process item deletes
+            for (int r = ItemsData.Count - 1; r >= 0; r--)
+            {
+                if (ItemsData[r].RowState == "delete")
+                {
+                    await db.ExecuteAsync(
+                        "DELETE FROM tblDBAssemblyIntersectItems WHERE ItemID = @ItemID",
+                        new { ItemID = ItemsData[r].ItemID });
+                    ItemsData.RemoveAt(r);
+                }
+            }
+
+            // Process item inserts and updates
+            foreach (var row in ItemsData)
+            {
+                switch (row.RowState)
+                {
+                    case "new":
+                        // HHM-561: identity select folded into the SAME batch as the
+                        // INSERT — a standalone "SELECT SCOPE_IDENTITY()" ran on a new
+                        // connection and always returned NULL → ItemID=0, silently
+                        // breaking later updates/deletes of takeoff-added rows. VB6
+                        // reads the identity right after the insert (FIntersection.frm:
+                        // 915-929, HFApp.SqlIdentity("tbldbassemblyintersectitems")).
+                        var newId = await db.ExecuteScalarAsync<long>(@"
+                            INSERT INTO tblDBAssemblyIntersectItems
+                                (IntersectID, AssemblyID, Phase, Item, TakeoffQty, TakeoffUOM,
+                                 ConversionFactor, OrderQty, OrderUOM, POIndex, Notes)
+                            VALUES
+                                (@IntersectID, @AssemblyID, @Phase, @Item, @TakeoffQty, @TakeoffUOM,
+                                 @ConversionFactor, @OrderQty, @OrderUOM, @POIndex, @Notes);
+                            SELECT CAST(SCOPE_IDENTITY() AS bigint);",
+                            new
+                            {
+                                IntersectID = mIntersectID,
+                                row.AssemblyID, row.Phase, row.Item,
+                                row.TakeoffQty, row.TakeoffUOM,
+                                row.ConversionFactor, row.OrderQty, row.OrderUOM,
+                                row.POIndex, row.Notes
+                            });
+                        row.ItemID = newId;
+                        row.RowState = "CLEAN";
+                        break;
+
+                    case "dirty":
+                        await db.ExecuteAsync(@"
+                            UPDATE tblDBAssemblyIntersectItems SET
+                                TakeoffQty = @TakeoffQty,
+                                ConversionFactor = @ConversionFactor,
+                                OrderQty = @OrderQty,
+                                POIndex = @POIndex,
+                                Notes = @Notes
+                            WHERE ItemID = @ItemID",
+                            new
+                            {
+                                row.TakeoffQty, row.ConversionFactor,
+                                row.OrderQty, row.POIndex, row.Notes,
+                                row.ItemID
+                            });
+                        row.RowState = "CLEAN";
+                        break;
+                }
+            }
+
+            Dirty = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}SaveData error");
+
+            await Dialogs.ConfirmAsync($"Error saving: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Toolbar: Delete ──────────────────────────────────────────────────
+    // Filtered views that hide "delete"-marked rows from the grids
+    private List<AssemblyRow> VisibleAssembliesData => AssembliesData.Where(a => a.RowState != "delete").ToList();
+    private List<IntersectItemRow> VisibleItemsData => ItemsData.Where(i => i.RowState != "delete").ToList();
+
+    private async Task OnDeleteClick()
+    {
+        // VB6 toolbar Delete (FIntersection.frm:652-655) routes to the focused
+        // grid's KeyDown handler (Screen.ActiveControl Is gIntersections /
+        // gAssemblies / gItems); ActiveGridName is our ActiveControl equivalent.
+        if (ActiveGridName == "Items" && SelectedItemRow != null)
+        {
+            DeleteSelectedItemRow();
+        }
+        else if (ActiveGridName == "Assemblies" && SelectedAssemblyRow != null)
+        {
+            DeleteSelectedAssemblyRow();
+        }
+        else if (mIntersectID != 0 && SelectedIntersectionIndex >= 0)
+        {
+            await DeleteCurrentIntersectionAsync();
+        }
+    }
+
+    // VB6 gItems_KeyDown (FIntersection.frm:579-590): mark the current item row
+    // "delete" and hide it; Save processes the delete later.
+    private void DeleteSelectedItemRow()
+    {
+        if (SelectedItemRow == null) return;
+        SelectedItemRow.RowState = "delete";
+        Dirty = true;
+        SelectedItemRow = null;
+        StateHasChanged();
+    }
+
+    // VB6 gAssemblies_KeyDown (FIntersection.frm:493-516): mark the selected
+    // assembly "delete" plus every gItems row with the matching AssemblyID.
+    private void DeleteSelectedAssemblyRow()
+    {
+        if (SelectedAssemblyRow == null) return;
+        var assemblyId = SelectedAssemblyRow.AssemblyID;
+        // Mark assembly's items for delete too (VB6: gItems rows with matching AssemblyID)
+        foreach (var item in ItemsData.Where(i => i.AssemblyID == assemblyId && i.RowState != "delete"))
+        {
+            item.RowState = "delete";
+        }
+        SelectedAssemblyRow.RowState = "delete";
+        Dirty = true;
+        SelectedAssemblyRow = null;
+        // VB6 :510 moves the current row to the next visible one — either way
+        // the deleted assembly must stop being the "current assembly" the
+        // Item/Assembly toolbar buttons act on (HHM-580 REOPEN).
+        if (mAssemblyID == assemblyId)
+        {
+            mAssemblyID = 0;
+            mAssemblyDesc = "";
+        }
+        StateHasChanged();
+    }
+
+    // VB6 gIntersections_KeyDown (FIntersection.frm:473-491): confirm, then
+    // delete the intersection's assemblies, items and header row immediately.
+    private async Task DeleteCurrentIntersectionAsync()
+    {
+        if (mIntersectID == 0 || SelectedIntersectionIndex < 0) return;
+
+        var confirm = await Dialogs.ConfirmAsync(
+            "Are you sure you want to delete this option intersection?");
+        if (!confirm) return;
+
+        try
+        {
+            await db.ExecuteAsync(
+                "DELETE FROM tblDBAssemblyIntersectAssemblies WHERE IntersectID = @IntersectID",
+                new { IntersectID = mIntersectID });
+            await db.ExecuteAsync(
+                "DELETE FROM tblDBAssemblyIntersectItems WHERE IntersectID = @IntersectID",
+                new { IntersectID = mIntersectID });
+            await db.ExecuteAsync(
+                "DELETE FROM tblDBAssemblyIntersections WHERE IntersectID = @IntersectID",
+                new { IntersectID = mIntersectID });
+
+            IntersectionsList.RemoveAt(SelectedIntersectionIndex);
+            mIntersectID = 0;
+            AssembliesData.Clear();
+            ItemsData.Clear();
+            SelectedIntersectionIndex = -1;
+            Dirty = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}DeleteIntersection error");
+
+        }
+    }
+
+    // ── HHM-580: keyboard Delete wiring (VB6 FIntersection.frm KeyDown) ──────
+    // VB6 fires each grid's KeyDown on vbKeyDelete with ANY modifier held
+    // ("If KeyCode = vbKeyDelete And Shift <> 0" — gIntersections :473,
+    // gAssemblies :493, gItems :579), so Ctrl+Delete, Shift+Delete and
+    // Alt+Delete all delete. FlexKit GridControl doesn't consume Delete, so the
+    // wrapper-div keydown catches it (FItems / FDimensionCategories pattern).
+    // Each handler calls ITS OWN delete method — never the toolbar cascade —
+    // because a stale SelectedItemRow/SelectedAssemblyRow from a prior grid
+    // click would misroute; VB6 routes strictly by the focused control.
+    private void OnAssembliesGridKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Delete" || !(e.CtrlKey || e.ShiftKey || e.AltKey)) return;
+        // HHM-580 REOPEN: fall back to the grid's OWN selection when the
+        // RowSelected callback hasn't tracked the row — the grid's internal
+        // selection is authoritative for the highlighted row, exactly like
+        // VB6 reads .Row off gAssemblies itself (:501 ValueMatrix(.Row, …)).
+        SelectedAssemblyRow ??= AssembliesGrid?.GetSelectedRecords()?
+            .FirstOrDefault(r => r.RowState != "delete");
+        if (SelectedAssemblyRow == null) return; // VB6 :497 If .Row < 1 Then Exit Sub
+        DeleteSelectedAssemblyRow();
+    }
+
+    private void OnItemsGridKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Delete" || !(e.CtrlKey || e.ShiftKey || e.AltKey)) return;
+        if (SelectedItemRow == null) return; // VB6 :582 If .Row < 1 Then Exit Sub
+        DeleteSelectedItemRow();
+    }
+
+    private async Task OnIntersectionsKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key != "Delete" || !(e.CtrlKey || e.ShiftKey || e.AltKey)) return;
+        // VB6 :476 skips the new-row placeholder ("If .Row = .Rows - 1 Or .Row < 1").
+        if (mIntersectID == 0 || SelectedIntersectionIndex < 0) return;
+        if (SelectedIntersectionIndex >= IntersectionsList.Count
+            || IntersectionsList[SelectedIntersectionIndex].IsNewRow) return;
+        await DeleteCurrentIntersectionAsync();
+    }
+
+    // ── Toolbar: Add Assembly (VB6 AddAssembly, FIntersection.frm:676) ────
+    // VB6 opens FPickList.Choose("Assembly", <multi-view SQL>, multiSelect:=True)
+    // hiding the AssemblyID + assemblytypedesc columns. The four views (Models /
+    // Model Options / Global Options / Design Center Options) are switched with
+    // the picklist's View dropdown. Models view is only offered when no model has
+    // been chosen yet; Model Options is filtered to that model once one exists.
+    private async Task OnAddAssemblyClick()
+    {
+        if (mIntersectID == 0 || pickList == null) return;
+
+        // VB6: scan gAssemblies for a non-hidden model row to constrain Model Options.
+        var model = AssembliesData
+            .Where(a => !string.IsNullOrEmpty(a.Model) && a.RowState != "delete")
+            .Select(a => a.Model)
+            .LastOrDefault() ?? "";
+
+        // Each view SELECTs the same named columns the VB6 insert loop reads
+        // (AssemblyID, AssemblyTypeDesc, Community, Assembly, Model, OptionID,
+        // Description). DivisionID / Model are bound, never interpolated.
+        var views = new List<string>();
+        if (string.IsNullOrEmpty(model))
+        {
+            views.Add("Models;" + AssemblyViewSql(assemblyType: 0, filterModel: false));
+        }
+        views.Add("Model Options;" + AssemblyViewSql(assemblyType: 2, filterModel: !string.IsNullOrEmpty(model)));
+        views.Add("Global Options;" + AssemblyViewSql(assemblyType: 3, filterModel: false));
+        views.Add("Design Center Options;" + AssemblyViewSql(assemblyType: 4, filterModel: false));
+
+        _pickContext = "AddAssembly";
+        await pickList.Open(
+            "Assembly",
+            string.Join("|", views),
+            hideColumns: "AssemblyID,AssemblyTypeDesc",
+            multiSelect: true,
+            parameters: new Dictionary<string, object>
+            {
+                ["DivisionID"] = SessionState.DivisionID,
+                ["Model"] = model
+            });
+    }
+
+    // VB6 AddAssembly per-view query (FIntersection.frm:690-716). Each view has a
+    // DIFFERENT column list in VB6: Models omits Category/OptionID; Model Options
+    // adds Category (+ keeps Model/OptionID); Global/Design Center add Category and
+    // omit Model. AssemblyID + AssemblyTypeDesc stay in every view (hidden via
+    // hideColumns) so the insert loop can read them.
+    private static string AssemblyViewSql(int assemblyType, bool filterModel)
+    {
+        var columns = assemblyType switch
+        {
+            0 => "a.AssemblyID, a.AssemblyTypeDesc, a.Community, a.Assembly, a.Model, a.Description",
+            2 => "a.AssemblyID, a.AssemblyTypeDesc, a.Category, a.Community, a.Assembly, a.Model, a.OptionID, a.Description",
+            3 => "a.AssemblyID, a.AssemblyTypeDesc, a.Category, a.Community, a.Assembly, a.OptionID, a.Description",
+            4 => "a.AssemblyID, a.AssemblyTypeDesc, a.Category, a.Community, a.Assembly, a.OptionID, a.Description",
+            _ => "a.AssemblyID, a.AssemblyTypeDesc, a.Community, a.Assembly, a.Model, a.OptionID, a.Description"
+        };
+
+        var sql =
+            $"SELECT {columns} " +
+            "FROM tblDBAssemblyMaster a " +
+            "WHERE a.DivisionID = @DivisionID AND ISNULL(a.Inactive,0) = 0 " +
+            $"AND a.AssemblyType = {assemblyType}";
+        if (filterModel) sql += " AND a.Model = @Model";
+        return sql;
+    }
+
+    // ── Items grid edit-button dispatch (VB6 gItems_CellButtonClick) ──────
+    // The STANDARD FlexKit edit button raises OnEditButtonClick; route by
+    // column to the same handler the old in-cell "…" button called. args.Data
+    // is the clicked row.
+    private async Task OnItemEditButtonClick(CellEditButtonArgs<IntersectItemRow> args)
+    {
+        if (args.Data == null) return;
+        switch (args.ColumnName)
+        {
+            case nameof(IntersectItemRow.POIndex):
+                await OnPickPOIndex(args.Data);
+                break;
+        }
+    }
+
+    // ── In-cell PO Index picker (VB6 gItems_CellButtonClick, FIntersection.frm:561) ──
+    // Opens FPickList for "PO Index" and fans the chosen value out to every
+    // selected item row (VB6 loops Min(.Row,.RowSel)..Max(.Row,.RowSel)).
+    private async Task ResumeItemsGridKeyboardNavigationAsync()
+    {
+        if (ItemsGrid == null) return;
+        await InvokeAsync(StateHasChanged);
+        await ItemsGrid.ResumeKeyboardNavigationAsync();
+    }
+
+    private async Task OnPickPOIndex(IntersectItemRow row)
+    {
+        if (pickList == null) return;
+        _poPickRow = row;
+        _pickContext = "POIndex";
+        await pickList.Open(
+            "PO Index",
+            "SELECT POIndex, case when poindex=description then '' else Description end Description " +
+            "FROM tblPOIndex WHERE DivisionID = @DivisionID",
+            defaultItem: row.POIndex,
+            parameters: new Dictionary<string, object> { ["DivisionID"] = SessionState.DivisionID });
+    }
+
+    // Unified picklist callback (VB6 FPickList.SelectedItem loops).
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        var ctx = _pickContext;
+        _pickContext = "";
+
+        if (ctx == "AddAssembly")
+        {
+            // VB6 AddAssembly loop (FIntersection.frm:719-742).
+            AssemblyRow? lastAdded = null;
+            foreach (var picked in selectedRows)
+            {
+                string Col(string name) => picked.TryGetValue(name, out var v) ? v?.ToString() ?? "" : "";
+                var assemblyId = long.TryParse(Col("AssemblyID"), out var id) ? id : 0;
+                if (assemblyId == 0) continue;
+
+                if (AssembliesData.Any(a => a.AssemblyID == assemblyId && a.RowState != "delete"))
+                {
+                    Notifications.Info($"\"{Col("Description")}\" has already been added.");
+                    continue;
+                }
+
+                var assemblyTypeDesc = Col("AssemblyTypeDesc");
+                var added = new AssemblyRow
+                {
+                    AssemblyID = assemblyId,
+                    AssemblyType = assemblyTypeDesc,
+                    Community = Col("Community"),
+                    Assembly = Col("Assembly"),
+                    Model = Col("Model"),
+                    Option = Col("OptionID"),
+                    Description = Col("Description"),
+                    RowState = "new"
+                };
+                AssembliesData.Add(added);
+                if (assemblyTypeDesc != "Model") lastAdded = added;
+                Dirty = true;
+
+                // VB6: "cant prevent user from selecting 3 models at once, so only
+                // accept the first." — stop after the first Model row.
+                if (assemblyTypeDesc == "Model") break;
+            }
+            // VB6 AddAssembly sets .Row = r on each added non-Model row
+            // (FIntersection.frm:740), which fires gAssemblies_BeforeSelChange and
+            // re-enables the Item/Assembly toolbar buttons (frm:445-451). Mirror
+            // that: the last added assembly becomes the current one (HHM-638).
+            if (lastAdded != null)
+            {
+                SelectedAssemblyRow = lastAdded;
+                mAssemblyID = lastAdded.AssemblyID;
+                mAssemblyDesc = lastAdded.Description;
+                ActiveGridName = "Assemblies";
+            }
+            StateHasChanged();
+            return;
+        }
+
+        if (ctx == "POIndex")
+        {
+            if (selectedRows.Count > 0)
+            {
+                string Col(string name) => selectedRows[0].TryGetValue(name, out var v) ? v?.ToString() ?? "" : "";
+                var poIndex = Col("POIndex");
+
+                // VB6 fans the pick out to all selected item rows; fall back to the
+                // clicked row when the grid has no multi-row selection.
+                var targets = ItemsGrid?.GetSelectedRecords()?.Where(r => r.RowState != "delete").ToList()
+                              ?? new List<IntersectItemRow>();
+                if (_poPickRow != null && !targets.Contains(_poPickRow))
+                    targets.Add(_poPickRow);
+                if (targets.Count == 0 && _poPickRow != null)
+                    targets.Add(_poPickRow);
+
+                foreach (var t in targets)
+                {
+                    t.POIndex = poIndex;
+                    if (t.RowState == "CLEAN") t.RowState = "dirty";
+                }
+                Dirty = true;
+            }
+            _poPickRow = null;
+            StateHasChanged();
+            await ResumeItemsGridKeyboardNavigationAsync();
+        }
+    }
+
+    private async Task OnPickListCancelled()
+    {
+        _pickContext = "";
+        _poPickRow = null;
+        await ResumeItemsGridKeyboardNavigationAsync();
+    }
+
+    // ── Toolbar: Takeoff Item / Assembly ─────────────────────────────────
+    // VB6: Call FTakeoff.Takeoff(Me, False, Mid(Button.Key, 8), 0, "", atoption, ...)
+    // opens FTakeoff MODALLY over the current form. The POC originally navigated
+    // to /takeoff, which unmounted the FMain MDI shell (screen appeared "outside
+    // the application"). Mirror FAssembly's in-app pattern: render FTakeoff inline
+    // with IsModal=true so FIntersection stays behind.
+    private void OnTakeoffItemClick()
+    {
+        if (mAssemblyID == 0) return;
+        _takeoffMode = "Item";
+        _showTakeoffModal = true;
+    }
+
+    private void OnTakeoffAssemblyClick()
+    {
+        if (mAssemblyID == 0) return;
+        _takeoffMode = "Assembly";
+        _showTakeoffModal = true;
+    }
+
+    private void OnTakeoffModalClosed()
+    {
+        _showTakeoffModal = false;
+    }
+
+    // VB6 parity: FTakeoff.frm:1590 — Call mParentForm.AddItem(...). FTakeoff has
+    // already filtered zero-qty rows and hands us the kept set; stage each one via
+    // the existing public AddItem so the next user-driven Save INSERTs them.
+    private void OnTakeoffItemsCommitted(List<FTakeoff.TakeoffItemRow> rows)
+    {
+        if (rows == null || rows.Count == 0) return;
+        foreach (var r in rows)
+        {
+            AddItem(r.Assembly, r.AssemblyDescription, r.Model,
+                r.Phase, r.Item, 0, r.Description,
+                r.OrderQty, r.OrderUOM, r.TakeoffQty, r.TakeoffUOM,
+                r.ConversionFactor, r.RoundTo, (int)r.RoundDir, (int)r.WastePercent,
+                r.POIndex, r.Notes);
+        }
+    }
+
+    // ── AddItem (called from takeoff) ────────────────────────────────────
+    public void AddItem(string assembly, string assemblyDescription, string model,
+        string phase, string item, long sequence, string description,
+        double orderQty, string orderUOM, double takeoffQty, string takeoffUOM,
+        double conversionFactor, double roundTo, int roundDir, int wastePercent,
+        string poIndex, string notes)
+    {
+        var newRow = new IntersectItemRow
+        {
+            ItemID = 0,
+            AssemblyID = mAssemblyID,
+            AssemblyDesc = mAssemblyDesc,
+            Phase = phase,
+            Item = item,
+            ItemDesc = description,
+            TakeoffQty = takeoffQty,
+            ConversionFactor = conversionFactor,
+            OrderQty = orderQty,
+            TakeoffUOM = takeoffUOM,
+            OrderUOM = orderUOM,
+            POIndex = poIndex,
+            Notes = "",
+            WastePercent = wastePercent,
+            RoundDir = roundDir,
+            RoundTo = roundTo,
+            RowState = "new"
+        };
+        ItemsData.Add(newRow);
+        Dirty = true;
+        StateHasChanged();
+    }
+
+    // ── Items-grid context menu: Edit Item Chart / Attachments (HHM-573) ────
+    // Port of FTakeoff's HHM-547 items-grid menu (FTakeoff.razor
+    // OnItemsGridContextMenu / OnEditItemChartClick / OnAttachmentsClick).
+    // VB6 FIntersection.frm:551 (gItems_BeforeMouseDown) popped only the header
+    // column menu with Attachments:=False, but HHM-547 established the product
+    // pattern of offering FMain.mnuAssemblyItemsSub's Edit Item Chart
+    // (mcITEM_EDITITEMCHART) and Attachments (mcITEM_VIEWFILES) on items grids.
+    private bool _showItemsGridMenu;
+    private double _itemsGridMenuX, _itemsGridMenuY;
+    // FItemChart modal visibility flag; ChartName preload comes from the row.
+    private bool _showItemChartModal;
+    private string? _editItemChartName;
+    // FAttachments host for the "Attachments…" entry.
+    private FAttachments? attachmentsDialog;
+
+    private void OnItemsGridContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        // Suppressed while the grid is empty, matching FTakeoff's convention.
+        if (VisibleItemsData.Count == 0) return;
+        _itemsGridMenuX = e.ClientX;
+        _itemsGridMenuY = e.ClientY;
+        _showItemsGridMenu = true;
+    }
+
+    // FTakeoff SelectedItemsOrCurrent() adapted to FIntersection's row model:
+    // grid multi-selection first, then the tracked SelectedItemRow, then the
+    // first visible row — never a "delete"-marked row.
+    private List<IntersectItemRow> SelectedItemsOrCurrent()
+    {
+        var sel = ItemsGrid?.GetSelectedRecords()?.Where(r => r.RowState != "delete").ToList()
+                  ?? new List<IntersectItemRow>();
+        if (sel.Count == 0)
+        {
+            if (SelectedItemRow != null && SelectedItemRow.RowState != "delete")
+                sel.Add(SelectedItemRow);
+            else if (VisibleItemsData.Count > 0)
+                sel.Add(VisibleItemsData[0]);
+        }
+        return sel;
+    }
+
+    private void OnItemChartModalClosed()
+    {
+        _showItemChartModal = false;
+        _editItemChartName = null;
+    }
+
+    /// <summary>VB6 mnuAssemblyItemsSub(mcITEM_EDITITEMCHART) — FItemChart.Edit(row
+    /// ItemChart). Opens the FItemChart modal preloaded with the selected item's
+    /// item-chart name (HHM-573, same host pattern as FTakeoff HHM-547).</summary>
+    private void OnEditItemChartClick()
+    {
+        _showItemsGridMenu = false;
+        var selected = SelectedItemsOrCurrent().FirstOrDefault();
+        if (selected == null)
+        {
+            Notifications.Info("Select an item row first.");
+            return;
+        }
+        _editItemChartName = selected.ItemChart ?? "";
+        _showItemChartModal = true;
+        StateHasChanged();
+    }
+
+    /// <summary>VB6 mnuAssemblyItemsSub(mcITEM_VIEWFILES) — EditAttachments for the
+    /// selected item. VB6 (FAssembly.frm:4139) uses the item-level object id
+    /// "ITM~{phase}~{item}" against the "Item Database" folder; we build the same
+    /// shape and open the shared FAttachments host (HHM-573).</summary>
+    private async Task OnAttachmentsClick()
+    {
+        _showItemsGridMenu = false;
+        var selected = SelectedItemsOrCurrent().FirstOrDefault();
+        if (selected == null)
+        {
+            Notifications.Info("Select an item row first.");
+            return;
+        }
+        if (attachmentsDialog == null) return;
+
+        var objectId = $"ITM~{selected.Phase}~{selected.Item}";
+        await attachmentsDialog.ShowForm(
+            "Item Database",
+            (objectId, objectId));
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    private double RoundTo(double value, double roundTo, int roundDir)
+    {
+        if (roundTo <= 0) return value;
+        return roundDir switch
+        {
+            1 => Math.Ceiling(value / roundTo) * roundTo,   // Round up
+            -1 => Math.Floor(value / roundTo) * roundTo,    // Round down
+            _ => Math.Round(value / roundTo) * roundTo       // Normal rounding
+        };
+    }
+
+    private double SafeDouble(object? val) =>
+        val != null && val != DBNull.Value ? Convert.ToDouble(val) : 0;
+
+    private int SafeInt(object? val) =>
+        val != null && val != DBNull.Value ? Convert.ToInt32(val) : 0;
+
+    // ── Model Classes ────────────────────────────────────────────────────
+    public class IntersectionItem
+    {
+        public long IntersectID { get; set; }
+        public string Description { get; set; } = "";
+        public bool IsNewRow { get; set; }
+    }
+
+    // === Grid Layout Helpers (Assemblies) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedAssembliesGridLayout()
+        => _assembliesGrid.GetOrdered();
+
+    // === Grid Layout Helpers (Items) ===
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedItemsGridLayout()
+        => _itemsGrid.GetOrdered();
+
+    private async Task OnAssembliesColumnsChosenAsync(ChooseColumnsResult result)
+    {
+        if (!HasAssembliesGridLayout || result?.Columns == null) return;
+        await GridLayoutPersister.MergeAndSaveChooseColumnsAsync(
+            GridLayoutSvc, "FIntersection", "gAssemblies", instanceKey: null,
+            gAssembliesLayout, result, ResolveAssembliesGridField);
+        await GridLayoutSvc.FlushPendingGridLayoutsAsync();
+        _assembliesGrid.BumpVersion();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnAssembliesLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (!HasAssembliesGridLayout || snapshot == null) return;
+        await GridLayoutPersister.MergeAndSaveAsync(
+            GridLayoutSvc, "FIntersection", "gAssemblies", instanceKey: null,
+            gAssembliesLayout, snapshot, ResolveAssembliesGridField);
+        _assembliesGrid.BumpVersion();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnItemsColumnsChosenAsync(ChooseColumnsResult result)
+    {
+        if (!HasItemsGridLayout || result?.Columns == null) return;
+        await GridLayoutPersister.MergeAndSaveChooseColumnsAsync(
+            GridLayoutSvc, "FIntersection", "gItems", instanceKey: null,
+            gItemsLayout, result, ResolveItemsGridField);
+        await GridLayoutSvc.FlushPendingGridLayoutsAsync();
+        _itemsGrid.BumpVersion();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnItemsLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (!HasItemsGridLayout || snapshot == null) return;
+        await GridLayoutPersister.MergeAndSaveAsync(
+            GridLayoutSvc, "FIntersection", "gItems", instanceKey: null,
+            gItemsLayout, snapshot, ResolveItemsGridField);
+        _itemsGrid.BumpVersion();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string ResolveAssembliesGridField(string layoutField)
+        => _assembliesGrid.ResolveField(layoutField);
+
+    private string ResolveItemsGridField(string layoutField)
+        => _itemsGrid.ResolveField(layoutField);
+
+    // ── HHM-528: Insert-a-Column lists ONLY legacy-captioned columns ─────
+    // VB6's Choose Columns dialog (FColumns.frm:367,
+    // `If .ColKey(i) <> "" And .TextMatrix(0, i) <> ""`) lists a column only when it has a
+    // caption, so the caption-less utility key columns (AssemblyID / ItemID) never appear.
+    // That rule now lives in GridLayoutPresenter.GetChooseColumnsSchema() for every grid —
+    // this page's local copy of the filter was removed as redundant.
+    private IEnumerable<ChooseColumnDescriptor>? GetAssembliesChooseColumnsSchema()
+        => _assembliesGrid.GetChooseColumnsSchema();
+
+    private IEnumerable<ChooseColumnDescriptor>? GetItemsChooseColumnsSchema()
+        => _itemsGrid.GetChooseColumnsSchema();
+
+    // HHM-528: the description list offers only its single legacy column —
+    // VB6 gIntersections holds just Description plus a caption-less
+    // intersectid key column that FColumns.frm:367 filters out. Without this
+    // schema the dialog would fall back to the rendered children and list the
+    // IntersectID / IsNewRow utility columns.
+    private static readonly ChooseColumnDescriptor[] IntersectionsChooseColumns =
+    {
+        new() { Field = nameof(IntersectionItem.Description), Header = "Intersection Description", Visible = true }
+    };
+
+    private static bool IsItemFieldEditable(string field)
+    {
+        return field switch
+        {
+            "ItemID" or "AssemblyID" or "RowState" or "AssemblyDesc" or "Phase" or "Item" or "ItemDesc"
+                or "TakeoffUOM" or "OrderUOM" => false,
+            "TakeoffQty" or "ConversionFactor" or "OrderQty" or "POIndex" or "Notes" => true,
+            // VB6 gItems_BeforeEdit (FIntersection.frm:540-549) cancels the
+            // edit for every column other than TakeoffQty / OrderQty /
+            // ConversionFactor / Notes / POIndex — so the layout-driven
+            // WastePercent / RoundTo / RoundDir columns stay read-only.
+            _ => false
+        };
+    }
+
+    // === Shared Grid Helpers ===
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    public class AssemblyRow
+    {
+        public long AssemblyID { get; set; }
+        public string AssemblyType { get; set; } = "";
+        public string Community { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Option { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+    public class IntersectItemRow
+    {
+        public long ItemID { get; set; }
+        public long AssemblyID { get; set; }
+        public string AssemblyDesc { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string ItemDesc { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public double OrderQty { get; set; }
+        public double ConversionFactor { get; set; } = 1;
+        public double WastePercent { get; set; }
+        public int RoundDir { get; set; }
+        public double RoundTo { get; set; }
+        public string TakeoffUOM { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string Notes { get; set; } = "";
+        // HHM-573: chart name for the Edit Item Chart… context-menu entry; sourced
+        // from tblDBAssemblyDetails (the intersect-items table has no ItemChart
+        // column — VB6 FIntersection.frm:915 insert list).
+        public string ItemChart { get; set; } = "";
+        public string RowState { get; set; } = "CLEAN";
+    }
+
+}

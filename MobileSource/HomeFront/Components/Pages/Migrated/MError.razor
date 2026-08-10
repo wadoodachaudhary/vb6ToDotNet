@@ -1,0 +1,137 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@* MError.razor - Error handling service component converted from VB6 MError.bas *@
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.IO
+@using System.Reflection
+@using Microsoft.JSInterop
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject ILogger<MError> Logger
+@inject NotificationService Notifications
+
+@code {
+    /// <summary>
+    /// Application product name (mirrors VB6 App.ProductName)
+    /// </summary>
+    private static string ProductName => Assembly.GetExecutingAssembly().GetName().Name ?? "HomeFront";
+
+    /// <summary>
+    /// Application version string (mirrors VB6 App.Major.Minor.Revision)
+    /// </summary>
+    private static string VersionString
+    {
+        get
+        {
+            var version = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0, 0);
+            return $"{version.Major}.{version.Minor:D2}.{version.Build:D4}";
+        }
+    }
+
+    /// <summary>
+    /// Application base path for error log file (mirrors VB6 App.Path)
+    /// </summary>
+    private static string AppPath => AppDomain.CurrentDomain.BaseDirectory;
+
+    /// <summary>
+    /// Handles an error by logging it and displaying a message to the user.
+    /// Converted from VB6: Public Sub errHandler(Source As String, Optional sql As String)
+    /// </summary>
+    /// <param name="source">The source method/location where the error occurred</param>
+    /// <param name="ex">The exception that was caught</param>
+    /// <param name="sql">Optional SQL statement that was being executed</param>
+    public async Task ErrHandler(string source, Exception ex, string sql = "")
+    {
+        var errNumber = ex.HResult;
+        var errSource = ex.Source ?? "";
+        var errDesc = ex.Message;
+
+        // Log the error to file
+        LogError(source, errNumber, errDesc, sql);
+
+        // Build the error message (mirrors VB6 string concatenation)
+        var s = "";
+        s += ProductName + " has encountered a problem and cannot complete the requested action.\n";
+        s += "\n";
+        s += "---ERROR----------------------------------------------------\n";
+        s += errSource + "\n";
+        s += errDesc + "   (" + errNumber + ")\n";
+        s += "\n";
+        s += "---SOURCE---------------------------------------------------\n";
+        s += source + "()\n";
+
+        if (!string.IsNullOrEmpty(sql))
+        {
+            s += "\n";
+            s += "---DETAILS----------------------------------------------\n";
+            s += sql + "\n";
+        }
+
+        var title = ProductName + " (version " + VersionString + ")";
+
+        // Display error to user via JS alert (mirrors VB6 MsgBox vbCritical)
+        try
+        {
+            Notifications.Error(title + "\n\n" + s);
+        }
+        catch
+        {
+            // If JSRuntime is not available (e.g., during prerendering), log to console
+            Console.Error.WriteLine($"[{title}] {s}");
+        }
+    }
+
+    /// <summary>
+    /// Logs an error to the error.txt file.
+    /// Converted from VB6: Public Sub LogError(Source As String, Number As Long, Description As String, Optional sql As String)
+    /// Uses On Error Resume Next equivalent (try/catch with silent failure).
+    /// </summary>
+    /// <param name="source">The source method/location where the error occurred</param>
+    /// <param name="number">The error number</param>
+    /// <param name="description">The error description</param>
+    /// <param name="sql">Optional SQL statement that was being executed</param>
+    public static void LogError(string source, int number, string description, string sql = "")
+    {
+        // VB6: On Error Resume Next — silently ignore any file I/O errors
+        try
+        {
+            var errorLogPath = Path.Combine(AppPath, "error.txt");
+
+            // Mirrors VB6: Open App.Path & "\error.txt" For Append As #fn
+            // Print #fn, Now & vbTab & Source & vbTab & Number & vbTab & Description & vbTab & sql
+            var logLine = $"{DateTime.Now}\t{source}\t{number}\t{description}\t{sql}";
+
+            File.AppendAllText(errorLogPath, logLine + Environment.NewLine);
+        }
+        catch
+        {
+            // Silent failure — mirrors VB6 On Error Resume Next
+            // Optionally write to console as a fallback
+            try
+            {
+                Console.Error.WriteLine($"[LogError Fallback] {DateTime.Now}\t{source}\t{number}\t{description}\t{sql}");
+            }
+            catch
+            {
+                // Absolute silent failure
+            }
+        }
+    }
+
+    /// <summary>
+    /// Overload accepting an Exception directly for convenience.
+    /// </summary>
+    public static void LogError(string source, Exception ex, string sql = "")
+    {
+        LogError(source, ex.HResult, ex.Message, sql);
+    }
+}

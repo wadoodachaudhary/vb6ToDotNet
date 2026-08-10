@@ -1,0 +1,872 @@
+@page "/po-price-change-wizard"
+@page "/po-price-change-wizard/{PONumber}"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ILogger<FPOPriceChangeWiz> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Purchase Order Price Update Wizard - HomeFront</PageTitle>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Processing...</div>
+    </div>
+}
+
+<div class="wizard-container">
+    <!-- Wizard Header -->
+    <div class="wiz-header">
+        <div class="wiz-header-text">
+            <h2>Update Purchase Orders Prices</h2>
+            <p>The PO Price Update wizard will help you change the vendor costs on purchase orders</p>
+        </div>
+    </div>
+
+    <!-- Step Indicators -->
+    <div class="step-indicators">
+        <span class="step-indicator @(CurrentStep == 0 ? "active" : CurrentStep > 0 ? "completed" : "")">1. Filter POs</span>
+        <span class="step-indicator @(CurrentStep == 1 ? "active" : CurrentStep > 1 ? "completed" : "")">2. Verify POs</span>
+        <span class="step-indicator @(CurrentStep == 2 ? "active" : "")">3. Verify Rates</span>
+    </div>
+
+    <!-- Wizard Body -->
+    <div class="wiz-body">
+        @switch (CurrentStep)
+        {
+            case 0:
+                @* ── Step 0: Filter Purchase Orders ── *@
+                <div class="step-header">
+                    <div class="step-icon">✓</div>
+                    <div>
+                        <div class="step-title">Filter Purchase Orders</div>
+                        <div class="step-description">
+                            Use the fields below to filter the purchase orders that you want to update.
+                            You can use wildcard characters (%) to broaden your search.
+                            Leave fields blank to include all values.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-form">
+                    <div class="filter-row">
+                        <label>@CommunityLabel</label>
+                        <TextBoxControl @bind-Value="FilterCommunity" CssClass="filter-input" Placeholder="Filter by community..." />
+                    </div>
+                    <div class="filter-row">
+                        <label>Job</label>
+                        <TextBoxControl @bind-Value="FilterJob" CssClass="filter-input" Placeholder="Filter by job..." />
+                    </div>
+                    <div class="filter-row">
+                        <label>Vendor</label>
+                        <TextBoxControl @bind-Value="FilterVendor" CssClass="filter-input" Placeholder="Filter by vendor..." />
+                    </div>
+                    <div class="filter-row">
+                        <label>PO Group</label>
+                        <TextBoxControl @bind-Value="FilterPOGroup" CssClass="filter-input" Placeholder="Filter by PO group..." />
+                    </div>
+                    <div class="filter-row">
+                        <label>PO Index</label>
+                        <TextBoxControl @bind-Value="FilterPOIndex" CssClass="filter-input" Placeholder="Filter by PO index..." />
+                    </div>
+                    <div class="filter-row">
+                        <label>PO Number</label>
+                        <TextBoxControl @bind-Value="FilterPONumber" CssClass="filter-input" Placeholder="Filter by PO number..." />
+                    </div>
+                </div>
+                break;
+
+            case 1:
+                @* ── Step 1: Verify POs ── *@
+                <div class="step-header">
+                    <div class="step-icon">✓</div>
+                    <div>
+                        <div class="step-title">Verify which POs will be updated</div>
+                        <div class="step-description">
+                            Review the list below to verify the purchase orders you have selected.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-section">
+                    <GridControl @ref="POsGrid"
+                            TValue="PORow"
+                            DataSource="@POsData"
+                            AllowSorting="true"
+                            AllowResizing="true"
+                            AllowSelection="true"
+                            AllowFiltering="true"
+                            EnableHover="true"
+                            Height="500px"
+                            FilterSettingsRef="@filterSettings"
+                            PageSettingsRef="@pageSettings"
+                            SelectionSettingsRef="@selectionSettings">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(PORow.Community)" HeaderText="@CommunityLabel" Width="100px" />
+                            <GridColumn Field="@nameof(PORow.CommunityDesc)" HeaderText="@(CommunityLabel + " Desc")" Width="150px" />
+                            <GridColumn Field="@nameof(PORow.Job)" HeaderText="Job" Width="80px" />
+                            <GridColumn Field="@nameof(PORow.JobDesc)" HeaderText="Job Desc" Width="150px" />
+                            <GridColumn Field="@nameof(PORow.Vendor)" HeaderText="Vendor" Width="80px" />
+                            <GridColumn Field="@nameof(PORow.VendorDesc)" HeaderText="Vendor Desc" Width="150px" />
+                            <GridColumn Field="@nameof(PORow.POGroup)" HeaderText="PO Group" Width="90px" />
+                            <GridColumn Field="@nameof(PORow.POIndex)" HeaderText="PO Index" Width="90px" />
+                            <GridColumn Field="@nameof(PORow.POIndexDescription)" HeaderText="PO Index Desc" Width="150px" />
+                            <GridColumn Field="@nameof(PORow.PONumber)" HeaderText="PO Number" Width="100px" />
+                            <GridColumn Field="@nameof(PORow.PODate)" HeaderText="PO Date" Width="100px" Format="d" Type="ColumnType.Date" />
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+
+            case 2:
+                @* ── Step 2: Verify Item Rates ── *@
+                <div class="step-header">
+                    <div class="step-icon">✓</div>
+                    <div>
+                        <div class="step-title">Verify the new item rates</div>
+                        <div class="step-description">
+                            Review the items below. The NewRate column shows the updated rate from the price database.
+                            You can edit the NewRate column to override the suggested price. Changed prices are shown in red.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="category-row">
+                    <label>Variance Category</label>
+                    <DropDownListControl TValue="string" TItem="ComboItem"
+                                         DataSource="@CategoryList"
+                                         ValueFieldName="Value"
+                                         TextFieldName="Text"
+                                         Placeholder="-- Select --"
+                                         @bind-Value="SelectedCategory"
+                                         Width="200px" />
+                </div>
+
+                <div class="grid-section">
+                    <GridControl @ref="ItemsGrid"
+                            TValue="ItemRow"
+                            DataSource="@ItemsData"
+                            AllowSorting="true"
+                            AllowResizing="true"
+                            AllowSelection="true"
+                            AllowFiltering="true"
+                            EnableHover="true"
+                            Height="450px"
+                            FilterSettingsRef="@filterSettings"
+                            PageSettingsRef="@pageSettings"
+                            SelectionSettingsRef="@selectionSettings"
+                            EditSettingsRef="@editSettings"
+                            EventsRef="@itemGridEvents">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(ItemRow.Vendor)" HeaderText="Vendor" Width="80px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.Name)" HeaderText="Name" Width="150px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.Phase)" HeaderText="Phase" Width="80px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.Item)" HeaderText="Item" Width="80px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.Description)" HeaderText="Description" Width="200px" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.OrigRate)" HeaderText="Orig Rate" Width="100px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="false" />
+                            <GridColumn Field="@nameof(ItemRow.NewRate)" HeaderText="New Rate" Width="100px" Format="N2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var row = (ItemRow)context;
+                                        var isChanged = row.NewRate != row.OrigRate;
+                                    }
+                                    <span class="@(isChanged ? "price-changed" : "")">@row.NewRate.ToString("N2")</span>
+                                </Template>
+                            </GridColumn>
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+        }
+    </div>
+
+    <!-- Wizard Footer -->
+    <div class="wiz-footer">
+        <ButtonControl CssClass="wiz-btn" OnClick="OnCancelClick">&Cancel</ButtonControl>
+        <ButtonControl CssClass="wiz-btn" Disabled="@(CurrentStep == 0)" OnClick="OnBackClick">&lt; &Back</ButtonControl>
+        <ButtonControl CssClass="wiz-btn" Disabled="@(CurrentStep >= MaxStep)" OnClick="OnNextClick">&Next &gt;</ButtonControl>
+        <ButtonControl CssClass="wiz-btn wiz-btn-primary" Disabled="@(CurrentStep != MaxStep)" OnClick="OnCommitClick">Commi&t</ButtonControl>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    [Parameter] public string? PONumber { get; set; }
+
+    private const string SRCFILE = "FPOPriceChangeWiz::";
+
+    // Database
+private string LoginID = "admin";
+
+    // UI State
+    private bool IsLoading = false;
+    private int CurrentStep = 0;
+    private int MaxStep = 2;
+    private string CommunityLabel = "Community";
+    private string mPONumber = "";
+
+    // Filter fields (Step 0)
+    private string FilterCommunity = "";
+    private string FilterJob = "";
+    private string FilterVendor = "";
+    private string FilterPOGroup = "";
+    private string FilterPOIndex = "";
+    private string FilterPONumber = "";
+
+    // Category (Step 2)
+    private string SelectedCategory = "";
+    private List<ComboItem> CategoryList = new();
+
+    // Grid data
+    private List<PORow> POsData = new();
+    private List<ItemRow> ItemsData = new();
+
+    // Grid refs
+    private GridControl<PORow>? POsGrid;
+    private GridControl<ItemRow>? ItemsGrid;
+
+    // Grid settings
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private PageSettings pageSettings = new() { PageSize = 100 };
+    private SelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row
+    };
+    private EditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private GridControlEvents<ItemRow> itemGridEvents = new();
+
+    // App options cache
+    private bool PostPOQtyToAccounting = false;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        itemGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ItemRow>>(this, OnItemCellSaved);
+
+        await LoadSettings();
+        await LoadCustomDescriptions();
+        await LoadCategories();
+
+        if (!string.IsNullOrEmpty(PONumber))
+        {
+            mPONumber = PONumber;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrEmpty(mPONumber))
+        {
+            FilterPONumber = mPONumber;
+            mPONumber = "";
+            CurrentStep = 2;
+            await SetCurrentFrame(2);
+            StateHasChanged();
+        }
+    }
+
+    // ── Settings ─────────────────────────────────────────────────────────
+    private async Task LoadSettings()
+    {
+        try
+        {
+            var dt = await db.QueryAsync(
+                "SELECT TOP 1 ISNULL(PostPOQtyToAccounting, 0) AS PostPOQtyToAccounting FROM system_setup WHERE id = @DivisionID",
+                new { SessionState.DivisionID });
+            if (dt.Any())
+            {
+                PostPOQtyToAccounting = dt.First()["PostPOQtyToAccounting"]?.ToString() == "True" ||
+                                        dt.First()["PostPOQtyToAccounting"]?.ToString() == "1";
+            }
+        }
+        catch { /* non-critical */ }
+    }
+
+    private async Task LoadCustomDescriptions()
+    {
+        try
+        {
+            var label = await db.ExecuteScalarAsync<string>(
+                "SELECT ISNULL(NULLIF(custom_description,''),'Community') FROM customdescriptions WHERE item='Community'");
+            if (!string.IsNullOrEmpty(label))
+                CommunityLabel = label;
+        }
+        catch { /* non-critical */ }
+    }
+
+    private async Task LoadCategories()
+    {
+        try
+        {
+            var sql = @"
+                SELECT ISNULL(category + ' - ' + description, category) AS Text, category AS Value, isvariance
+                FROM standardcategories
+                WHERE divisionid = @DivisionID
+                ORDER BY isvariance DESC, 1";
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            CategoryList = rows.Select(r => new ComboItem
+            {
+                Text = r["Text"]?.ToString() ?? "",
+                Value = r["Value"]?.ToString() ?? ""
+            }).ToList();
+
+            // Try to restore last used category
+            // VB6 FPOPriceChangeWiz: s = HFApp.Options.ValueByName("ChangeWizCategory") (Form_Load) → SetListIndex(cboCategory,,s)
+            // ValueByName falls back to AppOptions (division override wins): IN(0,@Div) ORDER BY divisionid DESC.
+            try
+            {
+                var savedCat = await db.ExecuteScalarAsync<string>(
+                    @"SELECT TOP 1 ISNULL(OptionValue,'') FROM AppOptions
+                      WHERE OptionName=@OptionName AND ISNULL(divisionid,0) IN (0, @DivisionID)
+                      ORDER BY divisionid DESC",
+                    new { OptionName = "ChangeWizCategory", DivisionID = SessionState.DivisionID });
+                if (!string.IsNullOrEmpty(savedCat) && CategoryList.Any(c => c.Value == savedCat))
+                    SelectedCategory = savedCat;
+                else if (CategoryList.Any())
+                    SelectedCategory = CategoryList.First().Value;
+            }
+            catch
+            {
+                if (CategoryList.Any())
+                    SelectedCategory = CategoryList.First().Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadCategories error");
+
+        }
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────
+    private async Task OnCancelClick()
+    {
+        await SaveCategoryPreference();
+        ClosePage();
+    }
+
+    private async Task OnBackClick()
+    {
+        if (CurrentStep > 0)
+        {
+            CurrentStep--;
+            await SetCurrentFrame(CurrentStep);
+        }
+    }
+
+    private async Task OnNextClick()
+    {
+        if (CurrentStep < MaxStep)
+        {
+            CurrentStep++;
+            await SetCurrentFrame(CurrentStep);
+        }
+    }
+
+    private async Task OnCommitClick()
+    {
+        if (await ValidateData())
+        {
+            await SaveData();
+            await SaveCategoryPreference();
+            ClosePage();
+        }
+    }
+
+    // ── Frame Loading ────────────────────────────────────────────────────
+    private async Task SetCurrentFrame(int step)
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            switch (step)
+            {
+                case 0:
+                    POsData = new();
+                    ItemsData = new();
+                    break;
+
+                case 1:
+                    await LoadPOs();
+                    break;
+
+                case 2:
+                    await LoadItems();
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}SetCurrentFrame error");
+
+            Notifications.Error($"Error: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Load POs (Step 1) ────────────────────────────────────────────────
+    private async Task LoadPOs()
+    {
+        var sql = BuildQueryPOs();
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+
+        POsData = rows.Select(r => new PORow
+        {
+            Community = r["Community"]?.ToString() ?? "",
+            CommunityDesc = r["CommunityDesc"]?.ToString() ?? "",
+            Job = r["Job"]?.ToString() ?? "",
+            JobDesc = r["JobDesc"]?.ToString() ?? "",
+            Vendor = r["Vendor"]?.ToString() ?? "",
+            VendorDesc = r["VendorDesc"]?.ToString() ?? "",
+            POGroup = r["POGroup"]?.ToString() ?? "",
+            POIndex = r["POIndex"]?.ToString() ?? "",
+            POIndexDescription = r["POIndexDescription"]?.ToString() ?? "",
+            PONumber = r["PONumber"]?.ToString() ?? "",
+            PODate = r["PODate"] != null && r["PODate"] != DBNull.Value
+                ? Convert.ToDateTime(r["PODate"])
+                : null
+        }).ToList();
+    }
+
+    // ── Load Items (Step 2) ──────────────────────────────────────────────
+    private async Task LoadItems()
+    {
+        var sql = BuildQueryItems();
+        var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+
+        ItemsData = rows.Select(r =>
+        {
+            var origRate = SafeDecimal(r["OrigRate"]);
+            var newRate = r["NewRate"] != null && r["NewRate"] != DBNull.Value && r["NewRate"]?.ToString() != ""
+                ? Convert.ToDecimal(r["NewRate"])
+                : origRate;
+
+            return new ItemRow
+            {
+                Vendor = r["Vendor"]?.ToString() ?? "",
+                Name = r["Name"]?.ToString() ?? "",
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                OrigRate = origRate,
+                NewRate = newRate
+            };
+        }).ToList();
+    }
+
+    // ── Query Builders ───────────────────────────────────────────────────
+    private string BuildQueryPOs()
+    {
+        var s = @"
+            SELECT p.Community, p.CommunityDesc, p.Job, p.JobDesc,
+                   p.Vendor, p.VendorDesc, p.POGroup, p.POIndex,
+                   p.POIndexDescription, p.PONumber,
+                   CAST(p.PODate AS DATE) AS PODate
+            FROM purchaseorders p
+            LEFT JOIN invoiceitems i ON p.divisionid = i.divisionid AND p.ponumber = i.commitment
+            WHERE i.invoice IS NULL
+              AND p.IsRepriced = 0
+              AND p.Cancelled = 0
+              AND p.DivisionID = @DivisionID";
+        s += BuildWhereClause("p");
+        s += "\nORDER BY 1,2,3,4,5,6,7";
+        return s;
+    }
+
+    private string BuildQueryItems()
+    {
+        var s = @"
+            SELECT DISTINCT
+                v.povendor AS Vendor, v.povendorname AS Name,
+                i.Phase, i.Item, i.Description,
+                i.porate AS OrigRate,
+                dbo.Purch_GetItemRate(0, 0, v.Community, v.CommunityPhase, v.Assembly,
+                    CASE WHEN v.assemblytype = 0 OR v.assemblytype = 2 THEN v.model ELSE '' END,
+                    '', v.EstPhase, v.EstItem, v.Sequence, v.POVendor, GETDATE(), i.divisionid) AS NewRate
+            FROM EstimateItems i
+            JOIN EstimatedItems v ON (i.EstItemID = v.EstItemID)
+            JOIN PurchaseOrders p ON i.divisionid = p.divisionid AND i.ponumber = p.ponumber
+            LEFT JOIN invoiceitems ii ON p.divisionid = ii.divisionid AND p.ponumber = ii.commitment
+            WHERE ii.invoice IS NULL
+              AND p.IsRepriced = 0
+              AND ISNULL(i.RowType, '') NOT IN ('Original - Cancelled', 'Original - Reversal')
+              AND ISNULL(i.pochangeordernumber, '') = ''
+              AND p.Cancelled = 0
+              AND p.DivisionID = @DivisionID";
+        s += BuildWhereClause("v");
+        return s;
+    }
+
+    private string BuildWhereClause(string alias)
+    {
+        var s = "";
+        var a = string.IsNullOrEmpty(alias) ? "" : alias + ".";
+
+        if (!string.IsNullOrWhiteSpace(FilterCommunity))
+            s += $"\n  AND ({a}community LIKE '{EscapeSql(FilterCommunity)}' OR {a}communitydesc LIKE '{EscapeSql(FilterCommunity)}')";
+
+        if (!string.IsNullOrWhiteSpace(FilterPOIndex))
+            s += $"\n  AND ({a}poindex LIKE '{EscapeSql(FilterPOIndex)}' OR {a}poindexdescription LIKE '{EscapeSql(FilterPOIndex)}')";
+
+        if (!string.IsNullOrWhiteSpace(FilterPOGroup))
+            s += $"\n  AND ISNULL({a}pogroup, '') LIKE '{EscapeSql(FilterPOGroup)}'";
+
+        if (!string.IsNullOrWhiteSpace(FilterPONumber))
+            s += $"\n  AND {a}ponumber LIKE '{EscapeSql(FilterPONumber)}'";
+
+        if (alias == "v")
+        {
+            // EstimatedItems view uses job_no / povendor
+            if (!string.IsNullOrWhiteSpace(FilterJob))
+                s += $"\n  AND ({a}job_no LIKE '{EscapeSql(FilterJob)}' OR {a}jobdesc LIKE '{EscapeSql(FilterJob)}')";
+            if (!string.IsNullOrWhiteSpace(FilterVendor))
+                s += $"\n  AND ({a}povendor LIKE '{EscapeSql(FilterVendor)}' OR {a}povendorname LIKE '{EscapeSql(FilterVendor)}')";
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(FilterJob))
+                s += $"\n  AND ({a}job LIKE '{EscapeSql(FilterJob)}' OR {a}jobdesc LIKE '{EscapeSql(FilterJob)}')";
+            if (!string.IsNullOrWhiteSpace(FilterVendor))
+                s += $"\n  AND ({a}vendor LIKE '{EscapeSql(FilterVendor)}' OR {a}vendordesc LIKE '{EscapeSql(FilterVendor)}')";
+        }
+
+        return s;
+    }
+
+    // ── Validation ───────────────────────────────────────────────────────
+    private async Task<bool> ValidateData()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedCategory))
+        {
+            Notifications.Info("Variance category is required");
+            return false;
+        }
+
+        var changedCount = ItemsData.Count(i => i.NewRate != i.OrigRate);
+        if (changedCount < 1)
+        {
+            Notifications.Warning("No prices have changed");
+            return false;
+        }
+
+        return true;
+    }
+
+    // ── Save Data ────────────────────────────────────────────────────────
+    private async Task SaveData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var sessionKey = LoginID + DateTime.Now.ToString("--yyyyMMddHHmmss");
+
+            foreach (var item in ItemsData)
+            {
+                var priceDelta = item.NewRate - item.OrigRate;
+                if (priceDelta == 0) continue;
+
+                // Mark POs with the changeorderaudit tag
+                var updateSql = BuildUpdatePOMasterSql(sessionKey, item);
+                await db.ExecuteAsync(updateSql);
+
+                // Create new items for price changes
+                var insertSql = BuildInsertEstimateItemsSql(sessionKey, item, priceDelta);
+                await db.ExecuteAsync(insertSql);
+            }
+
+            // Save change order records
+            await SaveChangeOrder(sessionKey);
+
+            // Check if BuildPro send is enabled
+            // VB6 FPOPriceChangeWiz: If HFApp.Options.ValueByName("BuildProSendPOsImmediately") = "true" Then
+            // ValueByName falls back to AppOptions (division override wins): IN(0,@Div) ORDER BY divisionid DESC.
+            try
+            {
+                var sendImmediately = await db.ExecuteScalarAsync<string>(
+                    @"SELECT TOP 1 ISNULL(OptionValue,'') FROM AppOptions
+                      WHERE OptionName=@OptionName AND ISNULL(divisionid,0) IN (0, @DivisionID)
+                      ORDER BY divisionid DESC",
+                    new { OptionName = "BuildProSendPOsImmediately", DivisionID = SessionState.DivisionID });
+                if (sendImmediately?.ToLower() == "true")
+                {
+                    var poRows = await db.QueryAsync(
+                        $"SELECT ponumber FROM pomaster WHERE ChangeOrderAudit = '{EscapeSql(sessionKey)}'");
+                    // SendBuildProPOs would be called here
+                }
+            }
+            catch { /* non-critical */ }
+
+            Notifications.Error("POs have been updated");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}SaveData error");
+
+            Notifications.Error($"Error saving data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string BuildUpdatePOMasterSql(string sessionKey, ItemRow item)
+    {
+        var whereClause = BuildWhereClause("v");
+        return $@"
+            UPDATE pm SET
+                datesenttobuildpro = NULL,
+                ChangeOrderAudit = '{EscapeSql(sessionKey)}'
+            FROM EstimateItems i
+            JOIN EstimateAssemblies a ON (i.EstAssemblyID = a.EstAssemblyID)
+            JOIN EstimatedItems v ON (i.EstItemID = v.EstItemID)
+            JOIN NextPOChangeOrders n ON (i.divisionid = n.divisionid AND i.ponumber = n.ponumber)
+            JOIN PurchaseOrders p ON i.divisionid = p.divisionid AND i.ponumber = p.ponumber
+            JOIN pomaster pm ON i.divisionid = pm.divisionid AND i.ponumber = pm.ponumber
+            LEFT JOIN invoiceitems ii ON p.divisionid = ii.divisionid AND p.ponumber = ii.commitment
+            WHERE ii.invoice IS NULL
+              AND p.Cancelled = 0
+              AND ISNULL(pm.ChangeOrderAudit, '') = ''
+              AND i.DivisionID = {SessionState.DivisionID}
+              {whereClause}
+              AND v.povendor = '{EscapeSql(item.Vendor)}'
+              AND i.phase = '{EscapeSql(item.Phase)}'
+              AND i.item = '{EscapeSql(item.Item)}'
+              AND i.description = '{EscapeSql(item.Description)}'
+              AND i.porate = {item.OrigRate}
+              AND ISNULL(i.RowType, '') NOT IN ('Original - Cancelled', 'Original - Reversal')";
+    }
+
+    private string BuildInsertEstimateItemsSql(string sessionKey, ItemRow item, decimal priceDelta)
+    {
+        var whereClause = BuildWhereClause("v");
+        var varianceCategory = PostPOQtyToAccounting ? "NULL" : $"'{EscapeSql(SelectedCategory)}'";
+        var priceDeltaStr = priceDelta.ToString("G");
+
+        return $@"
+            INSERT INTO estimateitems(
+                ChangeOrderAudit, ChangeOrderOrigEstItemID, POChangeOrderNumber, VarianceJCCategory,
+                CreatedDate, CreatedBy, ModifiedDate, ModifiedBy,
+                BudgetVendor, BudgetQty, BudgetTaxGroup, BudgetJCTaxRate, BudgetNJCTaxRate,
+                BudgetGenerated, BudgetPostingBatch, BudgetDeleted, BudgetOverridden, BudgetPostingDate,
+                BudgetRate, BudgetPretax, BudgetJCTax, BudgetNJCTax,
+                POVendor, POQty, POTaxGroup, POJCTaxRate, PONJCTaxRate, PONumber, ExcludeFromPO, PODeleted, POOverridden,
+                PORate, POPretax, POJCTax, PONJCTax,
+                POGenBatch, EstAssemblyID, POIndex, Phase, Item, Job, JCExtra, JCCostCode,
+                JCCategory, OriginalJCCategory,
+                SortOrder, Description, Comments, TakeoffQty, TakeoffUOM, ConversionFactor, OrderUOM,
+                Assembly, AssemblyDescription, Model, Location, RFP, Formula, Unit, BillingItemID, SalesQty, DivisionID,
+                RequestDetailID, Sequence,
+                WBS01, WBS02, WBS03, WBS04, WBS05, WBS06, WBS07, WBS08, WBS09, WBS10,
+                WBS11, WBS12, WBS13, WBS14, WBS15, WBS16, WBS17, WBS18, WBS19, WBS20,
+                WBS21, WBS22, WBS23, WBS24, WBS25, WBS26, WBS27, WBS28, WBS29, WBS30,
+                WBS31, WBS32, WBS33, WBS34, WBS35, WBS36, WBS37, WBS38, WBS39, WBS40)
+            SELECT
+                pm.ChangeOrderAudit,
+                i.EstItemID,
+                n.NextChangeNumber,
+                {varianceCategory},
+                GETDATE(), '{EscapeSql(LoginID)}', GETDATE(), '{EscapeSql(LoginID)}',
+                i.BudgetVendor, i.BudgetQty, i.BudgetTaxGroup, i.BudgetJCTaxRate, i.BudgetNJCTaxRate,
+                0, 0, a.Budgetslocked, 0, NULL,
+                CASE WHEN a.Budgetslocked = 1 THEN 0 ELSE {priceDeltaStr} END,
+                ROUND(CASE WHEN a.Budgetslocked = 1 THEN 0 ELSE {priceDeltaStr} END * i.budgetqty, 2),
+                ROUND(ROUND(CASE WHEN a.Budgetslocked = 1 THEN 0 ELSE {priceDeltaStr} END * i.budgetqty, 2) * i.BudgetJCTaxRate / 100, 2),
+                ROUND(ROUND(CASE WHEN a.Budgetslocked = 1 THEN 0 ELSE {priceDeltaStr} END * i.budgetqty, 2) * i.BudgetNJCTaxRate / 100, 2),
+                i.POVendor, i.POQty, i.POTaxGroup, i.POJCTaxRate, i.PONJCTaxRate, i.PONumber, i.ExcludeFromPO, i.PODeleted, i.POOverridden,
+                {priceDeltaStr},
+                ROUND(i.poqty * {priceDeltaStr}, 2),
+                ROUND(ROUND(i.poqty * {priceDeltaStr}, 2) * i.POJCTaxRate / 100, 2),
+                ROUND(ROUND(i.poqty * {priceDeltaStr}, 2) * i.PONJCTaxRate / 100, 2),
+                i.POGenBatch, i.EstAssemblyID, i.POIndex, i.Phase, i.Item, i.Job, i.JCExtra, i.JCCostCode,
+                '{EscapeSql(SelectedCategory)}',
+                '{EscapeSql(SelectedCategory)}',
+                i.SortOrder, i.Description, i.Comments, i.TakeoffQty, i.TakeoffUOM, i.ConversionFactor, i.OrderUOM,
+                i.Assembly, i.AssemblyDescription, i.Model, i.Location, i.RFP, i.Formula, i.Unit, i.BillingItemID, i.SalesQty, i.DivisionID,
+                i.RequestDetailID, i.Sequence,
+                i.WBS01, i.WBS02, i.WBS03, i.WBS04, i.WBS05, i.WBS06, i.WBS07, i.WBS08, i.WBS09, i.WBS10,
+                i.WBS11, i.WBS12, i.WBS13, i.WBS14, i.WBS15, i.WBS16, i.WBS17, i.WBS18, i.WBS19, i.WBS20,
+                i.WBS21, i.WBS22, i.WBS23, i.WBS24, i.WBS25, i.WBS26, i.WBS27, i.WBS28, i.WBS29, i.WBS30,
+                i.WBS31, i.WBS32, i.WBS33, i.WBS34, i.WBS35, i.WBS36, i.WBS37, i.WBS38, i.WBS39, i.WBS40
+            FROM EstimateItems i
+            JOIN EstimateAssemblies a ON (i.EstAssemblyID = a.EstAssemblyID)
+            JOIN EstimatedItems v ON (i.EstItemID = v.EstItemID)
+            JOIN NextPOChangeOrders n ON (i.divisionid = n.divisionid AND i.ponumber = n.ponumber)
+            JOIN PurchaseOrders p ON i.divisionid = p.divisionid AND i.ponumber = p.ponumber
+            JOIN pomaster pm ON i.divisionid = pm.divisionid AND i.ponumber = pm.ponumber
+            LEFT JOIN invoiceitems ii ON p.divisionid = ii.divisionid AND p.ponumber = ii.commitment
+            WHERE ii.invoice IS NULL
+              AND ISNULL(i.pochangeordernumber, '') = ''
+              AND p.Cancelled = 0
+              AND ISNULL(pm.ChangeOrderAudit, '') = '{EscapeSql(sessionKey)}'
+              AND i.DivisionID = {SessionState.DivisionID}
+              AND ISNULL(i.RowType, '') NOT IN ('Original - Cancelled', 'Original - Reversal')
+              AND ISNULL(i.ItemReversed, 0) = 0
+              AND ISNULL(i.IsReversingItem, 0) = 0
+              {whereClause}
+              AND v.povendor = '{EscapeSql(item.Vendor)}'
+              AND i.phase = '{EscapeSql(item.Phase)}'
+              AND i.item = '{EscapeSql(item.Item)}'
+              AND i.description = '{EscapeSql(item.Description)}'
+              AND i.porate = {item.OrigRate}";
+    }
+
+    private async Task SaveChangeOrder(string sessionKey)
+    {
+        // Write change order header
+        var coHeaderSql = $@"
+            INSERT INTO pochangeorders(PONumber, DivisionID, ChangeOrder, Description, CODate, UStmp, TStmp)
+            SELECT DISTINCT
+                ponumber, divisionid, pochangeordernumber,
+                'price change', GETDATE(), '{EscapeSql(LoginID)}', GETDATE()
+            FROM estimateitems
+            WHERE changeorderaudit = '{EscapeSql(sessionKey)}'";
+        await db.ExecuteAsync(coHeaderSql);
+
+        // Write change order items
+        var jcCategoryColumn = PostPOQtyToAccounting ? "c.jccategory" : "c.variancejccategory";
+        var coItemsSql = $@"
+            INSERT INTO pochangeorderitems(
+                DivisionID, PONumber, EstItemID, ChangeOrder, Description,
+                Qty, UOM, Rate, Pretax, TaxGroup, JCTax, NJCTax,
+                Job, JCExtra, JCCostCode, JCCategory, LineNumber)
+            SELECT
+                c.divisionid, c.ponumber, c.EstItemID, c.pochangeordernumber, c.description,
+                c.poqty, c.orderuom, c.porate, c.popretax, c.potaxgroup, c.pojctax, c.ponjctax,
+                c.job, c.jcextra, c.jccostcode, {jcCategoryColumn}, i.LineNumber
+            FROM estimateitems c
+            JOIN poitems i ON c.ChangeOrderOrigEstItemId = i.estitemid AND i.ponumber = c.ponumber
+            WHERE c.changeorderaudit = '{EscapeSql(sessionKey)}'";
+        await db.ExecuteAsync(coItemsSql);
+
+        // Update adjusted columns on poitems
+        var adjSql = $@"
+            UPDATE pi SET
+                adjrate = pi.rate + i.porate,
+                adjpretax = pi.pretax + i.popretax,
+                adjjctax = pi.jctax + i.pojctax,
+                adjnjctax = pi.njctax + i.ponjctax
+            FROM estimateitems i
+            JOIN poitems pi ON pi.estitemid = i.changeorderorigestitemid
+            WHERE i.changeorderaudit = '{EscapeSql(sessionKey)}'";
+        await db.ExecuteAsync(adjSql);
+    }
+
+    // ── Grid Events ──────────────────────────────────────────────────────
+    private void OnItemCellSaved(CellSaveArgs<ItemRow> args)
+    {
+        // After editing NewRate, the template will re-render with red styling if changed
+        StateHasChanged();
+    }
+
+    // ── Preferences ──────────────────────────────────────────────────────
+    private async Task SaveCategoryPreference()
+    {
+        try
+        {
+            var catText = CategoryList.FirstOrDefault(c => c.Value == SelectedCategory)?.Text ?? "";
+            // VB6 FPOPriceChangeWiz.Form_Unload: HFApp.Options.ValueByName("ChangeWizCategory") = cboCategory.Text
+            // ChangeWizCategory is not in OptionsEnum, so SetValueByName writes the DIVISION-SPECIFIC
+            // AppOptions row (UID='', DivisionID=@Div). Stores the combo's display TEXT, not the key.
+            await db.ExecuteAsync(@"
+                UPDATE AppOptions
+                   SET OptionValue=@Value, UStmp=@UID, TStmp=GETDATE()
+                 WHERE OptionName=@Name AND ISNULL(UID,'')='' AND ISNULL(divisionid,0)=@DivisionID;
+                IF @@ROWCOUNT=0
+                    INSERT INTO AppOptions(UID, OptionName, OptionValue, DivisionID, UStmp, TStmp)
+                    VALUES('', @Name, @Value, @DivisionID, @UID, GETDATE());",
+                new { Name = "ChangeWizCategory", Value = catText, DivisionID = SessionState.DivisionID, UID = "" });
+        }
+        catch { /* non-critical */ }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    private string EscapeSql(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Replace("'", "''");
+    }
+
+    private decimal SafeDecimal(object? val, decimal def = 0)
+    {
+        if (val == null || val == DBNull.Value) return def;
+        var s = val.ToString();
+        if (string.IsNullOrWhiteSpace(s)) return def;
+        return decimal.TryParse(s, out var result) ? result : def;
+    }
+
+    // ── Models ───────────────────────────────────────────────────────────
+    public class ComboItem
+    {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    public class PORow
+    {
+        public string Community { get; set; } = "";
+        public string CommunityDesc { get; set; } = "";
+        public string Job { get; set; } = "";
+        public string JobDesc { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string VendorDesc { get; set; } = "";
+        public string POGroup { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string POIndexDescription { get; set; } = "";
+        public string PONumber { get; set; } = "";
+        public DateTime? PODate { get; set; }
+    }
+
+    public class ItemRow
+    {
+        public string Vendor { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal OrigRate { get; set; }
+        public decimal NewRate { get; set; }
+    }
+}

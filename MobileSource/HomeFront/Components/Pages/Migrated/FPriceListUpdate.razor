@@ -1,0 +1,302 @@
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Components.Pages
+@using HomeFront.Data
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FPriceListUpdate> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+<DialogControl Visible="IsVisible" Header="Update Vendor Pricelists" Width="560px" OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="title-label">This will update your pricing database.</div>
+        <div class="message-label">@MessageText</div>
+
+        <div class="section-label">@PriceTypeLabel</div>
+        <div class="option-group">
+            <RadioControl TValue="int" Name="priceType" Value="0" @bind-SelectedValue="SelectedPriceType">
+                Quote. It applies to this model or option only.
+            </RadioControl>
+            <RadioControl TValue="int" Name="priceType" Value="1" @bind-SelectedValue="SelectedPriceType">
+                Unit price. The item is always this price.
+            </RadioControl>
+        </div>
+
+        <div class="section-label">@CommunityLabel</div>
+        <div class="option-group">
+            <RadioControl TValue="int" Name="communityScope" Value="0" @bind-SelectedValue="SelectedCommunityScope">
+                Everywhere.
+            </RadioControl>
+            <RadioControl TValue="int" Name="communityScope" Value="1" @bind-SelectedValue="SelectedCommunityScope">
+                @CommunityTerm in this phase only.
+            </RadioControl>
+            <RadioControl TValue="int" Name="communityScope" Value="2" @bind-SelectedValue="SelectedCommunityScope">
+                Any phase in @CommunityTerm.
+            </RadioControl>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="btn-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@code {
+    private const string SRCFILE = "FPriceListUpdate::";
+
+    // === Database ===
+// === Visibility ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    // === Parameters passed from parent (ShowForm equivalent) ===
+    [Parameter] public bool ShowBudgets { get; set; }
+    [Parameter] public string Community { get; set; } = "";
+    [Parameter] public string CommunityPhase { get; set; } = "";
+    [Parameter] public string CommunityDescription { get; set; } = "";
+    [Parameter] public string AssemblyType { get; set; } = "";
+    [Parameter] public string CommunityTerm { get; set; } = "Community";
+    [Parameter] public int DivisionID { get; set; } = 1;
+
+    // Grid data passed from parent — represents the selected rows from the calling grid
+    [Parameter] public List<GridRowData> GridRows { get; set; } = new();
+    [Parameter] public int SelectedRowStart { get; set; }
+    [Parameter] public int SelectedRowEnd { get; set; }
+
+    // === Internal State ===
+    private string mPrefix = "PO";
+    private int mAssemblyType = 0;
+    private string MessageText = "";
+    private string PriceTypeLabel = "What type of price is this?";
+    private string CommunityLabel = "What Community does this price apply to?";
+    private int SelectedPriceType = 0;   // 0 = Quote, 1 = Unit Price
+    private int SelectedCommunityScope = 0; // 0 = Everywhere, 1 = Phase only, 2 = Any phase
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible)
+        {
+            InitializeForm();
+        }
+    }
+
+    private void InitializeForm()
+    {
+        mPrefix = ShowBudgets ? "Budget" : "PO";
+        mAssemblyType = string.IsNullOrEmpty(AssemblyType) ? 0 : int.TryParse(AssemblyType, out var at) ? at : 0;
+
+        // Reset selections
+        SelectedPriceType = 0;
+        SelectedCommunityScope = 0;
+
+        // Build labels
+        PriceTypeLabel = "What type of price is this?";
+        CommunityLabel = $"What {CommunityTerm} does this price apply to?";
+
+        // Build message
+        var nonSubtotalRows = GridRows
+            .Skip(SelectedRowStart)
+            .Take(SelectedRowEnd - SelectedRowStart + 1)
+            .Where(r => !r.IsSubtotal)
+            .ToList();
+
+        if (SelectedRowStart == SelectedRowEnd && nonSubtotalRows.Count == 1)
+        {
+            var row = nonSubtotalRows[0];
+            var vendorName = row.GetValue($"{mPrefix}VendorName");
+            var itemDesc = row.GetValue("ItemDesc");
+            var rate = row.GetValue($"{mPrefix}Rate");
+            var orderUOM = row.GetValue("OrderUOM");
+
+            decimal.TryParse(rate, out var rateValue);
+            var formattedRate = rateValue.ToString("$#,##0.00###");
+
+            MessageText = $"It will change {vendorName}'s price for\n{itemDesc} to {formattedRate} per {orderUOM}";
+            PriceTypeLabel = "What type of price is this?";
+            CommunityLabel = $"What {CommunityTerm} does this price apply to?";
+        }
+        else
+        {
+            var count = nonSubtotalRows.Count;
+            MessageText = $"It will update the vendors pricing for these {count} items.";
+            PriceTypeLabel = "What type of prices are these?";
+            CommunityLabel = $"What {CommunityTerm} do these prices apply to?";
+        }
+    }
+
+    private async Task OnOkClick()
+    {
+        await SaveData();
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+        await OnSaved.InvokeAsync();
+    }
+
+    private async Task OnCancelClick()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task SaveData()
+    {
+        try
+        {
+            var rows = GridRows
+                .Skip(SelectedRowStart)
+                .Take(SelectedRowEnd - SelectedRowStart + 1)
+                .Where(r => !r.IsSubtotal)
+                .ToList();
+
+            foreach (var row in rows)
+            {
+                var estPhase = row.GetValue("EstPhase");
+                var estItem = row.GetValue("EstItem");
+                var vendor = row.GetValue($"{mPrefix}Vendor");
+                var rate = row.GetValue($"{mPrefix}Rate");
+                var model = row.GetValue("Model");
+                var assembly = row.GetValue("Assembly");
+
+                var communityValue = (SelectedCommunityScope == 1 || SelectedCommunityScope == 2) ? Community : "";
+                var communityPhaseValue = (SelectedCommunityScope == 1) ? CommunityPhase : "";
+
+                string modelValue;
+                if (mAssemblyType != 3)
+                {
+                    modelValue = (SelectedPriceType == 0) ? model : "";
+                }
+                else
+                {
+                    modelValue = "";
+                }
+
+                var assemblyValue = (SelectedPriceType == 0) ? assembly : "";
+
+                // INSERT into tblVendorCost
+                try
+                {
+                    var insertSql = @"
+                        INSERT INTO tblVendorCost(DivisionID, Community, CommunityPhase, Model, Assembly, Phase, Item, Vendor, Current_Cost)
+                        VALUES(@DivisionID, @Community, @CommunityPhase, @Model, @Assembly, @Phase, @Item, @Vendor, @CurrentCost)";
+
+                    await db.ExecuteAsync(insertSql, new
+                    {
+                        DivisionID,
+                        Community = communityValue,
+                        CommunityPhase = communityPhaseValue,
+                        Model = modelValue,
+                        Assembly = assemblyValue,
+                        Phase = estPhase,
+                        Item = estItem,
+                        Vendor = vendor,
+                        CurrentCost = ParseDecimal(rate)
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Skip duplicates
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        throw;
+                }
+
+                // UPDATE tblVendorCost
+                var updateSql = @"
+                    UPDATE tblVendorCost
+                       SET Current_Cost = @CurrentCost
+                     WHERE Vendor = @Vendor
+                       AND Phase = @Phase
+                       AND Item = @Item";
+
+                var updateParams = new Dictionary<string, object?>
+                {
+                    { "CurrentCost", ParseDecimal(rate) },
+                    { "Vendor", vendor },
+                    { "Phase", estPhase },
+                    { "Item", estItem },
+                    { "DivisionID", DivisionID }
+                };
+
+                var whereExtra = "";
+
+                if (SelectedPriceType == 0) // Quote
+                {
+                    whereExtra += " AND Assembly = @Assembly";
+                    updateParams["Assembly"] = assemblyValue;
+
+                    if (mAssemblyType != 3)
+                    {
+                        whereExtra += " AND Model = @Model";
+                        updateParams["Model"] = modelValue;
+                    }
+                    else
+                    {
+                        whereExtra += " AND Model = ''";
+                    }
+                }
+
+                if (SelectedCommunityScope == 1 || SelectedCommunityScope == 2)
+                {
+                    whereExtra += " AND Community = @Community";
+                    updateParams["Community"] = Community;
+                }
+
+                if (SelectedCommunityScope == 1)
+                {
+                    whereExtra += " AND CommunityPhase = @CommunityPhase";
+                    updateParams["CommunityPhase"] = CommunityPhase;
+                }
+
+                whereExtra += " AND DivisionID = @DivisionID";
+
+                updateSql += whereExtra;
+
+                await db.ExecuteAsync(updateSql, updateParams);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                MError.LogError(SRCFILE + "SaveData", ex);
+                try
+                {
+                    await Dialogs.AlertAsync(
+                        $"HomeFront has encountered a problem and cannot complete the requested action.\n\n" +
+                        $"---ERROR----------------------------------------------------\n" +
+                        $"{ex.Source}\n{ex.Message}   ({ex.HResult})\n\n" +
+                        $"---SOURCE---------------------------------------------------\n" +
+                        $"{SRCFILE}SaveData()");
+                }
+                catch (Exception) { Logger.LogDebug(ex, "Non-critical error in SaveData"); }
+            }
+        }
+    }
+
+    private decimal ParseDecimal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return 0;
+        value = value.Replace("$", "").Replace(",", "").Trim();
+        return decimal.TryParse(value, out var result) ? result : 0;
+    }
+
+    // === Model for grid row data passed from parent ===
+    public class GridRowData
+    {
+        public bool IsSubtotal { get; set; }
+        public Dictionary<string, string> Values { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public string GetValue(string columnName)
+        {
+            return Values.TryGetValue(columnName, out var val) ? val ?? "" : "";
+        }
+    }
+}

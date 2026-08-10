@@ -1,0 +1,1027 @@
+@page "/export-pricelists"
+@rendermode InteractiveServer
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.IO
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+@using HomeFront.Models
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FExportPricelists> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Export Vendor Pricelists</PageTitle>
+
+<div class="wizard-container">
+    <!-- Header -->
+    <div class="wizard-header">
+        <div class="wizard-header-icon">📤</div>
+        <div class="wizard-header-text">
+            <h3>Export Vendor Pricelists</h3>
+            <p>Export vendor pricelists to Excel spreadsheets</p>
+        </div>
+    </div>
+
+    <!-- Body -->
+    <div class="wizard-body">
+        @switch (CurrentFrame)
+        {
+            case 0:
+                @* Frame 0: Export Type Selection *@
+                <div class="frame-title">Select Export Type</div>
+                <div class="radio-group">
+                    <RadioControl TValue="bool" Name="exportType" Value="false"
+                                  @bind-SelectedValue="OptCorporate" @bind-SelectedValue:after="OnExportTypeChangedAfter"
+                                  Label="Export divisional price lists" />
+                    <RadioControl TValue="bool" Name="exportType" Value="true"
+                                  @bind-SelectedValue="OptCorporate" @bind-SelectedValue:after="OnExportTypeChangedAfter"
+                                  Label="Export corporate pricing" />
+                </div>
+                break;
+
+            case 1:
+                @* Frame 1: Select Communities *@
+                <div class="frame-title">Select @CommunityLabel</div>
+                <div class="check-all-row">
+                    <CheckBoxControl Checked="@ChkAllCommunities" CheckedChanged="OnAllCommunitiesChanged"
+                                     Label="@($"All {CommunityLabel}")" />
+                </div>
+                <div class="grid-frame">
+                    <GridControl @ref="CommunitiesGrid"
+                            TValue="SelectableItem"
+                            DataSource="@CommunitiesData"
+                            AllowSelection="true"
+                            Height="260px"
+                            SelectionSettingsRef="@checkSelectionSettings">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(SelectableItem.IsSelected)" HeaderText="" Width="40px"
+                                          Type="ColumnType.CheckBox" />
+                            <GridColumn Field="@nameof(SelectableItem.Code)" HeaderText="Code" Width="100px"
+                                          AllowEditing="false" />
+                            <GridColumn Field="@nameof(SelectableItem.Description)" HeaderText="Description"
+                                          Width="300px" AllowEditing="false" />
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+
+            case 2:
+                @* Frame 2: Select Vendors *@
+                <div class="frame-title">Select Vendors</div>
+                <div class="check-all-row">
+                    <CheckBoxControl Checked="@ChkAllVendors" CheckedChanged="OnAllVendorsChanged"
+                                     Label="All Vendors" />
+                </div>
+                <div class="grid-frame">
+                    <GridControl @ref="VendorsGrid"
+                            TValue="SelectableItem"
+                            DataSource="@VendorsData"
+                            AllowSelection="true"
+                            Height="260px"
+                            SelectionSettingsRef="@checkSelectionSettings">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(SelectableItem.IsSelected)" HeaderText="" Width="40px"
+                                          Type="ColumnType.CheckBox" />
+                            <GridColumn Field="@nameof(SelectableItem.Code)" HeaderText="Vendor" Width="100px"
+                                          AllowEditing="false" />
+                            <GridColumn Field="@nameof(SelectableItem.Description)" HeaderText="Company"
+                                          Width="300px" AllowEditing="false" />
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+
+            case 3:
+                @* Frame 3: Select Assemblies *@
+                <div class="frame-title">Select Assemblies</div>
+                <div class="check-all-row">
+                    <CheckBoxControl Checked="@ChkAllAssemblies" CheckedChanged="OnAllAssembliesChanged"
+                                     Label="All Assemblies" />
+                </div>
+                <div class="grid-frame">
+                    <GridControl @ref="AssembliesGrid"
+                            TValue="SelectableItem"
+                            DataSource="@AssembliesData"
+                            AllowSelection="true"
+                            Height="260px"
+                            SelectionSettingsRef="@checkSelectionSettings">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(SelectableItem.IsSelected)" HeaderText="" Width="40px"
+                                          Type="ColumnType.CheckBox" />
+                            <GridColumn Field="@nameof(SelectableItem.Code)" HeaderText="Assembly" Width="120px"
+                                          AllowEditing="false" />
+                            <GridColumn Field="@nameof(SelectableItem.Description)" HeaderText="Description"
+                                          Width="280px" AllowEditing="false" />
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+
+            case 4:
+                @* Frame 4: Select PO Indexes *@
+                <div class="frame-title">Select Purchase Orders</div>
+                <div class="check-all-row">
+                    <CheckBoxControl Checked="@ChkAllPOIndexes" CheckedChanged="OnAllPOIndexesChanged"
+                                     Label="All PO Indexes" />
+                </div>
+                <div class="grid-frame">
+                    <GridControl @ref="POIndexesGrid"
+                            TValue="SelectableItem"
+                            DataSource="@POIndexesData"
+                            AllowSelection="true"
+                            Height="260px"
+                            SelectionSettingsRef="@checkSelectionSettings">
+                        <GridColumnsBase>
+                            <GridColumn Field="@nameof(SelectableItem.IsSelected)" HeaderText="" Width="40px"
+                                          Type="ColumnType.CheckBox" />
+                            <GridColumn Field="@nameof(SelectableItem.Code)" HeaderText="PO Index" Width="120px"
+                                          AllowEditing="false" />
+                            <GridColumn Field="@nameof(SelectableItem.Description)" HeaderText="Description"
+                                          Width="280px" AllowEditing="false" />
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+                break;
+
+            case 5:
+                @* Frame 5: Options and Export *@
+                <div class="frame-title">The selected pricelists will be created in:</div>
+                <div class="path-row">
+                    <TextBoxControl @bind-Value="ExportPath" Placeholder="Select export folder..." CssClass="path-input" />
+                    <ButtonControl OnClick="OnChooseFolder" CssClass="path-btn">📁</ButtonControl>
+                </div>
+
+                @if (IsExporting)
+                {
+                    <div class="progress-section">
+                        <div class="progress-label">@SavingLabel</div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: @(ProgressValue)%">
+                                @(ProgressValue.ToString("0"))%
+                            </div>
+                        </div>
+                        <div class="progress-label">@AssemblyCountLabel</div>
+                        <div class="progress-label">@ItemDescLabel</div>
+                    </div>
+                }
+
+                <div class="options-section">
+                    <label class="option-label">Options:</label>
+                    <div class="checkbox-row">
+                        <CheckBoxControl @bind-Checked="ChkSingleFile" Label="Write all pricelists to a single spreadsheet file." />
+                    </div>
+                    <div class="checkbox-row">
+                        <CheckBoxControl @bind-Checked="ChkExportNextPrices" Label="Include future prices in export file." />
+                    </div>
+                    <div class="checkbox-row">
+                        <CheckBoxControl @bind-Checked="ChkCloseWhenFinished" Label="Close this dialog when all pricelists are completed." />
+                    </div>
+                    <div class="checkbox-row">
+                        <CheckBoxControl @bind-Checked="ChkSortByItem" Label="Sort the list by Item." />
+                    </div>
+                    <div class="checkbox-row">
+                        <CheckBoxControl @bind-Checked="ChkExportComments" Label="Include assembly comments and item POIndex." />
+                    </div>
+                </div>
+                break;
+        }
+    </div>
+
+    <!-- Footer -->
+    <div class="wizard-footer">
+        <ButtonControl OnClick="OnCancel">@CancelButtonText</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoBack)" OnClick="OnBack">&lt; Back</ButtonControl>
+        <ButtonControl Disabled="@(!CanGoNext)" OnClick="OnNext">Next &gt;</ButtonControl>
+        <ButtonControl CssClass="btn-primary" Disabled="@(!CanFinish)" OnClick="OnFinish">Finish</ButtonControl>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            NavigationManager.NavigateTo("/");
+    }
+
+    // === Database ===
+// === Wizard State ===
+    private int CurrentFrame = 0;
+    private int MaxFrame = 5;
+    private long DivCount = 0;
+
+    // === Export Type ===
+    private bool OptCorporate = false;
+
+    // === Checkbox "All" States ===
+    private bool ChkAllCommunities = true;
+    private bool ChkAllVendors = true;
+    private bool ChkAllAssemblies = true;
+    private bool ChkAllPOIndexes = true;
+
+    // === Options ===
+    private bool ChkSingleFile = false;
+    private bool ChkExportNextPrices = false;
+    private bool ChkCloseWhenFinished = false;
+    private bool ChkSortByItem = false;
+    private bool ChkExportComments = false;
+    private string ExportPath = "";
+
+    // === Progress ===
+    private bool IsExporting = false;
+    private double ProgressValue = 0;
+    private string SavingLabel = "";
+    private string AssemblyCountLabel = "";
+    private string ItemDescLabel = "";
+
+    // === Navigation ===
+    private string CancelButtonText = "Cancel";
+    private bool ExportComplete = false; // VB6: post-finish nav state
+    private bool CanGoBack => !ExportComplete && (DivCount < 2 ? CurrentFrame > 1 : CurrentFrame > 0);
+    private bool CanGoNext => !ExportComplete && CurrentFrame < MaxFrame;
+    private bool CanFinish => !ExportComplete && CurrentFrame == MaxFrame;
+
+    // === Custom Labels ===
+    private string CommunityLabel = "Communities";
+
+    // === Grid Refs ===
+    private GridControl<SelectableItem>? CommunitiesGrid;
+    private GridControl<SelectableItem>? VendorsGrid;
+    private GridControl<SelectableItem>? AssembliesGrid;
+    private GridControl<SelectableItem>? POIndexesGrid;
+
+    // === Data Sources ===
+    private List<SelectableItem> CommunitiesData = new();
+    private List<SelectableItem> VendorsData = new();
+    private List<SelectableItem> AssembliesData = new();
+    private List<SelectableItem> POIndexesData = new();
+
+    // === Grid Settings ===
+    private SelectionSettings checkSelectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+
+    // === bInHere flag (prevents re-entrant checkbox logic) ===
+    private bool bInHere = false;
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCustomDescriptions();
+        await GetDivisionCount();
+        await LoadOptions();
+
+        if (DivCount < 2)
+        {
+            OptCorporate = false;
+            CurrentFrame = 1;
+        }
+    }
+
+    // === Load Options from App Settings ===
+    private async Task LoadOptions()
+    {
+        try
+        {
+            // Load saved options - using defaults if not found
+            ChkCloseWhenFinished = await GetOptionBool("ClosePricelistExportDialog", false);
+            ChkSingleFile = await GetOptionBool("PricelistExportSingleFile", false);
+            ChkSortByItem = await GetOptionBool("SortPricelistExportByItem", false);
+            ChkExportNextPrices = await GetOptionBool("PricelistExportNextPrices", false);
+            ChkExportComments = await GetOptionBool("PricelistExportComments", false);
+            ExportPath = await GetOptionString("PricelistExportPath", "");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadOptions error");
+
+        }
+    }
+
+    private async Task<bool> GetOptionBool(string name, bool defaultValue)
+    {
+        try
+        {
+            var val = await db.ExecuteScalarAsync<string>(
+                "SELECT Value FROM tblOptions WHERE Name = @Name AND DivisionID = @DivisionID",
+                new { Name = name, SessionState.DivisionID });
+            return val?.Equals("True", StringComparison.OrdinalIgnoreCase) == true;
+        }
+        catch { return defaultValue; }
+    }
+
+    private async Task<string> GetOptionString(string name, string defaultValue)
+    {
+        try
+        {
+            var val = await db.ExecuteScalarAsync<string>(
+                "SELECT Value FROM tblOptions WHERE Name = @Name AND DivisionID = @DivisionID",
+                new { Name = name, SessionState.DivisionID });
+            return val ?? defaultValue;
+        }
+        catch { return defaultValue; }
+    }
+
+    private async Task LoadCustomDescriptions()
+    {
+        try
+        {
+            var desc = await db.ExecuteScalarAsync<string>(
+                "SELECT ISNULL(NULLIF(custom_description,''),'Communities') FROM customdescriptions WHERE item='Community'");
+            if (!string.IsNullOrEmpty(desc))
+                CommunityLabel = desc;
+        }
+        catch { /* non-critical */ }
+    }
+
+    private async Task GetDivisionCount()
+    {
+        try
+        {
+            DivCount = await db.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM divisions");
+        }
+        catch { DivCount = 1; }
+    }
+
+    // === Frame Navigation ===
+    private async Task SetCurrentFrame(int frame)
+    {
+        CurrentFrame = frame;
+        await LoadFrameData(frame);
+        StateHasChanged();
+    }
+
+    private async Task LoadFrameData(int frame)
+    {
+        switch (frame)
+        {
+            case 0:
+                // Trigger reload of vendors when returning to frame 0
+                VendorsData.Clear();
+                break;
+
+            case 1:
+                if (CommunitiesData.Count == 0)
+                    await LoadCommunities();
+                break;
+
+            case 2:
+                if (VendorsData.Count == 0)
+                    await LoadVendors();
+                break;
+
+            case 3:
+                if (AssembliesData.Count == 0)
+                    await LoadAssemblies();
+                break;
+
+            case 4:
+                if (POIndexesData.Count == 0)
+                    await LoadPOIndexes();
+                break;
+
+            case 5:
+                // Options frame - no data to load
+                break;
+        }
+    }
+
+    // === Data Loading ===
+    private async Task LoadCommunities()
+    {
+        try
+        {
+            var sql = @"SELECT Area Community, Description CommunityDesc
+                        FROM tblLocality c
+                        JOIN DivisionCommunities d ON c.Area = d.Community
+                        WHERE d.DivisionID = @DivisionID AND Inactive = 0
+                        ORDER BY 2";
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            CommunitiesData = rows.Select(r => new SelectableItem
+            {
+                Code = r["Community"]?.ToString() ?? "",
+                Description = r["CommunityDesc"]?.ToString() ?? "",
+                IsSelected = true
+            }).ToList();
+            ChkAllCommunities = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadCommunities error");
+
+        }
+    }
+
+    private async Task LoadVendors()
+    {
+        try
+        {
+            string sql;
+            if (OptCorporate)
+            {
+                sql = @"SELECT DISTINCT v.Vendor_Id Vendor, v.Vendor_name Company
+                        FROM tblVendors v
+                        INNER JOIN tblVendorCost c ON v.Vendor_id = c.Vendor AND c.DivisionID = 0
+                        WHERE v.inactive = 0 AND v.DivisionID = @DivisionID
+                        ORDER BY 2";
+            }
+            else
+            {
+                sql = @"SELECT DISTINCT v.Vendor_Id Vendor, v.Vendor_name Company
+                        FROM tblVendors v
+                        INNER JOIN tblVendorCost c ON v.Vendor_id = c.Vendor AND v.DivisionID = c.DivisionID
+                        WHERE v.inactive = 0 AND v.DivisionID = @DivisionID
+                        ORDER BY 2";
+            }
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            VendorsData = rows.Select(r => new SelectableItem
+            {
+                Code = r["Vendor"]?.ToString() ?? "",
+                Description = r["Company"]?.ToString() ?? "",
+                IsSelected = true
+            }).ToList();
+            ChkAllVendors = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadVendors error");
+
+        }
+    }
+
+    private async Task LoadAssemblies()
+    {
+        try
+        {
+            var sql = @"SELECT Assembly, Description AssemblyDesc
+                        FROM DistinctAssemblies
+                        WHERE DivisionID = @DivisionID
+                        ORDER BY 1";
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            AssembliesData = rows.Select(r => new SelectableItem
+            {
+                Code = r["Assembly"]?.ToString() ?? "",
+                Description = r["AssemblyDesc"]?.ToString() ?? "",
+                IsSelected = true
+            }).ToList();
+            ChkAllAssemblies = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadAssemblies error");
+
+        }
+    }
+
+    private async Task LoadPOIndexes()
+    {
+        try
+        {
+            var sql = @"SELECT POIndex,
+                               CASE WHEN poindex = description THEN '' ELSE description END AS Description
+                        FROM tblPOIndex
+                        WHERE DivisionID = @DivisionID
+                        ORDER BY 1";
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            POIndexesData = rows.Select(r => new SelectableItem
+            {
+                Code = r["POIndex"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? "",
+                IsSelected = true
+            }).ToList();
+            ChkAllPOIndexes = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadPOIndexes error");
+
+        }
+    }
+
+    // === Navigation Handlers ===
+    private async Task OnCancel()
+    {
+        ClosePage();
+    }
+
+    private async Task OnBack()
+    {
+        var target = CurrentFrame - 1;
+        if (OptCorporate)
+        {
+            if (target == 1) target = 0;
+            if (target == 3) target = 2;
+        }
+        await SetCurrentFrame(target);
+    }
+
+    private async Task OnNext()
+    {
+        var target = CurrentFrame + 1;
+        if (OptCorporate)
+        {
+            if (target == 1) target = 2;
+            if (target == 3) target = 4;
+        }
+        await SetCurrentFrame(target);
+    }
+
+    private async Task OnFinish()
+    {
+        var success = await SaveData();
+        if (success)
+        {
+            if (ChkCloseWhenFinished)
+            {
+                ClosePage();
+            }
+            else
+            {
+                // VB6: cmdNav(0).Caption = "Close", others disabled
+                CancelButtonText = "Close";
+                ExportComplete = true;
+            }
+        }
+    }
+
+    // === Export Type Changed ===
+    // RadioControl @bind-SelectedValue has already set OptCorporate; run the VB6 side-effects.
+    private void OnExportTypeChangedAfter()
+    {
+        if (OptCorporate)
+        {
+            ChkAllCommunities = true;
+            SetAllItems(CommunitiesData, true);
+            ChkAllAssemblies = true;
+            SetAllItems(AssembliesData, true);
+        }
+        // Clear vendors to force reload
+        VendorsData.Clear();
+    }
+
+    // === "All" Checkbox Handlers ===
+    private void OnAllCommunitiesChanged(bool value)
+    {
+        if (bInHere) return;
+        ChkAllCommunities = value;
+        SetAllItems(CommunitiesData, ChkAllCommunities);
+    }
+
+    private void OnAllVendorsChanged(bool value)
+    {
+        if (bInHere) return;
+        ChkAllVendors = value;
+        SetAllItems(VendorsData, ChkAllVendors);
+    }
+
+    private void OnAllAssembliesChanged(bool value)
+    {
+        if (bInHere) return;
+        ChkAllAssemblies = value;
+        SetAllItems(AssembliesData, ChkAllAssemblies);
+    }
+
+    private void OnAllPOIndexesChanged(bool value)
+    {
+        if (bInHere) return;
+        ChkAllPOIndexes = value;
+        SetAllItems(POIndexesData, ChkAllPOIndexes);
+    }
+
+    private void SetAllItems(List<SelectableItem> items, bool selected)
+    {
+        foreach (var item in items)
+            item.IsSelected = selected;
+    }
+
+    // === Choose Folder ===
+    private async Task OnChooseFolder()
+    {
+        var path = await Dialogs.PromptAsync("Enter export folder path:", "", ExportPath);
+        if (!string.IsNullOrEmpty(path))
+            ExportPath = path;
+    }
+
+    // === Build WHERE Clause ===
+    private string BuildWhereClause()
+    {
+        var clauses = new List<string>();
+
+        if (!ChkAllCommunities)
+        {
+            var selected = CommunitiesData.Where(c => c.IsSelected).Select(c => $"'{EscapeSql(c.Code)}'");
+            if (selected.Any())
+                clauses.Add($"c.Community IN({string.Join(",", selected)})");
+        }
+
+        if (!ChkAllVendors)
+        {
+            var selected = VendorsData.Where(v => v.IsSelected).Select(v => $"'{EscapeSql(v.Code)}'");
+            if (selected.Any())
+                clauses.Add($"c.Vendor IN({string.Join(",", selected)})");
+        }
+
+        if (!ChkAllAssemblies)
+        {
+            var selected = AssembliesData.Where(a => a.IsSelected).Select(a => $"'{EscapeSql(a.Code)}'");
+            if (selected.Any())
+                clauses.Add($"c.Assembly IN({string.Join(",", selected)})");
+        }
+
+        if (!ChkAllPOIndexes)
+        {
+            var selected = POIndexesData.Where(p => p.IsSelected).Select(p => $"'{EscapeSql(p.Code)}'");
+            if (selected.Any())
+                clauses.Add($"i.POIndex IN({string.Join(",", selected)})");
+        }
+
+        return clauses.Count > 0 ? string.Join(" AND ", clauses) : "1=1";
+    }
+
+    private string EscapeSql(string value) => value.Replace("'", "''");
+
+    // === Save / Export Data ===
+    private async Task<bool> SaveData()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(ExportPath))
+            {
+                // VB6: MsgBox "You must specify an export path", vbOK + vbExclamation
+                Console.WriteLine("FExportPricelists::SaveData: Export path not specified.");
+
+                return false;
+            }
+
+            IsExporting = true;
+            ProgressValue = 0;
+            SavingLabel = "Saving:";
+            AssemblyCountLabel = "";
+            ItemDescLabel = "";
+            StateHasChanged();
+
+            var bCorpPricing = OptCorporate;
+            var bShowNextPricing = ChkExportNextPrices;
+            var bShowComments = ChkExportComments;
+            var whereClause = BuildWhereClause();
+            var costDivisionId = bCorpPricing ? 0 : SessionState.DivisionID;
+
+            // Get counts
+            var countSql = $@"
+                SELECT COUNT(DISTINCT c.Vendor) lists, COUNT(*) items
+                FROM tblVendorCost c
+                JOIN tblVendors v ON c.Vendor = v.Vendor_ID AND {SessionState.DivisionID} = v.DivisionID
+                LEFT OUTER JOIN tblLocality l ON c.Community = l.Area AND l.Inactive = 0
+                LEFT OUTER JOIN tblPhaseItem i ON v.DivisionID = i.DivisionID AND c.Phase = i.Phase AND c.Item = i.Item
+                LEFT OUTER JOIN DistinctAssemblies a ON a.Assembly = c.Assembly
+                WHERE {whereClause}
+                  AND c.DivisionID = {costDivisionId}";
+            var countResult = await db.QueryAsync(countSql);
+            long totalLists = 0, totalItems = 0;
+            if (countResult.Any())
+            {
+                totalLists = Convert.ToInt64(countResult.First()["lists"] ?? 0);
+                totalItems = Convert.ToInt64(countResult.First()["items"] ?? 0);
+            }
+
+            // Build main query
+            var orderBy = ChkSortByItem
+                ? "ORDER BY 1, 11, 12, 6, 8, 3"
+                : "ORDER BY 1, 3, 4, 6, 8";
+
+            var dataSql = BuildExportQuery(whereClause, costDivisionId, orderBy);
+            var dataRows = await db.QueryAsync(dataSql);
+
+            // Process rows and build export data
+            var exportRows = new List<ExportRow>();
+            string currentVendor = "";
+            string currentVendorDesc = "";
+            long listCount = 0;
+            long itemCount = 0;
+
+            foreach (var row in dataRows)
+            {
+                var vendor = row["Vendor"]?.ToString() ?? "";
+                var vendorDesc = row["VendorDesc"]?.ToString() ?? "";
+
+                if (vendor != currentVendor)
+                {
+                    // Save previous vendor's file if not single file mode
+                    if (!string.IsNullOrEmpty(currentVendor) && !ChkSingleFile && exportRows.Count > 0)
+                    {
+                        await ExportToFile(exportRows, currentVendorDesc, bCorpPricing, bShowNextPricing, bShowComments);
+                        exportRows.Clear();
+                    }
+
+                    currentVendor = vendor;
+                    currentVendorDesc = vendorDesc;
+                    listCount++;
+
+                    // Add vendor header rows
+                    exportRows.Add(new ExportRow { IsHeader = true, HeaderText = "" });
+                    exportRows.Add(new ExportRow { IsHeader = true, HeaderText = "" });
+                    exportRows.Add(new ExportRow { IsHeader = true, HeaderText = $"Vendor: {vendor}" });
+                    exportRows.Add(new ExportRow { IsHeader = true, HeaderText = $"Company Name: {vendorDesc}" });
+
+                    // Add column headers
+                    var colHeaders = BuildColumnHeaders(bCorpPricing, bShowNextPricing, bShowComments);
+                    exportRows.Add(new ExportRow { IsHeader = true, HeaderText = colHeaders });
+                }
+
+                // Add data row
+                var exportRow = MapExportRow(row, bCorpPricing, bShowNextPricing, bShowComments);
+                exportRows.Add(exportRow);
+
+                itemCount++;
+                if (totalItems > 0)
+                    ProgressValue = (double)itemCount / totalItems * 100;
+
+                AssemblyCountLabel = $"Pricelist {listCount} of {totalLists}";
+                ItemDescLabel = vendorDesc;
+
+                // Yield to UI periodically
+                if (itemCount % 100 == 0)
+                    StateHasChanged();
+            }
+
+            // Save last file
+            if (exportRows.Count > 0)
+            {
+                var fileName = ChkSingleFile ? "Vendor Pricelists" : currentVendorDesc;
+                await ExportToFile(exportRows, fileName, bCorpPricing, bShowNextPricing, bShowComments);
+            }
+
+            IsExporting = false;
+            AssemblyCountLabel = "";
+            ItemDescLabel = "Finished!";
+            StateHasChanged();
+
+            await SaveOptions();
+            return true;
+        }
+        catch (IOException ex)
+        {
+            // VB6: Error 70/75 - file access denied or path not found
+            IsExporting = false;
+            SavingLabel = "";
+            AssemblyCountLabel = "";
+            ItemDescLabel = "";
+            Logger.LogWarning(ex, "Cannot create export file. You may not have access to the folder or the file may be in use.");
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            IsExporting = false;
+            Logger.LogError(ex, "FExportPricelists::SaveData error");
+
+            return false;
+        }
+    }
+
+    private string BuildExportQuery(string whereClause, int costDivisionId, string orderBy)
+    {
+        return $@"
+            SELECT c.Vendor, v.Vendor_Name VendorDesc,
+                   c.Community, c.CommunityPhase, l.Description CommunityDesc,
+                   c.Model, c.Assembly, a.Description AssemblyDesc,
+                   '' Phase, CAST(i.PriceLink AS VARCHAR) Item,
+                   0.0 PhaseSortOrder, CAST(i.PriceLink AS FLOAT) ItemSortOrder,
+                   i.PriceLink, MIN(i.Description) ItemDesc,
+                   MAX(c.PartNumber) PartNumber, MAX(i.OrderUOM) OrderUOM,
+                   MAX(c.Current_Cost) Current_Cost,
+                   MAX(c.Next_Cost1) Next_Cost1, MAX(c.Next_Effective1) Next_Effective1,
+                   MAX(c.Next_Cost2) Next_Cost2, MAX(c.Next_Effective2) Next_Effective2,
+                   '' AssemblyComments, '' POindex
+            FROM tblVendorCost c
+            JOIN tblVendors v ON c.Vendor = v.Vendor_ID AND v.DivisionID = {SessionState.DivisionID}
+            LEFT OUTER JOIN tblLocality l ON c.Community = l.Area
+            LEFT OUTER JOIN tblPhaseItem i ON v.DivisionID = i.DivisionID AND c.Phase = i.Phase AND c.Item = i.Item
+            LEFT OUTER JOIN DistinctAssembliesWithComments a ON a.Assembly = c.Assembly AND a.Model = c.Model AND a.DivisionID = v.DivisionID
+            WHERE {whereClause}
+              AND c.DivisionID = {costDivisionId}
+              AND ISNULL(i.PriceLink, 0) <> 0 AND c.assembly = ''
+              AND v.inactive = 0
+            GROUP BY c.Vendor, v.Vendor_Name, c.Community, c.CommunityPhase, l.Description,
+                     c.Model, c.Assembly, a.Description, i.PriceLink
+            UNION ALL
+            SELECT c.Vendor, v.Vendor_Name VendorDesc,
+                   c.Community, c.CommunityPhase, l.Description CommunityDesc,
+                   c.Model, a.Assembly, a.Description AssemblyDesc,
+                   c.Phase, c.Item,
+                   i.PhaseSortOrder, i.ItemSortOrder,
+                   i.PriceLink, i.Description ItemDesc,
+                   c.PartNumber, i.OrderUOM,
+                   c.Current_Cost,
+                   c.Next_Cost1, c.Next_Effective1,
+                   c.Next_Cost2, c.Next_Effective2,
+                   a.Comments AssemblyComments, i.POIndex
+            FROM tblVendorCost c
+            JOIN tblVendors v ON c.Vendor = v.Vendor_ID AND v.DivisionID = {SessionState.DivisionID}
+            LEFT OUTER JOIN tblLocality l ON c.Community = l.Area
+            LEFT OUTER JOIN tblPhaseItem i ON v.DivisionID = i.DivisionID AND c.Phase = i.Phase AND c.Item = i.Item
+            LEFT OUTER JOIN DistinctAssembliesWithComments a ON a.Assembly = c.Assembly AND a.Model = c.Model AND a.DivisionID = v.DivisionID
+            WHERE {whereClause}
+              AND c.DivisionID = {costDivisionId}
+              AND (ISNULL(i.PriceLink, 0) = 0 OR c.assembly <> '')
+              AND v.inactive = 0
+            {orderBy}";
+    }
+
+    private string BuildColumnHeaders(bool corpPricing, bool showNextPricing, bool showComments)
+    {
+        if (corpPricing)
+        {
+            var headers = "Group|Item|Item Description|Part Number|UOM|Price";
+            if (showNextPricing)
+                headers += "|Next Price 1|Effective 1|Next Price 2|Effective 2";
+            return headers;
+        }
+        else
+        {
+            var headers = $"{CommunityLabel}|Phase|{CommunityLabel} Name|Model|Specification|Assembly Description";
+            if (showComments)
+                headers += "|Assembly Comments|POIndex";
+            headers += "|Group|Item|Item Description|Part Number|UOM|Price";
+            if (showNextPricing)
+                headers += "|Next Price 1|Effective 1|Next Price 2|Effective 2";
+            return headers;
+        }
+    }
+
+    private ExportRow MapExportRow(Dictionary<string, object> row, bool corpPricing, bool showNextPricing, bool showComments)
+    {
+        var exportRow = new ExportRow();
+        var values = new List<string>();
+
+        if (corpPricing)
+        {
+            values.Add(row["Phase"]?.ToString() ?? "");
+            values.Add(row["Item"]?.ToString() ?? "");
+            values.Add(row["ItemDesc"]?.ToString() ?? "");
+            values.Add(row["PartNumber"]?.ToString() ?? "");
+            values.Add(row["OrderUOM"]?.ToString() ?? "");
+            values.Add(row["Current_Cost"]?.ToString() ?? "");
+            if (showNextPricing)
+            {
+                values.Add(row["Next_Cost1"]?.ToString() ?? "");
+                values.Add(row["Next_Effective1"]?.ToString() ?? "");
+                values.Add(row["Next_Cost2"]?.ToString() ?? "");
+                values.Add(row["Next_Effective2"]?.ToString() ?? "");
+            }
+        }
+        else
+        {
+            values.Add(row["Community"]?.ToString() ?? "");
+            values.Add(row["CommunityPhase"]?.ToString() ?? "");
+            values.Add(row["CommunityDesc"]?.ToString() ?? "");
+            values.Add(row["Model"]?.ToString() ?? "");
+            values.Add(row["Assembly"]?.ToString() ?? "");
+            values.Add(row["AssemblyDesc"]?.ToString() ?? "");
+            if (showComments)
+            {
+                values.Add(row["AssemblyComments"]?.ToString() ?? "");
+                values.Add(row["POindex"]?.ToString() ?? "");
+            }
+            values.Add(row["Phase"]?.ToString() ?? "");
+            values.Add(row["Item"]?.ToString() ?? "");
+            values.Add(row["ItemDesc"]?.ToString() ?? "");
+            values.Add(row["PartNumber"]?.ToString() ?? "");
+            values.Add(row["OrderUOM"]?.ToString() ?? "");
+            values.Add(row["Current_Cost"]?.ToString() ?? "");
+            if (showNextPricing)
+            {
+                values.Add(row["Next_Cost1"]?.ToString() ?? "");
+                values.Add(row["Next_Effective1"]?.ToString() ?? "");
+                values.Add(row["Next_Cost2"]?.ToString() ?? "");
+                values.Add(row["Next_Effective2"]?.ToString() ?? "");
+            }
+        }
+
+        exportRow.Values = values;
+        return exportRow;
+    }
+
+    private async Task ExportToFile(List<ExportRow> rows, string vendorDesc, bool corpPricing, bool showNextPricing, bool showComments)
+    {
+        var cleanName = CleanFileName(vendorDesc);
+        var fileName = $"{cleanName}.xls";
+        var fullPath = Path.Combine(ExportPath, fileName);
+
+        try
+        {
+            // Ensure export directory exists (VB6: CreatePath)
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            // Write tab-delimited file (VB6: SaveGrid with flexFileExcel writes tab-delimited .xls)
+            using var writer = new StreamWriter(fullPath);
+            foreach (var row in rows)
+            {
+                if (row.IsHeader)
+                {
+                    await writer.WriteLineAsync(row.HeaderText.Replace("|", "\t"));
+                }
+                else
+                {
+                    await writer.WriteLineAsync(string.Join("\t", row.Values));
+                }
+            }
+
+            Console.WriteLine($"Exported {rows.Count} rows to {fullPath}");
+
+        }
+        catch (IOException ex)
+        {
+            // VB6: Error 70/75 - file access error
+            Logger.LogWarning(ex, "Cannot create the {fullPath} file.");
+
+            throw;
+        }
+    }
+
+    private string CleanFileName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "export";
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+    }
+
+    // === Save Options ===
+    private async Task SaveOptions()
+    {
+        try
+        {
+            await SaveOption("SortPricelistExportByItem", ChkSortByItem.ToString());
+            await SaveOption("PricelistExportSingleFile", ChkSingleFile.ToString());
+            await SaveOption("ClosePricelistExportDialog", ChkCloseWhenFinished.ToString());
+            await SaveOption("PricelistExportNextPrices", ChkExportNextPrices.ToString());
+            await SaveOption("PricelistExportComments", ChkExportComments.ToString());
+            await SaveOption("PricelistExportPath", ExportPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "SaveOptions error");
+
+        }
+    }
+
+    private async Task SaveOption(string name, string value)
+    {
+        try
+        {
+            var exists = await db.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM tblOptions WHERE Name = @Name AND DivisionID = @DivisionID",
+                new { Name = name, SessionState.DivisionID });
+            if (exists > 0)
+            {
+                await db.ExecuteAsync(
+                    "UPDATE tblOptions SET Value = @Value WHERE Name = @Name AND DivisionID = @DivisionID",
+                    new { Value = value, Name = name, SessionState.DivisionID });
+            }
+            else
+            {
+                await db.ExecuteAsync(
+                    "INSERT INTO tblOptions (Name, Value, DivisionID) VALUES (@Name, @Value, @DivisionID)",
+                    new { Name = name, Value = value, SessionState.DivisionID });
+            }
+        }
+        catch { /* non-critical */ }
+    }
+
+    // === Models ===
+    public class SelectableItem
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+        public bool IsSelected { get; set; } = true;
+    }
+
+    public class ExportRow
+    {
+        public bool IsHeader { get; set; }
+        public string HeaderText { get; set; } = "";
+        public List<string> Values { get; set; } = new();
+    }
+}

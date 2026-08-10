@@ -1,0 +1,249 @@
+@namespace HomeFront.Components.Pages
+
+@* 
+    Tooltips.razor
+    Converted from VB6 TTDefs_472.bas (Tooltips module)
+    
+    This VB6 module contained Win32 API tooltip definitions, constants, structures,
+    and utility functions for native tooltip control management. In Blazor/.NET,
+    native Win32 tooltips are not used — tooltips are handled via HTML title attributes,
+    CSS tooltips, or component-based tooltip systems.
+    
+    This component provides equivalent tooltip functionality and the utility functions
+    from the original VB6 module as a reusable Blazor service/component.
+*@
+
+@code {
+    // ========================================================================
+    // Tooltip Styles (from VB6 TTS_ constants)
+    // ========================================================================
+    public const int TTS_ALWAYSTIP = 0x1;
+    public const int TTS_NOPREFIX = 0x2;
+
+    // ========================================================================
+    // Tooltip Flags (from VB6 TT_Flags enum)
+    // ========================================================================
+    [Flags]
+    public enum TT_Flags
+    {
+        TTF_IDISHWND = 0x1,
+        TTF_CENTERTIP = 0x2,
+        TTF_RTLREADING = 0x4,
+        TTF_SUBCLASS = 0x10,
+        TTF_TRACK = 0x20,
+        TTF_ABSOLUTE = 0x80,
+        TTF_TRANSPARENT = 0x100,
+        TTF_DI_SETITEM = 0x8000   // valid only on the TTN_NEEDTEXT callback
+    }
+
+    // ========================================================================
+    // Tooltip Delay Time Types (from VB6 TT_DelayTime enum)
+    // ========================================================================
+    public enum TT_DelayTime
+    {
+        TTDT_AUTOMATIC = 0,
+        TTDT_RESHOW = 1,
+        TTDT_AUTOPOP = 2,
+        TTDT_INITIAL = 3
+    }
+
+    // ========================================================================
+    // Tooltip Messages (from VB6 TT_Msgs enum)
+    // ========================================================================
+    public enum TT_Msgs
+    {
+        TTM_ACTIVATE = 0x401,
+        TTM_SETDELAYTIME = 0x403,
+        TTM_RELAYEVENT = 0x407,
+        TTM_GETTOOLCOUNT = 0x40D,
+        TTM_WINDOWFROMPOINT = 0x410,
+        TTM_ADDTOOL = 0x404,
+        TTM_DELTOOL = 0x405,
+        TTM_NEWTOOLRECT = 0x406,
+        TTM_GETTOOLINFO = 0x408,
+        TTM_SETTOOLINFO = 0x409,
+        TTM_HITTEST = 0x40A,
+        TTM_GETTEXT = 0x40B,
+        TTM_UPDATETIPTEXT = 0x40C,
+        TTM_ENUMTOOLS = 0x40E,
+        TTM_GETCURRENTTOOL = 0x40F,
+        TTM_TRACKACTIVATE = 0x411,
+        TTM_TRACKPOSITION = 0x412,
+        TTM_SETTIPBKCOLOR = 0x413,
+        TTM_SETTIPTEXTCOLOR = 0x414,
+        TTM_GETDELAYTIME = 0x415,
+        TTM_GETTIPBKCOLOR = 0x416,
+        TTM_GETTIPTEXTCOLOR = 0x417,
+        TTM_SETMAXTIPWIDTH = 0x418,
+        TTM_GETMAXTIPWIDTH = 0x419,
+        TTM_SETMARGIN = 0x41A,
+        TTM_GETMARGIN = 0x41B,
+        TTM_POP = 0x41C,
+        TTM_UPDATE = 0x41D
+    }
+
+    // ========================================================================
+    // Tooltip Notifications (from VB6 TT_Notifications enum)
+    // ========================================================================
+    public enum TT_Notifications
+    {
+        TTN_FIRST = -520,
+        TTN_LAST = -549,
+        TTN_NEEDTEXT = -520,   // TTN_FIRST - 0 (ANSI)
+        TTN_SHOW = -521,       // TTN_FIRST - 1
+        TTN_POP = -522         // TTN_FIRST - 2
+    }
+
+    // ========================================================================
+    // Structures (from VB6 Type definitions)
+    // ========================================================================
+
+    public struct PointApi
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+    }
+
+    public struct RectApi
+    {
+        public int Left { get; set; }
+        public int Top { get; set; }
+        public int Right { get; set; }
+        public int Bottom { get; set; }
+    }
+
+    public class NmHdr
+    {
+        public long HwndFrom { get; set; }
+        public long IdFrom { get; set; }
+        public long Code { get; set; }
+    }
+
+    public class ToolInfo
+    {
+        public int CbSize { get; set; }
+        public TT_Flags UFlags { get; set; }
+        public long Hwnd { get; set; }
+        public long UId { get; set; }
+        public RectApi Rect { get; set; }
+        public long HInst { get; set; }
+        public string LpszText { get; set; } = "";
+        public long LParam { get; set; }
+    }
+
+    public class TtHitTestInfo
+    {
+        public long Hwnd { get; set; }
+        public PointApi Pt { get; set; }
+        public ToolInfo Ti { get; set; } = new();
+    }
+
+    public class NmTtDispInfo
+    {
+        public NmHdr Hdr { get; set; } = new();
+        public long LpszText { get; set; }
+        public string SzText { get; set; } = new string('\0', 80);
+        public long HInst { get; set; }
+        public long UFlags { get; set; }
+        public long LParam { get; set; }
+    }
+
+    // ========================================================================
+    // Constants
+    // ========================================================================
+    public const string TOOLTIPS_CLASS = "tooltips_class32";
+    public const int WM_USER = 0x400;
+
+    // ========================================================================
+    // Utility Functions (from VB6 module-level functions)
+    // ========================================================================
+
+    /// <summary>
+    /// Returns the low-order word (16-bit) from the given 32-bit value.
+    /// Equivalent to VB6 LOWORD function.
+    /// </summary>
+    public static short LOWORD(int dwValue)
+    {
+        return (short)(dwValue & 0xFFFF);
+    }
+
+    /// <summary>
+    /// Returns the high-order word (16-bit) from the given 32-bit value.
+    /// </summary>
+    public static short HIWORD(int dwValue)
+    {
+        return (short)((dwValue >> 16) & 0xFFFF);
+    }
+
+    /// <summary>
+    /// Returns the larger of the two passed parameters.
+    /// Equivalent to VB6 Max function.
+    /// </summary>
+    public static long Max(long param1, long param2)
+    {
+        return param1 > param2 ? param1 : param2;
+    }
+
+    /// <summary>
+    /// Extracts a string from a null-terminated buffer.
+    /// Equivalent to VB6 GetStrFromBufferA function.
+    /// </summary>
+    public static string GetStrFromBufferA(string szA)
+    {
+        if (string.IsNullOrEmpty(szA))
+            return szA;
+
+        int nullIndex = szA.IndexOf('\0');
+        if (nullIndex >= 0)
+            return szA.Substring(0, nullIndex);
+
+        return szA;
+    }
+
+    // ========================================================================
+    // Blazor Tooltip Helper Methods
+    // ========================================================================
+
+    /// <summary>
+    /// Builds an HTML title attribute dictionary for use with Blazor components.
+    /// This replaces the Win32 tooltip control functionality.
+    /// </summary>
+    public static Dictionary<string, object> GetTooltipAttributes(string tooltipText)
+    {
+        return new Dictionary<string, object>
+        {
+            { "title", tooltipText ?? "" }
+        };
+    }
+
+    /// <summary>
+    /// Builds CSS class string for tooltip styling based on delay time type.
+    /// </summary>
+    public static string GetTooltipCssClass(TT_DelayTime delayType)
+    {
+        return delayType switch
+        {
+            TT_DelayTime.TTDT_AUTOMATIC => "tooltip-auto",
+            TT_DelayTime.TTDT_RESHOW => "tooltip-reshow",
+            TT_DelayTime.TTDT_AUTOPOP => "tooltip-autopop",
+            TT_DelayTime.TTDT_INITIAL => "tooltip-initial",
+            _ => "tooltip-default"
+        };
+    }
+
+    /// <summary>
+    /// Gets the default delay time in milliseconds for a given delay type.
+    /// Mirrors the Win32 tooltip delay behavior.
+    /// </summary>
+    public static int GetDefaultDelayMs(TT_DelayTime delayType)
+    {
+        return delayType switch
+        {
+            TT_DelayTime.TTDT_AUTOMATIC => 500,
+            TT_DelayTime.TTDT_RESHOW => 100,
+            TT_DelayTime.TTDT_AUTOPOP => 5000,
+            TT_DelayTime.TTDT_INITIAL => 500,
+            _ => 500
+        };
+    }
+}

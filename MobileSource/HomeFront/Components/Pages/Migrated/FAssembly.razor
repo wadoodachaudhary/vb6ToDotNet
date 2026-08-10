@@ -5194,15 +5194,31 @@ ORDER BY d.Phase, d.Item, d.itemchart, d.Sequence";
                              WHERE ParentAssemblyID = @Parent
                                AND ComponentAssemblyID = @Child)",
                         new { Parent = mAssemblyID, Child = componentId });
-                    if (affected > 0) inserted++; else skipped++;
+                    if (affected > 0)
+                    {
+                        inserted++;
+                        // VB6 appends the pick at the BOTTOM of gComponents and
+                        // leaves it there — Cost blank — until the next full load
+                        // (FAssembly.frm:2530-2540; no reload after add or save).
+                        // A reload here would re-sort the new row into its
+                        // assemblyid position mid-session.
+                        if (!ComponentsData.Any(c => c.AssemblyId == componentId))
+                            ComponentsData.Add(new AssemblyComponentRow
+                            {
+                                AssemblyId = componentId,
+                                Community = GetRowString(pick, "community"),
+                                Model = GetRowString(pick, "model"),
+                                Option = GetRowString(pick, "optionid"),
+                                Assembly = GetRowString(pick, "assembly"),
+                                Description = GetRowString(pick, "description"),
+                                Qty = 1
+                            });
+                    }
+                    else skipped++;
                 }
-                await LoadComponentsGridAsync();
-                // LoadComponentsGridAsync recomputes ComponentCost from the
-                // reloaded rows, but doesn't push the new value into the
-                // ComponentCostLabel / TotalCostLabel — that's RecalculateCosts'
-                // job. Without this call, the totals card stays frozen at
-                // the pre-add value even though the grid shows the new rows.
+                RecalculateComponentCost();
                 RecalculateCosts();
+                if (gComponents != null) await gComponents.Refresh();
                 // mDirty=true even though the INSERT already hit the DB:
                 // signals to the user that the form's state changed (Save
                 // button lights up) and keeps the close-without-save guard
@@ -5660,20 +5676,20 @@ from salesassemblylist
 where DivisionID = {divisionId} and assemblytype=0
 order by 1,2,3,4,5,6,7"));
 
-            views.Add(("Sales Model Specific Options", $@"
+            views.Add(("Sales Model Specific Options (Descoped)", $@"
 select CategoryDesc Category,community areaID,CommunityDesc {communityAlias},a.Model,dm.description ModelDescription,Series,a.Model modelid,OptionID,OptionID [Option],Assembly,a.Description,assemblytype,1 Source
 from salesassemblylist a
 left outer join distinctmodelsbydivision dm on(a.model=dm.model and a.divisionid=dm.divisionid)
 where a.DivisionID = {divisionId} and assemblytype=2
 order by 1,2,3,4,5,6,7"));
 
-            views.Add(("Sales Design Center Options", $@"
+            views.Add(("Sales Design Center Options (Descoped)", $@"
 select CategoryDesc Category,community areaID,CommunityDesc {communityAlias},Model modelid,OptionID,OptionID [Option],Assembly,Description,assemblytype,1 Source
 from salesassemblylist
 where DivisionID = {divisionId} and assemblytype=4
 order by 1,2,3,4,5,6,7"));
 
-            views.Add(("Sales Global Options", $@"
+            views.Add(("Sales Global Options (Descoped)", $@"
 select CategoryDesc Category,community areaID,CommunityDesc {communityAlias},Model modelid,OptionID,OptionID [Option],Assembly,Description,assemblytype,1 Source
 from salesassemblylist
 where DivisionID = {divisionId} and assemblytype=3
@@ -6821,7 +6837,7 @@ order by 1,2,3,4,5,6,7";
         LEFT OUTER JOIN taxGroups t ON t.DivisionID=@DivisionID AND t.TaxGroup=dbo.Purch_GetDefaultTaxGroup('',@mPricingCommunity,'',d.Model,d.Assembly,i.phase,i.item,v.Vendor_ID,i.JCCategory,@DivisionID)
         WHERE c.ParentAssemblyid=@ParentAssemblyId
         GROUP BY m.assemblyid, m.community, m.assembly, m.model, m.optionid, m.description, c.qty
-        ORDER BY m.assembly";
+        ORDER BY m.assemblyid";
 
     // ═══════════════════════════════════════════════════════════════════════
     // ── Combo Loaders ────────────────────────────────────────────────────

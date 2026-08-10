@@ -1,0 +1,842 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@page "/item-picklist"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+@layout HFComponent
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject ILogger<FItemPicklist> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Add Items - HomeFront</PageTitle>
+
+<div class="picklist-container" @onkeydown="OnTreeKeyDown" tabindex="0">
+    <div class="picklist-body">
+        <!-- Left Panel: Data Source + Button Bar -->
+        <div class="left-panel">
+            @if (DataSourceEnabled)
+            {
+                <DropDownListControl TValue="int" TItem="ComboBoxItem"
+                                     CssClass="data-source-select"
+                                     @bind-Value="SelectedDataSourceIndex"
+                                     @bind-Value:after="OnDataSourceChanged"
+                                     DataSource="@DataSourceItems"
+                                     TextFieldName="Text"
+                                     ValueFieldName="Value" />
+            }
+
+            <div class="button-bar">
+                @foreach (var view in VisibleViews)
+                {
+                    <div class="button-bar-item @(view.Index == mViewIndex ? "selected" : "")"
+                         @onclick="() => OnButtonBarItemClick(view.Index)">
+                        <img src="images/32/@(view.IconName).ico" alt="@view.Name"
+                             onerror="this.style.display='none'" />
+                        <span>@view.Name</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Right Panel: Tree Grid -->
+        <div class="right-panel">
+            <div class="tree-container">
+                @if (IsLoading)
+                {
+                    <div class="loading-indicator">⏳ Loading...</div>
+                }
+                else if (TreeRootNodes.Count == 0)
+                {
+                    <div class="loading-indicator">No items found.</div>
+                }
+                else
+                {
+                    <div style="padding: 4px;">
+                        @foreach (var node in TreeRootNodes)
+                        {
+                            @RenderTreeNode(node)
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-bar">
+        @if (ShowDebug)
+        {
+            <span class="debug-label" @onclick="OnDebugClick">Debug</span>
+        }
+        <span style="flex:1;"></span>
+        <ButtonControl CssClass="picklist-footer-btn fx-primary" OnClick="OnOpenClick">Open</ButtonControl>
+        <ButtonControl CssClass="picklist-footer-btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </div>
+</div>
+
+@code {
+    // === Database ===
+// === Parameters (set by caller before showing) ===
+    [Parameter] public string Caption { get; set; } = "Add Items";
+    [Parameter] public bool MultiSelect { get; set; } = true;
+    [Parameter] public bool GlobalOptions { get; set; } = false;
+    [Parameter] public bool ModelsAndOptions { get; set; } = true;
+    [Parameter] public bool DCOptions { get; set; } = false;
+    [Parameter] public bool DataSourceEnabled { get; set; } = false;
+    [Parameter] public int Status { get; set; } = 1; // AssemblyStatuses
+    [Parameter] public bool ShowPhase { get; set; } = true;
+    [Parameter] public EventCallback<ItemPicklistResult> OnItemsSelected { get; set; }
+    [Parameter] public EventCallback OnCancelled { get; set; }
+
+    // === Enums ===
+    public enum AssemblyTypes { atModel = 0, atOption = 1, atGlobal = 2, atDesignCenter = 3 }
+
+    // === App Options (would come from HFApp.Options in VB6) ===
+    private bool ModelByArea => false;
+    private bool ModelsByArea_Phase => false;
+    private bool OptionByArea => false;
+    private bool OptionByAreaPhase => false;
+    private bool GlobalOptionByArea => false;
+    private bool GlobalOptionByAreaPhase => false;
+    private bool DCOptionByArea => false;
+    private bool DCOptionByAreaPhase => false;
+    private bool UseMajorGroup => false;
+
+    // === State ===
+    private bool IsLoading = false;
+    private bool ShowDebug = false;
+    private int SelectedDataSourceIndex = 0;
+    private int mViewIndex = -1;
+    private List<ViewDef> AllViews = new();
+    private List<ViewDef> VisibleViews => AllViews.Where(v => v.Visible).ToList();
+    private List<TreeNode> TreeRootNodes = new();
+    private HashSet<TreeNode> SelectedNodes = new();
+
+    // Data-source dropdown choices (mirrors the VB6 two-item combo: Estimating / Sales Items)
+    private static readonly List<ComboBoxItem> DataSourceItems = new()
+    {
+        new ComboBoxItem { Value = 0, Text = "Estimating" },
+        new ComboBoxItem { Value = 1, Text = "Sales Items" },
+    };
+
+    // === Result ===
+    private List<SelectedItemInfo> mSelectedItems = new();
+    private int mSelectedDataSource = 0;
+
+    // === Models ===
+    public class ViewDef
+    {
+        public int Index { get; set; }
+        public string Name { get; set; } = "";
+        public string IconName { get; set; } = "";
+        public string KeyFlds { get; set; } = "";
+        public string DisplayFlds { get; set; } = "";
+        public string LevelIcons { get; set; } = "";
+        public string FilterClause { get; set; } = "";
+        public AssemblyTypes AssemblyType { get; set; }
+        public bool Visible { get; set; }
+    }
+
+    public class TreeNode
+    {
+        public string DisplayText { get; set; } = "";
+        public string KeyField { get; set; } = "";
+        public string KeyValue { get; set; } = "";
+        public string WhereClause { get; set; } = "";
+        public string IconName { get; set; } = "";
+        public int Level { get; set; }
+        public bool IsExpanded { get; set; } = false;
+        public bool ChildrenLoaded { get; set; } = false;
+        public bool IsLeaf { get; set; } = false;
+        public List<TreeNode> Children { get; set; } = new();
+
+        // Data carried on the node (mirrors VB6 grid row data)
+        public Dictionary<string, string> ColumnValues { get; set; } = new();
+    }
+
+    public class SelectedItemInfo
+    {
+        public string Community { get; set; } = "";
+        public string CommunityPhase { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string OptionID { get; set; } = "";
+        public AssemblyTypes AssemblyType { get; set; }
+    }
+
+    public class ItemPicklistResult
+    {
+        public List<SelectedItemInfo> Items { get; set; } = new();
+        public int DataSource { get; set; }
+    }
+
+    public class ComboBoxItem
+    {
+        public int Value { get; set; }
+        public string Text { get; set; } = "";
+    }
+
+    // === Lifecycle ===
+    protected override void OnInitialized()
+    {
+        LoadViews();
+    }
+
+    // === View Definitions ===
+    private void LoadViews()
+    {
+        AllViews.Clear();
+        int i = 0;
+
+        // Models
+        var modelsView = new ViewDef
+        {
+            Index = i,
+            Name = "Models",
+            IconName = "Models",
+            FilterClause = $"AssemblyType={(int)AssemblyTypes.atModel}",
+            AssemblyType = AssemblyTypes.atModel,
+            Visible = ModelsAndOptions
+        };
+        modelsView.KeyFlds = BuildFieldList(
+            ModelByArea ? "Community" : null,
+            ShowPhase && ModelByArea && ModelsByArea_Phase ? "CommunityPhase" : null,
+            "Model");
+        modelsView.DisplayFlds = BuildFieldList(
+            ModelByArea ? "Community + '  --  ' + CommunityDesc" : null,
+            ShowPhase && ModelByArea && ModelsByArea_Phase ? "CommunityPhaseDesc" : null,
+            "Assembly + '  --  ' + AssemblyDesc");
+        modelsView.LevelIcons = BuildFieldList(
+            ModelByArea ? "area" : null,
+            ShowPhase && ModelByArea && ModelsByArea_Phase ? "category" : null,
+            "model");
+        AllViews.Add(modelsView);
+        i++;
+
+        // Options
+        var optionsView = new ViewDef
+        {
+            Index = i,
+            Name = "Options",
+            IconName = "Options",
+            FilterClause = $"AssemblyType IN({(int)AssemblyTypes.atModel},{(int)AssemblyTypes.atOption})",
+            AssemblyType = AssemblyTypes.atOption,
+            Visible = ModelsAndOptions
+        };
+        optionsView.KeyFlds = BuildFieldList(
+            OptionByArea ? "Community" : null,
+            ShowPhase && OptionByArea && OptionByAreaPhase ? "CommunityPhase" : null,
+            "Model", "OptionID");
+        optionsView.DisplayFlds = BuildFieldList(
+            OptionByArea ? "Community + '  --  ' + CommunityDesc" : null,
+            ShowPhase && OptionByArea && OptionByAreaPhase ? "CommunityPhaseDesc" : null,
+            "Model + '  --  ' + ModelDesc", "Assembly + '  --  ' + AssemblyDesc");
+        optionsView.LevelIcons = BuildFieldList(
+            OptionByArea ? "area" : null,
+            ShowPhase && OptionByArea && OptionByAreaPhase ? "category" : null,
+            "model", "option");
+        AllViews.Add(optionsView);
+        i++;
+
+        // Global Options
+        var globalView = new ViewDef
+        {
+            Index = i,
+            Name = "Global Options",
+            IconName = "Global Options",
+            FilterClause = $"AssemblyType={(int)AssemblyTypes.atGlobal}",
+            AssemblyType = AssemblyTypes.atGlobal,
+            Visible = GlobalOptions
+        };
+        globalView.KeyFlds = BuildFieldList(
+            GlobalOptionByArea ? "Community" : null,
+            ShowPhase && GlobalOptionByArea && GlobalOptionByAreaPhase ? "CommunityPhase" : null,
+            UseMajorGroup ? "MajorGroup" : null,
+            "Category", "OptionID");
+        globalView.DisplayFlds = BuildFieldList(
+            GlobalOptionByArea ? "Community + '  --  ' + CommunityDesc" : null,
+            ShowPhase && GlobalOptionByArea && GlobalOptionByAreaPhase ? "CommunityPhaseDesc" : null,
+            UseMajorGroup ? "MajorGroupDesc" : null,
+            "CategoryDesc", "Assembly + '  --  ' + AssemblyDesc");
+        globalView.LevelIcons = BuildFieldList(
+            GlobalOptionByArea ? "area" : null,
+            ShowPhase && GlobalOptionByArea && GlobalOptionByAreaPhase ? "category" : null,
+            UseMajorGroup ? "groupphase" : null,
+            "phase", "option");
+        AllViews.Add(globalView);
+        i++;
+
+        // Design Center Options
+        var dcView = new ViewDef
+        {
+            Index = i,
+            Name = "Design Center Options",
+            IconName = "Design Center Options",
+            FilterClause = $"AssemblyType={(int)AssemblyTypes.atDesignCenter}",
+            AssemblyType = AssemblyTypes.atDesignCenter,
+            Visible = DCOptions
+        };
+        dcView.KeyFlds = BuildFieldList(
+            DCOptionByArea ? "Community" : null,
+            ShowPhase && DCOptionByArea && DCOptionByAreaPhase ? "CommunityPhase" : null,
+            UseMajorGroup ? "MajorGroup" : null,
+            "Category", "OptionID");
+        dcView.DisplayFlds = BuildFieldList(
+            DCOptionByArea ? "Community + '  --  ' + CommunityDesc" : null,
+            ShowPhase && DCOptionByArea && DCOptionByAreaPhase ? "CommunityPhaseDesc" : null,
+            UseMajorGroup ? "MajorGroupDesc" : null,
+            "CategoryDesc", "Assembly + '  --  ' + AssemblyDesc");
+        dcView.LevelIcons = BuildFieldList(
+            DCOptionByArea ? "area" : null,
+            ShowPhase && DCOptionByArea && DCOptionByAreaPhase ? "category" : null,
+            UseMajorGroup ? "groupphase" : null,
+            "phase", "option");
+        AllViews.Add(dcView);
+
+        // Select first visible view
+        var firstVisible = VisibleViews.FirstOrDefault();
+        if (firstVisible != null)
+        {
+            mViewIndex = firstVisible.Index;
+            _ = LoadDataAsync(true);
+        }
+    }
+
+    private string BuildFieldList(params string?[] fields)
+    {
+        return string.Join(",", fields.Where(f => !string.IsNullOrEmpty(f)));
+    }
+
+    // === Data Source Changed ===
+    private async Task OnDataSourceChanged()
+    {
+        await LoadDataAsync(true);
+    }
+
+    // === Button Bar Click ===
+    private async Task OnButtonBarItemClick(int viewIndex)
+    {
+        mViewIndex = viewIndex;
+        await LoadDataAsync(true);
+    }
+
+    // === Tree Node Rendering ===
+    private RenderFragment RenderTreeNode(TreeNode node) => __builder =>
+    {
+        <div class="tree-node">
+            <span class="tree-node-content @(SelectedNodes.Contains(node) ? (MultiSelect ? "multi-selected" : "selected") : "")"
+                  @onclick="(e) => OnNodeClick(node, e)"
+                  @ondblclick="() => OnNodeDoubleClick(node)">
+                @if (!node.IsLeaf)
+                {
+                    <span class="tree-toggle" @onclick="() => ToggleNode(node)" @onclick:stopPropagation="true">
+                        @(node.IsExpanded ? "▼" : "▶")
+                    </span>
+                }
+                else
+                {
+                    <span class="tree-toggle">&nbsp;</span>
+                }
+                <img class="tree-icon" src="images/16/@(node.IconName).ico" alt=""
+                     onerror="this.style.display='none'" />
+                <span>@node.DisplayText</span>
+            </span>
+            @if (node.IsExpanded && node.Children.Count > 0)
+            {
+                <div class="tree-children">
+                    @foreach (var child in node.Children)
+                    {
+                        @RenderTreeNode(child)
+                    }
+                </div>
+            }
+        </div>
+    };
+
+    private async Task ToggleNode(TreeNode node)
+    {
+        if (node.IsExpanded)
+        {
+            node.IsExpanded = false;
+        }
+        else
+        {
+            if (!node.ChildrenLoaded)
+            {
+                await LoadChildrenAsync(node);
+            }
+            node.IsExpanded = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnNodeClick(TreeNode node, MouseEventArgs e)
+    {
+        if (MultiSelect && (e.CtrlKey || e.MetaKey))
+        {
+            if (SelectedNodes.Contains(node))
+                SelectedNodes.Remove(node);
+            else
+                SelectedNodes.Add(node);
+        }
+        else if (MultiSelect && e.ShiftKey && SelectedNodes.Count > 0)
+        {
+            // Simple shift-select: add this node
+            SelectedNodes.Add(node);
+        }
+        else
+        {
+            SelectedNodes.Clear();
+            SelectedNodes.Add(node);
+        }
+
+        // If node has children and is collapsed, expand it
+        if (!node.IsLeaf && !node.IsExpanded)
+        {
+            await ToggleNode(node);
+        }
+    }
+
+    private async Task OnNodeDoubleClick(TreeNode node)
+    {
+        if (node.IsLeaf || (node.IsLeaf == false && node.Children.Count == 0 && node.ChildrenLoaded))
+        {
+            SelectedNodes.Clear();
+            SelectedNodes.Add(node);
+            await OnOpenClick();
+        }
+        else
+        {
+            await ToggleNode(node);
+        }
+    }
+
+    // === Load Data ===
+    private async Task LoadDataAsync(bool clearTree)
+    {
+        if (mViewIndex < 0 || mViewIndex >= AllViews.Count) return;
+
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (clearTree)
+            {
+                TreeRootNodes.Clear();
+                SelectedNodes.Clear();
+            }
+
+            var view = AllViews[mViewIndex];
+            var keyFields = view.KeyFlds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var displayFields = view.DisplayFlds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            var iconFields = view.LevelIcons.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            int totalLevels = keyFields.Length;
+
+            if (totalLevels == 0) return;
+
+            // Load level 0
+            var keyFld = keyFields[0].Trim();
+            var displayFld = displayFields[0].Trim();
+            var iconName = iconFields.Length > 0 ? iconFields[0].Trim() : "item";
+            var tableName = SelectedDataSourceIndex == 0 ? "AssemblyList" : "SalesAssemblyList";
+
+            var whereClause = view.FilterClause;
+
+            // Special handling for Options view
+            var extraFilter = "";
+            if (view.Name == "Options")
+            {
+                if (keyFld == "OptionID" || keyFld == "Community")
+                    extraFilter = $" AND AssemblyType={(int)AssemblyTypes.atOption}";
+            }
+
+            var sql = $@"SELECT DISTINCT {keyFld}, {displayFld}
+                         FROM {tableName}
+                         WHERE DivisionID = @DivisionID AND {whereClause}{extraFilter}
+                           AND Status <= @Status
+                         ORDER BY 2";
+
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, Status });
+
+            foreach (var row in rows)
+            {
+                var dict = row as IDictionary<string, object>;
+                var keyValue = dict?.Values.FirstOrDefault()?.ToString()?.Trim() ?? "";
+                var displayValue = dict?.Values.Skip(1).FirstOrDefault()?.ToString()?.Trim() ?? "";
+
+                if (string.IsNullOrEmpty(displayValue)) continue;
+
+                var node = new TreeNode
+                {
+                    DisplayText = displayValue,
+                    KeyField = keyFld,
+                    KeyValue = keyValue,
+                    WhereClause = $" AND {whereClause} AND {keyFld} = '{EscapeSql(keyValue)}'",
+                    IconName = iconName,
+                    Level = 0,
+                    IsLeaf = totalLevels <= 1
+                };
+
+                // Populate column values
+                node.ColumnValues[keyFld] = keyValue;
+                if (keyFld == "Model" || keyFld == "OptionID")
+                {
+                    node.ColumnValues["Assembly"] = ParseDisplayFirst(displayValue);
+                }
+                if (keyFld == "Model")
+                {
+                    node.ColumnValues["AssemblyType"] = ((int)AssemblyTypes.atModel).ToString();
+                }
+                if (keyFld == "OptionID")
+                {
+                    node.ColumnValues["AssemblyType"] = ((int)view.AssemblyType).ToString();
+                }
+
+                TreeRootNodes.Add(node);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadChildrenAsync(TreeNode parentNode)
+    {
+        if (mViewIndex < 0 || mViewIndex >= AllViews.Count) return;
+
+        var view = AllViews[mViewIndex];
+        var keyFields = view.KeyFlds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var displayFields = view.DisplayFlds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var iconFields = view.LevelIcons.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        int totalLevels = keyFields.Length;
+        int childLevel = parentNode.Level + 1;
+
+        if (childLevel >= totalLevels)
+        {
+            parentNode.ChildrenLoaded = true;
+            return;
+        }
+
+        try
+        {
+            var keyFld = keyFields[childLevel].Trim();
+            var displayFld = displayFields[childLevel].Trim();
+            var iconName = childLevel < iconFields.Length ? iconFields[childLevel].Trim() : "item";
+            var tableName = SelectedDataSourceIndex == 0 ? "AssemblyList" : "SalesAssemblyList";
+
+            var whereBase = parentNode.WhereClause;
+
+            // Special handling for Options view
+            var extraFilter = "";
+            if (view.Name == "Options")
+            {
+                if (keyFld == "OptionID" || keyFld == "Community")
+                    extraFilter = $" AND AssemblyType={(int)AssemblyTypes.atOption}";
+            }
+
+            var sql = $@"SELECT DISTINCT {keyFld}, {displayFld}
+                         FROM {tableName}
+                         WHERE DivisionID = @DivisionID {whereBase}{extraFilter}
+                           AND Status <= @Status
+                         ORDER BY 2";
+
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID, Status });
+
+            parentNode.Children.Clear();
+            foreach (var row in rows)
+            {
+                var dict = row as IDictionary<string, object>;
+                var keyValue = dict?.Values.FirstOrDefault()?.ToString()?.Trim() ?? "";
+                var displayValue = dict?.Values.Skip(1).FirstOrDefault()?.ToString()?.Trim() ?? "";
+
+                if (string.IsNullOrEmpty(displayValue)) continue;
+
+                var childNode = new TreeNode
+                {
+                    DisplayText = displayValue,
+                    KeyField = keyFld,
+                    KeyValue = keyValue,
+                    WhereClause = $"{whereBase} AND {keyFld} = '{EscapeSql(keyValue)}'",
+                    IconName = iconName,
+                    Level = childLevel,
+                    IsLeaf = childLevel + 1 >= totalLevels
+                };
+
+                // Inherit parent column values
+                foreach (var kv in parentNode.ColumnValues)
+                    childNode.ColumnValues[kv.Key] = kv.Value;
+
+                // Set this level's value
+                childNode.ColumnValues[keyFld] = keyValue;
+
+                if (keyFld == "Model")
+                {
+                    childNode.ColumnValues["Assembly"] = ParseDisplayFirst(displayValue);
+                    childNode.ColumnValues["AssemblyType"] = ((int)AssemblyTypes.atModel).ToString();
+                }
+                if (keyFld == "OptionID")
+                {
+                    childNode.ColumnValues["Assembly"] = ParseDisplayFirst(displayValue);
+                    childNode.ColumnValues["AssemblyType"] = ((int)view.AssemblyType).ToString();
+                }
+
+                parentNode.Children.Add(childNode);
+            }
+
+            parentNode.ChildrenLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Operation failed");
+
+        }
+    }
+
+    // === Open (OK) ===
+    private async Task OnOpenClick()
+    {
+        if (mViewIndex < 0 || mViewIndex >= AllViews.Count) return;
+
+        var view = AllViews[mViewIndex];
+        var result = new List<SelectedItemInfo>();
+
+        foreach (var node in SelectedNodes)
+        {
+            var assembly = node.ColumnValues.GetValueOrDefault("Assembly", "");
+            if (string.IsNullOrEmpty(assembly)) continue;
+
+            var assemblyTypeStr = node.ColumnValues.GetValueOrDefault("AssemblyType", "");
+            if (!int.TryParse(assemblyTypeStr, out var atInt)) continue;
+            var at = (AssemblyTypes)atInt;
+
+            if (at != view.AssemblyType) continue;
+
+            var item = new SelectedItemInfo
+            {
+                Assembly = assembly,
+                Model = node.ColumnValues.GetValueOrDefault("Model", ""),
+                OptionID = node.ColumnValues.GetValueOrDefault("OptionID", ""),
+                AssemblyType = at
+            };
+
+            // Community based on assembly type and options
+            item.Community = (at, true) switch
+            {
+                (AssemblyTypes.atModel, _) when ModelByArea => node.ColumnValues.GetValueOrDefault("Community", ""),
+                (AssemblyTypes.atOption, _) when OptionByArea => node.ColumnValues.GetValueOrDefault("Community", ""),
+                (AssemblyTypes.atGlobal, _) when GlobalOptionByArea => node.ColumnValues.GetValueOrDefault("Community", ""),
+                (AssemblyTypes.atDesignCenter, _) when DCOptionByArea => node.ColumnValues.GetValueOrDefault("Community", ""),
+                _ => ""
+            };
+
+            // Phase based on assembly type and options
+            item.CommunityPhase = (at, true) switch
+            {
+                (AssemblyTypes.atModel, _) when ModelsByArea_Phase => node.ColumnValues.GetValueOrDefault("CommunityPhase", ""),
+                (AssemblyTypes.atOption, _) when OptionByAreaPhase => node.ColumnValues.GetValueOrDefault("CommunityPhase", ""),
+                (AssemblyTypes.atGlobal, _) when GlobalOptionByAreaPhase => node.ColumnValues.GetValueOrDefault("CommunityPhase", ""),
+                (AssemblyTypes.atDesignCenter, _) when DCOptionByAreaPhase => node.ColumnValues.GetValueOrDefault("CommunityPhase", ""),
+                _ => ""
+            };
+
+            result.Add(item);
+        }
+
+        if (result.Count > 0)
+        {
+            mSelectedItems = result;
+            mSelectedDataSource = SelectedDataSourceIndex;
+            await OnItemsSelected.InvokeAsync(new ItemPicklistResult
+            {
+                Items = mSelectedItems,
+                DataSource = mSelectedDataSource
+            });
+        }
+    }
+
+    // === Cancel ===
+    private async Task OnCancelClick()
+    {
+        mSelectedItems.Clear();
+        await OnCancelled.InvokeAsync();
+    }
+
+    // === Debug ===
+    private void OnDebugClick()
+    {
+        // Toggle debug mode — in VB6 this showed all hidden columns
+        ShowDebug = !ShowDebug;
+    }
+
+    // === Key Navigation (mirrors VB6 gData_KeyDown) ===
+    private async Task OnTreeKeyDown(KeyboardEventArgs e)
+    {
+        var currentNode = SelectedNodes.LastOrDefault();
+        if (currentNode == null) return;
+
+        switch (e.Key)
+        {
+            case "ArrowLeft":
+                // If expanded and has children, collapse; otherwise go to parent
+                if (!currentNode.IsLeaf && currentNode.IsExpanded)
+                {
+                    currentNode.IsExpanded = false;
+                }
+                else
+                {
+                    var parent = FindParentNode(currentNode, TreeRootNodes);
+                    if (parent != null)
+                    {
+                        SelectedNodes.Clear();
+                        SelectedNodes.Add(parent);
+                    }
+                }
+                StateHasChanged();
+                break;
+
+            case "ArrowRight":
+            case "Enter":
+                if (!currentNode.IsLeaf)
+                {
+                    if (!currentNode.IsExpanded)
+                    {
+                        if (!currentNode.ChildrenLoaded)
+                            await LoadChildrenAsync(currentNode);
+                        currentNode.IsExpanded = true;
+                    }
+                    else if (currentNode.Children.Count > 0)
+                    {
+                        SelectedNodes.Clear();
+                        SelectedNodes.Add(currentNode.Children[0]);
+                    }
+                    StateHasChanged();
+                }
+                else if (e.Key == "Enter")
+                {
+                    await OnOpenClick();
+                }
+                break;
+
+            case "ArrowDown":
+                var next = GetNextVisibleNode(currentNode);
+                if (next != null)
+                {
+                    SelectedNodes.Clear();
+                    SelectedNodes.Add(next);
+                    StateHasChanged();
+                }
+                break;
+
+            case "ArrowUp":
+                var prev = GetPreviousVisibleNode(currentNode);
+                if (prev != null)
+                {
+                    SelectedNodes.Clear();
+                    SelectedNodes.Add(prev);
+                    StateHasChanged();
+                }
+                break;
+        }
+    }
+
+    private TreeNode? FindParentNode(TreeNode target, List<TreeNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Children.Contains(target)) return node;
+            var found = FindParentNode(target, node.Children);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private List<TreeNode> GetFlatVisibleNodes()
+    {
+        var flat = new List<TreeNode>();
+        void Walk(List<TreeNode> nodes)
+        {
+            foreach (var n in nodes)
+            {
+                flat.Add(n);
+                if (n.IsExpanded) Walk(n.Children);
+            }
+        }
+        Walk(TreeRootNodes);
+        return flat;
+    }
+
+    private TreeNode? GetNextVisibleNode(TreeNode current)
+    {
+        var flat = GetFlatVisibleNodes();
+        var idx = flat.IndexOf(current);
+        return idx >= 0 && idx + 1 < flat.Count ? flat[idx + 1] : null;
+    }
+
+    private TreeNode? GetPreviousVisibleNode(TreeNode current)
+    {
+        var flat = GetFlatVisibleNodes();
+        var idx = flat.IndexOf(current);
+        return idx > 0 ? flat[idx - 1] : null;
+    }
+
+    // === Public API (mirrors VB6 public functions) ===
+    public int SelectedItemCount => mSelectedItems.Count;
+
+    public string GetSelectedCommunity(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].Community : "";
+
+    public string GetSelectedCommunityPhase(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].CommunityPhase : "";
+
+    public int GetSelectedDataSource() => mSelectedDataSource;
+
+    public string GetSelectedAssembly(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].Assembly : "";
+
+    public string GetSelectedModel(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].Model : "";
+
+    public string GetSelectedOptionID(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].OptionID : "";
+
+    public AssemblyTypes GetSelectedAssemblyType(int index) =>
+        index >= 0 && index < mSelectedItems.Count ? mSelectedItems[index].AssemblyType : AssemblyTypes.atModel;
+
+    // === Helpers ===
+    private string ParseDisplayFirst(string displayValue)
+    {
+        // Extract the part before "  --  " (mirrors VB6 Parse(DisplayValue, 1, "  --  "))
+        var idx = displayValue.IndexOf("  --  ", StringComparison.Ordinal);
+        return idx >= 0 ? displayValue.Substring(0, idx).Trim() : displayValue.Trim();
+    }
+
+    private string EscapeSql(string value)
+    {
+        return value.Replace("'", "''");
+    }
+}

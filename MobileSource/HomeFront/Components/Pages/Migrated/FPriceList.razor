@@ -1,0 +1,1391 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Preview button notifies when PriceList.xml is missing
+     - View dropdown clipping fix
+     - Toolbar styles restored
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@* Canonical migration of VB6 FPriceList.frm (renamed from FPriceList 2026-06-11).
+   Keeps the /vendor-pricelist route (all existing nav links target it) and adds the
+   /price-list route. The old pre-FlexKit FPriceList is retired as FPriceListLegacy. *@
+@page "/vendor-pricelist"
+@page "/price-list"
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Dynamic
+@using System.Collections.Generic
+@using System.Linq
+@using System.Reflection
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using HomeFront.Data
+@using Microsoft.AspNetCore.Components.Web
+
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FPriceList> Logger
+@inject NotificationService Notifications
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment WebHost
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@using HomeFront.Models
+@inject DbWrapperSqlServer db
+@layout HFComponent
+<PageTitle>Vendor Item Prices</PageTitle>
+
+
+
+<div class="vendor-prices-container">
+
+    @* Toolbar — VB6 order (FPriceList.frm:644+):
+       New | Save | View ▾ | More | Less | Preview | Export | Import | Forecasting *@
+    <div class="vpl-toolbar" @onclick:stopPropagation="true">
+        <button class="vpl-tbar-btn" @onclick="NewPricelist_Click" title="New pricelist">
+            <img src="images/32/PricebookNew.ico" alt="New" onerror="this.style.display='none'" />
+            <span>New</span>
+        </button>
+
+        <button class="vpl-tbar-btn" disabled="@(!IsDirty)" @onclick="Save_Click" title="Save">
+            <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+            <span>Save</span>
+        </button>
+
+        <div class="vpl-tbar-sep"></div>
+
+        @* View split-button — drops a popup menu listing the four views with
+           ✓ on the active one. Mirrors VB6 Toolbar_ButtonDropDown. *@
+        <div class="vpl-view-popup">
+            <button class="vpl-tbar-btn" @onclick="ToggleViewMenu" title="Pick view">
+                <img src="images/32/ChangeView.ico" alt="View" onerror="this.style.display='none'" />
+                <span>View ▾</span>
+            </button>
+            @if (_viewMenuOpen)
+            {
+                <div class="vpl-view-menu">
+                    @for (var i = 0; i < Views.Count; i++)
+                    {
+                        var idx = i;
+                        <div class="vpl-view-menu-item @(idx == CurrentViewIndex ? "active" : "")"
+                             @onclick="() => SelectView(idx)">
+                            <span class="vpl-view-menu-check">@(idx == CurrentViewIndex ? "✓" : "")</span>
+                            <span class="vpl-view-menu-name">@Views[idx].Name</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="vpl-tbar-sep"></div>
+
+        <button class="vpl-tbar-btn" @onclick="More_Click" title="Increase decimal places">
+            <img src="images/32/more.ico" alt="More" onerror="this.style.display='none'" />
+            <span>More</span>
+        </button>
+        <button class="vpl-tbar-btn" @onclick="Less_Click" title="Decrease decimal places">
+            <img src="images/32/less.ico" alt="Less" onerror="this.style.display='none'" />
+            <span>Less</span>
+        </button>
+
+        <div class="vpl-tbar-sep"></div>
+
+        <button class="vpl-tbar-btn" @onclick="Preview_Click" title="Preview">
+            <img src="images/32/Preview.ico" alt="Preview" onerror="this.style.display='none'" />
+            <span>Preview</span>
+        </button>
+        <button class="vpl-tbar-btn" @onclick="Export_Click" title="Export">
+            <img src="images/32/PricebookExport.ico" alt="Export" onerror="this.style.display='none'" />
+            <span>Export</span>
+        </button>
+        <button class="vpl-tbar-btn" @onclick="Import_Click" title="Import">
+            <img src="images/32/PricebookImport.ico" alt="Import" onerror="this.style.display='none'" />
+            <span>Import</span>
+        </button>
+        <button class="vpl-tbar-btn" @onclick="Forecasting_Click" title="Forecasting">
+            <img src="images/32/Forecast.ico" alt="Forecasting" onerror="this.style.display='none'" />
+            <span>Forecasting</span>
+        </button>
+    </div>
+
+    @* Click-outside catcher for the View popup *@
+    @if (_viewMenuOpen)
+    {
+        <div class="vpl-view-menu-backdrop" @onclick="CloseViewMenu"></div>
+    }
+
+    <!-- Main split layout -->
+    <div class="main-content">
+
+        <!-- Left: Tree Panel -->
+        <div class="tree-panel">
+            <TreeGridControl @ref="gAssemblies"
+                        TValue="PriceTreeNode"
+                        DataSource="@TreeNodes"
+                        IdMapping="NodeID"
+                        ParentIdMapping="ParentID"
+                        TreeColumnIndex="0"
+                        EnableCollapseAll="true"
+                        AllowSelection="true"
+                        Height="100%"
+                        CssClass="fx-treegrid-compact fx-treegrid-dotted-lines"
+                        NodeExpandIconStyle="GroupExpandIconStyle.PlusMinus"
+                        RowSelected="OnTreeNodeSelected"
+                        Expanded="OnTreeNodeExpand">
+                <TreeGridColumn Field="NodeID" HeaderText="" Width="20px" Visible="false" />
+                <TreeGridColumn Field="Node" HeaderText="Assembly" Width="420px" />
+            </TreeGridControl>
+        </div>
+
+        <!-- Right: Price Grid -->
+        <div class="grid-panel">
+          <div @oncontextmenu="OnGridContextMenu" @oncontextmenu:preventDefault="true">
+            <GridControl @ref="gItems"
+                    TValue="VendorPriceViewModel"
+                    DataSource="@PriceData"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    AllowResizing="true"
+                    AllowSelection="true"
+                    AllowGrouping="false"
+                    AllowColumnReorder="true"
+                    EnableHover="true"
+                    Height="100%"
+                    CssClass="vpl-items-grid"
+                    FilterSettingsRef="@_filterSettings"
+                    SelectionSettingsRef="@_selectionSettings"
+                    EditSettingsRef="@_editSettings"
+                    BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                    EventsRef="@_gridEvents"
+                    OnLayoutChanged="@OnItemsLayoutChangedAsync">
+                <GridColumnsBase @key="ItemsGridLayoutVersion" DebugTag="FPriceList-gItems">
+                    @if (HasItemsGridLayout)
+                    {
+                        @foreach (var entry in GetOrderedItemsGridLayout())
+                        {
+                            var layout = entry.Layout;
+                            var fieldName = entry.Field;
+                            var columnType = entry.ColumnType;
+                            var textAlign = entry.TextAlign;
+                            var headerText = string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption;
+                            var width = layout.Width.HasValue && layout.Width.Value > 0
+                                ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px"
+                                : null;
+                            var initialVisible = !layout.Hidden;
+                            var allowEdit = _editableNumericFields.Contains(fieldName)
+                                         || _editableDateFields.Contains(fieldName)
+                                         || fieldName.Equals("SKU", StringComparison.OrdinalIgnoreCase);
+
+                            if (fieldName.Equals("TaxGroup", StringComparison.OrdinalIgnoreCase))
+                            {
+                                @* VB6 gItems_CellButtonClick "TaxGroup": the STANDARD FlexKit
+                                   edit button (AlwaysShowEditButton) opens the Tax Group picklist
+                                   via OnEditButtonClick → OnPickTaxGroup. Replaces the hand-rolled
+                                   div/span/button template; the cell still shows the raw TaxGroup
+                                   value (Ellipsis-clipped), the picker button always shows. *@
+                                <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width"
+                                              AllowEditing="false"
+                                              ShowEditButton="true" AlwaysShowEditButton="true"
+                                              Visible="@initialVisible"
+                                              ClipMode="ClipMode.Ellipsis" />
+                            }
+                            else if (fieldName.Equals("PriceLink", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <GridColumn Field="@fieldName" HeaderText="@headerText" Width="@width" AllowEditing="false" Visible="@initialVisible">
+                                    <Template>
+                                        @{ var data = (VendorPriceViewModel)context; }
+                                        <span title="@data.PriceGroupDesc">@(!string.IsNullOrWhiteSpace(data.PriceGroupDesc) ? data.PriceGroupDesc : (data.PriceLink != 0 ? data.PriceLink.ToString() : ""))</span>
+                                    </Template>
+                                </GridColumn>
+                            }
+                            else if (_editableNumericFields.Contains(fieldName))
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="ColumnType.Number"
+                                              Format="@DecimalFormat"
+                                              TextAlign="TextAlign.Right"
+                                              AllowEditing="true"
+                                              Visible="@initialVisible" />
+                            }
+                            else
+                            {
+                                <GridColumn Field="@fieldName"
+                                              HeaderText="@headerText"
+                                              Width="@width"
+                                              Type="@columnType"
+                                              TextAlign="@textAlign"
+                                              AllowEditing="@allowEdit"
+                                              Visible="@initialVisible" />
+                            }
+                        }
+                    }
+                    else
+                    {
+                        <GridColumn Field="@nameof(VendorPriceViewModel.CommunityDesc)" HeaderText="Community Description" Width="180px" AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.Phase)"         HeaderText="Phase"        Width="80px"  AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.Item)"          HeaderText="Item"         Width="80px"  AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.VendorName)"    HeaderText="Vendor Name"  Width="180px" AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.AssemblyDesc)"  HeaderText="Assembly Description" Width="180px" AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.ItemDesc)"      HeaderText="Item Description" Width="220px" AllowEditing="false" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.SKU)"           HeaderText="Part Number"  Width="100px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorPriceViewModel.Current)"       HeaderText="Current"      Width="90px"  Type="ColumnType.Number" Format="@DecimalFormat" TextAlign="TextAlign.Right" AllowEditing="true" />
+                    }
+                </GridColumnsBase>
+            </GridControl>
+          </div>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        @StatusMessage
+    </div>
+</div>
+
+@* ── Context Menu ──────────────────────────────────────────────── *@
+@if (_showContextMenu)
+{
+    <div style="position:fixed;inset:0;z-index:999;background:transparent;"
+         @onclick="CloseContextMenu"
+         @oncontextmenu="CloseContextMenu"
+         @oncontextmenu:preventDefault="true"></div>
+    <div class="context-menu" style="left:@(_contextMenuX)px;top:@(_contextMenuY)px;"
+         @onclick:stopPropagation="true">
+        <button @onclick="OnCtxNewItem">New Item...</button>
+        <hr />
+        <button @onclick="OnCtxAttachments" disabled="@(_ctxRow == null)">Attachments...</button>
+        <hr />
+        <button @onclick="OnCtxDelete" disabled="@(_ctxRow == null)">Delete</button>
+    </div>
+}
+
+<FPickList @ref="_pickList" OnSelected="OnPickListSelected" />
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
+
+@* VB6 Toolbar "NewPricelist" → FAddPricelist.Show vbModal. We render the migrated
+   FAddPricelist page as a child component with IsModal=true (exactly like FAssembly
+   hosts FTakeoff/FDBGrid), so the Vendor Item Prices list stays behind it. The @if
+   re-instantiates it fresh each open. OnClose hides it + reloads the current node so
+   newly-saved prices appear. *@
+@if (_showAddPricelistModal)
+{
+    <FAddPricelist IsModal="true"
+                   DefaultVendor="@_newVendor"
+                   DefaultCommunity="@_newCommunity"
+                   DefaultCommunityPhase="@_newCommunityPhase"
+                   OnClose="OnAddPricelistModalClosed" />
+}
+
+@code {
+    private const string FormName = "FPriceList";
+    private const string ItemsGridName = "gItems";
+    private GridControl<VendorPriceViewModel>? gItems;
+    private TreeGridControl<PriceTreeNode>? gAssemblies;
+    private FPickList? _pickList;
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
+    private string _pickListContext = "";
+    private VendorPriceViewModel? _pickListRow;
+
+    private List<VendorPriceViewModel> PriceData = new();
+    private List<PriceTreeNode> TreeNodes = new();
+    private PriceTreeNode? SelectedNode;
+    private VendorPriceViewModel? _selectedRow;
+    private int CurrentViewIndex = 0;
+    private int Decimals = 2;
+    private string StatusMessage = "Ready";
+    private bool IsDirty;
+    // ── Grid layout via the shared GridLayoutPresenter ───────────────────────
+    // The load/resolve/order/width boilerplate lives in GridLayoutPresenter<TRow>;
+    // only the VB6 form/grid name strings stay here (fidelity), plus the alias map
+    // (currentcost→Current, partnumber→SKU, description→ItemDesc, pricegroup→PriceLink),
+    // which is keyed by normalized layout field and handed to the presenter ctor.
+    // The members named ItemsGridLayout / HasItemsGridLayout / …Version below are
+    // thin delegations, so the markup is unchanged. FPriceList's runtime-dynamic
+    // gridname (per-view "gItems.{view}" with a 3-call fallback) and its
+    // Forecast-header overwrite (ApplyCustomForecastHeadersAsync) remain
+    // form-specific and operate on the presenter's Layout. NOTE: GetOrderedItems-
+    // GridLayout below deliberately does NOT filter Hidden (differs from the
+    // presenter's GetOrdered) — see the flag on that method.
+    private readonly GridLayoutPresenter<VendorPriceViewModel> _priceGrid =
+        new(FormName, ItemsGridName, aliases: _priceFieldAliases);
+
+    private Dictionary<string, GridLayoutColumn> ItemsGridLayout => _priceGrid.Layout;
+    private int ItemsGridLayoutVersion => _priceGrid.Version;
+    private bool HasItemsGridLayout => _priceGrid.Has;
+    private string CommunityLabel => "Community";
+    private string CommunityPhaseLabel => "Phase";
+    private string CD_Community = "Community";
+    private string DecimalFormat => $"N{Decimals}";
+
+    // === Grid Settings ===
+    // VB6 gItems had a frozen filter row (FrozenRows=1): typing a substring in
+    // Row 1 hid every row that didn't contain it on each column (gItems_AfterEdit
+    // Row=1 branch). FilterType.FilterBar is the faithful equivalent — a per-column
+    // type-to-filter bar — matching the reference template FAssembly's grid filtering.
+    private readonly FilterSettings _filterSettings = new() { Type = FilterType.FilterBar };
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Cell,
+        EnableToggle = true
+    };
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+    private GridControlEvents<VendorPriceViewModel>? _gridEvents;
+
+    // === Field classification (VB6 gItems_BeforeEdit) ===
+    private static readonly HashSet<string> _editableNumericFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Current", "Next1", "Next2",
+        "Forecast1", "Forecast2", "Forecast3", "Forecast4", "Forecast5", "Forecast6",
+        "Forecast7", "Forecast8", "Forecast9", "Forecast10", "Forecast11", "Forecast12"
+    };
+    private static readonly HashSet<string> _editableDateFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Effective1", "Effective2"
+    };
+    private static readonly HashSet<string> _fanOutFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Current", "Next1", "Next2", "Effective1", "Effective2",
+        "Last1", "Last2", "Last3", "Expiry1", "Expiry2", "Expiry3",
+        "Forecast1", "Forecast2", "Forecast3", "Forecast4", "Forecast5", "Forecast6",
+        "Forecast7", "Forecast8", "Forecast9", "Forecast10", "Forecast11", "Forecast12"
+    };
+
+    // === Context Menu ===
+    private bool _showContextMenu;
+    private double _contextMenuX, _contextMenuY;
+    private VendorPriceViewModel? _ctxRow;
+
+
+    private async Task OnTreeNodeSelected(TreeRowSelectEventArgs<PriceTreeNode> args)
+    {
+        // Dummy placeholder rows (the [+] stand-ins) aren't real data — ignore clicks.
+        if (args.Data?.IsPlaceholder == true) return;
+        if (IsDirty)
+        {
+            if (!await SaveDataAsync(true)) return;
+        }
+        SelectedNode = args.Data;
+        if (SelectedNode != null)
+            await LoadItemsAsync(SelectedNode);
+    }
+
+    private async Task OnViewChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var idx))
+        {
+            CurrentViewIndex = idx;
+            await LoadItemsGridLayoutAsync();
+            await LoadTreeAsync(true);
+        }
+    }
+
+    // View definitions
+    private List<ViewDefinition> Views = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _gridEvents = new GridControlEvents<VendorPriceViewModel>
+        {
+            RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<VendorPriceViewModel>>(this, args => { _selectedRow = args.Data; }),
+            OnCellSave = EventCallback.Factory.Create<CellSaveArgs<VendorPriceViewModel>>(this, OnGridCellSave),
+            OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<VendorPriceViewModel>>(this, OnGridEditButtonClick)
+        };
+        InitializeViewDefinitions();
+        await LoadSettings();
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
+    }
+
+    private void InitializeViewDefinitions()
+    {
+        Views = new List<ViewDefinition>
+        {
+            new ViewDefinition
+            {
+                Name = "Assembly",
+                KeyFields = "CommunityDesc,CommunityPhase,Assembly,CostCode",
+                DisplayFields = "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc",
+                SortFields = "Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc,CostCode + ' - ' + CostCodeDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Vendor",
+                KeyFields = "Vendor,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "VendorName,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Purchase Order",
+                KeyFields = "POIndex,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "POIndex + ' ' + case when poindex=POIndexDescription then '' else POIndexDescription end,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "POIndex + ' ' + case when poindex=POIndexDescription then '' else POIndexDescription end,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            },
+            new ViewDefinition
+            {
+                Name = "Cost Code",
+                KeyFields = "CostCode,CommunityDesc,CommunityPhase,Assembly",
+                DisplayFields = "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                SortFields = "CostCode + ' - ' + CostCodeDesc,Community + ' - ' + CommunityDesc,CommunityPhase + ' - ' + CommunityPhaseDesc,Assembly + ' - ' + AssemblyDesc",
+                FromWhere = "FROM VendorPrices v"
+            }
+        };
+    }
+
+    private async Task LoadSettings()
+    {
+        CurrentViewIndex = 0;
+        Decimals = 2;
+    }
+
+    // Running node-id allocator. VB6 used grid row indices; we allocate ints so the
+    // TreeGridControl's IdMapping/ParentIdMapping can wire parent→child as we lazily
+    // append children on expand.
+    private int _treeNodeId = 1;
+
+    // VB6 LoadAssemblies(ClearTree:=True): build ONLY the top level, give each node a
+    // dummy placeholder child so it shows a [+], and leave everything collapsed.
+    // Deeper levels load on expand (OnTreeNodeExpand). This matches VB6 exactly — the
+    // old migration eager-built the whole tree (slow, and pre-expanded branches).
+    private async Task LoadTreeAsync(bool clear = true)
+    {
+        try
+        {
+            if (clear)
+                SelectedNode = null;
+
+            var view = Views[CurrentViewIndex];
+            var keyFields = ParseViewList(view.KeyFields);
+            var displayFields = ParseViewList(view.DisplayFields);
+            var sortFields = ParseViewList(view.SortFields);
+            if (keyFields.Count == 0 || displayFields.Count == 0)
+            {
+                TreeNodes = new List<PriceTreeNode>();
+                return;
+            }
+
+            _treeNodeId = 1;
+            var nodes = new List<PriceTreeNode>();
+
+            var keyField = keyFields[0];
+            var displayField = displayFields[0];
+            var sortField = sortFields.ElementAtOrDefault(0);
+            var rows = await QueryTreeLevel(view, keyField, displayField, sortField, null);
+            foreach (var row in rows)
+            {
+                // VB6 LoadAssemblies keeps EVERY DISTINCT row — including rows whose
+                // key is empty. An empty CommunityPhase / Assembly is the "- any phase -"
+                // / "- any assembly -" ROLLUP node, and it carries the FULL child set
+                // (e.g. Global's "- any phase -" has 121 assemblies). The old
+                // `IsNullOrWhiteSpace(KeyValue) continue` dropped these rollups, which is
+                // why most communities showed no children and Global showed only the
+                // stray "1 - any phase -" (5 asms) instead of "- any phase -" (121). The
+                // empty key is valid: WhereClause becomes `… AND CommunityPhase = ''`.
+                var display = NormalizeDisplayValue(row.DisplayValue);
+                var safeKey = SqlSafe(row.KeyValue);
+                var node = new PriceTreeNode
+                {
+                    NodeID = _treeNodeId++,
+                    ParentID = null,
+                    Node = display,
+                    KeyField = keyField,
+                    KeyValue = row.KeyValue,
+                    WhereClause = $"{keyField} = '{safeKey}'",
+                    Level = 0
+                };
+                nodes.Add(node);
+                // Dummy child so the [+] appears (VB6 .GetNode(r).AddNode(…, "dummy")),
+                // but only when there IS a deeper level to open.
+                if (1 < keyFields.Count)
+                    nodes.Add(MakePlaceholder(node));
+            }
+
+            TreeNodes = nodes;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadTreeAsync error");
+
+            TreeNodes = new List<PriceTreeNode>();
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    // VB6 dummy child: a non-selectable placeholder that gives its parent a [+].
+    private PriceTreeNode MakePlaceholder(PriceTreeNode parent) => new PriceTreeNode
+    {
+        NodeID = _treeNodeId++,
+        ParentID = parent.NodeID,
+        Node = "",
+        Level = parent.Level + 1,
+        IsPlaceholder = true
+    };
+
+    // VB6 LoadAssemblies(ClearTree:=False): on first expand of a node, replace its
+    // dummy placeholder with the real next-level rows (each with its own dummy if a
+    // deeper level exists). Re-expanding a loaded node does nothing (ChildrenLoaded).
+    private async Task OnTreeNodeExpand(TreeNodeEventArgs<PriceTreeNode> args)
+    {
+        var node = args.Data;
+        if (node == null || node.IsPlaceholder || node.ChildrenLoaded) return;
+
+        var view = Views[CurrentViewIndex];
+        var keyFields = ParseViewList(view.KeyFields);
+        var displayFields = ParseViewList(view.DisplayFields);
+        var sortFields = ParseViewList(view.SortFields);
+
+        var childLevel = node.Level + 1;
+        if (childLevel >= keyFields.Count) return;   // already at the lowest level
+
+        var keyField = keyFields[childLevel];
+        var displayField = displayFields[Math.Min(childLevel, displayFields.Count - 1)];
+        var sortField = sortFields.ElementAtOrDefault(childLevel);
+
+        try
+        {
+            var rows = await QueryTreeLevel(view, keyField, displayField, sortField, node.WhereClause);
+
+            // Drop this node's placeholder child (VB6 RemoveItem of the "dummy" row).
+            TreeNodes.RemoveAll(n => n.IsPlaceholder && n.ParentID == node.NodeID);
+
+            // Insert the real children right after their parent so the flat list keeps
+            // parent→child contiguity (cosmetic; TreeGridControl groups by ParentID).
+            var insertAt = TreeNodes.FindIndex(n => n.NodeID == node.NodeID) + 1;
+            var newKids = new List<PriceTreeNode>();
+            foreach (var row in rows)
+            {
+                // VB6 LoadAssemblies keeps EVERY DISTINCT row — including rows whose
+                // key is empty. An empty CommunityPhase / Assembly is the "- any phase -"
+                // / "- any assembly -" ROLLUP node, and it carries the FULL child set
+                // (e.g. Global's "- any phase -" has 121 assemblies). The old
+                // `IsNullOrWhiteSpace(KeyValue) continue` dropped these rollups, which is
+                // why most communities showed no children and Global showed only the
+                // stray "1 - any phase -" (5 asms) instead of "- any phase -" (121). The
+                // empty key is valid: WhereClause becomes `… AND CommunityPhase = ''`.
+                var display = NormalizeDisplayValue(row.DisplayValue);
+                var safeKey = SqlSafe(row.KeyValue);
+                var child = new PriceTreeNode
+                {
+                    NodeID = _treeNodeId++,
+                    ParentID = node.NodeID,
+                    Node = display,
+                    KeyField = keyField,
+                    KeyValue = row.KeyValue,
+                    WhereClause = $"{node.WhereClause} AND {keyField} = '{safeKey}'",
+                    Level = childLevel
+                };
+                newKids.Add(child);
+                if (childLevel + 1 < keyFields.Count)
+                    newKids.Add(MakePlaceholder(child));
+            }
+            TreeNodes.InsertRange(insertAt, newKids);
+            node.ChildrenLoaded = true;
+            // New list instance so TreeGridControl re-derives the hierarchy.
+            TreeNodes = new List<PriceTreeNode>(TreeNodes);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "OnTreeNodeExpand error");
+        }
+    }
+
+    private async Task LoadItemsAsync(PriceTreeNode currentSelectedNode)
+    {
+        StatusMessage = "Loading vendor prices...";
+        StateHasChanged();
+        try
+        {
+            PriceData.Clear();
+
+            var sql = @"
+            SELECT v.*, g.PriceGroupDesc
+            FROM VendorPrices v
+            LEFT OUTER JOIN PriceGroups g
+                ON v.PriceLink = g.PriceGroup
+               AND g.DivisionID = @DivisionID";
+
+            var whereClause = currentSelectedNode?.WhereClause;
+
+            if (!string.IsNullOrWhiteSpace(whereClause))
+            {
+                var cleanWhere = whereClause.Trim().StartsWith("AND ")
+                    ? whereClause.Trim().Substring(4).Trim()
+                    : whereClause.Trim();
+                sql += $@"
+                WHERE ISNULL(Vendor, '') <> ''
+                  AND {cleanWhere}
+                  AND v.DivisionID IN (0, @DivisionID)";
+            }
+            else
+            {
+                sql += @"
+                WHERE v.DivisionID IN (0, @DivisionID)";
+            }
+
+            var orderBy = Views.Count > CurrentViewIndex ? Views[CurrentViewIndex].DisplayFields : "";
+            if (!string.IsNullOrWhiteSpace(orderBy))
+                sql += $@"
+                ORDER BY {orderBy}";
+
+            var parameters = new { SessionState.DivisionID };
+            var result = await db.QueryAsync(sql, parameters);
+
+            foreach (var row in result)
+            {
+                var item = new VendorPriceViewModel
+                {
+                    PriceLink = Convert.ToInt64(row["PriceLink"] ?? 0),
+                    PriceGroupDesc = row["PriceGroupDesc"]?.ToString() ?? "",
+                    ItemType = row["ItemType"]?.ToString(),
+                    PriceLevel = (row["PriceLevel"]?.ToString() ?? "")
+                        .Replace("Community", CommunityLabel),
+                    Vendor = row["Vendor"]?.ToString(),
+                    VendorName = row["VendorName"]?.ToString(),
+                    Community = row["Community"]?.ToString(),
+                    CommunityPhase = row["CommunityPhase"]?.ToString(),
+                    CommunityDesc = row["CommunityDesc"]?.ToString(),
+                    TaxGroup = row["TaxGroup"]?.ToString(),
+                    SKU = row["PartNumber"]?.ToString(),
+                    Item = row["Item"]?.ToString(),
+                    ItemNumber = row["ItemNumber"]?.ToString(),
+                    OrderUOM = row["OrderUOM"]?.ToString(),
+                    Phase = row["Phase"]?.ToString(),
+                    POIndex = row["POIndex"]?.ToString(),
+                    POIndexDescription = row["POIndexDescription"]?.ToString(),
+                    CostCode = row["CostCode"]?.ToString(),
+                    CostCodeDesc = row["CostCodeDesc"]?.ToString(),
+                    ItemDesc = row["ItemDesc"]?.ToString(),
+                    Assembly = row["Assembly"]?.ToString(),
+                    Model = row["Model"]?.ToString(),
+                    AssemblyDesc = row["AssemblyDesc"]?.ToString(),
+                    Last3 = Convert.ToDecimal(row["Last3"] ?? 0m),
+                    Expiry3 = row["Expiry3"] as DateTime?,
+                    Last2 = Convert.ToDecimal(row["Last2"] ?? 0m),
+                    Expiry2 = row["Expiry2"] as DateTime?,
+                    Last1 = Convert.ToDecimal(row["Last1"] ?? 0m),
+                    Expiry1 = row["Expiry1"] as DateTime?,
+                    Current = Convert.ToDecimal(row["CurrentCost"] ?? 0m),
+                    Next1 = Convert.ToDecimal(row["Next1"] ?? 0m),
+                    Effective1 = row["Effective1"] as DateTime?,
+                    Next2 = Convert.ToDecimal(row["Next2"] ?? 0m),
+                    Effective2 = row["Effective2"] as DateTime?,
+                    Forecast1 = Convert.ToDecimal(row["Forecast1"] ?? 0m),
+                    Forecast2 = Convert.ToDecimal(row["Forecast2"] ?? 0m),
+                    Forecast3 = Convert.ToDecimal(row["Forecast3"] ?? 0m),
+                    Forecast4 = Convert.ToDecimal(row["Forecast4"] ?? 0m),
+                    Forecast5 = Convert.ToDecimal(row["Forecast5"] ?? 0m),
+                    Forecast6 = Convert.ToDecimal(row["Forecast6"] ?? 0m),
+                    Forecast7 = Convert.ToDecimal(row["Forecast7"] ?? 0m),
+                    Forecast8 = Convert.ToDecimal(row["Forecast8"] ?? 0m),
+                    Forecast9 = Convert.ToDecimal(row["Forecast9"] ?? 0m),
+                    Forecast10 = Convert.ToDecimal(row["Forecast10"] ?? 0m),
+                    Forecast11 = Convert.ToDecimal(row["Forecast11"] ?? 0m),
+                    Forecast12 = Convert.ToDecimal(row["Forecast12"] ?? 0m),
+                    HasLinkedPriceGroup = Convert.ToInt64(row["PriceLink"] ?? 0) != 0
+                };
+                PriceData.Add(item);
+            }
+
+            StatusMessage = $"Loaded {PriceData.Count} price records";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading prices: {ex.Message}";
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    // Toolbar actions
+    // ── Navigation: prefer FMain's inline-host action so the menu/shell
+    //     stays mounted. Falls back to NavigationManager when the page is
+    //     opened standalone (URL bar / bookmark) without a parent host.
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void Navigate(string route)
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke(route);
+        else
+            NavigationManager.NavigateTo(route);
+    }
+
+    // ── View popup menu state ─────────────────────────────────────────
+    private bool _viewMenuOpen = false;
+    private void ToggleViewMenu() => _viewMenuOpen = !_viewMenuOpen;
+    private void CloseViewMenu() => _viewMenuOpen = false;
+
+    private async Task SelectView(int idx)
+    {
+        _viewMenuOpen = false;
+        if (idx < 0 || idx >= Views.Count || idx == CurrentViewIndex) return;
+        if (IsDirty && !await SaveDataAsync(true)) return;
+        CurrentViewIndex = idx;
+        PriceData.Clear();
+        IsDirty = false;
+        await LoadItemsGridLayoutAsync();
+        await LoadTreeAsync(true);
+    }
+
+    // ── Toolbar handlers (VB6 FPriceList.frm:644+) ──────────────
+
+    // VB6 Toolbar "NewPricelist": SaveData(True) then FAddPricelist.Show vbModal.
+    // We render the migrated FAddPricelist page as a child component with
+    // IsModal=true (like FAssembly hosts FTakeoff) — the flag flips it on; @if
+    // re-instantiates it fresh each time. NOT a navigation, NOT a one-off modal:
+    // it IS the migrated FAddPricelist page, shown modally over this list.
+    private bool _showAddPricelistModal;
+
+    // Defaults handed to FAddPricelist on "New" (VB6 FAddPricelist.ShowForm args).
+    // NEW VB6: ShowForm dropped its Assembly parameter — the dialog gathers assemblies
+    // itself via its gAssemblies grid, so we no longer seed an assembly here.
+    private string _newVendor = "";
+    private string _newCommunity = "";
+    private string _newCommunityPhase = "";
+
+    private async Task NewPricelist_Click()
+    {
+        if (IsDirty && !await SaveDataAsync(true)) return;
+
+        // VB6 Toolbar "NewPricelist" seeds Vendor/Community/CommunityPhase from the
+        // current selection BEFORE opening FAddPricelist. gItems active → use the
+        // selected vendor-price row; gAssemblies active → parse the selected tree node's
+        // accumulated WHERE. (NEW VB6: no Assembly seed — ShowForm takes 3 args now.)
+        _newVendor = _newCommunity = _newCommunityPhase = "";
+        if (_selectedRow != null)
+        {
+            _newVendor = _selectedRow.Vendor ?? "";
+            _newCommunity = _selectedRow.Community ?? "";
+            _newCommunityPhase = _selectedRow.CommunityPhase ?? "";
+        }
+        else if (SelectedNode != null)
+        {
+            var w = SelectedNode.WhereClause;
+            _newVendor = ParseWhereValue(w, "Vendor");
+            _newCommunityPhase = ParseWhereValue(w, "CommunityPhase");
+            // The Assembly-view tree keys Community by CommunityDesc (description), not
+            // the Area FAddPricelist matches on — leave _newCommunity blank (the dialog
+            // defaults the community); the Vendor view supplies Vendor via the WHERE.
+        }
+
+        _showAddPricelistModal = true;
+        await Task.CompletedTask;
+    }
+
+    // Extract the value from a `Field = 'value'` term in an accumulated tree WHERE
+    // clause (e.g. "CommunityDesc = 'AM' AND Assembly = 'ASTER1214'"). Matches the
+    // exact "<Field> = '" token so "Assembly" can't catch "AssemblyDesc", nor
+    // "Community" catch "CommunityPhase"/"CommunityDesc".
+    private static string ParseWhereValue(string? whereClause, string field)
+    {
+        if (string.IsNullOrEmpty(whereClause)) return "";
+        var token = field + " = '";
+        var i = whereClause.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return "";
+        i += token.Length;
+        var j = whereClause.IndexOf('\'', i);
+        return j < 0 ? "" : whereClause.Substring(i, j - i);
+    }
+
+    // VB6: FAddPricelist closes → back on FPriceList, reload the open node so any
+    // newly-saved vendor prices show.
+    private async Task OnAddPricelistModalClosed()
+    {
+        _showAddPricelistModal = false;
+        if (SelectedNode != null) await LoadItemsAsync(SelectedNode);
+        StateHasChanged();
+    }
+
+    // VB6 Save: just calls SaveData(False).
+    private async Task Save_Click() => await SaveDataAsync(false);
+
+    // VB6 (FPriceList.frm:686-701) Preview opens PriceList.rpt — VB6 path:
+    //     System\Reports\Estimating\PriceList.rpt
+    // POC's matching XML would live at:
+    //     wwwroot/resources/System/Estimating/PriceList.xml
+    // But that file isn't in either app's wwwroot. Until someone drops the
+    // XML in place, surface a clear "not available yet" notification
+    // instead of silently routing FRptViewer to a missing file (which is
+    // what the earlier "/report-viewer/PriceList?DivisionID=..." URL did —
+    // it also had the query-string glued onto the {ReportFile} route
+    // segment, so the path never resolved).
+    //
+    // When the XML lands, swap the notification for a normal navigation:
+    //     Navigate($"/report-viewer/{Uri.EscapeDataString(xmlPath)}");
+    private async Task Preview_Click()
+    {
+        if (IsDirty)
+        {
+            if (!await SaveDataAsync(false)) return;
+        }
+
+        var xmlPath = System.IO.Path.Combine(
+            WebHost.WebRootPath ?? "wwwroot",
+            "resources", "System", "Estimating", "PriceList.xml");
+
+        if (!System.IO.File.Exists(xmlPath))
+        {
+            Notifications.Warning(
+                "PriceList.rpt does not exist.",
+                $"Expected at {xmlPath}.\nThe XML export is missing from wwwroot. " +
+                "Drop the file in place to enable the Preview button.");
+            Logger.LogWarning("FPriceList Preview clicked but {Path} is missing", xmlPath);
+            return;
+        }
+
+        Navigate($"/report-viewer/{Uri.EscapeDataString(xmlPath)}");
+        await Task.CompletedTask;
+    }
+
+    // VB6 PricelistExport / PricelistImport: open FExportPricelists / FImportPricelists.
+    private async Task Export_Click()
+    {
+        if (IsDirty && !await SaveDataAsync(true)) return;
+        Navigate("/export-pricelists");
+    }
+
+    private async Task Import_Click()
+    {
+        if (IsDirty && !await SaveDataAsync(true)) return;
+        Navigate("/import-pricelists");
+    }
+
+    // VB6 Forecast: opens FCostForecast modal. We navigate to the migrated page.
+    private async Task Forecasting_Click()
+    {
+        Navigate("/cost-forecast");
+        await Task.CompletedTask;
+    }
+
+    // VB6 SetDecimalPlaces +/- 1, clamped 0..6. Writes the option back to AppOptions.
+    private async Task More_Click() => await SetDecimalPlaces(Decimals + 1);
+    private async Task Less_Click() => await SetDecimalPlaces(Decimals - 1);
+
+    private async Task SetDecimalPlaces(int newValue)
+    {
+        if (newValue < 0) newValue = 0;
+        if (newValue > 6) newValue = 6;
+        if (newValue == Decimals) return;
+        Decimals = newValue;
+        try
+        {
+            await db.ExecuteAsync(@"
+                IF EXISTS (SELECT 1 FROM appoptions WHERE DivisionID=@DivisionID AND optionname='PriceListDecimals')
+                    UPDATE appoptions SET optionvalue=@Value WHERE DivisionID=@DivisionID AND optionname='PriceListDecimals'
+                ELSE
+                    INSERT INTO appoptions(DivisionID, optionname, optionvalue) VALUES(@DivisionID,'PriceListDecimals',@Value)",
+                new { SessionState.DivisionID, Value = newValue.ToString() });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "SetDecimalPlaces persist failed");
+        }
+        StatusMessage = $"Decimal places: {Decimals}";
+        StateHasChanged();
+    }
+
+    private async Task<bool> SaveDataAsync(bool prompt)
+    {
+        if (!IsDirty)
+        {
+            StatusMessage = "Nothing to save";
+            return true;
+        }
+
+        if (prompt)
+        {
+            var result = _messageBox != null
+                ? await _messageBox.ShowAsync(
+                    "Vendor Price List has changed.\n\nDo you want to save these changes?",
+                    title: "Save changes?",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNoCancel)
+                : (await Dialogs.ConfirmAsync(
+                        "Vendor Price List has changed.\n\nDo you want to save these changes?")
+                    ? Fx.ControlKit.Dialogs.MessageBoxResult.Yes
+                    : Fx.ControlKit.Dialogs.MessageBoxResult.No);
+
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.Cancel) return false;
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.No) return true;
+        }
+
+        try
+        {
+            var div = SessionState.DivisionID;
+            foreach (var row in PriceData.Where(r => r.RowState == "Deleted").ToList())
+            {
+                var delDiv = row.PriceLevel == "Corporate (any Division)" ? 0 : div;
+                await db.ExecuteAsync($@"DELETE FROM tblVendorCost
+                    WHERE ISNULL(Community,'') = @Community AND ISNULL(CommunityPhase,'') = @CommunityPhase
+                    AND ISNULL(Assembly,'') = @Assembly AND ISNULL(Model,'') = @Model
+                    AND Phase = @Phase AND Item = @Item AND Vendor = @Vendor AND DivisionID = {delDiv}",
+                    new { Community = row.Community ?? "", CommunityPhase = row.CommunityPhase ?? "",
+                          Assembly = row.Assembly ?? "", Model = row.Model ?? "",
+                          row.Phase, row.Item, row.Vendor });
+                PriceData.Remove(row);
+            }
+
+            foreach (var row in PriceData.Where(r => r.RowState == "DIRTY"))
+            {
+                var updDiv = row.PriceLevel == "Corporate (any Division)" ? 0 : div;
+                await db.ExecuteAsync($@"UPDATE tblVendorCost SET
+                    Current_Cost = @Current, Next_Cost1 = @Next1, Next_Effective1 = @Effective1,
+                    Next_Cost2 = @Next2, Next_Effective2 = @Effective2,
+                    Last_Cost1 = @Last1, Last1_Expiry = @Expiry1,
+                    Last_Cost2 = @Last2, Last2_Expiry = @Expiry2,
+                    Last_Cost3 = @Last3, Last3_Expiry = @Expiry3,
+                    Forecast1=@Forecast1, Forecast2=@Forecast2, Forecast3=@Forecast3,
+                    Forecast4=@Forecast4, Forecast5=@Forecast5, Forecast6=@Forecast6,
+                    Forecast7=@Forecast7, Forecast8=@Forecast8, Forecast9=@Forecast9,
+                    Forecast10=@Forecast10, Forecast11=@Forecast11, Forecast12=@Forecast12,
+                    PartNumber = @SKU, TaxGroup = @TaxGroup
+                    WHERE ISNULL(Community,'') = @Community AND ISNULL(CommunityPhase,'') = @CommunityPhase
+                    AND ISNULL(Assembly,'') = @Assembly AND ISNULL(Model,'') = @Model
+                    AND Phase = @Phase AND Item = @Item AND Vendor = @Vendor AND DivisionID = {updDiv}",
+                    new { row.Current, row.Next1, row.Effective1, row.Next2, row.Effective2,
+                          row.Last1, row.Expiry1, row.Last2, row.Expiry2, row.Last3, row.Expiry3,
+                          row.Forecast1, row.Forecast2, row.Forecast3, row.Forecast4,
+                          row.Forecast5, row.Forecast6, row.Forecast7, row.Forecast8,
+                          row.Forecast9, row.Forecast10, row.Forecast11, row.Forecast12,
+                          row.SKU, row.TaxGroup,
+                          Community = row.Community ?? "", CommunityPhase = row.CommunityPhase ?? "",
+                          Assembly = row.Assembly ?? "", Model = row.Model ?? "",
+                          row.Phase, row.Item, row.Vendor });
+                row.RowState = "CLEAN";
+            }
+
+            IsDirty = false;
+            StatusMessage = "Saved";
+            Notifications.Info("Pricelist saved.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "FPriceList: SaveData failed");
+            Notifications.Error($"Save failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    // === Grid Cell Save + Fan-out (VB6 gItems_AfterEdit + ValidateEdit) ===
+    private Task OnGridCellSave(CellSaveArgs<VendorPriceViewModel> args)
+    {
+        var row = args.Data;
+        if (row == null) return Task.CompletedTask;
+        var field = args.ColumnName ?? "";
+
+        if (field.Equals("Current", StringComparison.OrdinalIgnoreCase) && row._currentChanged != true)
+        {
+            row._currentChanged = true;
+            row.Last3 = row.Last2;
+            row.Expiry3 = row.Expiry2;
+            row.Last2 = row.Last1;
+            row.Expiry2 = row.Expiry1;
+            row.Last1 = row.Current;
+            row.Expiry1 = DateTime.Today;
+        }
+
+        row.RowState = "DIRTY";
+        IsDirty = true;
+
+        if (row.PriceLink != 0 && _fanOutFields.Contains(field))
+        {
+            var key = $"{row.PriceLink}|{row.Vendor}|{row.Assembly}|{row.Model}|{row.Community}|{row.CommunityPhase}";
+            foreach (var other in PriceData)
+            {
+                if (ReferenceEquals(other, row)) continue;
+                var otherKey = $"{other.PriceLink}|{other.Vendor}|{other.Assembly}|{other.Model}|{other.Community}|{other.CommunityPhase}";
+                if (otherKey != key) continue;
+                CopyFanOutFields(row, other);
+                other.RowState = "DIRTY";
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static void CopyFanOutFields(VendorPriceViewModel src, VendorPriceViewModel dst)
+    {
+        dst.Current = src.Current; dst.Next1 = src.Next1; dst.Next2 = src.Next2;
+        dst.Effective1 = src.Effective1; dst.Effective2 = src.Effective2;
+        dst.Last1 = src.Last1; dst.Last2 = src.Last2; dst.Last3 = src.Last3;
+        dst.Expiry1 = src.Expiry1; dst.Expiry2 = src.Expiry2; dst.Expiry3 = src.Expiry3;
+        dst.Forecast1 = src.Forecast1; dst.Forecast2 = src.Forecast2; dst.Forecast3 = src.Forecast3;
+        dst.Forecast4 = src.Forecast4; dst.Forecast5 = src.Forecast5; dst.Forecast6 = src.Forecast6;
+        dst.Forecast7 = src.Forecast7; dst.Forecast8 = src.Forecast8; dst.Forecast9 = src.Forecast9;
+        dst.Forecast10 = src.Forecast10; dst.Forecast11 = src.Forecast11; dst.Forecast12 = src.Forecast12;
+    }
+
+    // === Context Menu ===
+    private void OnGridContextMenu(MouseEventArgs e)
+    {
+        _ctxRow = _selectedRow;
+        _showContextMenu = true;
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+    }
+    private void CloseContextMenu() => _showContextMenu = false;
+
+    private async Task OnCtxNewItem()
+    {
+        CloseContextMenu();
+        await NewPricelist_Click();
+    }
+
+    private void OnCtxAttachments()
+    {
+        CloseContextMenu();
+        Notifications.Info("Attachments — not yet implemented.");
+    }
+
+    private void OnCtxDelete()
+    {
+        CloseContextMenu();
+        if (_ctxRow == null) return;
+        _ctxRow.RowState = "Deleted";
+        IsDirty = true;
+        StateHasChanged();
+    }
+
+    // Grid edit-button dispatch (VB6 gItems_CellButtonClick): routes the
+    // STANDARD FlexKit edit button by column to the same picker the hand-rolled
+    // cell button used. args.Data is the clicked row.
+    private async Task OnGridEditButtonClick(CellEditButtonArgs<VendorPriceViewModel> args)
+    {
+        if (args.Data == null) return;
+        switch (args.ColumnName)
+        {
+            case "TaxGroup":
+                await OnPickTaxGroup(args.Data);
+                break;
+        }
+    }
+
+    // === TaxGroup Picker ===
+    private async Task OnPickTaxGroup(VendorPriceViewModel row)
+    {
+        if (_pickList == null) return;
+        _pickListContext = "TaxGroup";
+        _pickListRow = row;
+        await _pickList.Open("Tax Group",
+            $"SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID IN (0, {SessionState.DivisionID}) ORDER BY TaxGroup",
+            defaultItem: row.TaxGroup);
+    }
+
+    private async Task OnPickListSelected(List<IDictionary<string, object>> selectedRows)
+    {
+        if (selectedRows.Count == 0) { _pickListContext = ""; return; }
+        var pick = selectedRows[0];
+        switch (_pickListContext)
+        {
+            case "TaxGroup":
+                if (_pickListRow != null)
+                {
+                    _pickListRow.TaxGroup = pick.ContainsKey("TaxGroup") ? pick["TaxGroup"]?.ToString() ?? "" : "";
+                    _pickListRow.RowState = "DIRTY";
+                    IsDirty = true;
+                }
+                break;
+        }
+        _pickListContext = "";
+        StateHasChanged();
+    }
+
+    // Models
+    public class ViewDefinition
+    {
+        public string Name { get; set; } = "";
+        public string KeyFields { get; set; } = "";
+        public string DisplayFields { get; set; } = "";
+        public string SortFields { get; set; } = "";
+        public string FromWhere { get; set; } = "";
+    }
+
+    public class PriceTreeNode
+    {
+        public int? NodeID { get; set; }
+        public int? ParentID { get; set; }
+        public string Node { get; set; } = string.Empty;
+        public string KeyField { get; set; } = string.Empty;
+        public string KeyValue { get; set; } = string.Empty;
+        public string? WhereClause { get; set; }
+        // VB6 lazy-tree (LoadAssemblies): the node's outline level (0 = top), so an
+        // expand knows which KeyFlds/DisplayFlds slice to query next.
+        public int Level { get; set; }
+        // VB6 "dummy child" trick: every expandable node gets one placeholder child
+        // so the grid shows a [+] without the real children loaded. On expand it's
+        // replaced by the actual rows (OnTreeNodeExpand). Placeholders aren't real
+        // data and must not be selectable / load items.
+        public bool IsPlaceholder { get; set; }
+        // Whether this node's real children have already been loaded (so re-expanding
+        // doesn't re-query). Mirrors VB6 removing the dummy on first open.
+        public bool ChildrenLoaded { get; set; }
+    }
+
+    public class VendorPriceViewModel
+    {
+        public bool HasLinkedPriceGroup { get; set; }
+        public string? ItemType { get; set; }
+        public string? PriceLevel { get; set; }
+        public string? TaxGroup { get; set; }
+        public string? Item { get; set; }
+        public string? ItemNumber { get; set; }
+        public string? OrderUOM { get; set; }
+        public string? Phase { get; set; }
+        public string? POIndex { get; set; }
+        public string? POIndexDescription { get; set; }
+        public string? CostCode { get; set; }
+        public string? CostCodeDesc { get; set; }
+        public string? Model { get; set; }
+        public string? AssemblyDesc { get; set; }
+        public decimal Next2 { get; set; }
+        public DateTime? Effective2 { get; set; }
+        public long PriceLink { get; set; }
+        public string PriceGroupDesc { get; set; } = string.Empty;
+        public string? Vendor { get; set; }
+        public string? VendorName { get; set; }
+        public string? Community { get; set; }
+        public string? CommunityPhase { get; set; }
+        public string? CommunityDesc { get; set; }
+        public string? Assembly { get; set; }
+        public string? ItemDesc { get; set; }
+        public string? SKU { get; set; }
+        public decimal? Last3 { get; set; }
+        public DateTime? Expiry3 { get; set; }
+        public decimal? Last2 { get; set; }
+        public DateTime? Expiry2 { get; set; }
+        public decimal? Last1 { get; set; }
+        public DateTime? Expiry1 { get; set; }
+        public decimal? Current { get; set; }
+        public decimal? Next1 { get; set; }
+        public DateTime? Effective1 { get; set; }
+        public decimal? Forecast1 { get; set; }
+        public decimal? Forecast2 { get; set; }
+        public decimal? Forecast3 { get; set; }
+        public decimal? Forecast4 { get; set; }
+        public decimal? Forecast5 { get; set; }
+        public decimal? Forecast6 { get; set; }
+        public decimal? Forecast7 { get; set; }
+        public decimal? Forecast8 { get; set; }
+        public decimal? Forecast9 { get; set; }
+        public decimal? Forecast10 { get; set; }
+        public decimal? Forecast11 { get; set; }
+        public decimal? Forecast12 { get; set; }
+        public string RowState { get; set; } = "CLEAN";
+        internal bool? _currentChanged;
+    }
+
+    private sealed class TreeQueryRow
+    {
+        public string KeyValue { get; set; } = "";
+        public string DisplayValue { get; set; } = "";
+    }
+
+    private static string SqlSafe(string? value)
+    {
+        return (value ?? "").Replace("'", "''");
+    }
+
+    private static List<string> ParseViewList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+        return raw.Split(',')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+    }
+
+    private string NormalizeDisplayValue(string? value)
+    {
+        var display = (value ?? "").Trim();
+        if (display.Equals("- global -", StringComparison.OrdinalIgnoreCase))
+            display = $"Global (any {CD_Community})";
+        if (display.Equals("- corporate -", StringComparison.OrdinalIgnoreCase))
+            display = "Corporate (any Division)";
+        return display;
+    }
+
+    private async Task<List<TreeQueryRow>> QueryTreeLevel(ViewDefinition view, string keyField, string displayField, string? sortField, string? whereClause = null)
+    {
+        var sort = string.IsNullOrWhiteSpace(sortField) ? displayField : sortField;
+        var sql = new System.Text.StringBuilder();
+        sql.Append("SELECT DISTINCT ").Append(keyField).Append(" AS KeyValue, ").Append(displayField).Append(" AS DisplayValue");
+        if (!string.Equals(sort, keyField, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(sort, displayField, StringComparison.OrdinalIgnoreCase))
+        {
+            sql.Append(", ").Append(sort).Append(" AS SortValue");
+        }
+        sql.AppendLine();
+        sql.Append(view.FromWhere);
+        sql.Append(" WHERE v.DivisionID IN (0, ").Append(SessionState.DivisionID).Append(")");
+        if (!string.IsNullOrWhiteSpace(whereClause))
+            sql.Append(" AND ").Append(whereClause);
+        sql.Append(" ORDER BY ").Append(sort);
+
+        var rows = await db.QueryAsync(sql.ToString());
+        return rows.Select(r => new TreeQueryRow
+        {
+            KeyValue = r["KeyValue"]?.ToString() ?? "",
+            DisplayValue = r["DisplayValue"]?.ToString() ?? r["KeyValue"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    private async Task LoadItemsGridLayoutAsync()
+    {
+        // Runtime-dynamic gridname with the VB6 3-call fallback, now via the
+        // presenter's candidate-list overload (tries each in order until one
+        // returns rows). The (grid, gridIndex, instanceKey) tuples below reproduce
+        // the EXACT three gridTags the prior three GetGridLayoutAsync calls produced:
+        //   1. ("gItems.{view}", 0,    null) → tag "FPriceList.gItems.{view}"
+        //   2. ("gItems", CurrentViewIndex, null) → tag "FPriceList.gItems.({view})" (.(view) subscript only when view≠0)
+        //   3. ("gItems", 0,    null) → tag "FPriceList.gItems"
+        // Candidate 2 keeps gridIndex=CurrentViewIndex verbatim (a fixed-gridIndex
+        // overload couldn't express it) — same final tag, byte-for-byte.
+        await _priceGrid.LoadAsync(GridLayoutSvc,
+            ($"{ItemsGridName}.{CurrentViewIndex}", 0, (string?)null),
+            (ItemsGridName, CurrentViewIndex, (string?)null),
+            (ItemsGridName, 0, (string?)null));
+
+        await ApplyCustomForecastHeadersAsync();
+
+        // LoadAsync already bumped Version; bump again so the <GridColumnsBase @key>
+        // also reflects the Forecast-header captions applied just above.
+        _priceGrid.BumpVersion();
+    }
+
+    // GridControl raises OnLayoutChanged once a resize / reorder / hide / group /
+    // rename finishes; the new state lives on the snapshot, not in the presenter's
+    // layout dict, so it has to be merged in before the write.
+    // Saved under the per-view tag "gItems.{view}" — the FIRST candidate
+    // LoadItemsGridLayoutAsync probes, so the next load reads back what was written
+    // whichever of the three tags supplied the layout originally.
+    private async Task OnItemsLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || !HasItemsGridLayout) return;
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, FormName, $"{ItemsGridName}.{CurrentViewIndex}", instanceKey: null,
+                ItemsGridLayout, snapshot, _priceGrid.ResolveField, staticNames: false);
+
+            _priceGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FPriceList gItems layout");
+        }
+    }
+
+    // VB6 Form_Load → LoadCostTypes(, gItems): after the grid layout is loaded, the
+    // Forecast1..Forecast12 column HEADERS are overwritten from CustomDescriptions so a
+    // customer who renamed a period (e.g. "Oct 2025" instead of "Period 1") sees their
+    // label. VB6:  Grid.TextMatrix(0, ColIndex("ForecastN")) = IIf(custom="", "Forecast N", custom).
+    // A CustomDescriptions row with a blank Custom_Description falls back to "Forecast N";
+    // no row at all leaves the stored layout caption ("Period N") untouched.
+    private async Task ApplyCustomForecastHeadersAsync()
+    {
+        if (ItemsGridLayout.Count == 0) return;
+        try
+        {
+            var sql = new System.Text.StringBuilder();
+            for (var i = 1; i <= 12; i++)
+            {
+                if (i > 1) sql.AppendLine("UNION ALL");
+                sql.AppendLine($"SELECT Item, MAX(Custom_Description) AS CustomDesc, 'Forecast {i}' AS DefaultDesc FROM CustomDescriptions WHERE Item='Forecast{i}' GROUP BY Item");
+            }
+
+            var rows = await db.QueryAsync(sql.ToString());
+            foreach (var row in rows)
+            {
+                var item = row["Item"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(item)) continue;
+                var custom = row["CustomDesc"]?.ToString() ?? "";
+                var fallback = row["DefaultDesc"]?.ToString() ?? "";
+                var caption = string.IsNullOrEmpty(custom) ? fallback : custom;
+                if (ItemsGridLayout.TryGetValue(item, out var col))
+                    col.Caption = caption;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "FPriceList: custom Forecast header load failed");
+        }
+    }
+
+    // KEPT form-specific (NOT delegated to the presenter's GetOrdered): FPriceList
+    // renders Hidden columns too — the .Where below filters ONLY blank-field rows,
+    // unlike GridLayoutPresenter.GetOrdered which also drops c.Hidden. The grid then
+    // honors each column's own Visible="@initialVisible" (= !layout.Hidden) in the
+    // markup. Field resolution + column-type inference DO delegate to the presenter
+    // (ResolveField / ColumnTypeFor); the presenter's ColumnTypeFor is byte-equivalent
+    // to the old pure GetColumnTypeForField (bool→CheckBox, DateTime→Date, numeric→Number).
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedItemsGridLayout()
+    {
+        if (!HasItemsGridLayout)
+            yield break;
+
+        var ordered = ItemsGridLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var layout in ordered)
+        {
+            var resolvedField = _priceGrid.ResolveField(layout.Field);
+            var columnType = _priceGrid.ColumnTypeFor(resolvedField);
+            var textAlign = columnType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (layout, resolvedField, columnType, textAlign);
+        }
+    }
+
+    // Alias map (normalized layout field → property name) handed to the presenter
+    // ctor. Field resolution (exact → normalized → alias → literal) and column-type
+    // inference are the presenter's job now — the per-form reflection propmap,
+    // NormalizeGridKey, ResolveItemsGridField, and the pure GetColumnTypeForField
+    // were duplicates of GridLayoutPresenter.NormalizeKey / ResolveField / ColumnTypeFor
+    // and have been removed.
+    private static readonly Dictionary<string, string> _priceFieldAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["currentcost"] = nameof(VendorPriceViewModel.Current),
+        ["partnumber"] = nameof(VendorPriceViewModel.SKU),
+        ["description"] = nameof(VendorPriceViewModel.ItemDesc),
+        ["pricegroup"] = nameof(VendorPriceViewModel.PriceLink)
+    };
+
+    // twips → px is the single canonical GridLayoutPresenter.WidthPx now. WIDTH
+    // POLICY CHANGE (deliberate): the old hand-copied "/15 * 0.85" (no +16,
+    // clamp [24..2000]) is replaced by the canonical "/15 + 16" (clamp [32..2000]).
+    // VB6 does no width tuning; one canonical +16 everywhere is the confirmed policy,
+    // so columns here are now slightly wider than the prior 15%-trimmed values.
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+}

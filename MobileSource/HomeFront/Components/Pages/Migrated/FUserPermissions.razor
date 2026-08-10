@@ -51,11 +51,21 @@
                 <ButtonControl CssClass="tool-btn" Title="Save As" OnClick="CopyGroup"><img src="images/16/saveas.ico" alt="Save As" /></ButtonControl>
             </div>
         </div>
-        <div class="groups-section">
+        @* Deferred: migrate Groups and Members to FlexKit GridControl in a dedicated pass. *@
+        <div class="groups-section"
+             role="listbox"
+             aria-label="Security groups"
+             aria-activedescendant="@(SelectedGroup == null ? null : $"group-item-{SelectedGroup.SecGroupID}")"
+             tabindex="0"
+             @ref="_groupsSectionElement"
+             @onkeydown="OnGroupListKeyDown">
             @foreach (var group in Groups)
             {
-                <div class="list-item @(SelectedGroup?.SecGroupID == group.SecGroupID ? "selected" : "")"
-                     @onclick="() => OnGroupSelected(group)">
+                <div id="@($"group-item-{group.SecGroupID}")"
+                     class="list-item @(SelectedGroup?.SecGroupID == group.SecGroupID ? "selected" : "")"
+                     role="option"
+                     aria-selected="@(SelectedGroup?.SecGroupID == group.SecGroupID)"
+                     @onclick="() => OnGroupClicked(group)">
                     @if (EditingGroupId == group.SecGroupID)
                     {
                         <TextBoxControl CssClass="inline-edit-input" @bind-Value="EditingGroupDescription"
@@ -232,6 +242,7 @@
                     var tabItem = tab;
                     <ButtonControl CssClass="@(ActiveTab == tabItem.Key ? "active" : "")"
                                    TabIndex="-1"
+                                   Disabled="@tabItem.Descoped"
                                    OnClick="@(() => SelectTab(tabItem.Key))">
                         @tabItem.Caption
                     </ButtonControl>
@@ -327,12 +338,13 @@
                                            only the checkbox cell toggles. So the description is a sibling
                                            span, NOT the CheckBoxControl Label (a label click would toggle);
                                            clicking the row only selects it. *@
-                                        <div class="perm-item @(_selectedPermColumn == permItem.ColumnName ? "selected" : "")"
-                                             @onclick="() => _selectedPermColumn = permItem.ColumnName">
+                                        <div class="perm-item @(permItem.Descoped ? "descoped" : "") @(_selectedPermColumn == permItem.ColumnName ? "selected" : "")"
+                                             @onclick="() => SelectPermissionRow(permItem)">
                                             <CheckBoxControl Checked="permItem.Value"
                                                              CheckedChanged="@(v => OnPermissionToggled(permItem, v))"
+                                                             Disabled="@permItem.Descoped"
                                                              StopClickPropagation="true" />
-                                            <span class="perm-item-label">@permItem.Description</span>
+                                            <span class="perm-item-label">@permItem.Description@(permItem.Descoped ? " (Descoped)" : "")</span>
                                         </div>
                                     }
                                 }
@@ -414,6 +426,7 @@
     private DirtyState Dirty = DirtyState.None;
     private bool ShowUserPage = false;
     private string ActiveTab = TAB_ADMIN;
+    private ElementReference _groupsSectionElement;
     private long? EditingGroupId = null;
     private string EditingGroupDescription = "";
     private bool PasswordChanged = false;
@@ -585,12 +598,14 @@
         public string ColumnName { get; set; } = "";
         public string Description { get; set; } = "";
         public bool Value { get; set; }
+        public bool Descoped { get; set; }
     }
 
     public class TabDefinition
     {
         public string Key { get; set; } = "";
         public string Caption { get; set; } = "";
+        public bool Descoped { get; set; }
     }
 
     // ── Lifecycle ────────────────────────────────────────────────
@@ -663,6 +678,8 @@
             new() { Key = TAB_SALES, Caption = "Sales" },
             new() { Key = TAB_PURCHASING, Caption = "Purchasing" },
             new() { Key = TAB_PAYABLES, Caption = "Payables" },
+            new() { Key = TAB_SCHEDULING, Caption = "Scheduling (Descoped)", Descoped = true },
+            new() { Key = TAB_WARRANTY, Caption = "Warranty (Descoped)", Descoped = true },
             new() { Key = TAB_CRM, Caption = "CRM" },
             new() { Key = TAB_DATAPORTAL, Caption = "Data Portal" }
         };
@@ -789,7 +806,8 @@
                         Section = section,
                         ColumnName = columnName,
                         Description = description,
-                        Value = false
+                        Value = false,
+                        Descoped = IsDescopedPermission(page, description)
                     });
                 }
             }
@@ -800,7 +818,7 @@
             // no tab at all (e.g. CRM and Data Portal in this DB). Match that exactly — do
             // not force-keep any tab.
             var pagesWithPerms = AllPermissions.Select(p => p.Page).Distinct().ToHashSet();
-            VisibleTabs = AllTabs.Where(t => pagesWithPerms.Contains(t.Key)).ToList();
+            VisibleTabs = AllTabs.Where(t => t.Descoped || pagesWithPerms.Contains(t.Key)).ToList();
 
             if (VisibleTabs.Any() && !VisibleTabs.Any(t => t.Key == ActiveTab))
                 ActiveTab = VisibleTabs.First().Key;
@@ -973,6 +991,52 @@
         await LoadUsers(group.SecGroupID);
         await LoadPermissions(group.SecGroupID);
         Dirty = DirtyState.None;
+    }
+
+    private async Task OnGroupClicked(SecurityGroup group)
+    {
+        await OnGroupSelected(group);
+        if (SelectedGroup?.SecGroupID == group.SecGroupID)
+        {
+            try { await _groupsSectionElement.FocusAsync(preventScroll: true); } catch { }
+        }
+    }
+
+    private async Task OnGroupListKeyDown(KeyboardEventArgs e)
+    {
+        if (EditingGroupId.HasValue || Groups.Count == 0)
+            return;
+
+        var currentIndex = SelectedGroup == null
+            ? 0
+            : Groups.FindIndex(group => group.SecGroupID == SelectedGroup.SecGroupID);
+        if (currentIndex < 0)
+            currentIndex = 0;
+
+        var targetIndex = e.Key switch
+        {
+            "ArrowUp" => Math.Max(0, currentIndex - 1),
+            "ArrowDown" => Math.Min(Groups.Count - 1, currentIndex + 1),
+            "Home" => 0,
+            "End" => Groups.Count - 1,
+            _ => -1
+        };
+
+        if (targetIndex >= 0)
+        {
+            await OnGroupSelected(Groups[targetIndex]);
+            return;
+        }
+
+        if (e.Key is "Enter" or "NumpadEnter" or "F2")
+        {
+            var group = SelectedGroup ?? Groups[currentIndex];
+            if (SelectedGroup?.SecGroupID != group.SecGroupID)
+                await OnGroupSelected(group);
+
+            if (SelectedGroup?.SecGroupID == group.SecGroupID)
+                StartEditGroup(group);
+        }
     }
 
     private async Task CreateGroup()
@@ -1623,6 +1687,9 @@
 
     private async Task SelectTab(string key)
     {
+        if (VisibleTabs.FirstOrDefault(tab => tab.Key == key)?.Descoped == true)
+            return;
+
         ActiveTab = key;
         _selectedPermColumn = null; // HHM-271: switching tabs resets the grid cursor (new VB6 grid)
         try { await _tabStripElement.FocusAsync(preventScroll: true); } catch { }
@@ -1637,6 +1704,8 @@
         if (index < 0) index = 0;
 
         var next = index + delta;
+        while (next >= 0 && next < VisibleTabs.Count && VisibleTabs[next].Descoped)
+            next += delta;
         if (next < 0 || next >= VisibleTabs.Count) return;
 
         await SelectTab(VisibleTabs[next].Key);
@@ -1687,10 +1756,34 @@
 
     private void OnPermissionToggled(PermissionItem perm, bool value)
     {
+        if (perm.Descoped) return;
+
         perm.Value = value;
         // HHM-271: clicking the Value (checkbox) cell also moves the VB6 grid cursor to that row.
         _selectedPermColumn = perm.ColumnName;
         OnPermFieldChanged();
+    }
+
+    private void SelectPermissionRow(PermissionItem perm)
+    {
+        if (!perm.Descoped)
+            _selectedPermColumn = perm.ColumnName;
+    }
+
+    private static bool IsDescopedPermission(string page, string description)
+    {
+        if (page.Equals(TAB_SALES, StringComparison.OrdinalIgnoreCase))
+        {
+            return !description.Equals("Edit retail sales prices?", StringComparison.OrdinalIgnoreCase)
+                && !description.Equals("Edit approved custom options?", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!page.Equals(TAB_ADMIN, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return description.Equals("Quality Builder", StringComparison.OrdinalIgnoreCase)
+            || description.Equals("Workticket", StringComparison.OrdinalIgnoreCase)
+            || description.Equals("Project Builder", StringComparison.OrdinalIgnoreCase);
     }
 
     // ── HHM-270: Home-page-report browse (VB6 cmdBrowse_Click, FUserPermissions.frm:2032-2038) ──

@@ -1,0 +1,278 @@
+@page "/startup-helper"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject ILogger<FStartupHelper> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>HomeFront - Starting Up...</PageTitle>
+
+<div class="startup-container">
+    @if (IsLoading)
+    {
+        <div class="startup-message">
+            <span>Initializing application...</span>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="startup-message" style="color: red;">
+            <span>@ErrorMessage</span>
+        </div>
+    }
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    private bool IsLoading = true;
+    private string? ErrorMessage;
+    private bool UsingToolsClass = false;
+
+    // Database
+// App info (equivalent to VB6 App object)
+    private string AppTitle = "HFEst";
+    private string AppProductName = "HomeFront Estimating";
+    private string AppVersion = "1.0";
+
+    // VB6: MaxPOAmount loaded by ReadUserPermissions
+    public static decimal MaxPOAmount { get; set; } = 0;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // VB6: Timer1.Interval = 100, Timer1.Enabled = True
+            await Task.Delay(100);
+            await StartupAsync();
+        }
+    }
+
+    /// <summary>
+    /// VB6: Timer1_Timer -- Unload Me, then login sequence.
+    /// </summary>
+    private async Task StartupAsync()
+    {
+        try
+        {
+            if (!UsingToolsClass)
+            {
+                // VB6: InitCommonControls (no-op in Blazor)
+
+                // VB6: If HFApp.Login(App.Title, App.ProductName, App.Major & "." & App.Minor, App.Path) Then
+                var loginSuccess = await LoginAsync(AppTitle, AppProductName, AppVersion);
+
+                if (loginSuccess)
+                {
+                    // VB6: Call ReadUserPermissions
+                    await ReadUserPermissions();
+
+                    // VB6: FMain.Show (navigate to main BEFORE rolling prices)
+                    ClosePage();
+
+                    // VB6: Call RollPrices(True)
+                    await RollPrices(autoStartup: true);
+                }
+                else
+                {
+                    ErrorMessage = "Login failed. Please check your credentials and try again.";
+                    IsLoading = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Startup error: {ex.Message}";
+            IsLoading = false;
+            await InvokeAsync(StateHasChanged);
+            Logger.LogError(ex, "Startup error");
+
+        }
+    }
+
+    /// <summary>
+    /// VB6: HFApp.Login(App.Title, App.ProductName, App.Major & "." & App.Minor, App.Path)
+    /// Verifies database connectivity and system_setup record.
+    /// </summary>
+    private async Task<bool> LoginAsync(string title, string productName, string version)
+    {
+        try
+        {
+            var result = await db.QueryAsync(
+                "SELECT TOP 1 1 AS Connected FROM system_setup WHERE id = @DivisionID",
+                new { SessionState.DivisionID });
+
+            if (result == null || !result.Any())
+            {
+                Console.WriteLine("Login: No system_setup record found.");
+
+                return false;
+            }
+
+            Console.WriteLine($"Login successful - {productName} v{version}");
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Login error");
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// VB6: Public Sub ReadUserPermissions()
+    ///   MaxPOAmount = HFApp.SqlExec("select MaxPOAmount from user_manager where user_id=" & DbQuote(Str, HFApp.LoginID))(0)
+    /// </summary>
+    private async Task ReadUserPermissions()
+    {
+        try
+        {
+            var result = await db.QueryAsync(
+                "SELECT MaxPOAmount FROM user_manager WHERE user_id = @LoginID",
+                new { LoginID = AppTitle });
+
+            if (result != null && result.Any())
+            {
+                var row = result.First();
+                MaxPOAmount = Convert.ToDecimal(row["MaxPOAmount"] ?? 0);
+                Console.WriteLine($"MaxPOAmount loaded: {MaxPOAmount}");
+
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ReadUserPermissions error");
+
+        }
+    }
+
+    /// <summary>
+    /// VB6: Public Sub RollPrices(prompt As Boolean)
+    /// Checks tblvendorcost for expired next_effective dates and rolls pricing forward.
+    /// When autoStartup=true (prompt=True in VB6), silently skips if nothing to roll;
+    /// when autoStartup=false (called from menu), shows a message even if nothing to update.
+    /// </summary>
+    private async Task RollPrices(bool autoStartup)
+    {
+        try
+        {
+            // VB6: Query to count rows with zero-cost and total expired rows
+            var checkSql = @"
+                SELECT ISNULL(SUM(CASE WHEN next_effective1 <= CONVERT(datetime, GETDATE()) AND ISNULL(next_cost1,0) = 0 THEN 1 ELSE 0 END), 0) AS ZeroRows1,
+                       ISNULL(SUM(CASE WHEN next_effective2 <= CONVERT(datetime, GETDATE()) AND ISNULL(next_cost2,0) = 0 THEN 1 ELSE 0 END), 0) AS ZeroRows2,
+                       COUNT(*) AS AllRows
+                FROM tblvendorcost
+                WHERE (next_effective1 <= CONVERT(datetime, GETDATE()) OR next_effective2 <= CONVERT(datetime, GETDATE()))
+                  AND (divisionid = 0 OR DivisionID = @DivisionID)";
+
+            var rs = await db.QueryAsync(checkSql, new { SessionState.DivisionID });
+            if (rs == null || !rs.Any()) return;
+
+            var row = rs.First();
+            int zeroRows1 = Convert.ToInt32(row["ZeroRows1"] ?? 0);
+            int zeroRows2 = Convert.ToInt32(row["ZeroRows2"] ?? 0);
+            int zeroRows = Math.Max(zeroRows1, zeroRows2);
+            int allRows = Convert.ToInt32(row["AllRows"] ?? 0);
+
+            if (allRows == 0)
+            {
+                if (!autoStartup)
+                {
+                    // VB6: MsgBox "No prices have expired...", vbInformation + vbOKOnly
+                    Notifications.Info("No prices have expired. Your pricing database is current.");
+                }
+                return;
+            }
+
+            // VB6: Prompt the user about expired pricing
+            bool includeZeroCost;
+            if (zeroRows > 0)
+            {
+                // VB6: vbQuestion + vbYesNoCancel
+                var answer = await Dialogs.ConfirmAsync(
+                    $"Pricing has expired for {allRows} items in your database. For {zeroRows}\nitems the new price is $0.00. Do you want to set the cost price\nof these items to $0.00?");
+                if (!answer)
+                {
+                    // User said No -- update only non-zero items
+                    includeZeroCost = false;
+                }
+                else
+                {
+                    includeZeroCost = true;
+                }
+            }
+            else
+            {
+                if (autoStartup)
+                {
+                    // VB6: vbQuestion + vbOKCancel
+                    var answer = await Dialogs.ConfirmAsync(
+                        $"Pricing has expired for {allRows} items in your database. Do you\nwant to update these prices now?");
+                    if (!answer) return;
+                }
+                includeZeroCost = true;
+            }
+
+            // VB6: The update SQL cascades costs through history columns
+            var updateSql = @"
+                UPDATE tblVendorCost
+                SET last_cost3      = ISNULL(last_cost2, 0),
+                    last3_expiry    = last2_expiry,
+                    last_cost2      = ISNULL(last_cost1, 0),
+                    last2_expiry    = last1_expiry,
+                    last_cost1      = ISNULL(current_cost, 0),
+                    last1_expiry    = CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime),
+                    Current_Cost    = ISNULL(next_Cost1, 0),
+                    next_cost1      = ISNULL(next_cost2, 0),
+                    next_effective1 = next_effective2,
+                    next_cost2      = 0,
+                    next_effective2 = NULL
+                WHERE (next_effective1 <= CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime)
+                   OR  next_effective2 <= CAST(FLOOR(CAST(GETDATE() AS float)) AS datetime))
+                  AND (divisionid = 0 OR DivisionID = @DivisionID)";
+
+            if (!includeZeroCost)
+            {
+                // VB6 vbNo/vbOK path: only update where next_cost1 <> 0
+                updateSql += "\n  AND next_cost1 <> 0";
+            }
+
+            // VB6: Called twice to cascade both effective1 and effective2
+            await db.ExecuteAsync(updateSql, new { SessionState.DivisionID });
+            await db.ExecuteAsync(updateSql, new { SessionState.DivisionID });
+
+            int updatedCount = includeZeroCost ? allRows : (allRows - zeroRows);
+            Notifications.Info($"{updatedCount} items have been updated. Your pricing database is current.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "RollPrices error");
+
+        }
+    }
+}

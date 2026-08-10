@@ -19,11 +19,14 @@ public class AssemblyItemRow
     public bool IsQuote { get; set; }
     public string ItemType { get; set; } = "Unit Price";
     public string PriceLevel { get; set; } = "";
-    public double Price { get; set; }
-    public double TaxRate { get; set; }
-    public double TaxAmount { get; set; }
-    public double PretaxAmount { get; set; }
-    public double ExtendedAmount { get; set; }
+    // Nullable: VB6 writes the Price/Tax/Amount cells ONLY when a pricing community is
+    // selected (FAssembly.frm:3039-3082's `If PricingCommunity <> ""` block) — otherwise the
+    // cells are BLANK, not $0.00 (HHM-165). null = "no pricing loaded" and renders empty.
+    public double? Price { get; set; }
+    public double? TaxRate { get; set; }
+    public double? TaxAmount { get; set; }
+    public double? PretaxAmount { get; set; }
+    public double? ExtendedAmount { get; set; }
     public string Vendor { get; set; } = "";
     public string VendorDesc { get; set; } = "";
     public string OldPriceLevel { get; set; } = "";

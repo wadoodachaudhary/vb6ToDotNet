@@ -1,0 +1,360 @@
+@page "/inbox-tbd-assignments"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+@using HomeFront.Services
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ITaskService TaskSvc
+@inject ILogger<FInboxTBDAssignments> Logger
+@inject NotificationService Notifications
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>TBD Purchase Orders</PageTitle>
+
+@if (IsLoading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner">⏳ Loading TBD Assignments...</div>
+    </div>
+}
+
+<div class="page-container">
+    <!-- WizHead -->
+    <div class="wiz-head">
+        <h4>Confirm Vendor TBD Assignments</h4>
+        <p>Refresh costs on TBD POs for assigned Vendors</p>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid-container">
+        <GridControl @ref="DataGrid"
+                TValue="TBDAssignmentRow"
+                DataSource="@GridData"
+                AllowSorting="true"
+                AllowResizing="true"
+                AllowSelection="true"
+                EnableHover="true"
+                Height="100%"
+                SelectionSettingsRef="@selectionSettings"
+                EditSettingsRef="@editSettings">
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(TBDAssignmentRow.IsChecked)" HeaderText="" Width="50px"
+                              Type="ColumnType.CheckBox" AllowEditing="true" TextAlign="TextAlign.Center" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.PONumber)" HeaderText="PO Number" Width="100px"
+                              IsPrimaryKey="true" AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.PODesc)" HeaderText="PO Desc" Width="180px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.AssignedVendor)" HeaderText="Assigned Vendor" Width="120px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.AssignedVendorName)" HeaderText="Assigned Vendor Name" Width="200px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.TBDVendor)" HeaderText="TBD Vendor" Width="100px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.TBDVendorName)" HeaderText="TBD Vendor Name" Width="180px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.Job)" HeaderText="Job" Width="100px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.JobDesc)" HeaderText="Job Desc" Width="180px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.POIndex)" HeaderText="PO Index" Width="90px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.POIndexDesc)" HeaderText="PO Index Desc" Width="160px"
+                              AllowEditing="false" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.BudgetAmt)" HeaderText="Budget Amt" Width="110px"
+                              Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" Type="ColumnType.Number" />
+                <GridColumn Field="@nameof(TBDAssignmentRow.VendorAmt)" HeaderText="Vendor Amt" Width="110px"
+                              Format="C2" TextAlign="TextAlign.Right" AllowEditing="false" Type="ColumnType.Number">
+                    <Template>
+                        @{
+                            var row = (TBDAssignmentRow)context;
+                            var cssClass = row.VendorAmt != row.BudgetAmt ? "vendor-amt-changed" : "";
+                        }
+                        <span class="@cssClass">@row.VendorAmt.ToString("C2")</span>
+                    </Template>
+                </GridColumn>
+            </GridColumnsBase>
+        </GridControl>
+    </div>
+
+    <!-- Button Bar -->
+    <div class="button-bar">
+        <button class="btn-nav primary" @onclick="OnApproveClick">
+            &amp;Approve
+        </button>
+        <button class="btn-nav" @onclick="OnCloseClick">
+            &amp;Close
+        </button>
+    </div>
+</div>
+
+@code {
+    // === Navigation (close returns to FMain home screen) ===
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            ClosePage();
+    }
+
+    private const string SRCFILE = "FInboxTBDAssignments::";
+
+    // Database
+// UI State
+    private bool IsLoading = false;
+    private GridControl<TBDAssignmentRow>? DataGrid;
+
+    // Data
+    private List<TBDAssignmentRow> GridData = new();
+
+    // Grid Settings
+    private SelectionSettings selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        EnableToggle = true
+    };
+
+    private EditSettings editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        ShowConfirmDialog = false
+    };
+
+    // Lifecycle
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    // Load Data
+    private async Task LoadData()
+    {
+        IsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            GridData.Clear();
+
+            var sql = @"
+                SELECT
+                     p.PONumber
+                    ,p.Description AS PODesc
+                    ,av.Vendor_ID AS AssignedVendor
+                    ,av.Vendor_Name AS AssignedVendorName
+                    ,tv.Vendor_ID AS TBDVendor
+                    ,tv.Vendor_Name AS TBDVendorName
+                    ,p.Job
+                    ,j.Description AS JobDesc
+                    ,p.POIndex
+                    ,x.description AS POIndexDesc
+                    ,sum(i.Pretax) AS BudgetAmt
+                    ,sum(round(isnull(nullif(e.POQty * dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Pretax),2)) AS VendorAmt
+                FROM pomaster p
+                LEFT JOIN poitems i ON p.ponumber=i.ponumber AND p.divisionid=i.divisionid
+                LEFT JOIN estimateitems e ON i.estitemid=e.estitemid
+                LEFT JOIN estimateassemblies a ON a.estassemblyid=e.estassemblyid
+                LEFT JOIN tblvendors tv ON p.vendor=tv.vendor_id AND p.divisionid=tv.divisionid
+                LEFT JOIN tblvendors av ON p.BuildPro_AssignedVendor=av.vendor_id AND p.divisionid=av.divisionid
+                LEFT JOIN tbljobs j ON p.job=j.job_no AND p.divisionid=j.divisionid
+                LEFT JOIN tblpoindex x ON p.poindex=x.poindex AND p.divisionid=x.divisionid
+                WHERE p.divisionid = @DivisionID
+                  AND isnull(BuildPro_AssignedVendor,'')<>''
+                GROUP BY p.PONumber, p.Description, av.Vendor_ID, av.Vendor_Name,
+                         tv.Vendor_ID, tv.Vendor_Name, p.Job, j.Description, p.POIndex, x.description
+                ORDER BY p.PONumber, av.Vendor_Name, p.Job";
+
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+
+            foreach (var r in rows)
+            {
+                var budgetAmt = SafeDecimal(r.ContainsKey("BudgetAmt") ? r["BudgetAmt"] : null);
+                var vendorAmt = SafeDecimal(r.ContainsKey("VendorAmt") ? r["VendorAmt"] : null);
+
+                GridData.Add(new TBDAssignmentRow
+                {
+                    PONumber = r["PONumber"]?.ToString() ?? "",
+                    PODesc = r["PODesc"]?.ToString() ?? "",
+                    AssignedVendor = r["AssignedVendor"]?.ToString() ?? "",
+                    AssignedVendorName = r["AssignedVendorName"]?.ToString() ?? "",
+                    TBDVendor = r["TBDVendor"]?.ToString() ?? "",
+                    TBDVendorName = r["TBDVendorName"]?.ToString() ?? "",
+                    Job = r["Job"]?.ToString() ?? "",
+                    JobDesc = r["JobDesc"]?.ToString() ?? "",
+                    POIndex = r["POIndex"]?.ToString() ?? "",
+                    POIndexDesc = r["POIndexDesc"]?.ToString() ?? "",
+                    BudgetAmt = budgetAmt,
+                    VendorAmt = vendorAmt,
+                    IsChecked = false
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}LoadData error");
+
+            Notifications.Error($"Error loading data: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Save / Approve
+    private async Task OnApproveClick()
+    {
+        await SaveData();
+    }
+
+    private async Task SaveData()
+    {
+        try
+        {
+            var checkedPOs = GridData.Where(r => r.IsChecked).Select(r => r.PONumber).ToList();
+            if (!checkedPOs.Any())
+            {
+                Notifications.Success("No purchase orders selected.");
+                return;
+            }
+
+            var poList = string.Join(",", checkedPOs.Select(po => $"'{po.Replace("'", "''")}'"));
+
+            // Update estimate items with new rates
+            var sql1 = $@"
+                UPDATE e SET
+                     PORate = isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate)
+                    ,POPretax = round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                    ,POTaxGroup = t.TaxGroup
+                    ,POJCTaxRate = t.JCRate
+                    ,PONJCTaxRate = t.NJCRate
+                    ,POJCTax  = t.JCRate/100  * round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                    ,PONJCTax = t.NJCRate/100 * round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                FROM pomaster p
+                JOIN poitems i ON p.ponumber=i.ponumber AND p.divisionid=i.divisionid
+                JOIN estimateitems e ON i.estitemid=e.estitemid
+                JOIN estimateassemblies a ON a.estassemblyid=e.estassemblyid
+                LEFT JOIN tblvendors tv ON p.vendor=tv.vendor_id AND p.divisionid=tv.divisionid
+                LEFT JOIN tblvendors av ON p.BuildPro_AssignedVendor=av.vendor_id AND p.divisionid=av.divisionid
+                LEFT JOIN tbljobs j ON p.job=j.job_no AND p.divisionid=j.divisionid
+                LEFT JOIN taxgroups t ON t.taxgroup=dbo.Purch_GetDefaultTaxGroup(j.Job_No,j.Community,j.CommunityPhase,e.Model,e.Assembly,e.Phase,e.Item,p.buildpro_assignedvendor,e.JCCategory,e.DivisionID)
+                LEFT JOIN tblpoindex x ON p.poindex=x.poindex AND p.divisionid=x.divisionid
+                WHERE p.divisionid = @DivisionID
+                  AND p.ponumber IN ({poList})";
+
+            await db.ExecuteAsync(sql1, new { SessionState.DivisionID });
+
+            // Update PO items with new rates
+            var sql2 = $@"
+                UPDATE i SET
+                     Rate = isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate)
+                    ,Pretax = round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                    ,TaxGroup = t.TaxGroup
+                    ,JCTaxRate = t.JCRate
+                    ,NJCTaxRate = t.NJCRate
+                    ,JCTax  = t.JCRate/100  * round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                    ,NJCTax = t.NJCRate/100 * round(e.POQty * isnull(nullif(dbo.Purch_GetItemRate(0,0,j.Community,j.CommunityPhase,e.Assembly,e.model,a.optionid,e.phase,e.item,0,p.buildpro_assignedvendor,getdate(),a.divisionid),0),i.Rate),2)
+                FROM pomaster p
+                JOIN poitems i ON p.ponumber=i.ponumber AND p.divisionid=i.divisionid
+                JOIN estimateitems e ON i.estitemid=e.estitemid
+                JOIN estimateassemblies a ON a.estassemblyid=e.estassemblyid
+                LEFT JOIN tblvendors tv ON p.vendor=tv.vendor_id AND p.divisionid=tv.divisionid
+                LEFT JOIN tblvendors av ON p.BuildPro_AssignedVendor=av.vendor_id AND p.divisionid=av.divisionid
+                LEFT JOIN tbljobs j ON p.job=j.job_no AND p.divisionid=j.divisionid
+                LEFT JOIN taxgroups t ON t.taxgroup=dbo.Purch_GetDefaultTaxGroup(j.Job_No,j.Community,j.CommunityPhase,e.Model,e.Assembly,e.Phase,e.Item,p.buildpro_assignedvendor,e.JCCategory,e.DivisionID)
+                LEFT JOIN tblpoindex x ON p.poindex=x.poindex AND p.divisionid=x.divisionid
+                WHERE p.divisionid = @DivisionID
+                  AND p.ponumber IN ({poList})";
+
+            await db.ExecuteAsync(sql2, new { SessionState.DivisionID });
+
+            // Update PO master: assign vendor, clear BuildPro fields
+            var sql3 = $@"
+                UPDATE p SET
+                     Vendor = BuildPro_AssignedVendor
+                    ,BuildPro_AssignedVendor = ''
+                    ,DateSentToBuildPro = null
+                FROM pomaster p
+                WHERE p.divisionid = @DivisionID
+                  AND p.ponumber IN ({poList})";
+
+            await db.ExecuteAsync(sql3, new { SessionState.DivisionID });
+
+            // Send BuildPro POs
+            SendBuildProPOs("", poList);
+
+            // Remove approved rows from grid
+            GridData.RemoveAll(r => r.IsChecked);
+            StateHasChanged();
+
+            Notifications.Info($"Successfully approved {checkedPOs.Count} purchase order(s).");
+
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}SaveData error");
+
+            Notifications.Error($"Error saving data: {ex.Message}");
+        }
+    }
+
+    private void SendBuildProPOs(string job, string poList)
+    {
+        try
+        {
+            TaskSvc.RunTask($"SendBuildProPOs|{job}|{poList}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "{SRCFILE}SendBuildProPOs error");
+
+        }
+    }
+
+    private async Task OnCloseClick()
+    {
+        ClosePage();
+    }
+
+    // Helpers
+    private decimal SafeDecimal(object? val, decimal def = 0) =>
+        val != null && val != DBNull.Value && !string.IsNullOrEmpty(val.ToString())
+            ? Convert.ToDecimal(val)
+            : def;
+
+    // Model
+    public class TBDAssignmentRow
+    {
+        public bool IsChecked { get; set; }
+        public string PONumber { get; set; } = "";
+        public string PODesc { get; set; } = "";
+        public string AssignedVendor { get; set; } = "";
+        public string AssignedVendorName { get; set; } = "";
+        public string TBDVendor { get; set; } = "";
+        public string TBDVendorName { get; set; } = "";
+        public string Job { get; set; } = "";
+        public string JobDesc { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string POIndexDesc { get; set; } = "";
+        public decimal BudgetAmt { get; set; }
+        public decimal VendorAmt { get; set; }
+    }
+}

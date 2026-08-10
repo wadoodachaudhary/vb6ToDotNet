@@ -1,4 +1,10 @@
 ﻿@inherits LayoutComponentBase
+@* PageOpenLogger emits the +++++++ PAGE OPENED log line on every
+   navigation. Injected into the always-mounted MainLayout so the
+   service is constructed exactly once per circuit (scoped) and lives
+   for the circuit's lifetime, subscribing to NavigationManager.
+   LocationChanged. See Infrastructure/Logging/PageOpenLogger.cs. *@
+@inject HomeFront.Infrastructure.Logging.PageOpenLogger PageOpenLogger
 
 <div class="page">
     <main>
@@ -13,3 +19,20 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@* App-wide modal dialogs (FlexKit) — replaces native confirm/alert/prompt JS.
+   Hosted once here in the root layout so every page (login, FMain, all migrated
+   forms) can inject IDialogService and await ConfirmAsync/AlertAsync/PromptAsync. *@
+<DialogHostControl />
+
+@code {
+    // Fire the initial-URI page-open log once, after the layout's first
+    // render — LocationChanged doesn't raise for the initial nav, so we
+    // need this manual nudge. Subsequent navigations are caught by
+    // PageOpenLogger's NavigationManager.LocationChanged subscription.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            PageOpenLogger.LogInitialIfNeeded();
+    }
+}

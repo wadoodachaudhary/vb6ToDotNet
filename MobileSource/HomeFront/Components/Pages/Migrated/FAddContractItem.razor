@@ -1,0 +1,269 @@
+@namespace HomeFront.Components.Pages
+@rendermode InteractiveServer
+
+@using HomeFront.Data
+@using Fx.ControlKit
+@using Fx.ControlKit.Notifications
+@inject IJSRuntime JSRuntime
+@inject ILogger<FAddContractItem> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
+
+<DialogControl @bind-Visible="IsVisible"
+               Header="New Item"
+               Width="500px"
+               OnClose="OnCancelClick">
+    <ChildContent>
+        <div class="form-group aci-row aci-row-top">
+            <label class="aci-label aci-label-top">Description</label>
+            <TextBoxControl @bind-Value="HFDescription" @onfocus="OnDescriptionFocus"
+                            maxlength="200" CssClass="aci-grow" />
+        </div>
+        <div class="form-group aci-row aci-row-top">
+            <label class="aci-label aci-label-top">Comments</label>
+            <TextBoxControl @bind-Value="HFComments" @onfocus="OnCommentsFocus"
+                            Multiline="true" Rows="6" maxlength="4000" CssClass="aci-grow aci-textarea" />
+        </div>
+        <div class="form-group aci-row">
+            <label class="aci-label">Change Order</label>
+            <TextBoxControl @bind-Value="ChangeOrderText" list="changeOrderList" maxlength="10" CssClass="aci-combo" />
+            <datalist id="changeOrderList">
+                @foreach (var item in ChangeOrderItems)
+                {
+                    <option value="@item" />
+                }
+            </datalist>
+        </div>
+        <div class="form-group aci-row">
+            <label class="aci-label">@JCExtraLabel</label>
+            <TextBoxControl @bind-Value="JCExtraText" list="jcExtraList" maxlength="10" CssClass="aci-combo" />
+            <datalist id="jcExtraList">
+                @foreach (var item in JCExtraItems)
+                {
+                    <option value="@item" />
+                }
+            </datalist>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnOkClick">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnCancelClick">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@code {
+    // === Parameters ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    /// <summary>Fires when the dialog closes. True = OK (item saved), False = Cancel.</summary>
+    [Parameter] public EventCallback<bool> OnClosed { get; set; }
+
+    /// <summary>The accounting system name, used to relabel JCExtra (e.g. "Phase" for MasterBuilder).</summary>
+    [Parameter] public string AccountingSystem { get; set; } = "";
+
+    // === Database ===
+// === State ===
+    private string mCustomer = "";
+    private bool mCancel = true;
+
+    private string HFDescription { get; set; } = "New Item";
+    private string HFComments { get; set; } = "";
+    private string ChangeOrderText { get; set; } = "";
+    private string JCExtraText { get; set; } = "";
+    private string JCExtraLabel { get; set; } = "JC Extra";
+
+    private List<string> ChangeOrderItems { get; set; } = new();
+    private List<string> JCExtraItems { get; set; } = new();
+
+    // === Public API ===
+
+    /// <summary>
+    /// Opens the dialog to add a new contract item for the given customer/change order.
+    /// Returns true if the item was saved, false if cancelled.
+    /// </summary>
+    public async Task<bool> AddItemAsync(string customer, string changeOrder)
+    {
+        mCustomer = customer;
+        mCancel = true;
+
+        // Reset fields
+        HFDescription = "New Item";
+        HFComments = "";
+        ChangeOrderText = changeOrder;
+        JCExtraText = "";
+
+        // Set label based on accounting system
+        JCExtraLabel = AccountingSystem == "MasterBuilder" ? "Phase" : "JC Extra";
+
+        // Load combo box data
+        await LoadChangeOrderItems();
+        await LoadJCExtraItems(changeOrder);
+
+        IsVisible = true;
+        await IsVisibleChanged.InvokeAsync(true);
+        StateHasChanged();
+
+        // Note: In Blazor we can't block like VB6's vbModal.
+        // The result is communicated via the OnClosed callback.
+        // Return value here is not meaningful for modal blocking;
+        // consumers should use the OnClosed event.
+        return !mCancel;
+    }
+
+    // === Data Loading ===
+
+    private async Task LoadChangeOrderItems()
+    {
+        try
+        {
+            var sql = @"SELECT DISTINCT ISNULL(ChangeOrder,'') AS CO
+                        FROM EstimateAssemblies
+                        WHERE Job IN (SELECT Job_No FROM tblCustomers WHERE Customer_No = @Customer)
+                        ORDER BY CO";
+            var rows = await db.QueryAsync(sql, new { Customer = mCustomer });
+            ChangeOrderItems = rows.Select(r => r["CO"]?.ToString() ?? "").ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadChangeOrderItems error");
+
+            ChangeOrderItems = new();
+        }
+    }
+
+    private async Task LoadJCExtraItems(string changeOrder)
+    {
+        try
+        {
+            // Load distinct JCExtra values
+            var sql = @"SELECT DISTINCT ISNULL(JCExtra,'') AS JCE
+                        FROM EstimateAssemblies
+                        WHERE Job IN (SELECT Job_No FROM tblCustomers WHERE Customer_No = @Customer)
+                        ORDER BY JCE";
+            var rows = await db.QueryAsync(sql, new { Customer = mCustomer });
+            JCExtraItems = rows.Select(r => r["JCE"]?.ToString() ?? "").ToList();
+
+            // Try to default JCExtra from the most recent assembly with this change order
+            try
+            {
+                var defaultSql = @"SELECT TOP 1 JCExtra
+                                   FROM EstimateAssemblies
+                                   WHERE Customer_No = @Customer AND ChangeOrder = @ChangeOrder
+                                   ORDER BY EstAssemblyID DESC";
+                var defaultVal = await db.ExecuteScalarAsync<string>(defaultSql,
+                    new { Customer = mCustomer, ChangeOrder = changeOrder });
+                if (!string.IsNullOrEmpty(defaultVal))
+                    JCExtraText = defaultVal;
+            }
+            catch
+            {
+                // Ignore — default stays empty
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadJCExtraItems error");
+
+            JCExtraItems = new();
+        }
+    }
+
+    // === Save ===
+
+    private async Task<bool> SaveData()
+    {
+        if (string.IsNullOrWhiteSpace(HFDescription))
+        {
+            Notifications.Error("You must specify a description");
+            return false;
+        }
+
+        try
+        {
+            // Truncate combo values to 10 chars (matching VB6 Validate events)
+            var changeOrder = (ChangeOrderText ?? "").Length > 10
+                ? ChangeOrderText!.Substring(0, 10)
+                : ChangeOrderText ?? "";
+            var jcExtra = (JCExtraText ?? "").Length > 10
+                ? JCExtraText!.Substring(0, 10)
+                : JCExtraText ?? "";
+
+            var insertSql = @"
+                INSERT INTO EstimateAssemblies
+                    (Customer_No, EstimateIndex, AssemblyType, OptionType, SalesQty, Job,
+                     HFComments, HFDescription, ChangeOrder, JCExtra)
+                SELECT Customer_No,
+                       LastEstimateIndex + 1,
+                       -1,
+                       -1,
+                       1,
+                       Job_No,
+                       @HFComments,
+                       @HFDescription,
+                       @ChangeOrder,
+                       @JCExtra
+                FROM tblCustomers
+                WHERE Customer_No = @Customer";
+
+            await db.ExecuteAsync(insertSql, new
+            {
+                HFComments = HFComments ?? "",
+                HFDescription = HFDescription ?? "",
+                ChangeOrder = changeOrder,
+                JCExtra = jcExtra,
+                Customer = mCustomer
+            });
+
+            var updateSql = @"
+                UPDATE tblCustomers
+                SET LastEstimateIndex = LastEstimateIndex + 1
+                WHERE Customer_No = @Customer";
+
+            await db.ExecuteAsync(updateSql, new { Customer = mCustomer });
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error saving item: {ex.Message}");
+            return false;
+        }
+    }
+
+    // === Event Handlers ===
+
+    private async Task OnOkClick()
+    {
+        if (!await SaveData())
+            return;
+
+        mCancel = false;
+        await CloseDialog();
+    }
+
+    private async Task OnCancelClick()
+    {
+        mCancel = true;
+        await CloseDialog();
+    }
+
+    private async Task CloseDialog()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+        await OnClosed.InvokeAsync(!mCancel);
+    }
+
+    // === Focus Handlers (select all text on focus, matching VB6 SelectAll) ===
+
+    private async Task OnDescriptionFocus()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", "document.activeElement?.select()");
+    }
+
+    private async Task OnCommentsFocus()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", "document.activeElement?.select()");
+    }
+}

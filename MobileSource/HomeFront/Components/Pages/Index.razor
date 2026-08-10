@@ -2,6 +2,10 @@
 @rendermode InteractiveServer
 @using HomeFront.Data
 @using Microsoft.AspNetCore.Components
+@using HomeFront.Services
+
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
 
 <PageTitle>HomeFront</PageTitle>
 
@@ -21,7 +25,7 @@
             <div class="panel">
                 <div class="side-by-side mb-4">
                     <div class="workflow-col">
-                        <SfDashboardLayout Columns="12" CellSpacing="@(new double[] { 0, 0 })" CellAspectRatio="1">
+                        <DashboardLayoutControl Columns="12" CellSpacing="@(new double[] { 0, 0 })" CellAspectRatio="1">
                             <DashboardLayoutPanels>
                                 <DashboardLayoutPanel Row="0" Column="0" SizeX="1" SizeY="1">
                                     <ContentTemplate>
@@ -153,7 +157,7 @@
                                 <DashboardLayoutPanel Row="2" Column="2" SizeX="1" SizeY="1">
                                     <ContentTemplate>
                                         <div class="task-card" @onclick='() => NavigateTo("Model & Option Library")'>
-                                            <img src="images/workflow/Models and Option Library.bmp" alt="Model & Option Library" class="task-icon-process" />
+                                            <img src="images/workflow/Model Library.bmp" alt="Model & Option Library" class="task-icon-process" />
                                             <div class="task-label">2:2</div>
                                         </div>
                                     </ContentTemplate>
@@ -416,7 +420,7 @@
                                     </ContentTemplate>
                                 </DashboardLayoutPanel>
                             </DashboardLayoutPanels>
-                        </SfDashboardLayout>
+                        </DashboardLayoutControl>
                     </div>
                     <div class="financial-col">
                         <div class="financial-card h-100">
@@ -444,7 +448,7 @@
                         </div>
 
                         <div class="jobs-grid">
-                            <HfGrid @ref="JobsGrid"
+                            <GridControl @ref="JobsGrid"
                                     TValue="Job"
                                     DataSource="@JobsData"
                                     AllowSorting="true"
@@ -453,13 +457,13 @@
                                     Height="1400px"
                                     SelectionSettingsRef="@jobsSelection"
                                     EventsRef="@jobsEvents">
-                                <HfGridColumnsBase>
-                                    <HfGridColumn Field="@nameof(Job.JobNumber)" HeaderText="Job" Width="150px" />
-                                    <HfGridColumn Field="@nameof(Job.JobDescription)" HeaderText="Description" Width="150px" />
-                                    <HfGridColumn Field="@nameof(Job.JobAddress)" HeaderText="Address" Width="120px" Visible="true" />
-                                    <HfGridColumn Field="@nameof(Job.DivisionID)" HeaderText="Division ID" Width="120px" Visible="false" />
-                                </HfGridColumnsBase>
-                            </HfGrid>
+                                <GridColumnsBase>
+                                    <GridColumn Field="@nameof(Job.JobNumber)" HeaderText="Job" Width="150px" />
+                                    <GridColumn Field="@nameof(Job.JobDescription)" HeaderText="Description" Width="150px" />
+                                    <GridColumn Field="@nameof(Job.JobAddress)" HeaderText="Address" Width="120px" Visible="true" />
+                                    <GridColumn Field="@nameof(Job.DivisionID)" HeaderText="Division ID" Width="120px" Visible="false" />
+                                </GridColumnsBase>
+                            </GridControl>
                         </div>
                     </div>
                 </div>
@@ -589,19 +593,19 @@
         margin-top: 12px;
     }
 
-    .jobs-grid .hf-selected {
+    .jobs-grid .fx-selected {
         background-color: #FF5733 !important;
         color: white !important;
         font-weight: bold !important;
     }
 
-    .jobs-grid .hf-grid,
-    .jobs-grid .hf-grid-table {
+    .jobs-grid .fx-grid,
+    .jobs-grid .fx-grid-table {
         background-color: #e3f2fd !important;
     }
 
-    .jobs-grid .hf-grid-header,
-    .jobs-grid .hf-header-cell {
+    .jobs-grid .fx-grid-header,
+    .jobs-grid .fx-header-cell {
         border-color: black;
         border-style: solid;
         border-width: 2px;
@@ -647,20 +651,18 @@
 
 @code {
     [Inject] public NavigationManager NavigationManager { get; set; } = default!;
-
-    private readonly DbWrapperSqlServer db = new();
-    private HfGrid<Job>? JobsGrid;
+private GridControl<Job>? JobsGrid;
     private readonly List<Job> JobsData = new();
     private int activeTab = 1;
 
-    private readonly HfSelectionSettings jobsSelection = new()
+    private readonly SelectionSettings jobsSelection = new()
     {
         Mode = SelectionMode.Row,
         Type = SelectionType.Single,
         EnableToggle = true
     };
 
-    private readonly HfGridEvents<Job> jobsEvents = new();
+    private readonly GridControlEvents<Job> jobsEvents = new();
 
     private string CurrentJobTitle = "";
     private decimal Contract = 0;
@@ -760,7 +762,7 @@
             WHERE (d.DivisionID IS NULL OR d.DivisionID = @DivisionID)
             AND j.DivisionID = @DivisionID
             ORDER BY wj.job";
-        var parameters = new { DivisionID = 1 };
+        var parameters = new { DivisionID = SessionState.DivisionID };
         var result = await db.QueryAsync(sql, parameters);
 
         JobsData.Clear();

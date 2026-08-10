@@ -1,4 +1,3 @@
-```razor
 @namespace HomeFront.Components.Pages
 
 @using System
@@ -7,8 +6,12 @@
 @using System.Linq
 @using System.Text.RegularExpressions
 @using HomeFront.Data
+@using Fx.ControlKit.Notifications
 
 @inject IJSRuntime JSRuntime
+@inject ILogger<MFormulas> Logger
+@inject NotificationService Notifications
+@inject DbWrapperSqlServer db
 
 @* 
     MFormulas.razor – Blazor service-component converted from VB6 MFormulas.bas
@@ -17,9 +20,6 @@
 *@
 
 @code {
-    private DbWrapperSqlServer db = new();
-    private string AppProductName = "HomeFront";
-
     // ── ResolveFormula ───────────────────────────────────────────────────
     /// <summary>
     /// Resolves a raw formula by replacing {formulaname} tokens with their
@@ -47,8 +47,8 @@
 
             if (i > 30)
             {
-                await JSRuntime.InvokeVoidAsync("alert",
-                    $"Formula cannot be resolved.\n\n{originalFormula}\n\nCall Stack:\n{string.Join("\n", fnames)}");
+                Notifications.Info($"Formula cannot be resolved.\n\n{originalFormula}\n\nCall Stack:\n{string.Join("\n", fnames)}");
+
                 return "";
             }
 
@@ -58,7 +58,7 @@
 
             if (dt.Rows.Count == 0)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Unknown formula {name}");
+                Notifications.Info($"Unknown formula {name}");
                 return "";
             }
 
@@ -250,18 +250,15 @@
             {
                 if (ex is InvalidCastException || ex.Message.Contains("type mismatch", StringComparison.OrdinalIgnoreCase))
                 {
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        $"Formula returns '{s}'. It must return a number.");
+                    Notifications.Error($"Formula returns '{s}'. It must return a number.");
                 }
                 else if (ex.Message.Contains("Divide by zero", StringComparison.OrdinalIgnoreCase))
                 {
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        "Divide by zero error encountered.");
+                    Notifications.Warning("Divide by zero error encountered.");
                 }
                 else
                 {
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        $"Error Evaluating Formula:\n{ex.Message}\n\n{s}");
+                    Notifications.Error($"Error Evaluating Formula:\n{ex.Message}\n\n{s}");
                 }
             }
             throw new IndexOutOfRangeException("Formula evaluation failed.", ex);
@@ -324,19 +321,16 @@
             {
                 if (ex is InvalidCastException)
                 {
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        $"Formula returns '{s}'. It must return a number.");
+                    Notifications.Error($"Formula returns '{s}'. It must return a number.");
                 }
                 else if (ex.Message.Contains("Divide by zero", StringComparison.OrdinalIgnoreCase))
                 {
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        "Divide by zero error encountered.");
+                    Notifications.Warning("Divide by zero error encountered.");
                 }
                 else
                 {
                     var sqlServerMsg = ExtractSqlServerMessage(ex.Message);
-                    await JSRuntime.InvokeVoidAsync("alert",
-                        $"Error Evaluating Formula:\n{sqlServerMsg}\n\n{s}");
+                    Notifications.Error($"Error Evaluating Formula:\n{sqlServerMsg}\n\n{s}");
                 }
             }
             throw new IndexOutOfRangeException("Formula evaluation failed.", ex);
@@ -460,4 +454,3 @@
         public string ConditionUOM { get; set; } = "";
     }
 }
-```

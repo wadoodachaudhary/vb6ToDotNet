@@ -1,0 +1,1545 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+     - HHM-609: toolbar Open now uses the shared FPickList window (VB6
+       FPickList.Choose "Item Chart") instead of a bespoke list dialog.
+   ───────────────────────────────────────────────────────────────── *@
+@namespace HomeFront.Components.Pages
+@page "/item-chart"
+@page "/item-chart/{ChartName}"
+
+@using HomeFront.Data
+@using HomeFront.Models
+@using System.Data
+@using System.Reflection
+@using System.Text
+@using Fx.ControlKit.Notifications
+@layout HFComponent
+@inject IJSRuntime JSRuntime
+@inject IDialogService Dialogs
+@inject NavigationManager NavigationManager
+@inject ILogger<FItemChart> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject IGridLayoutService GridLayoutSvc
+@inject DbWrapperSqlServer db
+<PageTitle>Item Chart - HomeFront</PageTitle>
+
+@* IsModal: when FAssembly (or any caller) hosts FItemChart inline, wrap
+   the page in a backdrop+frame so the caller stays visible behind it.
+   VB6 FItemChart.Edit was modal-blocking; this preserves that UX
+   without stealing an MDI tab. Non-modal usage (/item-chart route or
+   the FMain Setup menu path) renders normally as a full-page form.
+   Mirrors the FDBGrid/FTakeoff IsModal pattern. *@
+@if (IsModal)
+{
+    <div class="fx-itemchart-modal-backdrop"></div>
+}
+<div class="@(IsModal ? "fx-itemchart-modal" : "")">
+@if (IsModal)
+{
+    <div class="fx-itemchart-modal-header">
+        @* HHM-237: legacy form icon LEFT of the title — VB6 FItemChart.frm:10
+           (Icon = FItemChart.frx). Same 16px vb6form.png face FPickList's
+           window icon uses (HHM-288). *@
+        <span class="fx-itemchart-modal-icon" aria-hidden="true"></span>
+        <span class="fx-itemchart-modal-title">@(string.IsNullOrEmpty(mChart) ? "Item Chart" : $"Item Chart — {mChart}")</span>
+        <button type="button" class="fx-itemchart-modal-close" title="Close"
+                aria-label="Close" @onclick="OnCloseClick">×</button>
+    </div>
+}
+
+@* ── TOOLBAR ─────────────────────────────────────────── *@
+<div class="toolbar-cntr">
+    <button class="tbar-btn" @onclick="OnNewClick">
+        <img src="images/32/new.ico" alt="New" onerror="this.style.display='none'" />
+        <span class="tool-label">New</span>
+    </button>
+    <button class="tbar-btn" @onclick="OnOpenClick">
+        <img src="images/32/open.ico" alt="Open" onerror="this.style.display='none'" />
+        <span class="tool-label">Open</span>
+    </button>
+    <button class="tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+        <img src="images/32/save.ico" alt="Save" onerror="this.style.display='none'" />
+        <span class="tool-label">Save</span>
+    </button>
+    <button class="tbar-btn" disabled="@(string.IsNullOrEmpty(mChart))" @onclick="OnDeleteClick">
+        <img src="images/32/delete.ico" alt="Delete" onerror="this.style.display='none'" />
+        <span class="tool-label">Delete</span>
+    </button>
+    @* Close in the toolbar only for the STANDALONE returnUrl case — VB6's
+       toolbar is New/Open/Save/Delete (FItemChart.frm:52-65); the modal is
+       dismissed by the header ✕, and the extra toolbar Close read as icon
+       clutter (HHM-237). *@
+    @if (!IsModal && !string.IsNullOrWhiteSpace(returnUrl))
+    {
+        <div class="tbar-separator"></div>
+        <button class="tbar-btn" @onclick="OnCloseClick">
+            <span class="tool-label">Close</span>
+        </button>
+    }
+</div>
+
+@* Page heading only in STANDALONE mode — the modal header already carries
+   the title; showing both duplicated it (HHM-237). *@
+@if (!IsModal)
+{
+    <h3 style="margin-bottom: 16px;">Item Chart</h3>
+}
+
+@* ── HEADER FIELDS ───────────────────────────────────── *@
+<div class="form-row">
+    <div class="left-panel">
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Chart Name</label>
+            <TextBoxControl Value="@txtName" ValueChanged="OnNameValueChanged"
+                            MaxLength="50" CssClass="ic-name-input" />
+        </div>
+        <div class="form-field">
+            <label>Formula</label>
+            <TextAreaControl Value="@txtFormula" ValueChanged="OnFormulaValueChanged"
+                             CssClass="ic-formula-area" />
+            <button class="formula-edit-btn" @onclick="OnFormulaEditClick" title="Edit Formula">✏️</button>
+        </div>
+    </div>
+
+    <div class="right-panel">
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Variable 1</label>
+            <DropDownListControl TValue="string" TItem="string"
+                                 Value="@Variable1"
+                                 ValueChanged="OnVariable1Changed"
+                                 DataSource="@VariableOptionList"
+                                 Width="240px" />
+            <button class="var-edit-btn" @onclick="() => OnEditVariable(1)" title="Edit Variable">✏️</button>
+        </div>
+        <div class="form-field" style="margin-bottom: 8px;">
+            <label>Variable 2</label>
+            <DropDownListControl TValue="string" TItem="string"
+                                 Value="@Variable2"
+                                 ValueChanged="OnVariable2Changed"
+                                 DataSource="@VariableOptionList"
+                                 Enabled="@Variable2Enabled"
+                                 Width="240px" />
+            <button class="var-edit-btn" disabled="@(!Variable2Enabled)"
+                    @onclick="() => OnEditVariable(2)" title="Edit Variable">✏️</button>
+        </div>
+        <div class="form-field">
+            <label>Variable 3</label>
+            <DropDownListControl TValue="string" TItem="string"
+                                 Value="@Variable3"
+                                 ValueChanged="OnVariable3Changed"
+                                 DataSource="@VariableOptionList"
+                                 Enabled="@Variable3Enabled"
+                                 Width="240px" />
+            <button class="var-edit-btn" disabled="@(!Variable3Enabled)"
+                    @onclick="() => OnEditVariable(3)" title="Edit Variable">✏️</button>
+        </div>
+    </div>
+</div>
+
+@* ── DATA GRID ───────────────────────────────────────── *@
+<div class="grid-container">
+    <GridControl @ref="gData"
+            TValue="ItemChartDetailRow"
+            DataSource="@GridData"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowSelection="true"
+            EnableHover="true"
+            Height="400px"
+            EditSettingsRef="@editSettings"
+            SelectionSettingsRef="@selectionSettings"
+            EventsRef="@gridEvents"
+            OnLayoutChanged="@OnGridLayoutChangedAsync">
+        <GridColumnsBase @key="gDataLayoutVersion">
+            @if (HasDataGridLayout)
+            {
+                <GridColumn Field="@nameof(ItemChartDetailRow.RowIndex)" HeaderText="" Width="1px"
+                              Visible="false" IsPrimaryKey="true" />
+                foreach (var entry in GetOrderedDataGridLayout())
+                {
+                    var layout = entry.Layout;
+                    var fieldName = entry.Field;
+                    var columnType = entry.ColumnType;
+                    var textAlign = entry.TextAlign;
+                    // HHM-237: VB6 ConfigDimensions (FItemChart.frm:733-764)
+                    // overrides the SAVED layout for the D1/D2/D3 dimension
+                    // columns on every load/variable change — the column is
+                    // visible IFF its variable is assigned, and its caption is
+                    // the variable name. A stale saved layout row (Hidden=0
+                    // with an old variable caption) must not leak an extra
+                    // column into a chart whose variables don't use it.
+                    var dimIndex = DimensionIndexOf(fieldName);
+                    var isVisible = dimIndex == 0 || GetDimensionVisible(dimIndex);
+                    var headerText = dimIndex != 0
+                        ? GetDimensionHeader(dimIndex)
+                        : (string.IsNullOrWhiteSpace(layout.Caption) ? layout.Field : layout.Caption);
+                    var width = layout.Width.HasValue && layout.Width.Value > 0
+                        ? $"{ConvertLayoutWidthToPx(layout.Width.Value)}px" : null;
+
+                    <GridColumn Field="@fieldName"
+                                  HeaderText="@headerText"
+                                  Width="@width"
+                                  Type="@columnType"
+                                  TextAlign="@textAlign"
+                                  Visible="@isVisible"
+                                  AllowEditing="true"
+                                  ClipMode="ClipMode.Ellipsis" />
+                }
+            }
+            else
+            {
+                <GridColumn Field="@nameof(ItemChartDetailRow.RowIndex)" HeaderText="" Width="1px"
+                              Visible="false" IsPrimaryKey="true" />
+                <GridColumn Field="@nameof(ItemChartDetailRow.D1)" HeaderText="@D1Header"
+                              Width="120px" Visible="@D1Visible" AllowEditing="true" />
+                <GridColumn Field="@nameof(ItemChartDetailRow.D2)" HeaderText="@D2Header"
+                              Width="120px" Visible="@D2Visible" AllowEditing="true" />
+                <GridColumn Field="@nameof(ItemChartDetailRow.D3)" HeaderText="@D3Header"
+                              Width="120px" Visible="@D3Visible" AllowEditing="true" />
+                <GridColumn Field="@nameof(ItemChartDetailRow.Phase)" HeaderText="Phase"
+                              Width="100px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (ItemChartDetailRow)context;
+                            <span>@row.Phase</span>
+                            <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                    @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="@nameof(ItemChartDetailRow.Item)" HeaderText="Item"
+                              Width="100px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (ItemChartDetailRow)context;
+                            <span>@row.Item</span>
+                            <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                    @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn Field="@nameof(ItemChartDetailRow.Description)" HeaderText="Description"
+                              Width="250px" AllowEditing="false">
+                    <Template>
+                        @{
+                            var row = (ItemChartDetailRow)context;
+                            <span>@row.Description</span>
+                            <button class="var-edit-btn" style="padding:1px 4px; font-size:10px;"
+                                    @onclick="() => OnPickItem(row)" @onclick:stopPropagation="true">...</button>
+                        }
+                    </Template>
+                </GridColumn>
+            }
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+@* ── OPEN CHART PICK LIST ─────────────────────────────
+   VB6 Toolbar "Open" (FItemChart.frm:529-536) runs
+   FPickList.Choose(db, "Item Chart", "SELECT Name from itemcharts",
+   mChart) — the STANDARD pick-list window (hints, sortable Name grid,
+   type-to-search, Open/Cancel). The first port showed a bespoke bare
+   list here, which QA read as an unimplemented window (HHM-609); the
+   shared FPickList component (z-index 10000) now stacks above the
+   item-chart modal exactly like every other picker. *@
+<FPickList @ref="_chartPicker" OnSelected="OnChartPicked" />
+
+@* ── ITEM PICK LIST DIALOG ──────────────────────────── *@
+<DialogControl Visible="@IsItemPickDialogVisible"
+               Header="Select Item"
+               Width="600px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               OnClose="@(() => IsItemPickDialogVisible = false)">
+    <ChildContent>
+        <div class="dialog-body" style="max-height: 400px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f0f0f0; border-bottom: 2px solid #dee2e6;">
+                        <th style="padding: 6px 8px; text-align: left;">Phase</th>
+                        <th style="padding: 6px 8px; text-align: left;">Item</th>
+                        <th style="padding: 6px 8px; text-align: left;">Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pi in PhaseItemPickList)
+                    {
+                        <tr class="pick-list-item @(pi == SelectedPhaseItem ? "selected" : "")"
+                            style="cursor: pointer;"
+                            @onclick="() => SelectedPhaseItem = pi">
+                            <td style="padding: 4px 8px;">@pi.Phase</td>
+                            <td style="padding: 4px 8px;">@pi.Item</td>
+                            <td style="padding: 4px 8px;">@pi.Description</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!PhaseItemPickList.Any())
+            {
+                <p style="color: #6c757d; padding: 12px;">No items found.</p>
+            }
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary"
+                       Disabled="@(SelectedPhaseItem == null)"
+                       OnClick="OnItemPickConfirm">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="@(() => IsItemPickDialogVisible = false)">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@* ── FORMULA EDITOR ─────────────────────────────────────
+   VB6 cmdFormula_Click (FItemChart.frm:339): FFormulaEditor.EditFormula("", s)
+   — the standard 3-pane Formula Editor (Variables / Formulas / function
+   library), NOT a bare textarea (HHM-239). Same component FItems uses. *@
+<FFormulaEditor @ref="formulaEditor" OnAccepted="OnFormulaAccepted" />
+
+@* ── VARIABLE EDITOR DIALOG ──────────────────────────────
+   In-place port of VB6 FVariable.frm.EditVariable so users can
+   maintain the rows of the [variables] table without leaving
+   FItemChart. Numeric variables expose Min/Max/Default/UOM; List
+   variables expose a ListOfValues textarea (one value per line on
+   screen, pipe-separated on disk). Condition fields are preserved
+   round-trip but not editable here — wire FCondition in a follow-up.
+   HHM-608 layout parity with FVariable.frm: caption is ALWAYS
+   "Variable" (frm:4); Name label sits LEFT of its box (frm:169/236);
+   Type radios stack VERTICALLY (frm:186-201); the right-hand
+   "Properties" group (frm:145) is a compact 2×2 grid — Min|Default /
+   Max|UOM with short labels and ~45px boxes (frm:70-140); the List
+   type swaps that panel for a "Values" textarea (frm:216/265); the
+   bottom label is "Help Notes" (frm:250) over a full-width box.
+   ──────────────────────────────────────────────────────── *@
+<DialogControl Visible="@IsVariableEditorVisible"
+               Header="Variable"
+               Width="360px"
+               IsModal="true"
+               ShowCloseIcon="true"
+               CssClass="ic-variable-dialog"
+               OnClose="OnVariableEditorCancel">
+    <ChildContent>
+        <div class="dialog-body ic-var-body">
+            <div class="ic-var-name-row">
+                <label class="ic-var-group-label">Name</label>
+                @if (_editingVarIsNew)
+                {
+                    <TextBoxControl @bind-Value="EditingVarName" MaxLength="50" />
+                }
+                else
+                {
+                    <TextBoxControl Value="@EditingVarName" readonly="readonly" CssClass="ic-readonly-input" />
+                }
+            </div>
+
+            <div class="ic-var-columns">
+                <div class="ic-var-type-col">
+                    <label class="ic-var-group-label">Type</label>
+                    <div class="ic-var-radios">
+                        <RadioControl TValue="int" Name="varType" Value="0"
+                                      @bind-SelectedValue="EditingVarType" Label="Numeric" />
+                        <RadioControl TValue="int" Name="varType" Value="1"
+                                      @bind-SelectedValue="EditingVarType" Label="List of values" />
+                    </div>
+                </div>
+                @if (EditingVarType == 0)
+                {
+                    <div class="ic-var-props-col">
+                        <label class="ic-var-group-label">Properties</label>
+                        <div class="ic-var-props-grid">
+                            <label>Min</label>
+                            <TextBoxControl @bind-Value="EditingVarMin" />
+                            <label>Default</label>
+                            <TextBoxControl @bind-Value="EditingVarDefault" />
+                            <label>Max</label>
+                            <TextBoxControl @bind-Value="EditingVarMax" />
+                            <label>UOM</label>
+                            @* HHM-240: same width as the Default box above so the
+                               UOM combo sits exactly parallel to it — VB6 gives
+                               txtDefault and cboUOM identical Left/Width
+                               (FVariable.frm:70-88, both Left=1965 Width=675). *@
+                            <DropDownListControl TValue="string" TItem="string"
+                                                 @bind-Value="EditingVarUOM"
+                                                 Width="56px"
+                                                 DataSource="@UomOptionList" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="ic-var-props-col">
+                        <label class="ic-var-group-label">Values</label>
+                        <TextAreaControl @bind-Value="EditingVarListOfValues" Rows="5"
+                                         CssClass="ic-monospace-area" />
+                    </div>
+                }
+            </div>
+
+            <div class="ic-var-help">
+                <label class="ic-var-group-label">Help Notes</label>
+                <TextAreaControl @bind-Value="EditingVarHelp" Rows="4" />
+            </div>
+        </div>
+    </ChildContent>
+    <FooterContent>
+        <ButtonControl CssClass="fx-dialog-btn fx-primary" OnClick="OnVariableEditorOk">OK</ButtonControl>
+        <ButtonControl CssClass="fx-dialog-btn" OnClick="OnVariableEditorCancel">Cancel</ButtonControl>
+    </FooterContent>
+</DialogControl>
+
+@* ── IN-APP MESSAGE BOX ─────────────────────────────────
+   FlexKit's MessageBoxControl replaces the browser's confirm()/alert()
+   dialogs so Save/Discard/Delete prompts have the same look-and-feel as
+   the rest of the application (FAssembly uses the same pattern at
+   _messageBox; see ShowAsync usage below for Yes/No/Cancel handling).
+   ──────────────────────────────────────────────────────── *@
+<Fx.ControlKit.Dialogs.MessageBoxControl @ref="_messageBox" />
+</div> @* close .fx-itemchart-modal / non-modal wrapper *@
+
+@code {
+    [Parameter] public string? ChartName { get; set; }
+    [SupplyParameterFromQuery] public string? returnUrl { get; set; }
+
+    /// <summary>When true, render inside a backdrop+frame so the host
+    /// page (e.g. FAssembly) stays visible behind. Standalone /item-chart
+    /// route navigation leaves this false → full-page layout.</summary>
+    [Parameter] public bool IsModal { get; set; }
+
+    /// <summary>Fires when the modal should dismiss (Close button or the
+    /// × in the modal header). Only used when <see cref="IsModal"/> is
+    /// true — host flips its visibility flag. In standalone mode the
+    /// Close button falls back to <c>returnUrl</c> navigation.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    // Database
+// State
+    private string mChart = "";
+    private bool mDirty = false;
+
+    // Form fields
+    private string txtName = "";
+    private string txtFormula = "";
+    private string Variable1 = "";
+    private string Variable2 = "";
+    private string Variable3 = "";
+
+    // Variable enable state
+    private bool Variable2Enabled => !string.IsNullOrEmpty(Variable1);
+    private bool Variable3Enabled => !string.IsNullOrEmpty(Variable2);
+
+    // Variable lists
+    private List<string> VariableList = new();
+
+    // DropDownListControl renders one option per DataSource item; the VB6
+    // <select> had a leading blank <option value=""> so the user could
+    // clear a variable. Prepend that blank to keep the same "no variable"
+    // choice (clearing Variable1 cascades to Variable2/3 in OnVariableChanged).
+    private IEnumerable<string> VariableOptionList =>
+        new[] { "" }.Concat(VariableList);
+
+    // Dimension min/max values
+    private double[] MinValue = new double[4];
+    private double[] MaxValue = new double[4];
+
+    // Dimension combo lists (for validation)
+    private string[] DimensionComboList = new string[4];
+
+    // Grid column headers and visibility
+    private string D1Header = "D1";
+    private string D2Header = "D2";
+    private string D3Header = "D3";
+    private bool D1Visible = false;
+    private bool D2Visible = false;
+    private bool D3Visible = false;
+
+    // Grid data
+    private List<ItemChartDetailRow> GridData = new();
+    private GridControl<ItemChartDetailRow>? gData;
+    private int SelectedRowIndex = -1;
+
+    // Grid settings
+    private SelectionSettings selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single
+    };
+    private EditSettings editSettings = new()
+    {
+        AllowAdding = true,
+        AllowEditing = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false
+    };
+    private GridControlEvents<ItemChartDetailRow> gridEvents = new();
+
+    // ── Grid Layout (dynamic from AppGridLayout) ──────────────
+    // Load/resolve/order/width boilerplate lives in the shared GridLayoutPresenter
+    // (Services/GridLayoutPresenter.cs); only the VB6 form/grid names stay here.
+    // gDataLayout / HasDataGridLayout / gDataLayoutVersion are thin delegations so
+    // the markup is unchanged. The keyed-then-unkeyed fallback is captured by
+    // instanceKey:"(0)"; the VB6 Dimension1..3 → D1..3 column aliases by aliases:.
+    private readonly GridLayoutPresenter<ItemChartDetailRow> _dataGrid =
+        new("FItemChart", "gData", instanceKey: "(0)",
+            aliases: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["dimension1"] = nameof(ItemChartDetailRow.D1),
+                ["dimension2"] = nameof(ItemChartDetailRow.D2),
+                ["dimension3"] = nameof(ItemChartDetailRow.D3)
+            });
+
+    private Dictionary<string, GridLayoutColumn> gDataLayout => _dataGrid.Layout;
+    private bool HasDataGridLayout => _dataGrid.Has;
+    private int gDataLayoutVersion => _dataGrid.Version;
+
+    // NOTE (drift): kept locally because GetColumnTypeForField below maps
+    // bool→CheckBox (not the presenter's Boolean) and recognizes a narrower
+    // numeric set. See the flag in GetColumnTypeForField.
+    private static readonly Dictionary<string, PropertyInfo> _chartRowPropMap =
+        typeof(ItemChartDetailRow)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .GroupBy(p => NormalizeGridKey(p.Name))
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    // Open Chart picker — shared FPickList (VB6 FPickList.Choose, HHM-609)
+    private FPickList? _chartPicker;
+
+    // Dialog state - Item Pick
+    private bool IsItemPickDialogVisible = false;
+    private List<PhaseItemPickRow> PhaseItemPickList = new();
+    private PhaseItemPickRow? SelectedPhaseItem;
+    private ItemChartDetailRow? PickTargetRow;
+
+    // Dialog state - Formula Editor
+
+    // In-app message box (Save/Discard/Delete prompts). Replaces the
+    // browser confirm() so the dialog matches the rest of the app's
+    // chrome; mirrors the pattern used in FAssembly.
+    private Fx.ControlKit.Dialogs.MessageBoxControl? _messageBox;
+
+    // ── Variable Editor state (VB6 FVariable.frm port) ──────────────
+    //
+    // We treat Name as read-only because OnEditVariable always opens
+    // an EXISTING row picked from one of the Variable1/2/3 dropdowns.
+    // Renames are intentionally deferred — they would orphan
+    // itemcharts.variableN references.
+    private bool IsVariableEditorVisible = false;
+    private string EditingVarName = "";
+    private bool _editingVarIsNew;
+    private int _editingVarSlot;
+    private int EditingVarType = 0;                  // 0=Numeric, 1=List
+    private string EditingVarMin = "0";
+    private string EditingVarMax = "9999999";
+    private string EditingVarDefault = "0";
+    private string EditingVarUOM = "";
+    private string EditingVarListOfValues = "";       // newline-separated on screen, pipe on disk
+    private string EditingVarHelp = "";
+    // Round-trip-only — FCondition is a separate VB6 form not yet ported.
+    private string EditingVarConditionName = "";
+    private string EditingVarConditionType = "";
+    private string EditingVarConditionUOM = "";
+    private List<string> UomList = new();
+
+    // Leading blank mirrors the VB6 <select>'s empty <option> so the UOM
+    // can be cleared back to "none" in the variable editor.
+    private IEnumerable<string> UomOptionList => new[] { "" }.Concat(UomList);
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        gridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<ItemChartDetailRow>>(this, OnRowSelected);
+        gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ItemChartDetailRow>>(this, OnCellSaved);
+
+        await LoadGridLayoutAsync();
+
+        mChart = ChartName ?? "";
+        await LoadVariables();
+        await LoadUomList();
+        ConfigDimensions();
+        EnsureEmptyRow();
+
+        if (!string.IsNullOrEmpty(mChart))
+            await LoadData();
+
+        mDirty = false;
+    }
+
+    // ── Load Variables ───────────────────────────────────────────────────
+    private async Task LoadVariables()
+    {
+        try
+        {
+            var rows = await db.QueryAsync(
+                "SELECT name FROM variables ORDER BY 1",
+                new { });
+            VariableList = rows.Select(r => (r["name"]?.ToString() ?? "").Trim())
+                               .Where(s => !string.IsNullOrEmpty(s))
+                               .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadVariables error");
+
+            VariableList = new();
+        }
+    }
+
+    // ── Configure Dimensions ─────────────────────────────────────────────
+    private void ConfigDimensions()
+    {
+        for (int i = 1; i <= 3; i++)
+        {
+            var varName = GetVariable(i);
+            if (string.IsNullOrEmpty(varName))
+            {
+                SetDimensionVisible(i, false);
+            }
+            else
+            {
+                try
+                {
+                    var rows = db.SqlExec(
+                        "SELECT * FROM variables WHERE name=@Name",
+                        new { Name = varName });
+                    if (rows.Rows.Count > 0)
+                    {
+                        var row = rows.Rows[0];
+                        SetDimensionVisible(i, true);
+                        SetDimensionHeader(i, row["name"]?.ToString() ?? $"D{i}");
+                        MinValue[i] = ToDouble(row["minimumvalue"]);
+                        MaxValue[i] = ToDouble(row["maximumvalue"]);
+                        DimensionComboList[i] = row["listofvalues"]?.ToString() ?? "";
+                    }
+                    else
+                    {
+                        SetDimensionVisible(i, false);
+                    }
+                }
+                catch
+                {
+                    SetDimensionVisible(i, false);
+                }
+            }
+        }
+    }
+
+    private string GetVariable(int index) => index switch
+    {
+        1 => Variable1,
+        2 => Variable2,
+        3 => Variable3,
+        _ => ""
+    };
+
+    private void SetVariable(int index, string name)
+    {
+        switch (index)
+        {
+            case 1: Variable1 = name; OnVariableChanged(1); break;
+            case 2: Variable2 = name; OnVariableChanged(2); break;
+            case 3: Variable3 = name; OnVariableChanged(3); break;
+        }
+    }
+
+    private void SetDimensionVisible(int index, bool visible)
+    {
+        switch (index)
+        {
+            case 1: D1Visible = visible; break;
+            case 2: D2Visible = visible; break;
+            case 3: D3Visible = visible; break;
+        }
+    }
+
+    private void SetDimensionHeader(int index, string header)
+    {
+        switch (index)
+        {
+            case 1: D1Header = header; break;
+            case 2: D2Header = header; break;
+            case 3: D3Header = header; break;
+        }
+    }
+
+    // ── Dimension-column helpers (HHM-237) ──────────────────────────────
+    // VB6 ConfigDimensions recomputes ColHidden + the header caption of the
+    // D1/D2/D3 columns from the assigned variables on every load/variable
+    // change (FItemChart.frm:733-764) — the saved grid layout never wins for
+    // them. These map a resolved field name to that runtime state so the
+    // layout-driven column loop can apply the same override.
+    private static int DimensionIndexOf(string field)
+    {
+        if (string.Equals(field, nameof(ItemChartDetailRow.D1), StringComparison.OrdinalIgnoreCase)) return 1;
+        if (string.Equals(field, nameof(ItemChartDetailRow.D2), StringComparison.OrdinalIgnoreCase)) return 2;
+        if (string.Equals(field, nameof(ItemChartDetailRow.D3), StringComparison.OrdinalIgnoreCase)) return 3;
+        return 0;
+    }
+
+    private bool GetDimensionVisible(int index) => index switch
+    {
+        1 => D1Visible,
+        2 => D2Visible,
+        3 => D3Visible,
+        _ => true
+    };
+
+    private string GetDimensionHeader(int index) => index switch
+    {
+        1 => D1Header,
+        2 => D2Header,
+        3 => D3Header,
+        _ => ""
+    };
+
+    // ── Load Data ────────────────────────────────────────────────────────
+    private async Task LoadData()
+    {
+        try
+        {
+            // Load master
+            var masterRows = await db.QueryAsync(
+                "SELECT * FROM itemcharts WHERE name=@Name",
+                new { Name = mChart });
+
+            if (!masterRows.Any())
+            {
+                txtName = "";
+                txtFormula = "";
+                Variable1 = "";
+                Variable2 = "";
+                Variable3 = "";
+            }
+            else
+            {
+                var m = masterRows.First();
+                txtName = m["Name"]?.ToString() ?? "";
+                txtFormula = m["Formula"]?.ToString() ?? "";
+                Variable1 = m["Variable1"]?.ToString() ?? "";
+                Variable2 = m["Variable2"]?.ToString() ?? "";
+                Variable3 = m["Variable3"]?.ToString() ?? "";
+            }
+
+            ConfigDimensions();
+
+            // Load details
+            GridData.Clear();
+            var detailSql = @"
+                SELECT i.*, d.description
+                FROM itemchartdetails i
+                JOIN tblphaseitem d ON (d.DivisionID = @DivisionID AND i.phase = d.phase AND i.item = d.item)
+                WHERE name = @Name";
+            var detailRows = await db.QueryAsync(detailSql, new { SessionState.DivisionID, Name = mChart });
+
+            int idx = 0;
+            foreach (var r in detailRows)
+            {
+                GridData.Add(new ItemChartDetailRow
+                {
+                    RowIndex = idx++,
+                    D1 = r["Dimension1"]?.ToString() ?? "",
+                    D2 = r["Dimension2"]?.ToString() ?? "",
+                    D3 = r["Dimension3"]?.ToString() ?? "",
+                    Phase = r["Phase"]?.ToString() ?? "",
+                    Item = r["Item"]?.ToString() ?? "",
+                    Description = r["Description"]?.ToString() ?? ""
+                });
+            }
+
+            EnsureEmptyRow();
+            mDirty = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadData error");
+
+        }
+    }
+
+    // ── Save Data ────────────────────────────────────────────────────────
+    private async Task<bool> SaveData(bool prompt)
+    {
+        if (!mDirty) return true;
+
+        if (prompt)
+        {
+            // In-app MessageBox (Yes/No/Cancel) replaces the browser dialog
+            // so Save flows match FAssembly's UX. Falls back to confirm() only
+            // if _messageBox isn't wired (defensive — shouldn't happen).
+            var result = _messageBox != null
+                ? await _messageBox.ShowAsync(
+                    "Item Chart has changed.\n\nDo you want to save these changes?",
+                    title: "Save changes?",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNoCancel)
+                : (await Dialogs.ConfirmAsync(
+                        "Item Chart has changed.\n\nDo you want to save these changes?")
+                    ? Fx.ControlKit.Dialogs.MessageBoxResult.Yes
+                    : Fx.ControlKit.Dialogs.MessageBoxResult.No);
+
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.Cancel) return false;
+            if (result == Fx.ControlKit.Dialogs.MessageBoxResult.No) return true;
+            // Yes → fall through to the save logic below.
+        }
+
+        // Validate
+        txtName = txtName.Trim();
+        if (string.IsNullOrWhiteSpace(txtName))
+        {
+            Notifications.Info("Chart name is required.");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(Variable1))
+        {
+            Notifications.Warning("At least one variable must be specified.");
+            return false;
+        }
+
+        // Validate rows (all except last empty row)
+        var dataRows = GridData.Where(r => !IsEmptyRow(r)).ToList();
+        foreach (var row in dataRows)
+        {
+            if (string.IsNullOrEmpty(row.Phase) || string.IsNullOrEmpty(row.Item))
+            {
+                Notifications.Info("You must specify a phase/item on each line.");
+                return false;
+            }
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(mChart))
+            {
+                // Insert
+                await db.ExecuteAsync(
+                    @"INSERT INTO itemcharts(name, formula, variable1, variable2, variable3)
+                      VALUES(@Name, @Formula, @Variable1, @Variable2, @Variable3)",
+                    new
+                    {
+                        Name = txtName,
+                        Formula = txtFormula,
+                        Variable1,
+                        Variable2,
+                        Variable3
+                    });
+                mChart = txtName;
+            }
+            else
+            {
+                // Update
+                await db.ExecuteAsync(
+                    @"UPDATE itemcharts
+                      SET name=@NewName, formula=@Formula,
+                          variable1=@Variable1, variable2=@Variable2, variable3=@Variable3
+                      WHERE name=@OldName",
+                    new
+                    {
+                        NewName = txtName,
+                        Formula = txtFormula,
+                        Variable1,
+                        Variable2 = string.IsNullOrEmpty(Variable2) ? (string?)null : Variable2,
+                        Variable3 = string.IsNullOrEmpty(Variable3) ? (string?)null : Variable3,
+                        OldName = mChart
+                    });
+                mChart = txtName;
+            }
+
+            // Delete existing details
+            await db.ExecuteAsync(
+                "DELETE FROM itemchartdetails WHERE name=@Name",
+                new { Name = txtName });
+
+            // Insert details
+            foreach (var row in dataRows)
+            {
+                await db.ExecuteAsync(
+                    @"INSERT INTO itemchartdetails(name, dimension1, dimension2, dimension3, phase, item)
+                      VALUES(@Name, @D1, @D2, @D3, @Phase, @Item)",
+                    new
+                    {
+                        Name = mChart,
+                        D1 = D1Visible ? row.D1 : "",
+                        D2 = D2Visible ? row.D2 : "",
+                        D3 = D3Visible ? row.D3 : "",
+                        row.Phase,
+                        row.Item
+                    });
+            }
+
+            mDirty = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error($"Unable to save this chart. \"{txtName}\" has already been used.\n\nPlease enter a different name.");
+            }
+            else
+            {
+                Notifications.Warning($"Error saving: {ex.Message}");
+            }
+            return false;
+        }
+    }
+
+    // ── Delete Chart ─────────────────────────────────────────────────────
+    private async Task DeleteChart()
+    {
+        if (!string.IsNullOrEmpty(mChart))
+        {
+            await db.ExecuteAsync("DELETE FROM itemcharts WHERE name=@Name", new { Name = mChart });
+            await db.ExecuteAsync("DELETE FROM itemchartdetails WHERE name=@Name", new { Name = mChart });
+            await db.ExecuteAsync("DELETE FROM tbldbassemblydetails WHERE itemchart=@Name", new { Name = mChart });
+            mChart = "";
+        }
+        await LoadData();
+    }
+
+    // ── Toolbar Handlers ─────────────────────────────────────────────────
+    private async Task OnNewClick()
+    {
+        if (!await SaveData(true)) return;
+        mChart = "";
+        txtName = "";
+        txtFormula = "";
+        Variable1 = "";
+        Variable2 = "";
+        Variable3 = "";
+        GridData.Clear();
+        ConfigDimensions();
+        EnsureEmptyRow();
+        mDirty = false;
+        StateHasChanged();
+    }
+
+    private async Task OnOpenClick()
+    {
+        if (!await SaveData(true)) return;
+
+        // VB6 FItemChart.frm:532-533 — same query string, current chart as
+        // the default row; window branding per HHM-423 owner decision
+        // ("Precision Builder - <Item> List"). An empty list still opens
+        // the picker with Open greyed, exactly like legacy FPickList.
+        if (_chartPicker != null)
+            await _chartPicker.Open("Item Chart",
+                "SELECT Name from itemcharts",
+                defaultItem: mChart,
+                windowTitle: "Precision Builder - Item Chart List");
+    }
+
+    private async Task OnChartPicked(List<IDictionary<string, object>> selectedRows)
+    {
+        if (selectedRows.Count == 0) return;
+        string? name = null;
+        foreach (var kvp in selectedRows[0])
+        {
+            if (string.Equals(kvp.Key, "Name", StringComparison.OrdinalIgnoreCase))
+            {
+                name = kvp.Value?.ToString();
+                break;
+            }
+        }
+        if (string.IsNullOrEmpty(name)) return;
+
+        // VB6: mChart = FPickList.SelectedItem("Name"): Call LoadData
+        mChart = name;
+        await LoadData();
+    }
+
+    private async Task OnSaveClick()
+    {
+        await SaveData(false);
+    }
+
+    private async Task OnDeleteClick()
+    {
+        if (!string.IsNullOrEmpty(mChart) || !string.IsNullOrEmpty(txtName))
+        {
+            // In-app confirm — see SaveData's MessageBoxControl wiring.
+            var result = _messageBox != null
+                ? await _messageBox.ShowAsync(
+                    "Are you sure you want to delete this chart?",
+                    title: "Delete Item Chart",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo)
+                : (await Dialogs.ConfirmAsync(
+                        "Are you sure you want to delete this chart?")
+                    ? Fx.ControlKit.Dialogs.MessageBoxResult.Yes
+                    : Fx.ControlKit.Dialogs.MessageBoxResult.No);
+
+            if (result != Fx.ControlKit.Dialogs.MessageBoxResult.Yes) return;
+            await DeleteChart();
+        }
+    }
+
+    private async Task OnCloseClick()
+    {
+        if (mDirty)
+        {
+            // In-app confirm — see SaveData's MessageBoxControl wiring.
+            var result = _messageBox != null
+                ? await _messageBox.ShowAsync(
+                    "Discard unsaved changes and return?",
+                    title: "Discard changes?",
+                    buttons: Fx.ControlKit.Dialogs.MessageBoxButtons.YesNo)
+                : (await Dialogs.ConfirmAsync("Discard unsaved changes and return?")
+                    ? Fx.ControlKit.Dialogs.MessageBoxResult.Yes
+                    : Fx.ControlKit.Dialogs.MessageBoxResult.No);
+
+            if (result != Fx.ControlKit.Dialogs.MessageBoxResult.Yes) return;
+        }
+
+        // Modal mode wins over returnUrl — host expects the callback so it
+        // can flip its visibility flag without leaving the current page.
+        if (IsModal && OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+            NavigationManager.NavigateTo(returnUrl);
+    }
+
+    // ── Variable Change Handlers ─────────────────────────────────────────
+    // DropDownListControl has no @bind:after, so these thin adapters set
+    // the bound field then run the original cascade logic — mirroring the
+    // VB6 `<select @bind @bind:after="() => OnVariableChanged(n)">`.
+    private void OnVariable1Changed(string? v)
+    {
+        Variable1 = v ?? "";
+        OnVariableChanged(1);
+    }
+
+    private void OnVariable2Changed(string? v)
+    {
+        Variable2 = v ?? "";
+        OnVariableChanged(2);
+    }
+
+    private void OnVariable3Changed(string? v)
+    {
+        Variable3 = v ?? "";
+        OnVariableChanged(3);
+    }
+
+    private void OnVariableChanged(int index)
+    {
+        mDirty = true;
+
+        switch (index)
+        {
+            case 1:
+                if (string.IsNullOrEmpty(Variable1))
+                {
+                    Variable2 = "";
+                    Variable3 = "";
+                }
+                break;
+            case 2:
+                if (string.IsNullOrEmpty(Variable2))
+                {
+                    Variable3 = "";
+                }
+                break;
+        }
+
+        ConfigDimensions();
+        StateHasChanged();
+    }
+
+    // ── Variable Editor ──────────────────────────────────────────────
+    //
+    // Migration of VB6 FVariable.frm.EditVariable + SaveData. We don't
+    // open a separate page — the FVariable form was modal in VB6 anyway,
+    // and an inline dialog keeps FItemChart's grid state intact while
+    // the user tweaks Min/Max/UOM or the picklist.
+    private async Task OnEditVariable(int index)
+    {
+        // VB6 cmdVariable_Click: FVariable.EditVariable(cboVariable(i).Text) —
+        // an EMPTY slot opens the editor in create-new mode (rs.EOF seeds
+        // Min=0 / Max=9999999 / Default=0), it never alerts (HHM-240).
+        var varName = GetVariable(index) ?? "";
+        _editingVarIsNew = string.IsNullOrWhiteSpace(varName);
+        _editingVarSlot = index;
+
+        try
+        {
+            await LoadVariableForEdit(varName);
+            IsVariableEditorVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "OnEditVariable: load failed");
+            Notifications.Error($"Could not load variable '{varName}': {ex.Message}");
+        }
+    }
+
+    private async Task LoadVariableForEdit(string name)
+    {
+        EditingVarName = name;
+
+        var rows = await db.QueryAsync(
+            @"SELECT variabletype, minimumvalue, maximumvalue, defaultvalue,
+                     uom, listofvalues, help,
+                     conditionname, conditiontype, conditionuom
+              FROM variables WHERE name=@Name",
+            new { Name = name });
+
+        var row = rows.FirstOrDefault();
+        if (row == null)
+        {
+            // Defensive — shouldn't happen for a name we just read from
+            // the dropdown, but mirror VB6's "row missing → fresh form"
+            // behavior so the user can still save something useful.
+            EditingVarType = 0;
+            EditingVarMin = "0";
+            EditingVarMax = "9999999";
+            EditingVarDefault = "0";
+            EditingVarUOM = "";
+            EditingVarListOfValues = "";
+            EditingVarHelp = "";
+            EditingVarConditionName = "";
+            EditingVarConditionType = "";
+            EditingVarConditionUOM = "";
+            return;
+        }
+
+        EditingVarType = (int)ToDouble(row["variabletype"]);
+        EditingVarMin = ToDouble(row["minimumvalue"]).ToString();
+        EditingVarMax = ToDouble(row["maximumvalue"]).ToString();
+        EditingVarDefault = ToDouble(row["defaultvalue"]).ToString();
+        EditingVarUOM = (row["uom"]?.ToString() ?? "").Trim();
+        // On disk: pipe-separated. On screen: one per line. Mirrors
+        // VB6 Replace("|", vbCrLf) round-trip.
+        EditingVarListOfValues = (row["listofvalues"]?.ToString() ?? "")
+            .Replace("|", "\n");
+        EditingVarHelp = row["help"]?.ToString() ?? "";
+        EditingVarConditionName = row["conditionname"]?.ToString() ?? "";
+        EditingVarConditionType = row["conditiontype"]?.ToString() ?? "";
+        EditingVarConditionUOM = row["conditionuom"]?.ToString() ?? "";
+    }
+
+    private async Task LoadUomList()
+    {
+        try
+        {
+            var rows = await db.QueryAsync("SELECT uom FROM uom ORDER BY 1", new { });
+            UomList = rows.Select(r => (r["uom"]?.ToString() ?? "").Trim())
+                          .Where(s => !string.IsNullOrEmpty(s))
+                          .ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadUomList error");
+            UomList = new();
+        }
+    }
+
+    private void OnVariableEditorCancel()
+    {
+        IsVariableEditorVisible = false;
+        StateHasChanged();
+    }
+
+    private async Task OnVariableEditorOk()
+    {
+        // VB6 SaveData: when Type=List, at least one non-blank value is
+        // required. Replicate verbatim so existing UI prompts match.
+        string values;
+        if (EditingVarType == 1)
+        {
+            values = (EditingVarListOfValues ?? "")
+                .Replace("\r\n", "\n")
+                .Replace("\n", "|");
+
+            var stripped = values.Replace("|", "").Replace(" ", "").Trim();
+            if (string.IsNullOrEmpty(stripped))
+            {
+                Notifications.Error("You must specify at least one value.");
+                return;
+            }
+        }
+        else
+        {
+            values = "";
+        }
+
+        // Tolerant parse — VB6's Val() returns 0 on garbage input rather
+        // than rejecting. Keep that behavior so dirty data flowing in
+        // from older records doesn't block save.
+        double minV = ParseDoubleOrZero(EditingVarMin);
+        double maxV = ParseDoubleOrZero(EditingVarMax);
+        double defV = ParseDoubleOrZero(EditingVarDefault);
+
+        try
+        {
+            EditingVarName = (EditingVarName ?? "").Trim();
+            if (string.IsNullOrEmpty(EditingVarName))
+            {
+                Notifications.Info("Variable name is required.");
+                return;
+            }
+            // Create-new mode (VB6 FVariable saves a fresh row when the name
+            // wasn't in [variables]): INSERT the shell first, then the shared
+            // UPDATE below fills every field.
+            if (_editingVarIsNew)
+            {
+                var exists = await db.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM variables WHERE Name=@Name", new { Name = EditingVarName });
+                if (exists == 0)
+                    await db.ExecuteAsync("INSERT INTO variables(Name) VALUES(@Name)", new { Name = EditingVarName });
+            }
+            await db.ExecuteAsync(
+                @"UPDATE variables SET
+                    VariableType=@VariableType,
+                    MinimumValue=@MinimumValue,
+                    MaximumValue=@MaximumValue,
+                    DefaultValue=@DefaultValue,
+                    ListOfValues=@ListOfValues,
+                    UOM=@UOM,
+                    Help=@Help,
+                    conditionname=@ConditionName,
+                    conditiontype=@ConditionType,
+                    conditionuom=@ConditionUOM
+                  WHERE Name=@Name",
+                new
+                {
+                    Name = EditingVarName,
+                    VariableType = EditingVarType,
+                    MinimumValue = minV,
+                    MaximumValue = maxV,
+                    DefaultValue = defV,
+                    ListOfValues = values,
+                    UOM = EditingVarUOM ?? "",
+                    Help = EditingVarHelp ?? "",
+                    ConditionName = EditingVarConditionName ?? "",
+                    ConditionType = EditingVarConditionType ?? "",
+                    ConditionUOM = EditingVarConditionUOM ?? ""
+                });
+
+            IsVariableEditorVisible = false;
+
+            // VB6 reloaded the variable list after save so dependent
+            // dropdowns (Min/Max ranges, UOM constraints) reflect the
+            // new metadata. A newly created variable is also assigned
+            // into the slot whose edit button launched the dialog.
+            await LoadVariables();
+            if (_editingVarIsNew && _editingVarSlot >= 1)
+                SetVariable(_editingVarSlot, EditingVarName);
+            _editingVarIsNew = false;
+            ConfigDimensions();
+            StateHasChanged();
+
+            Notifications.Info($"Variable '{EditingVarName}' saved.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "OnVariableEditorOk: update failed");
+            Notifications.Error($"Could not save variable: {ex.Message}");
+        }
+    }
+
+    private static double ParseDoubleOrZero(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return 0;
+        return double.TryParse(s, System.Globalization.NumberStyles.Any,
+                               System.Globalization.CultureInfo.InvariantCulture,
+                               out var v) ? v : 0;
+    }
+
+    // ── Formula Handlers ─────────────────────────────────────────────────
+    private FFormulaEditor? formulaEditor;
+
+    private async Task OnFormulaEditClick()
+    {
+        // VB6: FFormulaEditor.EditFormula("", txtFormula) — name blank, the
+        // chart formula as the working text (HHM-239).
+        if (formulaEditor != null)
+            await formulaEditor.Open("", txtFormula);
+    }
+
+    private void OnFormulaAccepted(string formula)
+    {
+        txtFormula = formula;
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    // ── Name/Formula Change ──────────────────────────────────────────────
+    // TextBoxControl/TextAreaControl fire ValueChanged on the native change
+    // event; these adapters set the bound field then run the original dirty
+    // logic (was VB6 `<input @bind:event="oninput" @bind:after="OnNameChanged">`).
+    private void OnNameValueChanged(string? v)
+    {
+        txtName = v ?? "";
+        OnNameChanged();
+    }
+
+    private void OnFormulaValueChanged(string? v)
+    {
+        txtFormula = v ?? "";
+        OnFormulaChanged();
+    }
+
+    private void OnNameChanged() => mDirty = true;
+    private void OnFormulaChanged() => mDirty = true;
+
+    // ── Grid Event Handlers ──────────────────────────────────────────────
+    private void OnRowSelected(RowSelectEventArgs<ItemChartDetailRow> args)
+    {
+        if (args.Data != null)
+            SelectedRowIndex = GridData.IndexOf(args.Data);
+    }
+
+    private void OnCellSaved(CellSaveArgs<ItemChartDetailRow> args)
+    {
+        if (args.Data != null)
+        {
+            // Validate dimension values
+            var colName = args.ColumnName;
+            if (colName == "D1" || colName == "D2" || colName == "D3")
+            {
+                int dimIndex = colName == "D1" ? 1 : colName == "D2" ? 2 : 3;
+                var comboList = DimensionComboList[dimIndex];
+                if (string.IsNullOrEmpty(comboList))
+                {
+                    // Numeric validation
+                    var text = args.Value?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        if (double.TryParse(text, out var val))
+                        {
+                            if (val < MinValue[dimIndex] || val > MaxValue[dimIndex])
+                            {
+                                // Value out of range - would ideally cancel but we mark dirty
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Ensure there's always an empty row at the end
+            EnsureEmptyRow();
+            mDirty = true;
+        }
+    }
+
+    // ── Item Pick List ───────────────────────────────────────────────────
+    private async Task OnPickItem(ItemChartDetailRow row)
+    {
+        try
+        {
+            var sql = $"SELECT Phase, Item, Description, POIndex FROM tblphaseitem WHERE DivisionID = @DivisionID ORDER BY Phase, Item";
+            var rows = await db.QueryAsync(sql, new { SessionState.DivisionID });
+            PhaseItemPickList = rows.Select(r => new PhaseItemPickRow
+            {
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+            SelectedPhaseItem = null;
+            PickTargetRow = row;
+            IsItemPickDialogVisible = true;
+        }
+        catch (Exception ex)
+        {
+            Notifications.Error($"Error loading items: {ex.Message}");
+        }
+    }
+
+    private void OnItemPickConfirm()
+    {
+        if (SelectedPhaseItem != null && PickTargetRow != null)
+        {
+            PickTargetRow.Phase = SelectedPhaseItem.Phase;
+            PickTargetRow.Item = SelectedPhaseItem.Item;
+            PickTargetRow.Description = SelectedPhaseItem.Description;
+            mDirty = true;
+            EnsureEmptyRow();
+        }
+        IsItemPickDialogVisible = false;
+        StateHasChanged();
+    }
+
+    // ── Add/Delete Row ───────────────────────────────────────────────────
+    private void OnAddRow()
+    {
+        // VB6 parity: "Add Row" always produces a new visible line in the
+        // grid. The grid already maintains a trailing sentinel via
+        // EnsureEmptyRow(), so unconditionally appending here turns that
+        // sentinel into a real (still-empty) editable row and adds a fresh
+        // sentinel after it. Without this, clicking Add Row when the
+        // sentinel is already empty is a no-op (the previous code only
+        // added when the last row had content).
+        GridData.Add(new ItemChartDetailRow { RowIndex = GridData.Count });
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    private async Task OnDeleteRow()
+    {
+        if (SelectedRowIndex >= 0 && SelectedRowIndex < GridData.Count - 1)
+        {
+            GridData.RemoveAt(SelectedRowIndex);
+            ReindexRows();
+            SelectedRowIndex = Math.Min(SelectedRowIndex, GridData.Count - 1);
+            mDirty = true;
+            StateHasChanged();
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+    private void EnsureEmptyRow()
+    {
+        if (!GridData.Any() || !IsEmptyRow(GridData.Last()))
+        {
+            GridData.Add(new ItemChartDetailRow { RowIndex = GridData.Count });
+        }
+    }
+
+    private bool IsEmptyRow(ItemChartDetailRow row)
+    {
+        return string.IsNullOrEmpty(row.Phase)
+            && string.IsNullOrEmpty(row.Item)
+            && string.IsNullOrEmpty(row.D1)
+            && string.IsNullOrEmpty(row.D2)
+            && string.IsNullOrEmpty(row.D3);
+    }
+
+    private void ReindexRows()
+    {
+        for (int i = 0; i < GridData.Count; i++)
+            GridData[i].RowIndex = i;
+    }
+
+    private double ToDouble(object? val)
+    {
+        if (val == null || val == DBNull.Value) return 0;
+        return double.TryParse(val.ToString(), out var result) ? result : 0;
+    }
+
+    // ── Load Grid Layout ──────────────────────────────────────
+    private async Task LoadGridLayoutAsync()
+    {
+        try
+        {
+            // Presenter does the keyed-then-unkeyed fallback + Version bump
+            // (ctor holds the "FItemChart"/"gData" names + key "(0)").
+            await _dataGrid.LoadAsync(GridLayoutSvc);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "LoadGridLayout");
+
+        }
+    }
+
+    /// <summary>Column resize / reorder / hide / group / header-rename done by the
+    /// user; written back under the same form/grid/instance key the load uses.</summary>
+    private async Task OnGridLayoutChangedAsync(GridSettings snapshot)
+    {
+        if (snapshot == null || !HasDataGridLayout) return;
+
+        try
+        {
+            await GridLayoutPersister.MergeSaveAndFlushAsync(
+                GridLayoutSvc, "FItemChart", "gData", instanceKey: null,
+                gDataLayout, snapshot, ResolveChartField);
+            _dataGrid.BumpVersion();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to persist FItemChart gData layout");
+        }
+    }
+
+    private IEnumerable<(GridLayoutColumn Layout, string Field, ColumnType ColumnType, TextAlign TextAlign)> GetOrderedDataGridLayout()
+    {
+        if (!HasDataGridLayout) yield break;
+
+        // HHM-237: dimension columns (D1/D2/D3) bypass the stored Hidden flag —
+        // VB6 ConfigDimensions recomputes their visibility from the assigned
+        // variables on every load, so the saved layout state is advisory only
+        // for them. Non-dimension columns keep honoring the stored flag.
+        var ordered = gDataLayout.Values
+            .Where(c => !string.IsNullOrWhiteSpace(c.Field)
+                        && (!c.Hidden || DimensionIndexOf(ResolveChartField(c.Field)) != 0))
+            .OrderBy(c => c.ColIndex ?? int.MaxValue)
+            .ThenBy(c => c.Field, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var col in ordered)
+        {
+            var resolvedField = ResolveChartField(col.Field);
+            var colType = GetColumnTypeForField(resolvedField, _chartRowPropMap);
+            var textAlign = colType == ColumnType.Number ? TextAlign.Right : TextAlign.Left;
+            yield return (col, resolvedField, colType, textAlign);
+        }
+    }
+
+    // Resolution (exact → normalized propmap → Dimension1..3 alias → literal) is
+    // delegated to the presenter (ctor supplied the alias map). Behavior is
+    // identical: the alias only fires when the propmap misses (same as the old
+    // switch fall-through), and no ItemChartDetailRow property shadows it.
+    private string ResolveChartField(string layoutField)
+        => _dataGrid.ResolveField(layoutField);
+
+    // DRIFT FLAG: body differs from the presenter's canonical ColumnTypeFor —
+    // bool maps to ColumnType.CheckBox (not Boolean) and only int/long/double/
+    // decimal are Number (presenter also covers byte/short/float). Kept verbatim
+    // to preserve the rendered <GridColumn Type="…">; GetOrderedDataGridLayout is
+    // therefore NOT delegated to _dataGrid.GetOrdered().
+    private static ColumnType GetColumnTypeForField(string field, Dictionary<string, PropertyInfo> propMap)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return ColumnType.Text;
+        if (propMap.TryGetValue(NormalizeGridKey(field), out var prop))
+        {
+            var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+            if (type == typeof(bool)) return ColumnType.CheckBox;
+            if (type == typeof(int) || type == typeof(long) || type == typeof(double) || type == typeof(decimal))
+                return ColumnType.Number;
+        }
+        return ColumnType.Text;
+    }
+
+    private static int ConvertLayoutWidthToPx(double layoutWidth)
+        => GridLayoutPresenter.WidthPx(layoutWidth);
+
+    private static string NormalizeGridKey(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "";
+        var sb = new StringBuilder(value.Length);
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
+    }
+
+    // ── Models ───────────────────────────────────────────────────────────
+    public class ItemChartDetailRow
+    {
+        public int RowIndex { get; set; }
+        public string D1 { get; set; } = "";
+        public string D2 { get; set; } = "";
+        public string D3 { get; set; } = "";
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class PhaseItemPickRow
+    {
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+}

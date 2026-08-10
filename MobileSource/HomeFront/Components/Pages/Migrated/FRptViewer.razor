@@ -1,0 +1,78 @@
+@* ─────────────────────────────────────────────────────────────────
+   Organization: Hyphen / Innovatix Inc.
+   Developer   : Wadood Chaudhary
+   Date        : 2026-05-24
+   Changes     :
+     - Initial port from VB6
+   ───────────────────────────────────────────────────────────────── *@
+@page "/report-viewer"
+@page "/report-viewer/{ReportFile}"
+@rendermode InteractiveServer
+
+@namespace HomeFront.Components.Pages
+
+@using Fx.ControlKit.Reports
+@using HomeFront.Services
+
+@inject NavigationManager NavigationManager
+@inject ILogger<FRptViewer> Logger
+@inject IReportSeedParameters ReportSeeds
+
+<PageTitle>Report Viewer - HomeFront</PageTitle>
+
+@*
+   FRptViewer is now a thin route shell — the report viewer chrome
+   (toolbar, group tree, status bar, parameter prompt dialog) lives in
+   FlexKit's <ReportWriterControl/> behind its [Parameter] ShowChrome.
+   This page just owns the route, hands the URL-decoded report filename
+   to RWC.ShowReportAsync, wires Close to FMain's ParentNavigate, and
+   forwards page-title updates to FMain's SetPageTitle.
+
+   Adding viewer chrome / orchestration features here is an anti-pattern —
+   they belong in ReportWriterControl so every consumer benefits.
+*@
+
+<ReportWriterControl @ref="_viewer" OnClose="ClosePage" OnPageTitleChanged="OnReportTitle" />
+
+@code {
+    [Parameter] public string? ReportFile { get; set; }
+
+    [CascadingParameter(Name = "ParentNavigate")]
+    private Action<string>? ParentNavigate { get; set; }
+
+    [CascadingParameter(Name = "SetPageTitle")]
+    private Action<string?>? SetPageTitle { get; set; }
+
+    private ReportWriterControl? _viewer;
+    private string? _lastResolvedReportFile;
+
+    private void OnReportTitle(string title) => SetPageTitle?.Invoke(title);
+
+    private void ClosePage()
+    {
+        if (ParentNavigate != null)
+            ParentNavigate.Invoke("");
+        else
+            NavigationManager.NavigateTo("/crystal-reports");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_viewer == null) return;
+        var decoded = string.IsNullOrEmpty(ReportFile) ? null : Uri.UnescapeDataString(ReportFile);
+        if (!string.Equals(decoded, _lastResolvedReportFile, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastResolvedReportFile = decoded;
+            if (!string.IsNullOrEmpty(decoded))
+            {
+                // Drain any seed-parameter values the caller stashed via
+                // IReportSeedParameters before navigating (e.g. SPW Preview
+                // pre-fills Worksheet so the param prompt skips it).
+                // Consume() returns + clears in one step so subsequent
+                // navigations don't inherit stale seeds.
+                var seeds = ReportSeeds.Consume();
+                await _viewer.ShowReportAsync(decoded, seeds.Count > 0 ? seeds : null);
+            }
+        }
+    }
+}

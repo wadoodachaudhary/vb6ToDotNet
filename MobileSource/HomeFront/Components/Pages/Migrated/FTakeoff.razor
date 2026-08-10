@@ -482,7 +482,7 @@
                        respects AppGridLayout — both must agree to show. *@
                     <GridColumn Field="@nameof(TakeoffItemRow.OverridePrice)" HeaderText="@ColCaption(nameof(TakeoffItemRow.OverridePrice), "Override Price")" Width="@ColWidth(nameof(TakeoffItemRow.OverridePrice), "100px")" Format="C2" TextAlign="TextAlign.Right" Type="ColumnType.Number" AllowEditing="true"
                                 Visible="@(IsEstimatesView && IsColVisible(nameof(TakeoffItemRow.OverridePrice), false))" />
-                    <GridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="@ColCaption(nameof(TakeoffItemRow.POIndex), "POIndex")" Width="@ColWidth(nameof(TakeoffItemRow.POIndex), "80px")" TextAlign="TextAlign.Right" AllowEditing="false"
+                    <GridColumn Field="@nameof(TakeoffItemRow.POIndex)" HeaderText="@ColCaption(nameof(TakeoffItemRow.POIndex), "POIndex")" Width="@ColWidth(nameof(TakeoffItemRow.POIndex), "80px")" TextAlign="TextAlign.Left" AllowEditing="false"
                                 ShowEditButton="true"
                                 Visible="@IsColVisible(nameof(TakeoffItemRow.POIndex), true)" />
                     <GridColumn Field="@nameof(TakeoffItemRow.Location)" HeaderText="@ColCaption(nameof(TakeoffItemRow.Location), "Location")" Width="@ColWidth(nameof(TakeoffItemRow.Location), "100px")" AllowEditing="true"
@@ -2590,6 +2590,41 @@
                 mUseQuotePricing = refresh == Fx.ControlKit.Dialogs.MessageBoxResult.No;
             }
 
+            // VB6 FTakeoff.frm:1486-1505 — a selected Override JC Category replaces every
+            // committed row's category, blank categories fall back to the PO Index's, and
+            // the description is re-resolved for the final code.
+            if (!string.IsNullOrEmpty(OverrideCategory))
+            {
+                foreach (var i in keep)
+                    i.JCCategory = OverrideCategory;
+            }
+            foreach (var i in keep)
+            {
+                if (string.IsNullOrEmpty(i.JCCategory) && !string.IsNullOrEmpty(i.POIndex))
+                {
+                    i.JCCategory = db.ExecuteScalar<string>(
+                        "SELECT ISNULL(JCCategory,'') FROM tblpoindex WHERE DivisionID=@DivisionID AND poindex=@POIndex",
+                        new { SessionState.DivisionID, i.POIndex }) ?? "";
+                }
+            }
+            var categoryDescs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var i in keep)
+            {
+                if (string.IsNullOrEmpty(i.JCCategory))
+                {
+                    i.JCCategoryDesc = "";
+                    continue;
+                }
+                if (!categoryDescs.TryGetValue(i.JCCategory, out var desc))
+                {
+                    desc = db.ExecuteScalar<string>(
+                        "SELECT ISNULL(Description,'') FROM StandardCategories WHERE DivisionID=@DivisionID AND Category=@Category",
+                        new { SessionState.DivisionID, Category = i.JCCategory }) ?? "";
+                    categoryDescs[i.JCCategory] = desc;
+                }
+                i.JCCategoryDesc = desc;
+            }
+
             // Emit the kept rows to whoever's listening (FAssembly today;
             // FQuote / FEstimateItems in future ports). The host owns the
             // translation to its own row model and the persistence step.
@@ -2851,8 +2886,9 @@
     {
         if (rows == null || rows.Count == 0)
         {
+            var resumeItemsGrid = _takeoffPickContext == "POIndex";
             ClearTakeoffPickState();
-            return Task.CompletedTask;
+            return resumeItemsGrid ? ResumeItemsGridKeyboardNavigationAsync() : Task.CompletedTask;
         }
 
         if (_takeoffPickContext == "POIndex")
@@ -2861,11 +2897,8 @@
             var pick = rows[0];
             ClearTakeoffPickState();
             if (target != null)
-            {
                 target.POIndex = PickValue(pick, "POIndex");
-                StateHasChanged();
-            }
-            return Task.CompletedTask;
+            return ResumeItemsGridKeyboardNavigationAsync();
         }
 
         // ── Substitute Item (VB6 FTakeoff.frm:2814-2833): overwrite the selected grid
@@ -2955,6 +2988,13 @@
     private TakeoffItemRow? _poIndexPickRow;
     private List<TakeoffItemRow> _itemsGridMenuSelection = new();
 
+    private async Task ResumeItemsGridKeyboardNavigationAsync()
+    {
+        if (ItemsGrid == null) return;
+        await InvokeAsync(StateHasChanged);
+        await ItemsGrid.ResumeKeyboardNavigationAsync();
+    }
+
     private async Task OnItemsEditButtonClick(CellEditButtonArgs<TakeoffItemRow> args)
     {
         if (args.Data == null
@@ -2971,10 +3011,12 @@
             defaultItem: args.Data.POIndex);
     }
 
-    private Task OnTakeoffPickCancelled()
+    private async Task OnTakeoffPickCancelled()
     {
+        var resumeItemsGrid = _takeoffPickContext == "POIndex";
         ClearTakeoffPickState();
-        return Task.CompletedTask;
+        if (resumeItemsGrid)
+            await ResumeItemsGridKeyboardNavigationAsync();
     }
 
     private void ClearTakeoffPickState()

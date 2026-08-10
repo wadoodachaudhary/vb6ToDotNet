@@ -1,0 +1,690 @@
+@page "/import-vendors"
+@rendermode InteractiveServer
+@layout HFComponent
+
+@namespace HomeFront.Components.Pages
+
+@using System
+@using System.Data
+@using System.Collections.Generic
+@using System.Linq
+@using System.IO
+@using HomeFront.Data
+@using Fx.ControlKit.Notifications
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ILogger<FImportVendors> Logger
+@inject NotificationService Notifications
+@using HomeFront.Services
+@inject ISessionStateService SessionState
+@inject DbWrapperSqlServer db
+
+<PageTitle>Pricelist Import Wizard - Vendor Import</PageTitle>
+
+@if (!IsWizardVisible)
+{
+    <div style="max-width: 600px; margin: 40px auto; text-align: center;">
+        <h3>Vendor Import Wizard</h3>
+        <p style="color: #6c757d; margin-bottom: 24px;">
+            Select a file to import vendor data into the database.
+        </p>
+
+        <div class="file-upload-area" @onclick="OnSelectFile">
+            <span style="font-size: 48px;">📁</span>
+            <p>Click to select a file<br />(Excel .xls, QuickBooks .iif, Text .txt/.csv)</p>
+        </div>
+
+        <InputFile OnChange="OnFileSelected" accept=".xls,.xlsx,.iif,.txt,.csv" style="display:none" id="fileInput" />
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <div style="color: #dc3545; margin-top: 12px;">@ErrorMessage</div>
+        }
+    </div>
+}
+else
+{
+    @if (IsLoading)
+    {
+        <div class="loading-overlay">
+            <div class="loading-spinner">⏳ Processing...</div>
+        </div>
+    }
+
+    <div class="wizard-container">
+        <!-- Wizard Header -->
+        <div class="wizard-head">
+            <div class="wizard-head-text">
+                <h3>Import Vendors</h3>
+                <p>The vendor import wizard will help you update your database</p>
+            </div>
+        </div>
+
+        <!-- Wizard Body -->
+        <div class="wizard-body">
+            @if (CurrentFrame == 0)
+            {
+                <!-- Frame 0: Show file data -->
+                <div class="file-info">
+                    <label><strong>File name:</strong> @FileName</label>
+                    <label><strong>Last Modified:</strong> @FileDate</label>
+                </div>
+
+                <div class="grid-container">
+                    <GridControl @ref="DataGrid"
+                            TValue="VendorImportRow"
+                            DataSource="@GridData"
+                            AllowSorting="true"
+                            AllowResizing="true"
+                            AllowFiltering="true"
+                            AllowPaging="true"
+                            Height="380px"
+                            FilterSettingsRef="@filterSettings"
+                            PageSettingsRef="@pageSettings">
+                        <GridColumnsBase>
+                            @foreach (var col in GridColumns)
+                            {
+                                <GridColumn Field="@col.Field"
+                                              HeaderText="@col.HeaderText"
+                                              Width="@col.Width"
+                                              AllowEditing="false" />
+                            }
+                        </GridColumnsBase>
+                    </GridControl>
+                </div>
+
+                @if (ShowProgressBar)
+                {
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width: @(ProgressValue)%;">
+                            @(ProgressValue)%
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Wizard Footer -->
+        <div class="wizard-footer">
+            <button @onclick="OnCancelClick">Cancel</button>
+            <button disabled="@(!CanGoBack)" @onclick="OnBackClick">&lt; Back</button>
+            <button disabled="@(!CanGoNext)" @onclick="OnNextClick">Next &gt;</button>
+            <button class="btn-primary" disabled="@(!CanFinish)" @onclick="OnFinishClick">Finish</button>
+        </div>
+    </div>
+}
+
+@code {
+    // === Database ===
+// === UI State ===
+    private bool IsWizardVisible = false;
+    private bool IsLoading = false;
+    private int CurrentFrame = 0;
+    private int MaxFrame = 0;
+    private string FileName = "";
+    private string FileDate = "";
+    private string ErrorMessage = "";
+    private bool ShowProgressBar = false;
+    private int ProgressValue = 0;
+
+    // === Navigation ===
+    private bool CanGoBack => CurrentFrame > 0;
+    private bool CanGoNext => CurrentFrame < MaxFrame;
+    private bool CanFinish => CurrentFrame == MaxFrame && GridData.Count > 0;
+
+    // === Grid ===
+    private GridControl<VendorImportRow>? DataGrid;
+    private List<VendorImportRow> GridData = new();
+    private List<GridColumnDef> GridColumns = new();
+
+    // === Grid Settings ===
+    private FilterSettings filterSettings = new() { Type = FilterType.FilterBar };
+    private PageSettings pageSettings = new() { PageSize = 50 };
+
+    // === File data ===
+    private string? UploadedFilePath;
+    private string? OriginalFileName;
+    private List<string[]> ParsedRows = new();
+    private string[] ColumnHeaders = Array.Empty<string>();
+    private Dictionary<string, int> ColumnMap = new();
+
+    // === Column name translation map ===
+    private static readonly Dictionary<string, string> ColumnTranslations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "refnum", "Vendor_ID" },
+        { "vendor", "Vendor_ID" },
+        { "vendorcode", "Vendor_ID" },
+        { "id", "Vendor_ID" },
+        { "code", "Vendor_ID" },
+        { "name", "Vendor_Name" },
+        { "prov", "state" },
+        { "province", "state" },
+        { "postalcode", "zip" },
+        { "zipcode", "zip" },
+        { "emailaddress", "email" },
+        { "phone1", "phone" },
+        { "faxnum", "fax" },
+        { "cont1", "contact" },
+        { "vtype", "tradetype" }
+    };
+
+    // === Excluded fields for vendor update ===
+    private static readonly HashSet<string> ExcludedFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "vendor_id", "divisionid", "paymentterms", "SchedContactID", "ServiceContactID",
+        "FPOContactID", "PurchContactID", "createddate", "createdby",
+        "modifieddate", "modifiedby", "DateSentToBuildPro"
+    };
+
+    // === Contact types ===
+    private static readonly string[] ContactTypes = { "FPO", "Purch", "Service", "Sched" };
+
+    protected override void OnInitialized()
+    {
+        // Start with file selection view
+        IsWizardVisible = false;
+    }
+
+    private async Task OnSelectFile()
+    {
+        await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('fileInput').click()");
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        ErrorMessage = "";
+        var file = e.File;
+        if (file == null) return;
+
+        try
+        {
+            IsLoading = true;
+            StateHasChanged();
+
+            OriginalFileName = file.Name;
+            var ext = Path.GetExtension(file.Name).TrimStart('.').ToLowerInvariant();
+
+            // Save uploaded file to temp
+            var tempPath = Path.Combine(Path.GetTempPath(), $"vendor_import_{Guid.NewGuid()}.{ext}");
+            await using (var fs = new FileStream(tempPath, FileMode.Create))
+            {
+                await file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(fs);
+            }
+
+            UploadedFilePath = tempPath;
+            FileName = file.Name;
+            FileDate = file.LastModified.LocalDateTime.ToString("D");
+
+            // Parse the file
+            await ParseFile(tempPath, ext);
+
+            if (GridData.Count == 0)
+            {
+                ErrorMessage = "No valid vendor data found in the file.";
+                IsLoading = false;
+                StateHasChanged();
+                return;
+            }
+
+            // Show wizard
+            CurrentFrame = 0;
+            MaxFrame = 0;
+            IsWizardVisible = true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error reading file: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ParseFile(string filePath, string ext)
+    {
+        ParsedRows.Clear();
+        GridData.Clear();
+        GridColumns.Clear();
+        ColumnMap.Clear();
+
+        string[] lines;
+
+        switch (ext)
+        {
+            case "xls":
+            case "xlsx":
+                // For Excel files, attempt to read as CSV (simplified - in production use a library like EPPlus)
+                ErrorMessage = "Excel files (.xls/.xlsx) require server-side conversion. Please save as CSV and re-upload.";
+                return;
+
+            case "iif":
+                lines = await File.ReadAllLinesAsync(filePath);
+                ParseTabDelimited(lines, isIIF: true);
+                break;
+
+            case "csv":
+                lines = await File.ReadAllLinesAsync(filePath);
+                ParseCsvDelimited(lines);
+                break;
+
+            default: // txt and others
+                lines = await File.ReadAllLinesAsync(filePath);
+                ParseTabDelimited(lines, isIIF: false);
+                break;
+        }
+
+        BuildGridData();
+    }
+
+    private void ParseTabDelimited(string[] lines, bool isIIF)
+    {
+        if (lines.Length == 0) return;
+
+        var dataLines = lines.ToList();
+
+        if (isIIF)
+        {
+            // Remove leading rows until we find !VEND header
+            while (dataLines.Count > 0 && !dataLines[0].StartsWith("!VEND", StringComparison.OrdinalIgnoreCase))
+                dataLines.RemoveAt(0);
+
+            // Remove trailing rows that aren't VEND data
+            while (dataLines.Count > 1 && !dataLines[^1].StartsWith("VEND", StringComparison.OrdinalIgnoreCase))
+                dataLines.RemoveAt(dataLines.Count - 1);
+        }
+
+        if (dataLines.Count < 2) return;
+
+        // First row after filtering is the header
+        var headerLine = dataLines[0];
+        var rawHeaders = headerLine.Split('\t');
+
+        // For IIF, skip the first column (record type indicator like !VEND)
+        var startCol = isIIF ? 1 : 0;
+        ColumnHeaders = new string[rawHeaders.Length - startCol];
+        for (int i = startCol; i < rawHeaders.Length; i++)
+        {
+            ColumnHeaders[i - startCol] = rawHeaders[i].Trim().Replace(" ", "");
+        }
+
+        // Parse data rows
+        for (int i = 1; i < dataLines.Count; i++)
+        {
+            var fields = dataLines[i].Split('\t');
+            var row = new string[ColumnHeaders.Length];
+            for (int j = startCol; j < fields.Length && (j - startCol) < row.Length; j++)
+            {
+                row[j - startCol] = fields[j].Trim();
+            }
+            ParsedRows.Add(row);
+        }
+    }
+
+    private void ParseCsvDelimited(string[] lines)
+    {
+        if (lines.Length < 2) return;
+
+        // Simple CSV parsing (does not handle quoted fields with commas)
+        var rawHeaders = lines[0].Split(',');
+        ColumnHeaders = rawHeaders.Select(h => h.Trim().Trim('"').Replace(" ", "")).ToArray();
+
+        for (int i = 1; i < lines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[i])) continue;
+            var fields = SplitCsvLine(lines[i]);
+            var row = new string[ColumnHeaders.Length];
+            for (int j = 0; j < fields.Length && j < row.Length; j++)
+            {
+                row[j] = fields[j].Trim().Trim('"');
+            }
+            ParsedRows.Add(row);
+        }
+    }
+
+    private string[] SplitCsvLine(string line)
+    {
+        var result = new List<string>();
+        bool inQuotes = false;
+        var current = new System.Text.StringBuilder();
+
+        foreach (char c in line)
+        {
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        result.Add(current.ToString());
+        return result.ToArray();
+    }
+
+    private void BuildGridData()
+    {
+        // Translate column headers
+        var translatedHeaders = new string[ColumnHeaders.Length];
+        for (int i = 0; i < ColumnHeaders.Length; i++)
+        {
+            var key = ColumnHeaders[i];
+            if (ColumnTranslations.TryGetValue(key, out var translated))
+                translatedHeaders[i] = translated;
+            else
+                translatedHeaders[i] = key;
+        }
+
+        // Build column map
+        ColumnMap.Clear();
+        for (int i = 0; i < translatedHeaders.Length; i++)
+        {
+            if (!ColumnMap.ContainsKey(translatedHeaders[i]))
+                ColumnMap[translatedHeaders[i]] = i;
+        }
+
+        // Check required column
+        if (!ColumnMap.ContainsKey("Vendor_ID"))
+        {
+            ErrorMessage = "Required column \"Vendor_ID\" (or equivalent: vendor, vendorcode, id, code, refnum) is missing.";
+            return;
+        }
+
+        var vendorIdCol = ColumnMap["Vendor_ID"];
+
+        // Build grid columns
+        GridColumns.Clear();
+        for (int i = 0; i < translatedHeaders.Length; i++)
+        {
+            GridColumns.Add(new GridColumnDef
+            {
+                Field = $"Col{i}",
+                HeaderText = translatedHeaders[i],
+                Width = "140px"
+            });
+        }
+
+        // Build grid data, removing rows with no vendor ID
+        GridData.Clear();
+        foreach (var row in ParsedRows)
+        {
+            var vendorId = vendorIdCol < row.Length ? row[vendorIdCol]?.Trim() : "";
+            if (string.IsNullOrEmpty(vendorId)) continue;
+
+            var importRow = new VendorImportRow();
+            for (int i = 0; i < row.Length && i < translatedHeaders.Length; i++)
+            {
+                importRow.Values[$"Col{i}"] = row[i] ?? "";
+            }
+            importRow.TranslatedHeaders = translatedHeaders;
+            GridData.Add(importRow);
+        }
+    }
+
+    // === Navigation ===
+    private void OnCancelClick()
+    {
+        CleanupTempFile();
+        IsWizardVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnBackClick()
+    {
+        if (CurrentFrame > 0)
+            CurrentFrame--;
+    }
+
+    private void OnNextClick()
+    {
+        if (CurrentFrame < MaxFrame)
+            CurrentFrame++;
+    }
+
+    private async Task OnFinishClick()
+    {
+        if (await SaveData())
+        {
+            CleanupTempFile();
+            IsWizardVisible = false;
+            Notifications.Success($"Successfully imported {GridData.Count} vendor(s).");
+
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveData()
+    {
+        IsLoading = true;
+        ShowProgressBar = true;
+        ProgressValue = 0;
+        StateHasChanged();
+
+        try
+        {
+            // Get table definition to know valid columns
+            var tabDef = db.SqlExec("SELECT * FROM tblvendors WHERE 1=2");
+            var validColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn col in tabDef.Columns)
+            {
+                validColumns.Add(col.ColumnName);
+            }
+
+            var totalRows = GridData.Count;
+
+            for (int r = 0; r < totalRows; r++)
+            {
+                ProgressValue = (int)(((double)(r + 1) / totalRows) * 100);
+
+                var row = GridData[r];
+                var vendorId = GetColumnValue(row, "Vendor_ID");
+                if (string.IsNullOrWhiteSpace(vendorId)) continue;
+
+                // INSERT vendor (will fail silently on duplicate due to try/catch)
+                try
+                {
+                    var insertSql = $"INSERT INTO tblVendors(DivisionID, webupdated, nodatachanged, Vendor_ID) VALUES (@DivisionID, 0, 0, @VendorID)";
+                    await db.ExecuteAsync(insertSql, new { SessionState.DivisionID, VendorID = vendorId });
+                }
+                catch (Exception ex)
+                {
+                    // Duplicate key - continue with update
+                    if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                        throw;
+                }
+
+                // Build UPDATE SET clause
+                var setClauses = new List<string>();
+                var updateParams = new Dictionary<string, object>();
+                updateParams["SessionState.DivisionID"] = SessionState.DivisionID;
+                updateParams["VendorID"] = vendorId;
+
+                for (int c = 0; c < (row.TranslatedHeaders?.Length ?? 0); c++)
+                {
+                    var colName = row.TranslatedHeaders![c];
+                    if (ExcludedFields.Contains(colName)) continue;
+                    if (!validColumns.Contains(colName)) continue;
+
+                    var value = row.Values.ContainsKey($"Col{c}") ? row.Values[$"Col{c}"] : "";
+                    var paramName = $"p{c}";
+                    setClauses.Add($"{colName} = @{paramName}");
+                    updateParams[paramName] = value ?? "";
+                }
+
+                if (setClauses.Count > 0)
+                {
+                    var updateSql = $"UPDATE tblVendors SET {string.Join(", ", setClauses)} WHERE DivisionID = @DivisionID AND Vendor_ID = @VendorID";
+                    await db.ExecuteAsync(updateSql, updateParams);
+                }
+
+                // Update contact fields for each contact type
+                foreach (var ctype in ContactTypes)
+                {
+                    var contactSets = new List<string>();
+                    var contactParams = new Dictionary<string, object>();
+                    contactParams["SessionState.DivisionID"] = SessionState.DivisionID;
+                    contactParams["VendorID"] = vendorId;
+
+                    AddContactField(row, ctype, "contact", "firstname", contactSets, contactParams);
+                    AddContactField(row, ctype, "phone", "workphone", contactSets, contactParams);
+                    AddContactField(row, ctype, "email", "email", contactSets, contactParams);
+                    AddContactField(row, ctype, "fax", "fax", contactSets, contactParams);
+                    AddContactField(row, ctype, "smsaddress", "smsaddress", contactSets, contactParams);
+                    AddContactField(row, ctype, "cell", "cellphone", contactSets, contactParams);
+
+                    // Handle delivery method -> CommMode
+                    var delMethodValue = GetColumnValue(row, $"{ctype}delmethod");
+                    if (delMethodValue != null)
+                    {
+                        if (delMethodValue == "0" || delMethodValue == "1" || delMethodValue == "2")
+                        {
+                            var commMode = delMethodValue switch
+                            {
+                                "0" => "1",
+                                "1" => "3",
+                                "2" => "4",
+                                _ => "1"
+                            };
+                            contactSets.Add("CommModeID = @CommMode");
+                            contactParams["CommMode"] = commMode;
+                        }
+                    }
+
+                    if (contactSets.Count > 0)
+                    {
+                        var contactSql = $@"
+                            UPDATE contacts SET {string.Join(", ", contactSets)}
+                            FROM contacts c
+                            JOIN tblvendors v ON c.contactid = v.{ctype}contactid
+                            WHERE v.DivisionID = @DivisionID
+                            AND v.Vendor_ID = @VendorID";
+
+                        try
+                        {
+                            await db.ExecuteAsync(contactSql, contactParams);
+                        }
+                        catch
+                        {
+                            // Silently continue on contact update errors
+                        }
+                    }
+                }
+
+                // Update UI periodically
+                if (r % 10 == 0)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+            {
+                Notifications.Error($"Error saving data: {ex.Message}");
+                return false;
+            }
+            return true;
+        }
+        finally
+        {
+            IsLoading = false;
+            ShowProgressBar = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AddContactField(VendorImportRow row, string ctype, string suffix, string dbField,
+        List<string> setClauses, Dictionary<string, object> parameters)
+    {
+        var value = GetColumnValue(row, $"{ctype}{suffix}");
+        if (value != null)
+        {
+            var paramName = $"{ctype}_{suffix}";
+            setClauses.Add($"{dbField} = @{paramName}");
+            parameters[paramName] = value;
+        }
+    }
+
+    private string? GetColumnValue(VendorImportRow row, string columnName)
+    {
+        if (row.TranslatedHeaders == null) return null;
+
+        for (int i = 0; i < row.TranslatedHeaders.Length; i++)
+        {
+            if (string.Equals(row.TranslatedHeaders[i], columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return row.Values.ContainsKey($"Col{i}") ? row.Values[$"Col{i}"] : null;
+            }
+        }
+        return null;
+    }
+
+    private void CleanupTempFile()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(UploadedFilePath) && File.Exists(UploadedFilePath))
+                File.Delete(UploadedFilePath);
+        }
+        catch { /* non-critical */ }
+    }
+
+    // === Models ===
+    public class VendorImportRow
+    {
+        public Dictionary<string, string> Values { get; set; } = new();
+        public string[]? TranslatedHeaders { get; set; }
+
+        // Dynamic property access for grid binding
+        public string Col0 { get => GetVal("Col0"); set => Values["Col0"] = value; }
+        public string Col1 { get => GetVal("Col1"); set => Values["Col1"] = value; }
+        public string Col2 { get => GetVal("Col2"); set => Values["Col2"] = value; }
+        public string Col3 { get => GetVal("Col3"); set => Values["Col3"] = value; }
+        public string Col4 { get => GetVal("Col4"); set => Values["Col4"] = value; }
+        public string Col5 { get => GetVal("Col5"); set => Values["Col5"] = value; }
+        public string Col6 { get => GetVal("Col6"); set => Values["Col6"] = value; }
+        public string Col7 { get => GetVal("Col7"); set => Values["Col7"] = value; }
+        public string Col8 { get => GetVal("Col8"); set => Values["Col8"] = value; }
+        public string Col9 { get => GetVal("Col9"); set => Values["Col9"] = value; }
+        public string Col10 { get => GetVal("Col10"); set => Values["Col10"] = value; }
+        public string Col11 { get => GetVal("Col11"); set => Values["Col11"] = value; }
+        public string Col12 { get => GetVal("Col12"); set => Values["Col12"] = value; }
+        public string Col13 { get => GetVal("Col13"); set => Values["Col13"] = value; }
+        public string Col14 { get => GetVal("Col14"); set => Values["Col14"] = value; }
+        public string Col15 { get => GetVal("Col15"); set => Values["Col15"] = value; }
+        public string Col16 { get => GetVal("Col16"); set => Values["Col16"] = value; }
+        public string Col17 { get => GetVal("Col17"); set => Values["Col17"] = value; }
+        public string Col18 { get => GetVal("Col18"); set => Values["Col18"] = value; }
+        public string Col19 { get => GetVal("Col19"); set => Values["Col19"] = value; }
+        public string Col20 { get => GetVal("Col20"); set => Values["Col20"] = value; }
+        public string Col21 { get => GetVal("Col21"); set => Values["Col21"] = value; }
+        public string Col22 { get => GetVal("Col22"); set => Values["Col22"] = value; }
+        public string Col23 { get => GetVal("Col23"); set => Values["Col23"] = value; }
+        public string Col24 { get => GetVal("Col24"); set => Values["Col24"] = value; }
+        public string Col25 { get => GetVal("Col25"); set => Values["Col25"] = value; }
+        public string Col26 { get => GetVal("Col26"); set => Values["Col26"] = value; }
+        public string Col27 { get => GetVal("Col27"); set => Values["Col27"] = value; }
+        public string Col28 { get => GetVal("Col28"); set => Values["Col28"] = value; }
+        public string Col29 { get => GetVal("Col29"); set => Values["Col29"] = value; }
+
+        private string GetVal(string key) => Values.ContainsKey(key) ? Values[key] : "";
+    }
+
+    public class GridColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string HeaderText { get; set; } = "";
+        public string Width { get; set; } = "140px";
+    }
+}
