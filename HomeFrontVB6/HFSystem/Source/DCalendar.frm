@@ -57,7 +57,7 @@ Begin VB.Form DCalendar
       BackColor       =   -2147483633
       BorderStyle     =   1
       Appearance      =   0
-      StartOfWeek     =   55640065
+      StartOfWeek     =   171245569
       CurrentDate     =   37995
    End
 End
@@ -153,7 +153,7 @@ Public Property Let Value(RHS As Date)
 End Property
 Private Sub UpdateBuddy()
 On Error Resume Next
-    mBuddy = Format(mValue, HFApp.Options(DateFormat))
+    mBuddy = Format(mValue, "medium date")
 End Sub
 
 

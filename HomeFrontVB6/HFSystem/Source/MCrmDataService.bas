@@ -55,9 +55,9 @@ Private Function Integrated() As Boolean
 End Function
 
 Private Function SalesWrapper(xml As String) As String
-    Dim crm As New HyphenSys.SalesWrapper
-    Dim results As String
-    SalesWrapper = crm.PostXml(CrmClientID, CrmApiKey, CrmEnvironment = "Production", "1", xml)
+'    Dim crm As New HyphenSys.SalesWrapper
+'    Dim results As String
+'    SalesWrapper = crm.PostXml(CrmClientID, CrmApiKey, CrmEnvironment = "Production", "1", xml)
 End Function
 
 

@@ -282,6 +282,7 @@ Private Type StatementType
     Description  As String  'displayed in listbox
     SQLStatement As String  'query to run
     IgnoreErrors As Boolean
+    DontLog      As Boolean 'only used for schema protection statements
 End Type
 Private mStatements() As StatementType
 
@@ -313,8 +314,8 @@ On Error GoTo eh
     'open connection
     Set mConnection = New Connection
     Set mConnection2 = New Connection
-    mConnection.Open ConnectionString
-    mConnection2.Open ConnectionString
+    mConnection.Open ConnectionString & ";App=HFDBUpgradeWiz"
+    mConnection2.Open ConnectionString & ";App=HFDBUpgradeWiz"
     mConnection.CommandTimeout = 3000
     mConnection2.CommandTimeout = 3000
     
@@ -339,9 +340,9 @@ On Error GoTo eh
     If mDbRevision > UBound(mStatements) Then
     
         s = ""
-        s = s & "A new version has been installed on the server. You should" & vbCrLf
-        s = s & "upgrade your workstation software as soon as possible. If you" & vbCrLf
-        s = s & "choose not to upgrade your software you may experience" & vbCrLf
+        s = s & "A new version has been installed on the server. You should "
+        s = s & "upgrade your workstation software as soon as possible. If you "
+        s = s & "choose not to upgrade your software you may experience "
         s = s & "problems." & vbCrLf & vbCrLf
         s = s & "Please contact your HomeFront administrator for instructions."
         Upgrade = vbOK = MsgBox(s, vbOKCancel + vbExclamation, App.ProductName)
@@ -349,8 +350,8 @@ On Error GoTo eh
     ElseIf mDbRevision <= 8620 Then
     
         s = ""
-        s = s & "This database cannot be upgraded by this version of " & App.ProductName & vbCrLf
-        s = s & "as it is too old. Please contact " & App.ProductName & " support for assistance." & vbCrLf
+        s = s & "This database cannot be upgraded by this version of " & App.ProductName
+        s = s & " as it is too old. Please contact " & App.ProductName & " support for assistance." & vbCrLf
         Call MsgBox(s, vbOKOnly + vbExclamation, App.ProductName)
         Upgrade = False
     
@@ -359,26 +360,34 @@ On Error GoTo eh
     ElseIf mDbRevision < UBound(mStatements) Then
         
         '-- do check sql version -----------------------------------
-        'Microsoft SQL Server 2005           9.00.1399.06  -- Microsoft extended support for SQL Server 2005 ended on April 12, 2016
+        'Microsoft SQL Server 2005           9.00.1399.06
         'Microsoft SQL Server 2008 (SP1)     10.0.2573.0
         'Microsoft SQL Server 2008 R2 (RTM)  10.50.1600.1
         'Microsoft SQL Server 2012           11.0.2100.60
         'Microsoft SQL Server 2014           12.0.2254.0
         'Microsoft SQL Server 2016 (RTM)     13.0.1601.5
+        'Microsoft SQL Server 2017           14.0.xxxx
+        'Microsoft SQL Server 2019           15.0.xxxx
+        'Microsoft SQL Server 2022           16.0.xxxx
+        'Microsoft SQL Server 2025           ??
+        
         s = mConnection.Execute("SELECT SERVERPROPERTY('ProductVersion')")(0)
         majorversion = Val(Parse(s, 1, "."))
         Select Case True
-        Case majorversion <= 9:   s = "Microsoft ended extended support for SQL Server 2005 on April 12, 2016."
-        'Case majorversion = 10
-        'Case majorversion = 11
-        'Case majorversion = 12
-        'Case majorversion = 13
+        Case majorversion <= 9:   s = "Microsoft extended support for SQL Server 2005 ended on April 12, 2016."
+        Case majorversion = 10:   s = "Microsoft extended support for SQL Server 2008 ended on July 9, 2019."
+        Case majorversion = 11:   s = "Microsoft extended support for SQL Server 2012 ended on July 12, 2022."
+        Case majorversion = 12:   s = "Microsoft extended support for SQL Server 2014 ended on July 9, 2024."
+        'Case majorversion = 13:   s = "Microsoft extended support for SQL Server 2016 ended on "
+        'Case majorversion = 14:   s = "Microsoft extended support for SQL Server 2017 ended on "
+        'Case majorversion = 15:   s = "Microsoft extended support for SQL Server 2019 ended on "
+        'Case majorversion = 16:   s = "Microsoft extended support for SQL Server 2022 ended on "
+        
         Case Else: s = ""
         End Select
         If s <> "" Then
             
-            s = "Unsupported SQL Server version detected. This database cannot be upgraded." & vbCrLf & _
-                s & vbCrLf & vbCrLf & _
+            s = "Unsupported SQL Server version detected. This database cannot be upgraded. " & s & vbCrLf & vbCrLf & _
                 "Please upgrade to a recent version of SQL Server."
             Call MsgBox(s, vbOKOnly + vbExclamation, App.ProductName)
             Upgrade = False
@@ -410,18 +419,19 @@ End Function
 
 
 
-Public Sub sql(Description As String, SQLStatement As String, Optional IgnoreErrors As Boolean)
+Public Sub sql(Description As String, SQLStatement As String, Optional IgnoreErrors As Boolean, Optional DontLog As Boolean = False)
     Dim i As Long
     i = UBound(mStatements) + 1
 
- 
+If InIde() Then
+'If i = 14902 Then Stop
+End If
 
-
-'If InIde And IsIn(i, 14342) Then Stop
     ReDim Preserve mStatements(i)
     mStatements(i).Description = Description
     mStatements(i).SQLStatement = SQLStatement
     mStatements(i).IgnoreErrors = IgnoreErrors
+    mStatements(i).DontLog = DontLog
 End Sub
 
 
@@ -433,6 +443,7 @@ Private Sub cmdNav_Click(Index As Integer)
             picFrame(1).Visible = True
             picFrame(0).Visible = False
             Call RunStatements
+            
             
         Case 1 'cancel
             Unload Me
@@ -447,15 +458,36 @@ On Error Resume Next
 
     Dim i As Long
     Dim s As String
+    Dim rs As Recordset
     Dim SQLStatement As String
+    Dim version As String
     
     Screen.MousePointer = vbHourglass
     
     ProgressBar.Max = UBound(mStatements)
     ProgressBar.Min = mDbRevision
     
-    Call DisableAudit
     
+    
+    Call RUNPROC_FixSchema
+
+    'ensure db is at highest compatability level
+    Set rs = mConnection.Execute("select db_name(),SERVERPROPERTY('productversion')")
+    s = "" & rs(0)
+    version = "" & rs(1)
+    
+    Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 130")
+    Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 140")
+    'sql 19 behaves has a bug at level 150 so leave it at 140
+    If Not version Like "15.*" Then
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 150")
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 160")
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 170")
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 180")
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 190")
+        Call mConnection.Execute("ALTER DATABASE " & s & " SET COMPATIBILITY_LEVEL = 200")
+    End If
+
     For i = mDbRevision + 1 To UBound(mStatements)
     
         Err.Clear
@@ -487,7 +519,11 @@ On Error Resume Next
             s = s & "      ," & DbQuote(Str, Mid(mStatements(i).Description, 1, 50)) & vbCrLf
             s = s & "      ," & DbQuote(Str, HFApp.LoginID) & vbCrLf
             s = s & "      ,GETDATE()" & vbCrLf
-            s = s & "      ," & DbQuote(Str, left(SQLStatement, 7599)) & ")"
+            If mStatements(i).DontLog Then
+                s = s & "      ,'')"
+            Else
+                s = s & "      ," & DbQuote(Str, left(SQLStatement, 7599)) & ")"
+            End If
             mConnection.Execute s
         Else
             Screen.MousePointer = vbDefault
@@ -504,12 +540,96 @@ On Error Resume Next
         
     Next
     
-    mConnection.Execute "exec ZYB_CreateDefaults"
+    
+    
+    
+    'the options screen does this already but make sure its correct after the dbupgrade.
+    s = ""
+    s = s & "---------------------------------------------------------------------------------------------------- " & vbCrLf
+    s = s & "-- Invoice creation trigger slows down the app so only use it if needed." & vbCrLf
+    s = s & "-- Is needed if a division does not use buildpro and autopay or autorelease is turned on." & vbCrLf
+    s = s & "---------------------------------------------------------------------------------------------------- " & vbCrLf
+    s = s & "if exists(" & vbCrLf
+    s = s & "    select" & vbCrLf
+    s = s & "      --a.divisionid,isnull(a.optionvalue,''),isnull(b.optionvalue,''),isnull(c.optionvalue,'')" & vbCrLf
+    s = s & "      --,case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end TriggerReq" & vbCrLf
+    s = s & "      max(case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end) TriggerReq" & vbCrLf
+    s = s & "    from appoptions a" & vbCrLf
+    s = s & "    join appoptions b on a.divisionid=b.divisionid and b.optionname='AutoPayApprovedPOs'" & vbCrLf
+    s = s & "    join appoptions c on a.divisionid=c.divisionid and c.optionname='AutoReleaseHeldPOInvoices'" & vbCrLf
+    s = s & "    where a.optionname='BuildProCompanyCode'" & vbCrLf
+    s = s & "    having max(case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end)=1" & vbCrLf
+    s = s & ")" & vbCrLf
+    s = s & "    enable trigger POMaster_CreateInvoice on POMaster" & vbCrLf
+    s = s & "else" & vbCrLf
+    s = s & "    disable trigger POMaster_CreateInvoice on POMaster" & vbCrLf
+    Call mConnection.Execute(s)
+    
+    
+    Call RemoveZybDefaults
+    
     mCompleted = True
     Unload Me
     
 End Function
 
+Private Sub RemoveZybDefaults()
+On Error GoTo 0
+
+    'remove legacy default binding and replace with default column constraints.
+    'this was added in the 2025.03 build and should remain until all clients have been upgraded to this version or beyond.
+
+    Dim s As String
+    Dim rs As Recordset
+    Dim a As String
+    Dim b As String
+    
+    s = ""
+    s = s & "select" & vbCrLf
+    s = s & " 'exec sp_unbindefault ''[' + tab.name + '].['+col.name+']'''" & vbCrLf
+    s = s & ",'alter table '+tab.name+' add constraint [df_'+tab.name+'_'+col.name+'] default 0 for ['+col.name+']'" & vbCrLf
+    s = s & "from syscolumns  col " & vbCrLf
+    s = s & "join sysobjects  tab on tab.id=col.id " & vbCrLf
+    s = s & "join sysobjects  def on col.cdefault=def.id" & vbCrLf
+    s = s & "where def.name='zybdefault0'" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "union" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "select" & vbCrLf
+    s = s & " 'exec sp_unbindefault ''[' + tab.name + '].['+col.name+']'''" & vbCrLf
+    s = s & ",'alter table '+tab.name+' add constraint [df_'+tab.name+'_'+col.name+'] default 1 for ['+col.name+']'" & vbCrLf
+    s = s & "from syscolumns  col " & vbCrLf
+    s = s & "join sysobjects  tab on tab.id=col.id " & vbCrLf
+    s = s & "join sysobjects  def on col.cdefault=def.id" & vbCrLf
+    s = s & "where def.name='zybdefault1'" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "union" & vbCrLf
+    s = s & "" & vbCrLf
+    s = s & "select" & vbCrLf
+    s = s & " 'exec sp_unbindefault ''[' + tab.name + '].['+col.name+']'''" & vbCrLf
+    s = s & ",'alter table '+tab.name+' add constraint [df_'+tab.name+'_'+col.name+'] default '''' for ['+col.name+']'" & vbCrLf
+    s = s & "from syscolumns  col " & vbCrLf
+    s = s & "join sysobjects  tab on tab.id=col.id " & vbCrLf
+    s = s & "join sysobjects  def on col.cdefault=def.id" & vbCrLf
+    s = s & "where def.name='zybdefaultblank'" & vbCrLf
+    Set rs = mConnection.Execute(s)
+    
+    While Not rs.EOF
+        a = a & "" & rs(0) & vbCrLf
+        b = b & "" & rs(1) & vbCrLf
+        rs.MoveNext
+    Wend
+    
+    If a <> "" Then
+        mConnection.Execute a
+        mConnection.Execute b
+        On Error Resume Next
+        mConnection.Execute "drop default zybDefault0"
+        mConnection.Execute "drop default zybDefault1"
+        mConnection.Execute "drop default zybDefaultblank"
+    End If
+    
+End Sub
 
 Private Sub Form_Activate()
     Call WindowOnTop(Me, True)
@@ -525,33 +645,32 @@ Private Sub Form_Resize()
     picFrame(2).Move picFrame(0).left, picFrame(0).Top, picFrame(0).Width, picFrame(0).Height
 End Sub
 
-Private Sub Form_Unload(Cancel As Integer)
-    Call EnableAudit
-End Sub
 
 Private Sub optBackup_Click(Index As Integer)
     cmdNav(0).Enabled = optBackup(3).Value
 End Sub
 
 
-Private Sub EnableAudit()
-On Error Resume Next
+
+
+
+Private Sub RUNPROC_FixSchema()
+    Dim s As String
+    Dim rs As Recordset
     
-    mConnection.Execute "enable trigger audit_view_change on database"
-    mConnection.Execute "enable trigger audit_table_change on database"
-    mConnection.Execute "enable trigger audit_trigger_change on database"
+    s = ""
+    s = s & "select 'alter schema dbo transfer ['+object_schema_name(object_id)+'].'+name" & vbCrLf
+    s = s & "from sys.procedures" & vbCrLf
+    s = s & "where name like 'msgq%' and object_schema_name(object_id)<>'dbo'" & vbCrLf
+    Set rs = mConnection.Execute(s)
+
+    While Not rs.EOF
+        s = "" & rs(0)
+        Call mConnection2.Execute(s)
+        rs.MoveNext
+    Wend
 
 End Sub
-Private Sub DisableAudit()
-On Error Resume Next
-    
-    mConnection.Execute "disable trigger audit_view_change on database"
-    mConnection.Execute "disable trigger audit_table_change on database"
-    mConnection.Execute "disable trigger audit_trigger_change on database"
-
-End Sub
-
-
 
 
 Private Sub RUNPROC_EncryptPswds()

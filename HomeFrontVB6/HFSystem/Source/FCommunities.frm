@@ -1,11 +1,11 @@
 VERSION 5.00
 Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsFlex8.ocx"
-Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "mscomctl.ocx"
+Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "MSCOMCTL.OCX"
 Begin VB.Form FCommunities 
    Caption         =   "Communities"
    ClientHeight    =   5520
-   ClientLeft      =   870
-   ClientTop       =   2205
+   ClientLeft      =   1290
+   ClientTop       =   2625
    ClientWidth     =   12750
    Icon            =   "FCommunities.frx":0000
    KeyPreview      =   -1  'True
@@ -56,7 +56,7 @@ Begin VB.Form FCommunities
       GridLinesFixed  =   2
       GridLineWidth   =   1
       Rows            =   4
-      Cols            =   45
+      Cols            =   47
       FixedRows       =   1
       FixedCols       =   0
       RowHeightMin    =   0
@@ -155,159 +155,159 @@ Begin VB.Form FCommunities
          BeginProperty Images {2C247F25-8591-11D1-B16A-00C0F0283628} 
             NumListImages   =   39
             BeginProperty ListImage1 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":06B8
+               Picture         =   "FCommunities.frx":0721
                Key             =   "EditAssembly"
             EndProperty
             BeginProperty ListImage2 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":0F92
+               Picture         =   "FCommunities.frx":0FFB
                Key             =   ""
             EndProperty
             BeginProperty ListImage3 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":186C
+               Picture         =   "FCommunities.frx":18D5
                Key             =   "ExcelImport"
             EndProperty
             BeginProperty ListImage4 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":2146
+               Picture         =   "FCommunities.frx":21AF
                Key             =   "ExcelExport"
             EndProperty
             BeginProperty ListImage5 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":2A20
+               Picture         =   "FCommunities.frx":2A89
                Key             =   "Publish"
             EndProperty
             BeginProperty ListImage6 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":32FA
+               Picture         =   "FCommunities.frx":3363
                Key             =   "Forecast"
             EndProperty
             BeginProperty ListImage7 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":3BD4
+               Picture         =   "FCommunities.frx":3C3D
                Key             =   "ViewPOs"
             EndProperty
             BeginProperty ListImage8 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":44AE
+               Picture         =   "FCommunities.frx":4517
                Key             =   "ViewBudgets"
             EndProperty
             BeginProperty ListImage9 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":4D88
+               Picture         =   "FCommunities.frx":4DF1
                Key             =   "Open"
             EndProperty
             BeginProperty ListImage10 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":5662
+               Picture         =   "FCommunities.frx":56CB
                Key             =   "Preview"
             EndProperty
             BeginProperty ListImage11 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":5F3C
+               Picture         =   "FCommunities.frx":5FA5
                Key             =   "Send"
             EndProperty
             BeginProperty ListImage12 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":6816
+               Picture         =   "FCommunities.frx":687F
                Key             =   "TakeoffOneTime"
             EndProperty
             BeginProperty ListImage13 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":70F0
+               Picture         =   "FCommunities.frx":7159
                Key             =   "Estimate"
             EndProperty
             BeginProperty ListImage14 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":79CA
+               Picture         =   "FCommunities.frx":7A33
                Key             =   "TakeoffAssembly"
             EndProperty
             BeginProperty ListImage15 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":82A4
+               Picture         =   "FCommunities.frx":830D
                Key             =   "NewAssembly"
             EndProperty
             BeginProperty ListImage16 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":8B7E
+               Picture         =   "FCommunities.frx":8BE7
                Key             =   "New"
             EndProperty
             BeginProperty ListImage17 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":9458
+               Picture         =   "FCommunities.frx":94C1
                Key             =   "TakeoffItem"
             EndProperty
             BeginProperty ListImage18 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":9D32
+               Picture         =   "FCommunities.frx":9D9B
                Key             =   "TakeoffCustom"
             EndProperty
             BeginProperty ListImage19 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":A60C
+               Picture         =   "FCommunities.frx":A675
                Key             =   "Save"
             EndProperty
             BeginProperty ListImage20 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":AEE6
+               Picture         =   "FCommunities.frx":AF4F
                Key             =   "SaveAs"
             EndProperty
             BeginProperty ListImage21 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":B7C0
+               Picture         =   "FCommunities.frx":B829
                Key             =   "Delete"
             EndProperty
             BeginProperty ListImage22 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":C09A
+               Picture         =   "FCommunities.frx":C103
                Key             =   "RePrice"
             EndProperty
             BeginProperty ListImage23 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":C974
+               Picture         =   "FCommunities.frx":C9DD
                Key             =   "PricebookSearch"
             EndProperty
             BeginProperty ListImage24 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":D24E
+               Picture         =   "FCommunities.frx":D2B7
                Key             =   "Pricebook"
             EndProperty
             BeginProperty ListImage25 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":DB28
+               Picture         =   "FCommunities.frx":DB91
                Key             =   "PricebookEdit"
             EndProperty
             BeginProperty ListImage26 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":E402
+               Picture         =   "FCommunities.frx":E46B
                Key             =   "PricebookExport"
             EndProperty
             BeginProperty ListImage27 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":ECDC
+               Picture         =   "FCommunities.frx":ED45
                Key             =   "PricebookImport"
             EndProperty
             BeginProperty ListImage28 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":F5B6
+               Picture         =   "FCommunities.frx":F61F
                Key             =   "PricebookNew"
             EndProperty
             BeginProperty ListImage29 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":FE90
+               Picture         =   "FCommunities.frx":FEF9
                Key             =   "View"
             EndProperty
             BeginProperty ListImage30 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":1076A
+               Picture         =   "FCommunities.frx":107D3
                Key             =   "Vendor1"
             EndProperty
             BeginProperty ListImage31 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":11044
+               Picture         =   "FCommunities.frx":110AD
                Key             =   "Vendor"
             EndProperty
             BeginProperty ListImage32 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":1191E
+               Picture         =   "FCommunities.frx":11987
                Key             =   "Add"
             EndProperty
             BeginProperty ListImage33 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":121F8
+               Picture         =   "FCommunities.frx":12261
                Key             =   "Attachments"
             EndProperty
             BeginProperty ListImage34 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":12512
+               Picture         =   "FCommunities.frx":1257B
                Key             =   ""
             EndProperty
             BeginProperty ListImage35 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":12DEC
+               Picture         =   "FCommunities.frx":12E55
                Key             =   ""
             EndProperty
             BeginProperty ListImage36 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":136C6
+               Picture         =   "FCommunities.frx":1372F
                Key             =   "Design Center Options"
             EndProperty
             BeginProperty ListImage37 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":13FA0
+               Picture         =   "FCommunities.frx":14009
                Key             =   "Global Options"
             EndProperty
             BeginProperty ListImage38 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":1487A
+               Picture         =   "FCommunities.frx":148E3
                Key             =   "Models and Options"
             EndProperty
             BeginProperty ListImage39 {2C247F27-8591-11D1-B16A-00C0F0283628} 
-               Picture         =   "FCommunities.frx":15154
+               Picture         =   "FCommunities.frx":151BD
                Key             =   "Generate"
             EndProperty
          EndProperty
@@ -335,19 +335,25 @@ Private Sub Form_Load()
 On Error GoTo eh
     Call SetToolbarIcons(Toolbar, LargeIcons)
     Call IniGetForm(Me)
-'    Call IniGetGrid(Me, gData)
-    
-    
+    Call IniGetGrid(Me, gData)
     
     
     Call LoadCustomDescriptions
     Call LoadData
+    
     If HFApp.Options(Show_CDN_GST) = False Then
         gData.ColHidden(gData.ColIndex("GSTRate")) = True
     End If
     If HFApp.Options(UsePst) = False Then
         gData.ColHidden(gData.ColIndex("PSTRate")) = True
     End If
+    
+    If HFApp.Options(AccountingSystem) <> asD365_ABN Then
+        gData.ColHidden(gData.ColIndex("ABN_D02Function")) = True
+    End If
+    
+    
+    
 Exit Sub
 eh: Call errHandler(SRCFILE & "Form_Load")
 End Sub
@@ -441,9 +447,12 @@ On Error GoTo eh:
                 s = s & "   ,Prefix1=" & DbQuote(Str, .TextMatrix(r, .ColIndex("BalanceSheet"))) & vbCrLf
                 s = s & "   ,Prefix2=" & DbQuote(Str, .TextMatrix(r, .ColIndex("IncomePrefix"))) & vbCrLf
                 
+                s = s & "   ,ABN_D02Function=" & DbQuote(Str, .TextMatrix(r, .ColIndex("ABN_D02Function"))) & vbCrLf
+                
                 s = s & "   ,mortgage_credit=" & DbQuote(Str, .TextMatrix(r, .ColIndex("mortgage_credit"))) & vbCrLf
                 s = s & "   ,BankAccount=" & DbQuote(Str, .TextMatrix(r, .ColIndex("BankAccount"))) & vbCrLf
                 s = s & "   ,TarionBuilderNumber=" & DbQuote(Str, .TextMatrix(r, .ColIndex("TarionBuilderNumber"))) & vbCrLf
+                s = s & "   ,PreconScheduleTemplate=" & DbQuote(Str, .TextMatrix(r, .ColIndex("PreconScheduleTemplate"))) & vbCrLf
                 
                 s = s & "   ,lot_inv_debit=" & DbQuote(Str, .TextMatrix(r, .ColIndex("LotInventoryDebit"))) & vbCrLf
                 s = s & "   ,lot_inv_credit=" & DbQuote(Str, .TextMatrix(r, .ColIndex("LotInventoryCredit"))) & vbCrLf
@@ -519,9 +528,10 @@ Private Sub LoadData()
         
         s = ""
         s = s & "SELECT l.BankAccount,l.Area, l.Description, l.Abr, l.Last_Customer, l.Contract_Document, l.Lot_Inv_Debit, l.Lot_Inv_Credit, l.Project_Manager, l.CustServiceID, l.DC_Sales_Person, l.last_job_no, l.developer, l.Prefix1"
-        s = s & " ,l.Prefix2, l.CompanyName, l.CompanyLogo, l.Address1, l.Address2, l.City, l.Province, l.Zip, l.GSTNumber, l.Phone, l.FAX,l.Email, l.Est_DB_Path, l.WMS_DB_path, l.Sales_SystemID, l.EST_Phase_code, l.seq"
+        s = s & " ,l.Prefix2, l.CompanyName, l.CompanyLogo, l.Address1, l.Address2, l.City, l.Province, l.Zip, l.GSTNumber, l.Phone, l.FAX,l.Email, l.Est_DB_Path, l.WMS_DB_path, l.Sales_SystemID, l.EST_Phase_code, l.seq,l.PreconScheduleTemplate"
         s = s & " ,l.Comments, l.Inactive, l.ProjectCost, l.DepositGL, l.UsesPhases, l.Country, l.County, l.LabourTaxGroup, l.MaterialTaxGroup, l.SubContractTaxGroup, l.EquipmentTaxGroup, l.OverheadTaxGroup, l.TarionBuilderNumber" & vbCrLf
         s = s & " ,l.OtherTaxGroup, l.WarrantyJob, l.GSTRate, l.PSTRate, l.SalesManagerEmail, l.LastPOSeq,l.purchaser ,dc.BuildProEnabled BuildPro,l.WrapInsuranceExempt, l.IntacctEntity, l.IntacctParentJob,l.IntacctDepartment,l.Mortgage_Credit" & vbCrLf
+        s = s & " ,ABN_D02Function" & vbCrLf
         s = s & "FROM tbllocality l " & vbCrLf
         s = s & "left outer join DivisionCommunities dc on dc.Community = l.Area and dc.DivisionID = " & DbQuote(Num, HFApp.DivisionID) & vbCrLf
         Set rs = HFApp.SqlExec(s)
@@ -536,6 +546,8 @@ Private Sub LoadData()
             .TextMatrix(r, .ColIndex("BuildPro")) = "" & rs("BuildPro")
             .TextMatrix(r, .ColIndex("WrapInsuranceExempt")) = "" & rs("WrapInsuranceExempt")
             
+            
+            .TextMatrix(r, .ColIndex("ABN_D02Function")) = "" & rs("ABN_D02Function")
             
             .TextMatrix(r, .ColIndex("Area")) = "" & rs("Area")
             .TextMatrix(r, .ColIndex("Description")) = "" & rs("Description")
@@ -565,6 +577,7 @@ Private Sub LoadData()
             .TextMatrix(r, .ColIndex("CustServiceID")) = "" & rs("CustServiceID")
             .TextMatrix(r, .ColIndex("DC_Sales_Person")) = "" & rs("DC_Sales_Person")
             .TextMatrix(r, .ColIndex("Contract_Document")) = "" & rs("Contract_Document")
+            .TextMatrix(r, .ColIndex("PreconScheduleTemplate")) = "" & rs("PreconScheduleTemplate")
             
             
             .TextMatrix(r, .ColIndex("LabourTaxGroup")) = "" & rs("LabourTaxGroup")
@@ -649,18 +662,23 @@ Private Sub gData_BeforeEdit(ByVal Row As Long, ByVal Col As Long, Cancel As Boo
         .ComboList = ""
         If .Row = 1 Then Exit Sub
         Select Case .ColKey(Col)
-            Case "Area":                .EditMaxLength = 10:  Cancel = .Cell(flexcpData, Row, .ColIndex("Area")) <> ""
-            Case "Description":         .EditMaxLength = 50
-            Case "Comments":            .ComboList = "..."
-            Case "Company":             .ComboList = "..."
-            Case "LotInventoryDebit":   .ComboList = "..."
-            Case "Divisions":           .ComboList = "..."
-            Case "Project_Manager":     .ComboList = "..."
-            Case "Purchaser":           .ComboList = "..."
-            Case "CustServiceID":       .ComboList = "..."
-            Case "DC_Sales_Person":     .ComboList = "..."
-            Case "Contract_Document":   .ComboList = "..."
-            Case "WarrantyJob":         .ComboList = "|...": .EditMaxLength = 12
+            Case "Area":                   .EditMaxLength = 10:  Cancel = .Cell(flexcpData, Row, .ColIndex("Area")) <> ""
+            Case "Description":            .EditMaxLength = 50
+            Case "Comments":               .ComboList = "..."
+            Case "Company":                .ComboList = "..."
+            Case "LotInventoryDebit":      .ComboList = "..."
+            Case "Divisions":              .ComboList = "..."
+            Case "Project_Manager":        .ComboList = "..."
+            Case "Purchaser":              .ComboList = "..."
+            Case "CustServiceID":          .ComboList = "..."
+            Case "DC_Sales_Person":        .ComboList = "..."
+            Case "Contract_Document":      .ComboList = "..."
+            
+            Case "ABN_D02Function":        .ComboList = "..."
+            
+            Case "PreconScheduleTemplate": .ComboList = HFApp.Options.ValueByName("ScheduleTemplates")
+            
+            Case "WarrantyJob":            .ComboList = "|...": .EditMaxLength = 12
         End Select
     End With
 End Sub
@@ -672,10 +690,14 @@ End Sub
 Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
     Dim s As String
     Dim i As Long
+    Dim hidecols As String
     
     With gData
         Select Case .ColKey(Col)
-            Case "WarrantyJob":     s = "select job_no Job,Description,job_no ID from tblJobs where DivisionID = " & HFApp.DivisionID & " and isnull(inactive,0)=0"
+        
+            Case "WarrantyJob":
+                hidecols = "id"
+                s = "select job_no Job,Description,job_no ID from tblJobs where DivisionID = " & HFApp.DivisionID & " and isnull(inactive,0)=0"
             
             Case "Comments":
                 s = .Text
@@ -687,13 +709,17 @@ Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
                 If VBGetOpenFileName(s, , , , , , "Contract Documents (*.dot;*.rpt)|*.dot;*.rpt", , , "Select Contract Document", , Me.hwnd) Then .Text = s
                 s = ""
             
-            Case "Project_Manager":     s = "select pm id,pmname Name from tblprojectmanager where isnull(inactive,0)=0 and isnull(PrjMgr,0)=1"
-            Case "Purchaser":           s = "select pm id,pmname Name from tblprojectmanager where isnull(inactive,0)=0 and isnull(Purchaser,0)=1"
-            Case "CustServiceID":       s = "select custserviceid id ,custservicename Name from tblcustserviceperson"
-            Case "DC_Sales_Person":     s = "select sales_person_id id ,sales_person_name Name from tblsales_persons where isnull(inactive,0)=0 and isnull(dcsales,0)=1"
+            Case "Project_Manager":     s = "select '' ID,'' Name union select pm id,pmname Name from tblprojectmanager where isnull(inactive,0)=0 and isnull(PrjMgr,0)=1"
+            Case "Purchaser":           s = "select '' ID,'' Name union select pm id,pmname Name from tblprojectmanager where isnull(inactive,0)=0 and isnull(Purchaser,0)=1"
+            Case "CustServiceID":       s = "select '' ID,'' Name union select custserviceid id ,custservicename Name from tblcustserviceperson"
+            Case "DC_Sales_Person":     s = "select '' ID,'' Name union select sales_person_id id ,sales_person_name Name from tblsales_persons where isnull(inactive,0)=0 and isnull(dcsales,0)=1"
         
             Case "Company":             Call FCompany.ShowForm(gData)
             Case "LotInventoryDebit":   Call FCommunityAccounting.ShowForm(gData)
+            
+            Case "ABN_D02Function":
+                s = "select Value,Description,value id from D365FinancialDimensionValues where Dimension='D02_Function' order by 1"
+                hidecols = "id"
             
             Case "Divisions":
                 If FPickList.Choose(HFApp.Databases(dbHomefront), "Division", "select divisioncode Code,divisionname Name from divisions", , , , , , False) Then
@@ -705,11 +731,10 @@ Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
                     s = ""
                 End If
                 
-                
         End Select
         
         If s <> "" Then
-            If FPickList.Choose(HFApp.Databases(dbHomefront), .TextMatrix(0, Col), s, .TextMatrix(Row, Col), , False, , "id") Then
+            If FPickList.Choose(HFApp.Databases(dbHomefront), .TextMatrix(0, Col), s, .TextMatrix(Row, Col), , False, , hidecols) Then
                 .TextMatrix(Row, Col) = FPickList.SelectedItem("id")
             End If
         End If

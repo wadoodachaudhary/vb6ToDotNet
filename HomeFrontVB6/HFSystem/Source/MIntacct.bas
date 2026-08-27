@@ -216,8 +216,9 @@ On Error GoTo eh
     Wend
     X.CloseMessage
     Call WriteLogFile("intacct.writecustomers.req.xml", X.xml())
+    
     s = X.PostMessage(False)
-    Call WriteLogFile("intacct.writecustomers.res.xml", s)
+    Call WriteLogFile("intacct.writecustomers.res.xml", X.lastResponse)
         
         
 Exit Sub

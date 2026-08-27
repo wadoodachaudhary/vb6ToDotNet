@@ -4,23 +4,23 @@ Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "MSCOMCTL.OCX"
 Begin VB.Form FJob 
    Caption         =   "Job Setup"
    ClientHeight    =   11070
-   ClientLeft      =   3765
-   ClientTop       =   1605
-   ClientWidth     =   24000
+   ClientLeft      =   6525
+   ClientTop       =   2055
+   ClientWidth     =   20430
    Icon            =   "FJob.frx":0000
    KeyPreview      =   -1  'True
    LinkTopic       =   "Form1"
    ScaleHeight     =   11070
-   ScaleWidth      =   24000
+   ScaleWidth      =   20430
    Begin MSComctlLib.Toolbar Toolbar 
       Align           =   1  'Align Top
       Height          =   600
       Left            =   0
       Negotiate       =   -1  'True
-      TabIndex        =   25
+      TabIndex        =   24
       Top             =   0
-      Width           =   24000
-      _ExtentX        =   42333
+      Width           =   20430
+      _ExtentX        =   36036
       _ExtentY        =   1058
       ButtonWidth     =   2487
       ButtonHeight    =   1005
@@ -600,7 +600,7 @@ Begin VB.Form FJob
    Begin HFSystem.VBCombo cboProvince 
       Height          =   240
       Left            =   3435
-      TabIndex        =   10
+      TabIndex        =   14
       Top             =   4305
       Width           =   750
       _ExtentX        =   1323
@@ -614,19 +614,9 @@ Begin VB.Form FJob
       Left            =   1320
       Locked          =   -1  'True
       MaxLength       =   50
-      TabIndex        =   21
-      Text            =   "0"
+      TabIndex        =   2
       Top             =   1380
       Width           =   2865
-   End
-   Begin VB.TextBox txtHoldback 
-      BorderStyle     =   0  'None
-      Height          =   230
-      Left            =   1320
-      MaxLength       =   10
-      TabIndex        =   7
-      Top             =   3495
-      Width           =   945
    End
    Begin VB.TextBox txtARCustomer 
       BorderStyle     =   0  'None
@@ -634,8 +624,7 @@ Begin VB.Form FJob
       Left            =   1320
       Locked          =   -1  'True
       MaxLength       =   50
-      TabIndex        =   23
-      Text            =   "0"
+      TabIndex        =   4
       Top             =   1875
       Width           =   2640
    End
@@ -646,7 +635,7 @@ Begin VB.Form FJob
       MaxLength       =   8000
       MultiLine       =   -1  'True
       ScrollBars      =   2  'Vertical
-      TabIndex        =   15
+      TabIndex        =   19
       Text            =   "FJob.frx":387E6
       Top             =   1170
       Width           =   6975
@@ -657,7 +646,7 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   3240
       MaxLength       =   10
-      TabIndex        =   5
+      TabIndex        =   10
       Top             =   3000
       Width           =   945
    End
@@ -667,7 +656,7 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   2280
       MaxLength       =   10
-      TabIndex        =   4
+      TabIndex        =   9
       Top             =   3000
       Width           =   945
    End
@@ -677,14 +666,14 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   1320
       MaxLength       =   10
-      TabIndex        =   3
+      TabIndex        =   8
       Top             =   3000
       Width           =   945
    End
    Begin HFSystem.VBCombo cboStatus 
       Height          =   240
       Left            =   1320
-      TabIndex        =   6
+      TabIndex        =   11
       Top             =   3240
       Width           =   1275
       _ExtentX        =   2249
@@ -694,7 +683,7 @@ Begin VB.Form FJob
    Begin VSFlex8Ctl.VSFlexGrid gProperties 
       Height          =   3135
       Left            =   180
-      TabIndex        =   14
+      TabIndex        =   18
       Top             =   5580
       Width           =   4035
       _cx             =   7117
@@ -794,7 +783,7 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   1320
       MaxLength       =   7
-      TabIndex        =   11
+      TabIndex        =   15
       Top             =   4560
       Width           =   1395
    End
@@ -804,7 +793,7 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   1320
       MaxLength       =   25
-      TabIndex        =   13
+      TabIndex        =   17
       Top             =   5040
       Width           =   1755
    End
@@ -814,7 +803,7 @@ Begin VB.Form FJob
       Height          =   230
       Left            =   1320
       MaxLength       =   25
-      TabIndex        =   12
+      TabIndex        =   16
       Top             =   4800
       Width           =   1755
    End
@@ -824,7 +813,7 @@ Begin VB.Form FJob
       Height          =   240
       Left            =   1320
       MaxLength       =   30
-      TabIndex        =   9
+      TabIndex        =   13
       Top             =   4305
       Width           =   2100
    End
@@ -832,10 +821,10 @@ Begin VB.Form FJob
       BorderStyle     =   0  'None
       Enabled         =   0   'False
       Height          =   420
-      Left            =   1320
+      Left            =   1335
       MaxLength       =   75
       MultiLine       =   -1  'True
-      TabIndex        =   8
+      TabIndex        =   12
       Top             =   3870
       Width           =   2865
    End
@@ -843,47 +832,43 @@ Begin VB.Form FJob
       BorderStyle     =   0  'None
       Enabled         =   0   'False
       Height          =   230
-      Left            =   1320
+      Left            =   1335
       MaxLength       =   50
-      TabIndex        =   20
-      Text            =   "0"
+      TabIndex        =   1
       Top             =   1140
       Width           =   2865
    End
    Begin HFSystem.VBCombo cboCommunity 
       Height          =   240
       Left            =   1320
-      TabIndex        =   0
+      TabIndex        =   5
       Top             =   2235
       Width           =   2865
       _ExtentX        =   5054
       _ExtentY        =   423
-      Text            =   "Combo1"
    End
    Begin HFSystem.VBCombo cboModel 
       Height          =   240
       Left            =   1320
-      TabIndex        =   2
+      TabIndex        =   7
       Top             =   2745
       Width           =   2865
       _ExtentX        =   5054
       _ExtentY        =   423
-      Text            =   "Combo1"
    End
    Begin HFSystem.VBCombo cboGLPrefix 
       Height          =   240
       Left            =   1320
-      TabIndex        =   24
+      TabIndex        =   3
       Top             =   1620
       Width           =   2865
       _ExtentX        =   5054
       _ExtentY        =   423
-      Text            =   "Combo1"
    End
    Begin VSFlex8Ctl.VSFlexGrid gPOs 
       Height          =   2985
       Left            =   4320
-      TabIndex        =   18
+      TabIndex        =   22
       Top             =   7530
       Width           =   16995
       _cx             =   1986360601
@@ -980,17 +965,16 @@ Begin VB.Form FJob
    Begin HFSystem.VBCombo cboPhase 
       Height          =   240
       Left            =   1320
-      TabIndex        =   1
+      TabIndex        =   6
       Top             =   2490
       Width           =   885
       _ExtentX        =   1561
       _ExtentY        =   423
-      Text            =   "Combo1"
    End
    Begin VSFlex8Ctl.VSFlexGrid gJobContacts 
       Height          =   2625
       Left            =   4350
-      TabIndex        =   17
+      TabIndex        =   21
       Top             =   4560
       Width           =   11295
       _cx             =   1986350547
@@ -1087,7 +1071,7 @@ Begin VB.Form FJob
    Begin VSFlex8Ctl.VSFlexGrid gContacts 
       Height          =   1515
       Left            =   4350
-      TabIndex        =   16
+      TabIndex        =   20
       Top             =   2670
       Width           =   6975
       _cx             =   1986342927
@@ -1185,8 +1169,7 @@ Begin VB.Form FJob
       BorderStyle     =   0  'None
       Height          =   230
       Left            =   1320
-      TabIndex        =   19
-      Text            =   "0"
+      TabIndex        =   0
       Top             =   900
       Width           =   2640
    End
@@ -1196,7 +1179,7 @@ Begin VB.Form FJob
       Height          =   240
       Left            =   1320
       MaxLength       =   10
-      TabIndex        =   22
+      TabIndex        =   23
       Text            =   "0"
       Top             =   1620
       Width           =   2865
@@ -1207,19 +1190,8 @@ Begin VB.Form FJob
       Caption         =   "ExternalID"
       Height          =   195
       Left            =   465
-      TabIndex        =   46
+      TabIndex        =   44
       Top             =   1410
-      Width           =   735
-   End
-   Begin VB.Label Label15 
-      Alignment       =   1  'Right Justify
-      AutoSize        =   -1  'True
-      Caption         =   "Retainage"
-      Height          =   195
-      Index           =   1
-      Left            =   480
-      TabIndex        =   45
-      Top             =   3540
       Width           =   735
    End
    Begin VB.Label lblLink 
@@ -1240,7 +1212,7 @@ Begin VB.Form FJob
       Height          =   195
       Index           =   0
       Left            =   300
-      TabIndex        =   44
+      TabIndex        =   43
       Top             =   1890
       Width           =   930
    End
@@ -1267,7 +1239,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   4320
-      TabIndex        =   43
+      TabIndex        =   42
       Top             =   2430
       Width           =   855
    End
@@ -1286,7 +1258,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   4350
-      TabIndex        =   42
+      TabIndex        =   41
       Top             =   4260
       Width           =   765
    End
@@ -1313,7 +1285,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   4320
-      TabIndex        =   41
+      TabIndex        =   40
       Top             =   930
       Width           =   510
    End
@@ -1323,7 +1295,7 @@ Begin VB.Form FJob
       Caption         =   "Phase"
       Height          =   195
       Left            =   765
-      TabIndex        =   40
+      TabIndex        =   39
       Top             =   2505
       Width           =   450
    End
@@ -1342,7 +1314,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   4350
-      TabIndex        =   39
+      TabIndex        =   38
       Top             =   7260
       Width           =   1425
    End
@@ -1352,7 +1324,7 @@ Begin VB.Form FJob
       Caption         =   "Model"
       Height          =   195
       Left            =   765
-      TabIndex        =   38
+      TabIndex        =   37
       Top             =   2790
       Width           =   435
    End
@@ -1363,7 +1335,7 @@ Begin VB.Form FJob
       Height          =   195
       Index           =   0
       Left            =   105
-      TabIndex        =   37
+      TabIndex        =   36
       Top             =   3030
       Width           =   1095
    End
@@ -1373,7 +1345,7 @@ Begin VB.Form FJob
       Caption         =   "Community"
       Height          =   195
       Left            =   450
-      TabIndex        =   36
+      TabIndex        =   35
       Top             =   2280
       Width           =   765
    End
@@ -1383,7 +1355,7 @@ Begin VB.Form FJob
       Caption         =   "Status"
       Height          =   195
       Left            =   765
-      TabIndex        =   35
+      TabIndex        =   34
       Top             =   3270
       Width           =   450
    End
@@ -1393,7 +1365,7 @@ Begin VB.Form FJob
       Caption         =   "GL Prefix"
       Height          =   195
       Left            =   555
-      TabIndex        =   33
+      TabIndex        =   32
       Top             =   1650
       Width           =   645
    End
@@ -1403,7 +1375,7 @@ Begin VB.Form FJob
       Caption         =   "Postal"
       Height          =   195
       Left            =   765
-      TabIndex        =   32
+      TabIndex        =   31
       Top             =   4545
       Width           =   435
    End
@@ -1423,7 +1395,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   510
-      TabIndex        =   31
+      TabIndex        =   30
       Top             =   3870
       Width           =   690
    End
@@ -1433,7 +1405,7 @@ Begin VB.Form FJob
       Caption         =   "Fax"
       Height          =   195
       Left            =   945
-      TabIndex        =   30
+      TabIndex        =   29
       Top             =   5025
       Width           =   255
    End
@@ -1443,7 +1415,7 @@ Begin VB.Form FJob
       Caption         =   "Phone"
       Height          =   195
       Left            =   735
-      TabIndex        =   29
+      TabIndex        =   28
       Top             =   4785
       Width           =   465
    End
@@ -1453,7 +1425,7 @@ Begin VB.Form FJob
       Caption         =   "City/Prov"
       Height          =   195
       Left            =   540
-      TabIndex        =   28
+      TabIndex        =   27
       Top             =   4320
       Width           =   660
    End
@@ -1474,7 +1446,7 @@ Begin VB.Form FJob
       Height          =   195
       Index           =   0
       Left            =   180
-      TabIndex        =   27
+      TabIndex        =   26
       Top             =   930
       Width           =   1020
    End
@@ -1493,7 +1465,7 @@ Begin VB.Form FJob
       ForeColor       =   &H8000000D&
       Height          =   195
       Left            =   180
-      TabIndex        =   26
+      TabIndex        =   25
       Top             =   5310
       Width           =   870
    End
@@ -1503,7 +1475,7 @@ Begin VB.Form FJob
       Caption         =   "Description"
       Height          =   195
       Left            =   405
-      TabIndex        =   34
+      TabIndex        =   33
       Top             =   1170
       Width           =   795
    End
@@ -1528,7 +1500,9 @@ Private mIsMultifamily As Boolean
 Private mprop_PermitNumber As Integer
 Private mprop_PermitDate As Integer
 Private mprop_ShellTemplate As Integer
+Private mprop_PreconTemplate As Integer
 Private mprop_UnitTemplate As Integer
+Private mprop_PreconStart As Integer
 Private mprop_ConstStart As Integer
 Private mprop_IntacctDepartment As Integer
 Private mprop_TarionBuilderNumber  As Integer
@@ -1541,8 +1515,6 @@ Private mprop_OvrTax As Integer
 Private mprop_OthTax As Integer
 Private mprop_ARTax As Integer
 Private mprop_UserFlds As Integer
-
-
 
 
 
@@ -1991,6 +1963,10 @@ End Sub
 
 
 
+Private Sub gProperties_ComboCloseUp(ByVal Row As Long, ByVal Col As Long, FinishEdit As Boolean)
+    FinishEdit = True
+End Sub
+
 Private Sub lblLink_Click(Index As Integer)
     If Not lblLink(Index).Enabled Then Exit Sub
     Select Case Index
@@ -2178,7 +2154,6 @@ On Error GoTo eh
             s = s & "   ,Block=" & DbQuote(Str, txtBlock.Text) & vbCrLf
             s = s & "   ,LotPlan=" & DbQuote(Str, txtLotPlan.Text) & vbCrLf
             s = s & "   ,Model=" & DbQuote(Str, model) & vbCrLf
-            s = s & "   ,HoldbackRate=" & DbQuote(Num, txtHoldback) & vbCrLf
             
             'properties
             If HFApp.Options.ValueByName("EnableTarionFields") = "true" Then
@@ -2187,9 +2162,16 @@ On Error GoTo eh
             End If
             s = s & "   ,PermitNumber=" & DbQuote(Str, .TextMatrix(mprop_PermitNumber, .ColIndex("value"))) & vbCrLf
             s = s & "   ,PermitReceivedDate=" & DbQuote(Date, .TextMatrix(mprop_PermitDate, .ColIndex("value"))) & vbCrLf
+            
             If mIsMultifamily Then
                 s = s & "   ,ShellScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_ShellTemplate, .ColIndex("value"))) & vbCrLf
             End If
+            
+            If HFApp.Options.ValueByName("EnablePreconJobs") = "true" Then
+                s = s & "   ,preconScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_PreconTemplate, .ColIndex("value"))) & vbCrLf
+                s = s & "   ,PreconStartDate=" & DbQuote(Date, .TextMatrix(mprop_PreconStart, .ColIndex("value"))) & vbCrLf
+            End If
+            
             s = s & "   ,ScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_UnitTemplate, .ColIndex("value"))) & vbCrLf
             s = s & "   ,Start_Date=" & DbQuote(Date, .TextMatrix(mprop_ConstStart, .ColIndex("value"))) & vbCrLf
             If HFApp.Options(AccountingSystem) = asIntacct Then
@@ -2252,7 +2234,6 @@ On Error GoTo eh
             s = s & "   ,Block=" & DbQuote(Str, txtBlock.Text) & vbCrLf
             s = s & "   ,LotPlan=" & DbQuote(Str, txtLotPlan.Text) & vbCrLf
             s = s & "   ,Model=" & DbQuote(Str, model) & vbCrLf
-            s = s & "   ,HoldbackRate=" & DbQuote(Num, txtHoldback) & vbCrLf
             
             'properties
             If HFApp.Options.ValueByName("EnableTarionFields") = "true" Then
@@ -2264,6 +2245,12 @@ On Error GoTo eh
             If mIsMultifamily Then
                 s = s & "   ,ShellScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_ShellTemplate, .ColIndex("value"))) & vbCrLf
             End If
+            
+            If HFApp.Options.ValueByName("EnablePreconJobs") = "true" Then
+                s = s & "   ,preconScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_PreconTemplate, .ColIndex("value"))) & vbCrLf
+                s = s & "   ,PreconStartDate=" & DbQuote(Date, .TextMatrix(mprop_PreconStart, .ColIndex("value"))) & vbCrLf
+            End If
+            
             s = s & "   ,ScheduleTemplate=" & DbQuote(Str, .TextMatrix(mprop_UnitTemplate, .ColIndex("value"))) & vbCrLf
             s = s & "   ,Start_Date=" & DbQuote(Date, .TextMatrix(mprop_ConstStart, .ColIndex("value"))) & vbCrLf
             If HFApp.Options(AccountingSystem) = asIntacct Then
@@ -2494,7 +2481,6 @@ On Error GoTo eh
         txtLot.Text = ""
         txtBlock.Text = ""
         txtLotPlan.Text = ""
-        txtHoldback.Text = ""
         cboStatus.ListIndex = 0
         cboCommunity.ListIndex = -1
     Else
@@ -2528,8 +2514,6 @@ On Error GoTo eh
         txtLot.Text = "" & rs("Lot")
         txtBlock.Text = "" & rs("Block")
         txtLotPlan.Text = "" & rs("LotPlan")
-        txtHoldback.Text = "" & rs("HoldbackRate")
-        If Val(txtHoldback.Text) = 0 Then txtHoldback = ""
         
         cboStatus.ListIndex = IIf("" & rs("inactive") = "true", 1, 0)
         Call SetComboBoxListIndex(cboCommunity, "", "" & rs("Community"))
@@ -2609,17 +2593,6 @@ Private Sub txtGLPrefix_GotFocus()
     SelectAll txtGLPrefix
 End Sub
 
-Private Sub txtHoldback_Change()
-    Dirty = True
-End Sub
-
-Private Sub txtHoldback_GotFocus()
-    SelectAll txtHoldback
-End Sub
-
-Private Sub txtHoldback_Validate(Cancel As Boolean)
-    txtHoldback = Val(txtHoldback)
-End Sub
 
 Private Sub txtJob_Change()
     Dirty = True
@@ -2824,6 +2797,8 @@ On Error Resume Next
     s = s & " ,j.scheduletemplate" & vbCrLf
     s = s & " ,j.permitnumber" & vbCrLf
     s = s & " ,j.permitreceiveddate" & vbCrLf
+    s = s & " ,j.preconStartDate" & vbCrLf
+    s = s & " ,j.preconScheduleTemplate" & vbCrLf
     s = s & " ,j.start_date" & vbCrLf
     s = s & " ,j.LabourTaxGroup" & vbCrLf
     s = s & " ,j.MaterialTaxGroup" & vbCrLf
@@ -2878,13 +2853,39 @@ On Error Resume Next
         .IsSubtotal(r) = True
         mprop_PermitDate = r
         .TextMatrix(r, .ColIndex("name")) = "Permit Received Date"
-        .TextMatrix(r, .ColIndex("value")) = "" & rs("PermitReceivedDate")
+        .TextMatrix(r, .ColIndex("value")) = Format("" & rs("PermitReceivedDate"), "medium date")
         .TextMatrix(r, .ColIndex("category")) = Category
         .TextMatrix(r, .ColIndex("DataType")) = DateTime
         .RowOutlineLevel(r) = 1
         .IsSubtotal(r) = True
         
         
+If HFApp.Options.ValueByName("EnablePreconJobs") = "true" Then
+        r = r + 1
+        .AddItem ""
+        .RowOutlineLevel(r) = 1
+        .IsSubtotal(r) = True
+        mprop_PreconTemplate = r
+        .TextMatrix(r, .ColIndex("name")) = "Precon Template"
+        .TextMatrix(r, .ColIndex("value")) = "" & rs("PreconScheduleTemplate")
+        .TextMatrix(r, .ColIndex("category")) = Category
+        .TextMatrix(r, .ColIndex("DataType")) = Str
+        .TextMatrix(r, .ColIndex("PickList")) = ScheduleTemplates
+        .RowOutlineLevel(r) = 1
+        .IsSubtotal(r) = True
+        
+        r = r + 1
+        .AddItem ""
+        .RowOutlineLevel(r) = 1
+        .IsSubtotal(r) = True
+        mprop_PreconStart = r
+        .TextMatrix(r, .ColIndex("name")) = "Precon Start Date"
+        .TextMatrix(r, .ColIndex("value")) = Format("" & rs("PreconStartDate"), "medium date")
+        .TextMatrix(r, .ColIndex("category")) = Category
+        .TextMatrix(r, .ColIndex("DataType")) = DateTime
+        .RowOutlineLevel(r) = 1
+        .IsSubtotal(r) = True
+End If
         
 If mIsMultifamily Then
         r = r + 1
@@ -2892,7 +2893,7 @@ If mIsMultifamily Then
         .RowOutlineLevel(r) = 1
         .IsSubtotal(r) = True
         mprop_ShellTemplate = r
-        .TextMatrix(r, .ColIndex("name")) = "Shell Schedule Template"
+        .TextMatrix(r, .ColIndex("name")) = "Shell Template"
         .TextMatrix(r, .ColIndex("value")) = "" & rs("ShellScheduleTemplate")
         .TextMatrix(r, .ColIndex("category")) = Category
         .TextMatrix(r, .ColIndex("DataType")) = Str
@@ -2906,7 +2907,7 @@ If mIsMultifamily Then
         .RowOutlineLevel(r) = 1
         .IsSubtotal(r) = True
         mprop_UnitTemplate = r
-        .TextMatrix(r, .ColIndex("name")) = "Unit Schedule Template"
+        .TextMatrix(r, .ColIndex("name")) = "Unit Template"
         .TextMatrix(r, .ColIndex("value")) = "" & rs("ScheduleTemplate")
         .TextMatrix(r, .ColIndex("category")) = Category
         .TextMatrix(r, .ColIndex("DataType")) = Str
@@ -2920,7 +2921,7 @@ Else
         .RowOutlineLevel(r) = 1
         .IsSubtotal(r) = True
         mprop_UnitTemplate = r
-        .TextMatrix(r, .ColIndex("name")) = "Schedule Template"
+        .TextMatrix(r, .ColIndex("name")) = "Const Template"
         .TextMatrix(r, .ColIndex("value")) = "" & rs("ScheduleTemplate")
         .TextMatrix(r, .ColIndex("category")) = Category
         .TextMatrix(r, .ColIndex("DataType")) = Str
@@ -2929,13 +2930,14 @@ Else
         .IsSubtotal(r) = True
         
 End If
+        
         r = r + 1
         .AddItem ""
         .RowOutlineLevel(r) = 1
         .IsSubtotal(r) = True
         mprop_ConstStart = r
-        .TextMatrix(r, .ColIndex("name")) = "Construction Start Date"
-        .TextMatrix(r, .ColIndex("value")) = "" & rs("Start_Date")
+        .TextMatrix(r, .ColIndex("name")) = "Const Start Date"
+        .TextMatrix(r, .ColIndex("value")) = Format("" & rs("Start_Date"), "medium date")
         .TextMatrix(r, .ColIndex("category")) = Category
         .TextMatrix(r, .ColIndex("DataType")) = DateTime
         .RowOutlineLevel(r) = 1
@@ -3392,7 +3394,7 @@ On Error GoTo eh
             Case Bit:
             Case DateTime:
                 If IsDate(.EditText) Or .EditText = "" Then
-                    .EditText = Format(.EditText, HFApp.Options(DateFormat))
+                    .EditText = Format(.EditText, "medium date")
                 Else
                     Cancel = True
                 End If

@@ -54,6 +54,7 @@ Public Enum AccountingSystems
     asSpectrum = 8
     asIntacct = 9
     asQuickbooksOnline = 10
+    asD365_ABN = 11
 End Enum
 Private SimplyOdbcUtilities As SimplyWrapper.ODBCUtilities
 
@@ -1114,17 +1115,6 @@ Public Sub RunTask(TaskName As String)
     
     Select Case task
         
-        Case "SendBuildProJobs":                Call SendBuildProJobs(p1)
-        Case "CancelBuildProPO":                Call CancelBuildProPO(p1, p2)
-        Case "SendBuildProPOs":                 Call SendBuildProPOs(p1, p2)
-        Case "SendBuildProPOIndexes":           Call SendBuildProPOIndexes
-        Case "SendBuildProVendors":             Call SendBuildProVendors
-        Case "SendBuildProCommunities":         Call SendBuildProCommunities
-        
-        Case "SendBuildProRemittances":         Call SendBuildProVouchers: Call SendBuildProChecks
-        Case "SendBuildProChecks":              Call SendBuildProChecks
-        Case "SendBuildProVouchers":            Call SendBuildProVouchers
-
         Case "EditAttachments":                 Call FAttachments.ShowForm("Attachments", p1, p2, p3, p4, p5, p6, p7, p8)
         Case "AddAttachment":                   Call FAttachments.AddFile(p1, p2, p3 = "True", p4)
         Case "EditItemAttachments":             Call FAttachments.ShowForm(p1, p2, p3, p4, p5, p6, p7, p8, p9)
@@ -1169,16 +1159,21 @@ End Sub
 Private Sub EditJCCostCodes()
     Dim s As String
             
-    s = "select DivisionID,GroupDescription,CostCode, Description, DebitAccount from standardcostcodes where DivisionID = " & HFApp.DivisionID
-    Select Case HFApp.Options(AccountingSystem)
-    
-        Case asTimberline, asIntacct, asQuickBooks, asQuickbooksOnline
-            Call FDBGrid.ShowForm("Cost Codes", s, "standardcostcodes", "divisionid,costcode", True, "DivisionID,GroupDescription")
-        
-        Case Else
-            Call FDBGrid.ShowForm("Cost Codes", s, "standardcostcodes", "divisionid,costcode", False, "DivisionID")
-            
-    End Select
+    s = "select DivisionID,GroupDescription,CostCode, Description, DebitAccount,ABN_D04SpendCategory D04_SpendCategory,ABN_ProjectCategory ProjectCategory,ABN_ItemCode ItemCode from standardcostcodes where DivisionID = " & HFApp.DivisionID
+'    Select Case HFApp.Options(AccountingSystem)
+'        Case asTimberline, asIntacct, asQuickBooks, asQuickBooksOnline
+'            Call FDBGrid.ShowForm("Cost Codes", s, "standardcostcodes", "divisionid,costcode", True, "DivisionID,GroupDescription")
+'        Case Else
+            Call FDBGrid.ShowForm("Cost Codes", _
+                                  s, _
+                                  "standardcostcodes", _
+                                  "divisionid,costcode", _
+                                  False, _
+                                  "DivisionID" & IIf(HFApp.Options(AccountingSystem) = asD365_ABN, ",DebitAccount,GroupDescription", ",D04_SpendCategory,ProjectCategory,ItemCode"), _
+                                  "", _
+                                  True, _
+                                  True)
+'    End Select
 
 End Sub
 

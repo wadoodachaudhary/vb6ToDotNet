@@ -457,7 +457,7 @@ On Error Resume Next
         If section <> "" Then
             pwd = IniGet(file, section, "pwd")
             If pwd <> "" Then
-                Call IniPut(file, section, "pwe", HFApp.Encrypt(pwd))
+                Call IniPut(file, section, "pwe", Base64Encode(StrConv(HFApp.Encrypt(pwd), vbFromUnicode)))
                 Call IniRemove(file, section, "pwd")
             End If
         End If
@@ -471,8 +471,8 @@ On Error Resume Next
         If section <> "" Then
             pwd = IniGet(file, section, "pwd")
             If pwd <> "" Then
-                Call IniPut(file, section, "pwe", HFApp.Encrypt(pwd))
-                Call IniRemove(file, section, "pwd")
+                Call IniPut(file, section, "pwe", Base64Encode(StrConv(HFApp.Encrypt(pwd), vbFromUnicode)))
+'                Call IniRemove(file, section, "pwd")
             End If
         End If
     Next
@@ -515,18 +515,20 @@ Private Sub LoadConnections()
             .Clear
             sections = IniGetSectionNames(sIniFile)
             For i = 1 To Parse(sections)
-            
                 CompanyName = Parse(sections, i)
-                Dsn = IniGet(sIniFile, CompanyName, "dsn")
-                uid = IniGet(sIniFile, CompanyName, "uid")
-                pwe = IniGet(sIniFile, CompanyName, "pwe")
-                pwd = IniGet(sIniFile, CompanyName, "pwd")
-                If pwe <> "" Then pwd = hff.MyDeCrypt(pwe, "Fazlul")
-
-                .AddItem CompanyName
-                ReDim Preserve mConnections(UBound(mConnections) + 1)
-                mConnections(UBound(mConnections)) = "dsn=" & Dsn & ";uid=" & uid & ";pwd=" & pwd & ";Persist Security Info=True"
-            
+                If CompanyName <> "Options" Then
+                    Dsn = IniGet(sIniFile, CompanyName, "dsn")
+                    uid = IniGet(sIniFile, CompanyName, "uid")
+                    pwe = IniGet(sIniFile, CompanyName, "pwe")
+                    pwd = IniGet(sIniFile, CompanyName, "pwd")
+                    If pwe <> "" Then
+                        pwd = hff.MyDeCrypt(Base64Decode(pwe), "Fazlul")
+                    End If
+    
+                    .AddItem CompanyName
+                    ReDim Preserve mConnections(UBound(mConnections) + 1)
+                    mConnections(UBound(mConnections)) = "dsn=" & Dsn & ";uid=" & uid & ";pwd=" & pwd & ";Persist Security Info=True"
+                End If
             Next
             .Visible = True
         End With
@@ -1068,6 +1070,7 @@ On Error GoTo eh
 Exit Sub
 eh:
     MsgBox Err.Description, vbCritical, "Error at DoLogin()"
+    Stop: Resume
     Unload Me
 End Sub
 
@@ -1101,6 +1104,8 @@ Dim i As Long
     s = s & ",'' [Divisions!2!AccountingSystem!element]" & vbCrLf
     s = s & ",'' [Divisions!2!EstimatingSystem!element]" & vbCrLf
     s = s & ",'' [Divisions!2!TakeoffSystem!element]" & vbCrLf
+    s = s & ",'' [Divisions!2!HFSURLSegment!element]" & vbCrLf
+    s = s & ",'' [Divisions!2!HFSEnvironment!element]" & vbCrLf
     s = s & ",'' [Stats!3!Year!element]" & vbCrLf
     s = s & ",'' [Stats!3!Month!element]" & vbCrLf
     s = s & ",'' [Stats!3!JobCreates!element]" & vbCrLf
@@ -1133,10 +1138,12 @@ Dim i As Long
     s = s & ",d.DivisionName  [Divisions!2!Name!element]" & vbCrLf
     s = s & ",bpc.OptionValue [Divisions!2!BuildProCompanyCode!element]" & vbCrLf
     s = s & ",bpe.OptionValue [Divisions!2!BuildProEnvironment!element]" & vbCrLf
-    s = s & ",cast(ds.DataSourceID as varchar(40)) [Divisions!2!WalletPartyID!element]" & vbCrLf
+    s = s & ",case when isnull(ds.walletbankaccount,'')='' then '' else cast(ds.DataSourceID as varchar(40)) end [Divisions!2!WalletPartyID!element]" & vbCrLf
     s = s & ",case oas.OptionValue when 1 then 'Sage 300 CRE' when 2 then 'Sage 100' when 3 then 'QuickBooks' when 4 then 'Sage 50' when 5 then 'MYOB' when 6 then 'Peachtree' when 7 then 'Xero' when 8 then 'Spectrum' when 9 then 'Intacct' when 10 then 'QBO' else 'none' end [Divisions!2!AccountingSystem!element]" & vbCrLf
     s = s & ",case oes.OptionValue when 1 then 'Pipeline' when 2 then 'Sage 300' else 'none' end [Divisions!2!EstimatingSystem!element]" & vbCrLf
     s = s & ",ots.OptionValue [Divisions!2!TakeoffSystem!element]" & vbCrLf
+    s = s & ",ssi.OptionValue [Divisions!2!HFSURLSegment!element]" & vbCrLf
+    s = s & ",sse.OptionValue [Divisions!2!HFSEnvironment!element]" & vbCrLf
     s = s & ",'' [Stats!3!Year!element]" & vbCrLf
     s = s & ",'' [Stats!3!Month!element]" & vbCrLf
     s = s & ",'' [Stats!3!JobCreates!element]" & vbCrLf
@@ -1164,6 +1171,8 @@ Dim i As Long
     s = s & "left outer join appoptions bpe on d.divisionid=bpe.divisionid and bpe.optionname='BuildProEnvironment'" & vbCrLf
     s = s & "left outer join appoptions oes on d.divisionid=oes.divisionid and oes.optionname='EstimatingSystem'" & vbCrLf
     s = s & "left outer join appoptions ots on d.divisionid=ots.divisionid and ots.optionname='TakeoffSystem'" & vbCrLf
+    s = s & "left outer join appoptions ssi on d.divisionid=ssi.divisionid and ssi.optionname='CRMClientID'" & vbCrLf
+    s = s & "left outer join appoptions sse on d.divisionid=sse.divisionid and sse.optionname='CRMEnvironment'" & vbCrLf
     s = s & "Union all" & vbCrLf
     s = s & "select --- STATISTICS ---" & vbCrLf
     s = s & " 3 Tag" & vbCrLf
@@ -1181,6 +1190,8 @@ Dim i As Long
     s = s & ",'' [Divisions!2!AccountingSystem!element]" & vbCrLf
     s = s & ",'' [Divisions!2!EstimatingSystem!element]" & vbCrLf
     s = s & ",'' [Divisions!2!TakeoffSystem!element]" & vbCrLf
+    s = s & ",'' [Divisions!2!HFSURLSegment!element]" & vbCrLf
+    s = s & ",'' [Divisions!2!HFSEnvironment!element]" & vbCrLf
     s = s & ",Year  [Stats!3!Year!element]" & vbCrLf
     s = s & ",Month [Stats!3!Month!element]" & vbCrLf
     s = s & ",sum(CreateCount)    [Stats!3!JobCreates!element]" & vbCrLf
@@ -1287,57 +1298,61 @@ Dim i As Long
     s = s & "   group by d.divisioncode,year(x.ticketdate),datename(month,x.ticketdate)" & vbCrLf
     s = s & ") tt" & vbCrLf
     s = s & "group by divisioncode,Year,Month" & vbCrLf
-    s = s & "union all" & vbCrLf
-
-    s = s & "select --- RECENT VENDORS ---" & vbCrLf
-    s = s & " 4 Tag" & vbCrLf
-    s = s & ",null Parent" & vbCrLf
-    s = s & ",'' [Client!1!ID!element]" & vbCrLf
-    s = s & ",'' [Client!1!Name!element]" & vbCrLf
-    s = s & ",'' [Client!1!AppVersion!element]" & vbCrLf
-    s = s & ",'' [Client!1!License!element]" & vbCrLf
-    s = s & ",'' [Client!1!Database!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!Code!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!Name!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!BuildProCompanyCode!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!BuildProEnvironment!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!WalletPartyID!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!AccountingSystem!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!EstimatingSystem!element]" & vbCrLf
-    s = s & ",'' [Divisions!2!TakeoffSystem!element]" & vbCrLf
-    s = s & ",'' [Stats!3!Year!element]" & vbCrLf
-    s = s & ",'' [Stats!3!Month!element]" & vbCrLf
-    s = s & ",'' [Stats!3!JobCreates!element]" & vbCrLf
-    s = s & ",'' [Stats!3!JobStarts!element]" & vbCrLf
-    s = s & ",'' [Stats!3!POsIssued!element]" & vbCrLf
-    s = s & ",'' [Stats!3!SchedulesCreated!element]" & vbCrLf
-    s = s & ",'' [Stats!3!WarrantyWorkordersCreated!element]" & vbCrLf
-    s = s & ",'' [Stats!3!WorkticketsCreated!element]" & vbCrLf
-    s = s & ",isnull(v.Vendor_name,'') [Suppliers!4!Name!element]" & vbCrLf
-    s = s & ",isnull(v.addr1,'')       [Suppliers!4!Address1!element]" & vbCrLf
-    s = s & ",isnull(v.addr2,'')       [Suppliers!4!Address2!element]" & vbCrLf
-    s = s & ",isnull(v.city,'')        [Suppliers!4!City!element]" & vbCrLf
-    s = s & ",isnull(v.state,'')       [Suppliers!4!State!element]" & vbCrLf
-    s = s & ",isnull(v.zip,'')         [Suppliers!4!PostalCode!element]" & vbCrLf
-    s = s & ",isnull(v.Phone,'')       [Suppliers!4!Phone!element]" & vbCrLf
-    s = s & ",isnull(v.email,'')       [Suppliers!4!GeneralEmail!element]" & vbCrLf
-    s = s & ",isnull(v.PurchEmail,'')  [Suppliers!4!PurchEmail!element]" & vbCrLf
-    s = s & ",isnull(v.SchedEmail,'')  [Suppliers!4!SchedEmail!element]" & vbCrLf
-    s = s & ",sum(i.pretax+i.tax)      [Suppliers!4!InvoiceAmt365!element]" & vbCrLf
-    s = s & "from tblvendors v" & vbCrLf
-    s = s & "join invoices i on v.divisionid=i.divisionid and v.vendor_id=i.vendor" & vbCrLf
-    s = s & "where i.invoicedate > getdate()-365  " & vbCrLf
-    s = s & "group by " & vbCrLf
-    s = s & " isnull(v.Vendor_name,'') " & vbCrLf
-    s = s & ",isnull(v.addr1,'')      " & vbCrLf
-    s = s & ",isnull(v.addr2,'')      " & vbCrLf
-    s = s & ",isnull(v.city,'')       " & vbCrLf
-    s = s & ",isnull(v.state,'')      " & vbCrLf
-    s = s & ",isnull(v.zip,'')        " & vbCrLf
-    s = s & ",isnull(v.Phone,'')      " & vbCrLf
-    s = s & ",isnull(v.email,'')      " & vbCrLf
-    s = s & ",isnull(v.PurchEmail,'') " & vbCrLf
-    s = s & ",isnull(v.SchedEmail,'')" & vbCrLf
+    
+'this breaks the upload if vendor descriptions or addresses contain bad data which they do.
+'we dont use it anyway so dont send it.
+'    s = s & "union all" & vbCrLf
+'    s = s & "select --- RECENT VENDORS ---" & vbCrLf
+'    s = s & " 4 Tag" & vbCrLf
+'    s = s & ",null Parent" & vbCrLf
+'    s = s & ",'' [Client!1!ID!element]" & vbCrLf
+'    s = s & ",'' [Client!1!Name!element]" & vbCrLf
+'    s = s & ",'' [Client!1!AppVersion!element]" & vbCrLf
+'    s = s & ",'' [Client!1!License!element]" & vbCrLf
+'    s = s & ",'' [Client!1!Database!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!Code!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!Name!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!BuildProCompanyCode!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!BuildProEnvironment!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!WalletPartyID!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!AccountingSystem!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!EstimatingSystem!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!TakeoffSystem!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!HFSURLSegment!element]" & vbCrLf
+'    s = s & ",'' [Divisions!2!HFSEnvironment!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!Year!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!Month!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!JobCreates!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!JobStarts!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!POsIssued!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!SchedulesCreated!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!WarrantyWorkordersCreated!element]" & vbCrLf
+'    s = s & ",'' [Stats!3!WorkticketsCreated!element]" & vbCrLf
+'    s = s & ",isnull(v.Vendor_name,'') [Suppliers!4!Name!element]" & vbCrLf
+'    s = s & ",isnull(v.addr1,'')       [Suppliers!4!Address1!element]" & vbCrLf
+'    s = s & ",isnull(v.addr2,'')       [Suppliers!4!Address2!element]" & vbCrLf
+'    s = s & ",isnull(v.city,'')        [Suppliers!4!City!element]" & vbCrLf
+'    s = s & ",isnull(v.state,'')       [Suppliers!4!State!element]" & vbCrLf
+'    s = s & ",isnull(v.zip,'')         [Suppliers!4!PostalCode!element]" & vbCrLf
+'    s = s & ",isnull(v.Phone,'')       [Suppliers!4!Phone!element]" & vbCrLf
+'    s = s & ",isnull(v.email,'')       [Suppliers!4!GeneralEmail!element]" & vbCrLf
+'    s = s & ",isnull(v.PurchEmail,'')  [Suppliers!4!PurchEmail!element]" & vbCrLf
+'    s = s & ",isnull(v.SchedEmail,'')  [Suppliers!4!SchedEmail!element]" & vbCrLf
+'    s = s & ",sum(i.pretax+i.tax)      [Suppliers!4!InvoiceAmt365!element]" & vbCrLf
+'    s = s & "from tblvendors v" & vbCrLf
+'    s = s & "join invoices i on v.divisionid=i.divisionid and v.vendor_id=i.vendor" & vbCrLf
+'    s = s & "where i.invoicedate > getdate()-365  " & vbCrLf
+'    s = s & "group by " & vbCrLf
+'    s = s & " isnull(v.Vendor_name,'') " & vbCrLf
+'    s = s & ",isnull(v.addr1,'')      " & vbCrLf
+'    s = s & ",isnull(v.addr2,'')      " & vbCrLf
+'    s = s & ",isnull(v.city,'')       " & vbCrLf
+'    s = s & ",isnull(v.state,'')      " & vbCrLf
+'    s = s & ",isnull(v.zip,'')        " & vbCrLf
+'    s = s & ",isnull(v.Phone,'')      " & vbCrLf
+'    s = s & ",isnull(v.email,'')      " & vbCrLf
+'    s = s & ",isnull(v.PurchEmail,'') " & vbCrLf
+'    s = s & ",isnull(v.SchedEmail,'')" & vbCrLf
     
     s = s & "order by [Divisions!2!Code!element], [Parent], [Stats!3!Year!element], [Stats!3!Month!element]" & vbCrLf
     s = s & "for xml explicit" & vbCrLf

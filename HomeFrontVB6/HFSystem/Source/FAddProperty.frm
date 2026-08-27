@@ -209,9 +209,10 @@ Private Sub cmdNav_Click(Index As Integer)
 On Error GoTo eh
     Dim s As String
     Dim d As String
+    Dim c As Connection
     
     Dim i As Long
-    Dim size As Long
+    Dim SIZE As Long
     Dim list As String
     
     Select Case True
@@ -219,9 +220,9 @@ On Error GoTo eh
             
             If optType(5) Then
                 list = ""
-                size = Val(txtLength.Text)
+                SIZE = Val(txtLength.Text)
                 For i = 1 To Parse(txtPickList.Text, , vbCrLf)
-                    s = left(Trim(Parse(txtPickList.Text, i, vbCrLf)), size)
+                    s = left(Trim(Parse(txtPickList.Text, i, vbCrLf)), SIZE)
                     If s <> "" Then
                         list = list & "|" & s
                     End If
@@ -250,11 +251,11 @@ On Error GoTo eh
             
             If optType(5) Then
                 list = ""
-                size = -1
+                SIZE = -1
                 For i = 1 To Parse(txtPickList.Text, , vbCrLf)
                     s = Trim(Parse(txtPickList.Text, i, vbCrLf))
                     If s <> "" Then
-                        size = Max(size, Len(s))
+                        SIZE = Max(SIZE, Len(s))
                         list = list & "|" & s
                     End If
                 Next
@@ -266,10 +267,16 @@ On Error GoTo eh
             If optType(2) Then s = " datetime"
             If optType(3) Then s = " bit"
             If optType(4) Then s = " varchar(" & Val(txtLength.Text) & ")"
-            If optType(5) Then s = " varchar(" & IIf(size = -1, 25, size) & ")"
+            If optType(5) Then s = " varchar(" & IIf(SIZE = -1, 25, SIZE) & ")"
             If optType(6) Then s = " money"
-            Call HFApp.SqlExec("ALTER TABLE dbo.JobCustomFields ADD " & vbQuote & Trim(txtFieldName.Text) & vbQuote & s)
-            Call HFApp.SqlExec("ALTER TABLE dbo.WorkticketCustomFlds ADD " & vbQuote & Trim(txtFieldName.Text) & vbQuote & s)
+            
+            Set c = New Connection
+            c.Open HFApp.ConnectionString(dbHomefront) & ";App=HFDBUpgradeWiz"
+            Call c.Execute("ALTER TABLE dbo.JobCustomFields ADD " & vbQuote & Trim(txtFieldName.Text) & vbQuote & s)
+            Call c.Execute("ALTER TABLE dbo.WorkticketCustomFlds ADD " & vbQuote & Trim(txtFieldName.Text) & vbQuote & s)
+            c.Close
+            Set c = Nothing
+        
             Call HFApp.SqlExec("INSERT INTO JobCustomFieldDefs(Name,Category,PickList) VALUES(" & DbQuote(Str, txtFieldName.Text, , True) & "," & DbQuote(Str, txtCategory.Text) & "," & DbQuote(Str, list) & ")")
             Unload Me
             

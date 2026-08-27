@@ -1,5 +1,5 @@
 VERSION 5.00
-Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsflex8.ocx"
+Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsFlex8.ocx"
 Object = "{55473EAC-7715-4257-B5EF-6E14EBD6A5DD}#1.0#0"; "vbalProgBar6.ocx"
 Begin VB.Form FImportVendors 
    Caption         =   "Pricelist Import Wizard"
@@ -317,7 +317,7 @@ On Error GoTo eh
                 lblFileDate.Caption = "Last Modified: " & Format(fileinfo.ModifyTime, "long date")
                 
                 Select Case FileExt(mFilename)
-                    Case "xls"
+                    Case "xls", "xlsx"
                         mFilename = SaveToCSV(mFilename)
                         Call ReadText(mFilename)
                         On Error Resume Next
@@ -468,7 +468,7 @@ End Sub
 Private Function SaveData() As Boolean
 On Error GoTo eh
     Dim tabdef As Recordset
-    
+    Dim bIgnoreDupKey As Boolean
     Dim r As Long
     Dim c As Long
     Dim X As Long
@@ -490,7 +490,9 @@ On Error GoTo eh
         
         
         s = "INSERT INTO tblVendors(DivisionID,webupdated,nodatachanged,Vendor_ID) VALUES (" & HFApp.DivisionID & ",0,0," & DbQuote(Str, .TextMatrix(r, .ColIndex("Vendor_ID")), , True) & ")"
+        bIgnoreDupKey = True
         Call HFApp.SqlExec(s, dbHomefront)
+        bIgnoreDupKey = False
         
         s = ""
         For c = 1 To .Cols - 1
@@ -551,10 +553,12 @@ On Error GoTo eh
     
     SaveData = True
 Exit Function
-eh: If InStr(1, Err.Description, "duplicate", vbTextCompare) Then
+eh:
+    If bIgnoreDupKey And InStr(1, Err.Description, "duplicate", vbTextCompare) Then
         Resume Next
     Else
         Call errHandler(SRCFILE & "SaveData", s)
+        ProgressBar.Visible = False
     End If
 End Function
 

@@ -804,6 +804,12 @@ Private Declare Function PtrToInt Lib "kernel32" Alias "lstrcpynW" (RetVal As An
 Private Declare Function PtrToStr Lib "kernel32" Alias "lstrcpyW" (RetVal As Byte, ByVal Ptr As Long) As Long
 Private Declare Function StrLen Lib "kernel32" Alias "lstrlenW" (ByVal Ptr As Long) As Long
 
+Private Declare Function CryptBinaryToStringA Lib "crypt32.dll" (ByVal pbBinary As Long, ByVal cbBinary As Long, ByVal dwFlags As Long, ByVal pszString As Long, ByRef pcchString As Long) As Long
+
+Private Declare Function CryptStringToBinaryA Lib "crypt32.dll" (ByVal pszString As Long, ByVal cchString As Long, ByVal dwFlags As Long, ByVal pbBinary As Long, ByRef pcbBinary As Long, ByVal pdwSkip As Long, ByVal pdwFlags As Long) As Long
+Private Const CRYPT_STRING_BASE64 = &H1
+Private Const CRYPT_STRING_BASE64_ANY = &H6
+
 
 Public Function GetLocalizedPath(sPath As String) As String
 'Dim d As String
@@ -3683,4 +3689,39 @@ Function ReadFileToString(ByVal sFile As String) As String
 
 End Function
 
+
+
+
+
+     
+
+Function Base64Decode(ByVal data As String) As String
+  Dim s As Long
+  s = Len(data)
+  Dim b() As Byte
+
+  b = StrConv(data, vbFromUnicode)
+  '??VB???Unicode??,??????Ansi
+  Dim ret() As Byte
+  Dim retlen As Long
+  Call CryptStringToBinaryA(VarPtr(b(0)), s, CRYPT_STRING_BASE64_ANY, StrPtr(ret), retlen, 0, 0)
+  If retlen = 0 Then Base64Decode = "": Exit Function
+  ReDim ret(retlen - 1)
+  Call CryptStringToBinaryA(VarPtr(b(0)), s, CRYPT_STRING_BASE64_ANY, VarPtr(ret(0)), retlen, 0, 0)
+  Base64Decode = StrConv(LeftB(ret, retlen), vbUnicode)
+End Function
+Function Base64Encode(data() As Byte) As String
+  Dim s As Long
+  s = UBound(data) + 1
+
+  Dim ret() As Byte
+  Dim retlen As Long
+  Call CryptBinaryToStringA(VarPtr(data(0)), s, 1073741825, StrPtr(ret), retlen)
+  If retlen = 0 Then Exit Function
+
+  'MsgBox retlen
+  ReDim ret(retlen - 1)
+  Call CryptBinaryToStringA(VarPtr(data(0)), s, 1073741825, VarPtr(ret(0)), retlen)
+  Base64Encode = StrConv(LeftB(ret, retlen), vbUnicode)
+End Function
 

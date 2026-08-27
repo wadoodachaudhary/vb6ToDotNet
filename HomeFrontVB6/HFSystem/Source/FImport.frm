@@ -376,11 +376,11 @@ eh: If InStr(1, Err.Description, "duplicate", vbTextCompare) Then
     End If
 End Property
 
-Private Function SaveToCSV(FileName As String) As String
+Private Function SaveToCSV(Filename As String) As String
 On Error Resume Next
     Dim s As String
     Dim xlSheet As Object 'Excel.Worksheet
-    Set xlSheet = GetObject(FileName).Sheets(1)
+    Set xlSheet = GetObject(Filename).Sheets(1)
     s = TempFile("csv")
     Kill s
     Call xlSheet.SaveAs(s, 6, , , , , False)
@@ -388,7 +388,7 @@ On Error Resume Next
     SaveToCSV = s
 End Function
 
-Private Sub ReadText(FileName As String)
+Private Sub ReadText(Filename As String)
 On Error GoTo eh
     Dim i As Long
     Dim c As Long
@@ -401,9 +401,9 @@ On Error GoTo eh
     Dim missingkey As Boolean
     
     
-    Select Case FileExt(FileName)
-        Case "csv": Call gData.LoadGrid(FileName, flexFileCommaText)
-        Case Else:  Call gData.LoadGrid(FileName, flexFileTabText)
+    Select Case FileExt(Filename)
+        Case "csv": Call gData.LoadGrid(Filename, flexFileCommaText)
+        Case Else:  Call gData.LoadGrid(Filename, flexFileTabText)
     End Select
     
     

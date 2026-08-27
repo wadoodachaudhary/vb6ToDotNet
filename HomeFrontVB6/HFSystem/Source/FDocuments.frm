@@ -1,7 +1,6 @@
 VERSION 5.00
-Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsflex8.ocx"
-Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "mscomctl.ocx"
-Object = "{C46A8909-8107-11D8-8671-00C1261173F0}#2.3#0"; "TwainControlX.ocx"
+Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsFlex8.ocx"
+Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "MSCOMCTL.OCX"
 Begin VB.Form FDocuments 
    Caption         =   "Documents"
    ClientHeight    =   5460
@@ -22,7 +21,7 @@ Begin VB.Form FDocuments
       Left            =   495
       ScaleHeight     =   240
       ScaleWidth      =   240
-      TabIndex        =   8
+      TabIndex        =   6
       Top             =   4650
       Visible         =   0   'False
       Width           =   240
@@ -36,7 +35,7 @@ Begin VB.Form FDocuments
       Picture         =   "FDocuments.frx":058A
       ScaleHeight     =   240
       ScaleWidth      =   240
-      TabIndex        =   7
+      TabIndex        =   5
       Top             =   4635
       Visible         =   0   'False
       Width           =   240
@@ -50,7 +49,7 @@ Begin VB.Form FDocuments
       Picture         =   "FDocuments.frx":0B14
       ScaleHeight     =   240
       ScaleWidth      =   240
-      TabIndex        =   5
+      TabIndex        =   3
       Top             =   4335
       Visible         =   0   'False
       Width           =   240
@@ -63,7 +62,7 @@ Begin VB.Form FDocuments
          Picture         =   "FDocuments.frx":109E
          ScaleHeight     =   240
          ScaleWidth      =   240
-         TabIndex        =   6
+         TabIndex        =   4
          Top             =   1620
          Visible         =   0   'False
          Width           =   240
@@ -78,7 +77,7 @@ Begin VB.Form FDocuments
       Picture         =   "FDocuments.frx":1628
       ScaleHeight     =   240
       ScaleWidth      =   240
-      TabIndex        =   4
+      TabIndex        =   2
       Top             =   4350
       Visible         =   0   'False
       Width           =   240
@@ -221,48 +220,6 @@ Begin VB.Form FDocuments
          EndProperty
       EndProperty
       BorderStyle     =   1
-      Begin TwainControlX.Twain Twain1 
-         Height          =   480
-         Left            =   7260
-         TabIndex        =   3
-         Top             =   0
-         Visible         =   0   'False
-         Width           =   480
-         CurrentDevice   =   -1
-         UseInterface    =   -1  'True
-         WaitForAcquire  =   -1  'True
-         DoubleBuffered  =   0   'False
-         Enabled         =   -1  'True
-         Object.Visible         =   -1  'True
-         Cursor          =   0
-         HelpType        =   0
-         HelpKeyword     =   ""
-         JPEGQuality     =   90
-         PixelType       =   -1
-         ShowProgress    =   0   'False
-         Units           =   0
-         Resolution      =   -1
-         ImageLeft       =   0
-         ImageTop        =   0
-         ImageRight      =   0
-         ImageBottom     =   0
-         XResolution     =   -1
-         YResolution     =   -1
-         AppName         =   "Ciansoft TwainControlX"
-         UseADF          =   0   'False
-         MultiImage      =   0   'False
-         ImagesToRead    =   0
-         KeepImages      =   0   'False
-         SelectedImage   =   1
-         AutoDeskew      =   0   'False
-         Contrast        =   -1
-         Brightness      =   -1
-         AutoBright      =   0   'False
-         DuplexEnabled   =   0   'False
-         ClearBeforeAcquire=   -1  'True
-         Threshold       =   -1
-         BlankTol        =   100
-      End
       Begin MSComctlLib.ImageList LargeIcons 
          Left            =   6615
          Top             =   0
@@ -317,17 +274,6 @@ Begin VB.Form FDocuments
             EndProperty
          EndProperty
       End
-      Begin HFSystem.VBCombo cboScanner 
-         Height          =   240
-         Left            =   3570
-         TabIndex        =   2
-         Top             =   150
-         Width           =   2985
-         _ExtentX        =   5265
-         _ExtentY        =   423
-         Style           =   2
-         Text            =   "Combo1"
-      End
    End
    Begin VB.Menu mnuGrid 
       Caption         =   "<Grid>"
@@ -350,10 +296,6 @@ Begin VB.Form FDocuments
       Begin VB.Menu mnuDocClassSub 
          Caption         =   "Add File..."
          Index           =   0
-      End
-      Begin VB.Menu mnuDocClassSub 
-         Caption         =   "Scan File..."
-         Index           =   1
       End
    End
    Begin VB.Menu mnuRevisions 
@@ -398,7 +340,6 @@ Private MouseGrid As VSFlexGrid
 Private MouseCol As Long
 
 Private Const CLASS_ADDFILE = 0
-Private Const CLASS_SCANFILE = 1
 
 Private Const REVISION_OPEN = 0
 Private Const REVISION_PRINT = 1
@@ -568,7 +509,6 @@ End Sub
 Private Sub Form_Resize()
 On Error Resume Next
     gData.Move 0, Toolbar.Height, Me.ScaleWidth, Me.ScaleHeight - Toolbar.Height
-    cboScanner.Move Toolbar.Width - cboScanner.Width - 120, (Toolbar.Height - cboScanner.Height) / 2
 End Sub
 
 
@@ -593,7 +533,6 @@ End Sub
 Private Sub Form_Unload(Cancel As Integer)
     Call IniPutForm(Me)
     Call IniPutGrid(Me, gData)
-    Call IniPut(AppIni, Me.Name, "Scanner", cboScanner.Text)
     
 On Error Resume Next: Call Kill(PathAppend(TempPath, "*.*"))
 End Sub
@@ -752,7 +691,6 @@ Private Sub mnuDocClassSub_Click(Index As Integer)
     With gData
     Select Case Index
         Case CLASS_ADDFILE:   Call AddDocument(gData.Row, "")
-        Case CLASS_SCANFILE
     End Select
     End With
 End Sub

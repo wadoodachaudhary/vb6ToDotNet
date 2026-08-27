@@ -11,8 +11,116 @@ Begin VB.Form FUserPermissions
    ClientWidth     =   14370
    Icon            =   "FUserPermissions.frx":0000
    LinkTopic       =   "Form1"
-   ScaleHeight     =   15255
-   ScaleWidth      =   28800
+   ScaleHeight     =   7770
+   ScaleWidth      =   14370
+   Begin VB.Frame TabFrame 
+      Caption         =   "Data Portal"
+      Height          =   4995
+      Index           =   9
+      Left            =   6972
+      TabIndex        =   59
+      Top             =   3264
+      Width           =   7005
+      Begin VSFlex8Ctl.VSFlexGrid gPermissions 
+         Height          =   5655
+         Index           =   9
+         Left            =   150
+         TabIndex        =   60
+         TabStop         =   0   'False
+         Top             =   240
+         Width           =   8295
+         _cx             =   1976842535
+         _cy             =   1976837879
+         Appearance      =   2
+         BorderStyle     =   1
+         Enabled         =   -1  'True
+         BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   400
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         MousePointer    =   0
+         BackColor       =   -2147483643
+         ForeColor       =   -2147483640
+         BackColorFixed  =   -2147483633
+         ForeColorFixed  =   -2147483630
+         BackColorSel    =   -2147483635
+         ForeColorSel    =   -2147483634
+         BackColorBkg    =   -2147483643
+         BackColorAlternate=   -2147483643
+         GridColor       =   -2147483633
+         GridColorFixed  =   -2147483632
+         TreeColor       =   -2147483632
+         FloodColor      =   192
+         SheetBorder     =   -2147483643
+         FocusRect       =   1
+         HighLight       =   0
+         AllowSelection  =   0   'False
+         AllowBigSelection=   0   'False
+         AllowUserResizing=   1
+         SelectionMode   =   3
+         GridLines       =   0
+         GridLinesFixed  =   2
+         GridLineWidth   =   1
+         Rows            =   9
+         Cols            =   4
+         FixedRows       =   1
+         FixedCols       =   0
+         RowHeightMin    =   0
+         RowHeightMax    =   0
+         ColWidthMin     =   0
+         ColWidthMax     =   0
+         ExtendLastCol   =   0   'False
+         FormatString    =   $"FUserPermissions.frx":000C
+         ScrollTrack     =   0   'False
+         ScrollBars      =   3
+         ScrollTips      =   0   'False
+         MergeCells      =   7
+         MergeCompare    =   0
+         AutoResize      =   -1  'True
+         AutoSizeMode    =   0
+         AutoSearch      =   0
+         AutoSearchDelay =   2
+         MultiTotals     =   -1  'True
+         SubtotalPosition=   1
+         OutlineBar      =   5
+         OutlineCol      =   0
+         Ellipsis        =   0
+         ExplorerBar     =   0
+         PicturesOver    =   0   'False
+         FillStyle       =   0
+         RightToLeft     =   0   'False
+         PictureType     =   0
+         TabBehavior     =   0
+         OwnerDraw       =   2
+         Editable        =   2
+         ShowComboButton =   1
+         WordWrap        =   0   'False
+         TextStyle       =   0
+         TextStyleFixed  =   0
+         OleDragMode     =   0
+         OleDropMode     =   0
+         DataMode        =   0
+         VirtualData     =   -1  'True
+         DataMember      =   ""
+         ComboSearch     =   3
+         AutoSizeMouse   =   -1  'True
+         FrozenRows      =   0
+         FrozenCols      =   0
+         AllowUserFreezing=   0
+         BackColorFrozen =   0
+         ForeColorFrozen =   0
+         WallPaperAlignment=   9
+         AccessibleName  =   ""
+         AccessibleDescription=   ""
+         AccessibleValue =   ""
+         AccessibleRole  =   24
+      End
+   End
    Begin VB.Frame UserPage 
       Caption         =   "User"
       Height          =   7605
@@ -175,7 +283,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":000C
+         FormatString    =   $"FUserPermissions.frx":01E1
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -272,7 +380,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":00B3
+         FormatString    =   $"FUserPermissions.frx":0288
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -324,7 +432,7 @@ Begin VB.Form FUserPermissions
          Height          =   195
          Index           =   7
          Left            =   3705
-         TabIndex        =   65
+         TabIndex        =   63
          Top             =   690
          Width           =   750
       End
@@ -371,7 +479,7 @@ Begin VB.Form FUserPermissions
       Begin VB.Image Image1 
          Height          =   1995
          Left            =   810
-         Picture         =   "FUserPermissions.frx":0133
+         Picture         =   "FUserPermissions.frx":0308
          Top             =   660
          Width           =   1995
       End
@@ -440,222 +548,6 @@ Begin VB.Form FUserPermissions
          TabIndex        =   24
          Top             =   390
          Width           =   540
-      End
-   End
-   Begin VB.Frame TabFrame 
-      Caption         =   "Document Management"
-      Height          =   4995
-      Index           =   9
-      Left            =   5325
-      TabIndex        =   63
-      Top             =   1665
-      Width           =   7005
-      Begin VSFlex8Ctl.VSFlexGrid gPermissions 
-         Height          =   5655
-         Index           =   9
-         Left            =   270
-         TabIndex        =   64
-         TabStop         =   0   'False
-         Top             =   510
-         Width           =   8295
-         _cx             =   1976842535
-         _cy             =   1976837879
-         Appearance      =   2
-         BorderStyle     =   1
-         Enabled         =   -1  'True
-         BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   400
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         MousePointer    =   0
-         BackColor       =   -2147483643
-         ForeColor       =   -2147483640
-         BackColorFixed  =   -2147483633
-         ForeColorFixed  =   -2147483630
-         BackColorSel    =   -2147483635
-         ForeColorSel    =   -2147483634
-         BackColorBkg    =   -2147483643
-         BackColorAlternate=   -2147483643
-         GridColor       =   -2147483633
-         GridColorFixed  =   -2147483632
-         TreeColor       =   -2147483632
-         FloodColor      =   192
-         SheetBorder     =   -2147483643
-         FocusRect       =   1
-         HighLight       =   0
-         AllowSelection  =   0   'False
-         AllowBigSelection=   0   'False
-         AllowUserResizing=   1
-         SelectionMode   =   3
-         GridLines       =   0
-         GridLinesFixed  =   2
-         GridLineWidth   =   1
-         Rows            =   5
-         Cols            =   4
-         FixedRows       =   1
-         FixedCols       =   0
-         RowHeightMin    =   0
-         RowHeightMax    =   0
-         ColWidthMin     =   0
-         ColWidthMax     =   0
-         ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":485D
-         ScrollTrack     =   0   'False
-         ScrollBars      =   3
-         ScrollTips      =   0   'False
-         MergeCells      =   7
-         MergeCompare    =   0
-         AutoResize      =   -1  'True
-         AutoSizeMode    =   0
-         AutoSearch      =   0
-         AutoSearchDelay =   2
-         MultiTotals     =   -1  'True
-         SubtotalPosition=   1
-         OutlineBar      =   5
-         OutlineCol      =   0
-         Ellipsis        =   0
-         ExplorerBar     =   0
-         PicturesOver    =   0   'False
-         FillStyle       =   0
-         RightToLeft     =   0   'False
-         PictureType     =   0
-         TabBehavior     =   0
-         OwnerDraw       =   2
-         Editable        =   2
-         ShowComboButton =   1
-         WordWrap        =   0   'False
-         TextStyle       =   0
-         TextStyleFixed  =   0
-         OleDragMode     =   0
-         OleDropMode     =   0
-         DataMode        =   0
-         VirtualData     =   -1  'True
-         DataMember      =   ""
-         ComboSearch     =   3
-         AutoSizeMouse   =   -1  'True
-         FrozenRows      =   0
-         FrozenCols      =   0
-         AllowUserFreezing=   0
-         BackColorFrozen =   0
-         ForeColorFrozen =   0
-         WallPaperAlignment=   9
-         AccessibleName  =   ""
-         AccessibleDescription=   ""
-         AccessibleValue =   ""
-         AccessibleRole  =   24
-      End
-   End
-   Begin VB.Frame TabFrame 
-      Caption         =   "Data Portal"
-      Height          =   4995
-      Index           =   10
-      Left            =   6972
-      TabIndex        =   59
-      Top             =   3264
-      Width           =   7005
-      Begin VSFlex8Ctl.VSFlexGrid gPermissions 
-         Height          =   5655
-         Index           =   10
-         Left            =   150
-         TabIndex        =   60
-         TabStop         =   0   'False
-         Top             =   240
-         Width           =   8295
-         _cx             =   1976842535
-         _cy             =   1976837879
-         Appearance      =   2
-         BorderStyle     =   1
-         Enabled         =   -1  'True
-         BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   400
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         MousePointer    =   0
-         BackColor       =   -2147483643
-         ForeColor       =   -2147483640
-         BackColorFixed  =   -2147483633
-         ForeColorFixed  =   -2147483630
-         BackColorSel    =   -2147483635
-         ForeColorSel    =   -2147483634
-         BackColorBkg    =   -2147483643
-         BackColorAlternate=   -2147483643
-         GridColor       =   -2147483633
-         GridColorFixed  =   -2147483632
-         TreeColor       =   -2147483632
-         FloodColor      =   192
-         SheetBorder     =   -2147483643
-         FocusRect       =   1
-         HighLight       =   0
-         AllowSelection  =   0   'False
-         AllowBigSelection=   0   'False
-         AllowUserResizing=   1
-         SelectionMode   =   3
-         GridLines       =   0
-         GridLinesFixed  =   2
-         GridLineWidth   =   1
-         Rows            =   9
-         Cols            =   4
-         FixedRows       =   1
-         FixedCols       =   0
-         RowHeightMin    =   0
-         RowHeightMax    =   0
-         ColWidthMin     =   0
-         ColWidthMax     =   0
-         ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":4A32
-         ScrollTrack     =   0   'False
-         ScrollBars      =   3
-         ScrollTips      =   0   'False
-         MergeCells      =   7
-         MergeCompare    =   0
-         AutoResize      =   -1  'True
-         AutoSizeMode    =   0
-         AutoSearch      =   0
-         AutoSearchDelay =   2
-         MultiTotals     =   -1  'True
-         SubtotalPosition=   1
-         OutlineBar      =   5
-         OutlineCol      =   0
-         Ellipsis        =   0
-         ExplorerBar     =   0
-         PicturesOver    =   0   'False
-         FillStyle       =   0
-         RightToLeft     =   0   'False
-         PictureType     =   0
-         TabBehavior     =   0
-         OwnerDraw       =   2
-         Editable        =   2
-         ShowComboButton =   1
-         WordWrap        =   0   'False
-         TextStyle       =   0
-         TextStyleFixed  =   0
-         OleDragMode     =   0
-         OleDropMode     =   0
-         DataMode        =   0
-         VirtualData     =   -1  'True
-         DataMember      =   ""
-         ComboSearch     =   3
-         AutoSizeMouse   =   -1  'True
-         FrozenRows      =   0
-         FrozenCols      =   0
-         AllowUserFreezing=   0
-         BackColorFrozen =   0
-         ForeColorFrozen =   0
-         WallPaperAlignment=   9
-         AccessibleName  =   ""
-         AccessibleDescription=   ""
-         AccessibleValue =   ""
-         AccessibleRole  =   24
       End
    End
    Begin VB.CommandButton cmdNav 
@@ -750,7 +642,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":4C07
+         FormatString    =   $"FUserPermissions.frx":4A32
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -858,7 +750,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":4DDC
+         FormatString    =   $"FUserPermissions.frx":4C07
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -966,7 +858,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":4FB1
+         FormatString    =   $"FUserPermissions.frx":4DDC
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1074,7 +966,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":5186
+         FormatString    =   $"FUserPermissions.frx":4FB1
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1173,7 +1065,7 @@ Begin VB.Form FUserPermissions
       ColWidthMin     =   0
       ColWidthMax     =   0
       ExtendLastCol   =   -1  'True
-      FormatString    =   $"FUserPermissions.frx":535B
+      FormatString    =   $"FUserPermissions.frx":5186
       ScrollTrack     =   0   'False
       ScrollBars      =   3
       ScrollTips      =   0   'False
@@ -1271,7 +1163,7 @@ Begin VB.Form FUserPermissions
       ColWidthMin     =   0
       ColWidthMax     =   0
       ExtendLastCol   =   -1  'True
-      FormatString    =   $"FUserPermissions.frx":53C5
+      FormatString    =   $"FUserPermissions.frx":51F0
       ScrollTrack     =   0   'False
       ScrollBars      =   3
       ScrollTips      =   0   'False
@@ -1387,7 +1279,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":5419
+         FormatString    =   $"FUserPermissions.frx":5244
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1535,7 +1427,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":55EE
+         FormatString    =   $"FUserPermissions.frx":5419
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1583,7 +1475,7 @@ Begin VB.Form FUserPermissions
       Begin VB.Image cmdBrowse 
          Height          =   240
          Left            =   6420
-         Picture         =   "FUserPermissions.frx":57C3
+         Picture         =   "FUserPermissions.frx":55EE
          Top             =   285
          Width           =   240
       End
@@ -1670,7 +1562,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":590D
+         FormatString    =   $"FUserPermissions.frx":5738
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1828,7 +1720,7 @@ Begin VB.Form FUserPermissions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FUserPermissions.frx":5AE2
+         FormatString    =   $"FUserPermissions.frx":590D
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -1936,7 +1828,7 @@ Begin VB.Form FUserPermissions
       _ExtentY        =   13203
       _Version        =   327682
       BeginProperty Tabs {0713E432-850A-101B-AFC0-4210102A8DA7} 
-         NumTabs         =   10
+         NumTabs         =   9
          BeginProperty Tab1 {0713F341-850A-101B-AFC0-4210102A8DA7} 
             Caption         =   "Admin"
             Key             =   ""
@@ -1986,12 +1878,6 @@ Begin VB.Form FUserPermissions
             ImageVarType    =   2
          EndProperty
          BeginProperty Tab9 {0713F341-850A-101B-AFC0-4210102A8DA7} 
-            Caption         =   "Document Management"
-            Key             =   ""
-            Object.Tag             =   ""
-            ImageVarType    =   2
-         EndProperty
-         BeginProperty Tab10 {0713F341-850A-101B-AFC0-4210102A8DA7} 
             Caption         =   "Data Portal"
             Key             =   ""
             Object.Tag             =   ""
@@ -2003,7 +1889,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   5
       Left            =   660
-      Picture         =   "FUserPermissions.frx":5CB7
+      Picture         =   "FUserPermissions.frx":5AE2
       ToolTipText     =   "Find"
       Top             =   3720
       Width           =   240
@@ -2012,7 +1898,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   4
       Left            =   390
-      Picture         =   "FUserPermissions.frx":6241
+      Picture         =   "FUserPermissions.frx":606C
       ToolTipText     =   "Create New"
       Top             =   3720
       Width           =   240
@@ -2021,7 +1907,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   3
       Left            =   150
-      Picture         =   "FUserPermissions.frx":67CB
+      Picture         =   "FUserPermissions.frx":65F6
       ToolTipText     =   "Delete"
       Top             =   3720
       Width           =   240
@@ -2030,7 +1916,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   2
       Left            =   690
-      Picture         =   "FUserPermissions.frx":6D55
+      Picture         =   "FUserPermissions.frx":6B80
       ToolTipText     =   "Save As"
       Top             =   60
       Width           =   240
@@ -2039,7 +1925,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   1
       Left            =   420
-      Picture         =   "FUserPermissions.frx":72DF
+      Picture         =   "FUserPermissions.frx":710A
       ToolTipText     =   "Create New"
       Top             =   60
       Width           =   240
@@ -2048,7 +1934,7 @@ Begin VB.Form FUserPermissions
       Height          =   240
       Index           =   0
       Left            =   180
-      Picture         =   "FUserPermissions.frx":7869
+      Picture         =   "FUserPermissions.frx":7694
       ToolTipText     =   "Delete"
       Top             =   60
       Width           =   240
@@ -2121,8 +2007,7 @@ Const TSCHEDULING = 5
 Const TWARRANTY = 6
 Const TWORKTICKET = 7
 Const TCRM = 8
-Const TDOCUMENTS = 9
-Const TDATAPORTAL = 10
+Const TDATAPORTAL = 9
 
 
 
@@ -2195,7 +2080,7 @@ Private Sub CreateGroup()
     Dim r As Long
     
     Call HFApp.SqlExec("insert into securitygroups(Description) values('(untitled)')")
-    ID = HFApp.SqlIdentity("SecurityGroups", dbHomeFront)
+    ID = HFApp.SqlIdentity("SecurityGroups", dbHomefront)
     Call LoadGroups
     
     With gGroups
@@ -2243,7 +2128,7 @@ Private Sub CopyGroup()
     s = s & "--select @sql" & vbCrLf
     s = s & "exec sp_executesql @sql" & vbCrLf
     Call HFApp.SqlExec(s)
-    ID = HFApp.SqlIdentity("SecurityGroups", dbHomeFront)
+    ID = HFApp.SqlIdentity("SecurityGroups", dbHomefront)
     
     Call LoadGroups
     r = gGroups.FindRow(ID, 0, gGroups.ColIndex("SecGroupID"), , True)
@@ -2341,7 +2226,7 @@ Private Sub FindUser()
     s = s & ",g.Description SecurityGroup" & vbCrLf
     s = s & "from user_manager u " & vbCrLf
     s = s & "join securitygroups g on u.secgroupid=g.secgroupid" & vbCrLf
-    If Not FPickList.Choose(HFApp.Databases(dbHomeFront), "User", s, , , , , "SecGroupID") Then Exit Sub
+    If Not FPickList.Choose(HFApp.Databases(dbHomefront), "User", s, , , , , "SecGroupID") Then Exit Sub
     
     gid = Val("" & FPickList.SelectedItem("SecGroupID"))
     uid = FPickList.SelectedItem("LoginID")
@@ -2374,7 +2259,6 @@ On Error Resume Next
     UserPage.BorderStyle = 0
     
     'remove tabs largest to smallest so you can use the frame index
-    Call TabStrip.Tabs.Remove(TDOCUMENTS - 1)
     If HFApp.LicensedSeats("JobSimplicity") > 0 Then
     Else
         If HFApp.LicensedSeats("CRM") < 1 Then Call TabStrip.Tabs.Remove(TCRM)
@@ -2462,7 +2346,7 @@ Private Sub LoadGroups()
     End With
     
     
-    Call LoadComboBox(cboSecurityGroups, HFApp.Databases(dbHomeFront), "select Description,'',SecGroupID from securitygroups order by 1")
+    Call LoadComboBox(cboSecurityGroups, HFApp.Databases(dbHomefront), "select Description,'',SecGroupID from securitygroups order by 1")
     
     Dirty = e_none
     
@@ -2615,7 +2499,6 @@ Private Sub LoadPermissions(SecGroupID As Long)
         
         'all the checkboxes
         For i = 1 To gPermissions.Count
-        If i <> TDOCUMENTS Then
         With gPermissions(i)
             For r = 0 To .Rows - 1
                 If Not .IsSubtotal(r) Then
@@ -2623,31 +2506,10 @@ Private Sub LoadPermissions(SecGroupID As Long)
                 End If
             Next
         End With
-        End If
         Next
     End If
     
     
-    With gPermissions(TDOCUMENTS)
-        
-         'clear document classes
-        For r = 0 To .Rows - 1
-        If Not .IsSubtotal(r) And .TextMatrix(r, .ColIndex("section")) = "document classes" Then
-            .Cell(flexcpChecked, r, .ColIndex("Value")) = flexUnchecked
-        End If
-        Next
-    
-        s = "select * from securitygroupdocumentclasses where secgroupid=" & DbQuote(Num, SecGroupID)
-        Set rs = HFApp.SqlExec(s)
-        While Not rs.EOF
-            For r = 0 To .Rows - 1
-            If Not .IsSubtotal(r) And .TextMatrix(r, .ColIndex("ColumnName")) = "" & rs("documentclass") Then
-                .Cell(flexcpChecked, r, .ColIndex("Value")) = flexChecked
-            End If
-            Next
-            rs.MoveNext
-        Wend
-    End With
     
     Dirty = e_none
     
@@ -2727,11 +2589,6 @@ Private Sub InitPermissionGrids()
     s = s & "join sys.columns c on t.object_id=c.object_id" & vbCrLf
     s = s & "join sys.extended_properties p on p.major_id=t.object_id and p.minor_id=c.column_id and p.name='MS_Description'" & vbCrLf
     s = s & "where t.name='SecurityGroups' " & vbCrLf
-    s = s & "union all" & vbCrLf
-    s = s & "select " & vbCrLf
-    s = s & " documentclass name" & vbCrLf
-    s = s & ",'Document Management:Document Classes:a:' + documentclass description" & vbCrLf
-    s = s & "from dms_documentclasses" & vbCrLf
     s = s & "order by 2" & vbCrLf
     Set rs = HFApp.SqlExec(s)
     While Not rs.EOF
@@ -2884,7 +2741,7 @@ Private Sub gGroups_ValidateEdit(ByVal Row As Long, ByVal Col As Long, Cancel As
         s = s & "where secgroupid=" & DbQuote(Str, .TextMatrix(.Row, .ColIndex("SecGroupID"))) & vbCrLf
         Call HFApp.SqlExec(s)
     End With
-    Call LoadComboBox(cboSecurityGroups, HFApp.Databases(dbHomeFront), "select Description,'',SecGroupID from securitygroups order by 1")
+    Call LoadComboBox(cboSecurityGroups, HFApp.Databases(dbHomefront), "select Description,'',SecGroupID from securitygroups order by 1")
     
 End Sub
 
@@ -3323,7 +3180,6 @@ Private Sub SaveGroup()
     
     'all the checkboxes
     For i = 1 To gPermissions.Count
-    If i <> TDOCUMENTS Then
     With gPermissions(i)
         For r = 0 To .Rows - 1
             If Not .IsSubtotal(r) Then
@@ -3331,7 +3187,6 @@ Private Sub SaveGroup()
             End If
         Next
     End With
-    End If
     Next
     s = s & "where SecGroupID=" & DbQuote(Num, mSecGroupID) & vbCrLf
     
@@ -3340,23 +3195,6 @@ Private Sub SaveGroup()
     
     
     
-    With gPermissions(TDOCUMENTS)
-        s = ""
-        For r = 0 To .Rows - 1
-            If Not .IsSubtotal(r) Then
-            If .Cell(flexcpChecked, r, .ColIndex("Value")) = flexChecked Then
-                s = s & ",(" & DbQuote(Num, mSecGroupID) & "," & DbQuote(Str, .TextMatrix(r, .ColIndex("ColumnName"))) & ")" & vbCrLf
-            End If
-            End If
-        Next
-        If s = "" Then
-            s = "delete securitygroupdocumentclasses where SecGroupID=" & DbQuote(Num, mSecGroupID)
-        Else
-            s = "delete securitygroupdocumentclasses where SecGroupID=" & DbQuote(Num, mSecGroupID) & vbCrLf & _
-                "insert securitygroupdocumentclasses(SecGroupID,documentclass) values" & vbCrLf & Mid(s, 2)
-        End If
-        Call HFApp.SqlExec(s)
-    End With
     
     
     

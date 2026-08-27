@@ -1,7 +1,6 @@
 VERSION 5.00
 Object = "{BEEECC20-4D5F-4F8B-BFDC-5D9B6FBDE09D}#1.0#0"; "vsFlex8.ocx"
-Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "mscomctl.ocx"
-Object = "{C46A8909-8107-11D8-8671-00C1261173F0}#2.3#0"; "TwainControlX.ocx"
+Object = "{831FDD16-0C5C-11D2-A9FC-0000F8754DA1}#2.2#0"; "MSCOMCTL.OCX"
 Begin VB.Form FAttachments 
    Caption         =   "Attachments"
    ClientHeight    =   5370
@@ -14,48 +13,6 @@ Begin VB.Form FAttachments
    LinkTopic       =   "Form1"
    ScaleHeight     =   5370
    ScaleWidth      =   7275
-   Begin TwainControlX.Twain Twain1 
-      Height          =   480
-      Left            =   1800
-      TabIndex        =   4
-      Top             =   4410
-      Visible         =   0   'False
-      Width           =   480
-      CurrentDevice   =   -1
-      UseInterface    =   -1  'True
-      WaitForAcquire  =   -1  'True
-      DoubleBuffered  =   0   'False
-      Enabled         =   -1  'True
-      Object.Visible         =   -1  'True
-      Cursor          =   0
-      HelpType        =   0
-      HelpKeyword     =   ""
-      JPEGQuality     =   90
-      PixelType       =   -1
-      ShowProgress    =   0   'False
-      Units           =   0
-      Resolution      =   -1
-      ImageLeft       =   0
-      ImageTop        =   0
-      ImageRight      =   0
-      ImageBottom     =   0
-      XResolution     =   -1
-      YResolution     =   -1
-      AppName         =   "Ciansoft TwainControlX"
-      UseADF          =   0   'False
-      MultiImage      =   0   'False
-      ImagesToRead    =   0
-      KeepImages      =   0   'False
-      SelectedImage   =   1
-      AutoDeskew      =   0   'False
-      Contrast        =   -1
-      Brightness      =   -1
-      AutoBright      =   0   'False
-      DuplexEnabled   =   0   'False
-      ClearBeforeAcquire=   -1  'True
-      Threshold       =   -1
-      BlankTol        =   100
-   End
    Begin VB.PictureBox picEmbedded 
       AutoRedraw      =   -1  'True
       BackColor       =   &H80000005&
@@ -199,7 +156,7 @@ Begin VB.Form FAttachments
       Height          =   600
       Left            =   0
       Negotiate       =   -1  'True
-      TabIndex        =   5
+      TabIndex        =   4
       Top             =   0
       Width           =   7275
       _ExtentX        =   12832
@@ -235,17 +192,6 @@ Begin VB.Form FAttachments
          EndProperty
       EndProperty
       BorderStyle     =   1
-      Begin HFSystem.VBCombo cboScanner 
-         Height          =   240
-         Left            =   3570
-         TabIndex        =   6
-         Top             =   150
-         Width           =   2985
-         _extentx        =   5265
-         _extenty        =   423
-         style           =   2
-         text            =   "Combo1"
-      End
       Begin MSComctlLib.ImageList LargeIcons 
          Left            =   6660
          Top             =   -30
@@ -480,10 +426,6 @@ Begin VB.Form FAttachments
          Caption         =   "Insert File..."
          Index           =   1
       End
-      Begin VB.Menu mnuFoldersSub 
-         Caption         =   "Scan File..."
-         Index           =   2
-      End
    End
    Begin VB.Menu mnuFiles 
       Caption         =   "<File Popup>"
@@ -569,7 +511,6 @@ Private Const mcCOL_ATTACHED = 9
 
 Private Const mcFOLDER_LINK = 0
 Private Const mcFOLDER_EMBED = 1
-Private Const mcFOLDER_SCAN = 2
 
 Private Const mcFILE_OPEN = 0
 Private Const mcFILE_PRINT = 1
@@ -789,14 +730,6 @@ On Error GoTo eh
     mnuFoldersSub(mcFOLDER_EMBED).Enabled = HFApp.SQLEdition Like "*Express Edition*"
     
     
-    With cboScanner
-    .Clear
-    s = IniGet(AppIni, Me.Name, "Scanner")
-    For i = 0 To Twain1.DeviceCount - 1
-        Call .AddItem(Twain1.DeviceName(i))
-        If Twain1.DeviceName(i) = s Then .ListIndex = i
-    Next
-    End With
     
     Call IniGetGrid(Me, gData)
 
@@ -807,13 +740,11 @@ End Sub
 Private Sub Form_Resize()
 On Error Resume Next
     gData.Move 0, Toolbar.Height, Me.ScaleWidth, Me.ScaleHeight - Toolbar.Height
-    cboScanner.Move Toolbar.Width - cboScanner.Width - 120, (Toolbar.Height - cboScanner.Height) / 2
 End Sub
 
 Private Sub Form_Unload(Cancel As Integer)
     Call IniPutForm(Me)
     Call IniPutGrid(Me, gData)
-    Call IniPut(AppIni, Me.Name, "Scanner", cboScanner.Text)
     
 On Error Resume Next: Call Kill(PathAppend(TempPath, "*.*"))
 End Sub
@@ -965,8 +896,6 @@ On Error GoTo eh
         Case mcFOLDER_EMBED
             Call FAttachments.AddFile(gData.TextMatrix(gData.Row, gData.ColIndex("ObjectID")), gData.TextMatrix(gData.Row, gData.ColIndex("Folder")), True)
             
-        Case mcFOLDER_SCAN
-            Call AquireImage
                         
     End Select
     
@@ -1017,7 +946,7 @@ End Function
 
 
 
-Private Sub gData_OLEDragDrop(Data As VSFlex8Ctl.VSDataObject, Effect As Long, ByVal Button As Integer, ByVal Shift As Integer, ByVal x As Single, ByVal Y As Single)
+Private Sub gData_OLEDragDrop(Data As VSFlex8Ctl.VSDataObject, Effect As Long, ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
 On Error GoTo eh
     Dim i As Long
     Dim ObjectID As String
@@ -1035,7 +964,7 @@ On Error GoTo eh
 eh: Exit Sub
 End Sub
 
-Private Sub gData_OLEDragOver(Data As VSFlex8Ctl.VSDataObject, Effect As Long, ByVal Button As Integer, ByVal Shift As Integer, ByVal x As Single, ByVal Y As Single, State As Integer)
+Private Sub gData_OLEDragOver(Data As VSFlex8Ctl.VSDataObject, Effect As Long, ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single, State As Integer)
     Effect = IIf(gData.MouseRow > 0 And Data.GetFormat(vbCFFiles), vbDropEffectCopy, vbDropEffectNone)
 End Sub
 
@@ -1283,7 +1212,7 @@ Private Sub gData_DblClick()
 End Sub
 
 
-Private Sub gData_MouseDown(Button As Integer, Shift As Integer, x As Single, Y As Single)
+Private Sub gData_MouseDown(Button As Integer, Shift As Integer, X As Single, Y As Single)
 On Error Resume Next
     With gData
     If Button = vbRightButton Then
@@ -1318,33 +1247,6 @@ End Sub
 
 
 
-Private Sub AquireImage()
-On Error GoTo eh:
-    Dim s As String
-
-    Twain1.CurrentDevice = cboScanner.ListIndex
-
-    If Not Twain1.Connected Then
-        MsgBox "No scanner could be detected. Please verify" & vbCrLf & _
-               "that it is installed and configured correctly.", vbInformation, App.ProductName
-        Exit Sub
-    End If
-
-    Twain1.AutoDeskew = True
-    Twain1.PixelType = 2
-    Twain1.Resolution = 300
-    Call Twain1.Acquire
-
-    s = TempFile("pdf")
-    Call Twain1.SaveToFile(s)
-    If FileExists(s) Then
-        Call FAttachments.AddFile(gData.TextMatrix(gData.Row, gData.ColIndex("ObjectID")), gData.TextMatrix(gData.Row, gData.ColIndex("Folder")), True, s)
-        Kill s
-    End If
-    
-Exit Sub
-eh: Call errHandler(SRCFILE & "AquireImage")
-End Sub
 
 Private Sub Form_KeyDown(KeyCode As Integer, Shift As Integer)
     Select Case True

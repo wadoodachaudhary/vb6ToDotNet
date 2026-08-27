@@ -135,6 +135,11 @@ On Error GoTo eh
             s = s & "   and job_no=" & DbQuote(Str, "" & rs("Job_No")) & vbCrLf
             Call HFApp.SqlExec(s, dbHomefront)
             
+            
+            'if style = simple then write listid to customer and to job
+            'if style = heirarchy then write parentid to customer and listid to job
+            If HFApp.Options.ValueByName("QuickBooksJobStyle") <> "Simple" Then listid = parentid
+            
             'add customer to HF
             s = ""
             s = s & "insert into arcustomers(arcustomer,description,contact1,phone1,email1,phone2,billaddr1,billaddr2,billcity,billprovince,billpostalcode,shipaddr1,shipcity,shipprovince,shippostalcode)" & vbCrLf

@@ -3,24 +3,41 @@ Begin VB.Form FPOIndex
    BorderStyle     =   3  'Fixed Dialog
    Caption         =   "Purchase Order"
    ClientHeight    =   7575
-   ClientLeft      =   3855
-   ClientTop       =   2745
+   ClientLeft      =   2025
+   ClientTop       =   3435
    ClientWidth     =   8670
    Icon            =   "FPOIndex.frx":0000
    LinkTopic       =   "Form1"
-   LockControls    =   -1  'True
    MaxButton       =   0   'False
    MinButton       =   0   'False
    ScaleHeight     =   7575
    ScaleWidth      =   8670
    ShowInTaskbar   =   0   'False
+   Begin VB.CheckBox chkPreConPO 
+      Alignment       =   1  'Right Justify
+      Caption         =   "Precon PO"
+      Height          =   225
+      Left            =   6060
+      TabIndex        =   13
+      Top             =   2610
+      Width           =   1920
+   End
+   Begin VB.CheckBox chkWarrantyPO 
+      Alignment       =   1  'Right Justify
+      Caption         =   "Warranty PO"
+      Height          =   255
+      Left            =   6060
+      TabIndex        =   12
+      Top             =   2340
+      Width           =   1920
+   End
    Begin VB.CheckBox chkLiens 
       Alignment       =   1  'Right Justify
       Caption         =   "Require Lien Release"
       Height          =   255
       Left            =   6060
       TabIndex        =   10
-      Top             =   1875
+      Top             =   1860
       Width           =   1920
    End
    Begin VB.CheckBox chkMPO 
@@ -29,32 +46,32 @@ Begin VB.Form FPOIndex
       Height          =   255
       Left            =   6060
       TabIndex        =   11
-      Top             =   2130
+      Top             =   2100
       Width           =   1920
    End
    Begin VB.CheckBox chkBuildPro 
       Alignment       =   1  'Right Justify
-      Caption         =   "BuildPro"
-      Height          =   255
+      Caption         =   "Send to BuildPro"
+      Height          =   270
       Left            =   6060
-      TabIndex        =   12
-      Top             =   2385
+      TabIndex        =   14
+      Top             =   2835
       Width           =   1920
    End
    Begin VB.CheckBox chkRequiresPaymentApproval 
       Alignment       =   1  'Right Justify
       Caption         =   "Approval Rqrd"
-      Height          =   255
+      Height          =   225
       Left            =   6060
-      TabIndex        =   13
-      Top             =   2640
+      TabIndex        =   15
+      Top             =   3105
       Width           =   1920
    End
    Begin HFSystem.WizHead WizHead1 
       Align           =   1  'Align Top
       Height          =   900
       Left            =   0
-      TabIndex        =   34
+      TabIndex        =   36
       Top             =   0
       Width           =   8670
       _ExtentX        =   15293
@@ -65,20 +82,20 @@ Begin VB.Form FPOIndex
    End
    Begin VB.PictureBox picAttachments 
       BorderStyle     =   0  'None
-      Height          =   2520
+      Height          =   2205
       Left            =   6060
-      ScaleHeight     =   2520
+      ScaleHeight     =   2205
       ScaleWidth      =   2295
-      TabIndex        =   33
-      Top             =   4485
+      TabIndex        =   35
+      Top             =   4800
       Width           =   2295
       Begin VB.ListBox lstAttachments 
          Appearance      =   0  'Flat
-         Height          =   2550
+         Height          =   2235
          IntegralHeight  =   0   'False
          Left            =   -15
          Style           =   1  'Checkbox
-         TabIndex        =   18
+         TabIndex        =   20
          Top             =   -15
          Width           =   2325
       End
@@ -86,21 +103,21 @@ Begin VB.Form FPOIndex
    Begin VB.CheckBox chkTotalOnly 
       Alignment       =   1  'Right Justify
       Caption         =   "Total Only"
-      Height          =   255
+      Height          =   225
       Left            =   6060
-      TabIndex        =   16
-      Top             =   3390
+      TabIndex        =   18
+      Top             =   3870
       Width           =   1920
    End
    Begin VB.TextBox txtRetainagePercent 
       Alignment       =   2  'Center
       BorderStyle     =   0  'None
-      Height          =   230
+      Height          =   225
       Left            =   7605
       MaxLength       =   50
-      TabIndex        =   17
+      TabIndex        =   19
       Text            =   "99%"
-      Top             =   3690
+      Top             =   4170
       Width           =   375
    End
    Begin HFSystem.VBCombo cboJCCostCode 
@@ -175,19 +192,19 @@ Begin VB.Form FPOIndex
    Begin VB.CheckBox chkHideQty 
       Alignment       =   1  'Right Justify
       Caption         =   "Hide Qty"
-      Height          =   255
+      Height          =   225
       Left            =   6060
-      TabIndex        =   15
-      Top             =   3150
+      TabIndex        =   17
+      Top             =   3630
       Width           =   1920
    End
    Begin VB.CheckBox chkHidePrice 
       Alignment       =   1  'Right Justify
       Caption         =   "Hide Price"
-      Height          =   255
+      Height          =   225
       Left            =   6060
-      TabIndex        =   14
-      Top             =   2895
+      TabIndex        =   16
+      Top             =   3375
       Width           =   1920
    End
    Begin VB.TextBox txtDescription 
@@ -207,7 +224,7 @@ Begin VB.Form FPOIndex
       Height          =   315
       Index           =   0
       Left            =   6360
-      TabIndex        =   19
+      TabIndex        =   21
       Top             =   7140
       Width           =   1035
    End
@@ -217,7 +234,7 @@ Begin VB.Form FPOIndex
       Height          =   315
       Index           =   1
       Left            =   7500
-      TabIndex        =   20
+      TabIndex        =   22
       Top             =   7140
       Width           =   1035
    End
@@ -255,7 +272,7 @@ Begin VB.Form FPOIndex
       Height          =   255
       Index           =   7
       Left            =   5940
-      TabIndex        =   35
+      TabIndex        =   37
       Top             =   990
       Width           =   1395
    End
@@ -274,17 +291,17 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   6
       Left            =   5940
-      TabIndex        =   32
-      Top             =   4215
+      TabIndex        =   34
+      Top             =   4515
       Width           =   1395
    End
    Begin VB.Label Label1 
       Caption         =   "Retainage"
-      Height          =   255
+      Height          =   210
       Index           =   5
       Left            =   6090
-      TabIndex        =   31
-      Top             =   3690
+      TabIndex        =   33
+      Top             =   4170
       Width           =   975
    End
    Begin VB.Label Label1 
@@ -293,7 +310,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   4
       Left            =   540
-      TabIndex        =   30
+      TabIndex        =   32
       Top             =   6780
       Width           =   975
    End
@@ -303,7 +320,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   3
       Left            =   540
-      TabIndex        =   29
+      TabIndex        =   31
       Top             =   6480
       Width           =   975
    End
@@ -313,7 +330,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   2
       Left            =   480
-      TabIndex        =   28
+      TabIndex        =   30
       Top             =   4680
       Width           =   975
    End
@@ -333,7 +350,7 @@ Begin VB.Form FPOIndex
       Height          =   255
       Index           =   1
       Left            =   60
-      TabIndex        =   27
+      TabIndex        =   29
       Top             =   1080
       Width           =   1395
    End
@@ -352,8 +369,8 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   0
       Left            =   5940
-      TabIndex        =   26
-      Top             =   1665
+      TabIndex        =   28
+      Top             =   1650
       Width           =   975
    End
    Begin VB.Label Label1 
@@ -362,7 +379,7 @@ Begin VB.Form FPOIndex
       Height          =   255
       Index           =   23
       Left            =   480
-      TabIndex        =   25
+      TabIndex        =   27
       Top             =   2400
       Width           =   975
    End
@@ -372,7 +389,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   24
       Left            =   480
-      TabIndex        =   24
+      TabIndex        =   26
       Top             =   2880
       Width           =   975
    End
@@ -382,7 +399,7 @@ Begin VB.Form FPOIndex
       Height          =   255
       Index           =   25
       Left            =   360
-      TabIndex        =   23
+      TabIndex        =   25
       Top             =   2640
       Width           =   1095
    End
@@ -392,7 +409,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   28
       Left            =   480
-      TabIndex        =   22
+      TabIndex        =   24
       Top             =   1350
       Width           =   975
    End
@@ -402,7 +419,7 @@ Begin VB.Form FPOIndex
       Height          =   240
       Index           =   29
       Left            =   420
-      TabIndex        =   21
+      TabIndex        =   23
       Top             =   1860
       Width           =   1035
    End
@@ -440,6 +457,13 @@ Private Sub chkBuildPro_Click()
     mDirty = True
 End Sub
 
+Private Sub chkWarrantyPO_Click()
+    mDirty = True
+End Sub
+
+Private Sub chkPreConPO_Click()
+    mDirty = True
+End Sub
 Private Sub chkLiens_Click()
     mDirty = True
 End Sub
@@ -495,6 +519,8 @@ Private Sub Form_Load()
         cboPOType.ListIndex = 0
         chkBuildPro.Value = vbChecked
         chkMPO.Value = vbUnchecked
+        chkWarrantyPO.Value = vbUnchecked
+        chkPreConPO.Value = vbUnchecked
         chkRequiresPaymentApproval.Value = vbUnchecked
         chkHidePrice.Value = vbUnchecked
         chkHideQty.Value = vbUnchecked
@@ -516,6 +542,8 @@ Private Sub Form_Load()
         
         chkLiens.Value = IIf("" & rs("RequireLienRelease") = "True", vbChecked, vbUnchecked)
         chkMPO.Value = IIf("" & rs("MPO") = "True", vbChecked, vbUnchecked)
+        chkWarrantyPO.Value = IIf("" & rs("WarrantyPO") = "True", vbChecked, vbUnchecked)
+        chkPreConPO.Value = IIf("" & rs("PreconPO") = "True", vbChecked, vbUnchecked)
         chkBuildPro.Value = IIf("" & rs("BuildProEnabled") = "True", vbChecked, vbUnchecked)
         chkRequiresPaymentApproval.Value = IIf("" & rs("RequiresPaymentApproval") = "True", vbChecked, vbUnchecked)
         chkHidePrice.Value = IIf("" & rs("HidePrice") = "True", vbChecked, vbUnchecked)
@@ -681,6 +709,8 @@ On Error GoTo eh:
     s = s & "   ,JCCostCode=" & DbQuote(Str, GetComboBoxListKey(cboJCCostCode)) & vbCrLf
     s = s & "   ,JCCategory=" & DbQuote(Str, GetComboBoxListKey(cboJCCategory)) & vbCrLf
     s = s & "   ,MPO=" & DbQuote(Bit, chkMPO.Value = vbChecked) & vbCrLf
+    s = s & "   ,WarrantyPO=" & DbQuote(Bit, chkWarrantyPO.Value = vbChecked) & vbCrLf
+    s = s & "   ,PreconPO=" & DbQuote(Bit, chkPreConPO.Value = vbChecked) & vbCrLf
     s = s & "   ,BuildProEnabled=" & DbQuote(Bit, chkBuildPro.Value = vbChecked) & vbCrLf
     s = s & "   ,RequireLienRelease=" & DbQuote(Bit, chkLiens.Value = vbChecked) & vbCrLf
     s = s & "   ,RequiresPaymentApproval=" & DbQuote(Bit, chkRequiresPaymentApproval.Value = vbChecked) & vbCrLf
@@ -758,8 +788,12 @@ Private Function ValidateData() As Boolean
     Dim s As String
     
     ValidateData = True
-    If Trim(txtPOIndex.Text) = "" Then s = s & "Purchase order is required"
+    If Trim(txtPOIndex.Text) = "" Then s = s & "Purchase order is required" & vbCrLf
     
+    If HFApp.Options.ValueByName("BuildProCompanyCode") <> "" And chkBuildPro.Value = vbChecked Then
+        If Trim(cboJCCostCode.Text) = "" Then s = s & "Cost Code is required" & vbCrLf
+        If Trim(cboJCCategory.Text) = "" Then s = s & "Category is required" & vbCrLf
+    End If
     
     If s <> "" Then
         ValidateData = False

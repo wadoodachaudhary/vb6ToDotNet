@@ -14,15 +14,6 @@ Begin VB.Form FVendor
    ScaleWidth      =   16395
    Begin VB.TextBox txtTaxID 
       BorderStyle     =   0  'None
-      BeginProperty Font 
-         Name            =   "MS Sans Serif"
-         Size            =   8.25
-         Charset         =   0
-         Weight          =   400
-         Underline       =   0   'False
-         Italic          =   0   'False
-         Strikethrough   =   0   'False
-      EndProperty
       Height          =   270
       Left            =   1455
       Locked          =   -1  'True
@@ -2122,7 +2113,7 @@ Private Sub LoadContacts()
     s = s & "select *" & vbCrLf
     s = s & "  from contacts" & vbCrLf
     s = s & " where DivisionID = " & HFApp.DivisionID & " and contacttypeid=99" & vbCrLf
-    s = s & "   and vendorcode=" & DbQuote(Str, mVendor)
+    s = s & "   and vendorcode=" & DbQuote(Str, mVendor) & vbCrLf
     s = s & "order by firstname" & vbCrLf
     Set rs = HFApp.SqlExec(s)
     With gContacts

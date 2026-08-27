@@ -9,19 +9,19 @@ End Function
 Private Function GetImpDate(Name As String) As Date
 On Error Resume Next
     Dim dt As Date
-    
+
     dt = "1970-01-01"
     dt = CDate(HFApp.Options.ValueByName(Name))
     If dt < DateValue("1970-01-01") Then dt = DateValue("1970-01-01")
     GetImpDate = dt
-    
+
 End Function
 
 Private Sub PutImpDate(Name As String)
 On Error Resume Next
-    
+
     HFApp.Options.ValueByName(Name) = Now()
-    
+
 End Sub
 
 Private Sub LogXML(Name As String, XmlMessage As String)
@@ -42,15 +42,15 @@ On Error GoTo eh
     Dim rs As Recordset
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
-    
+
     If Not BuildProEnabled Then Exit Sub
-    
+
     Screen.MousePointer = vbHourglass
-    
+
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenPOIndexes
-        
+
     s = ""
     s = s & "select * from BuildPro_POIndexes " & vbCrLf
     s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID)
@@ -64,8 +64,8 @@ On Error GoTo eh
     LogXML "poindexes", X.xml
     X.PostMessage
     Screen.MousePointer = vbNormal
-    
-    
+
+
 Exit Sub
 eh: Call errHandler(SRCFILE & "SendBuildProPOIndexes")
 End Sub
@@ -77,21 +77,21 @@ On Error GoTo eh
     Dim rs As Recordset
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
-    
+
     If Not BuildProEnabled Then Exit Sub
-    
+
     Screen.MousePointer = vbHourglass
 
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
-    
+
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenVendors
-        
+
     s = ""
     s = s & "select * from dbo.BuildPro_Vendors" & vbCrLf
     s = s & "Where DivisionID = " & DbQuote(Num, HFApp.DivisionID)
     Set rs = HFApp.SqlExec(s, dbHomefront)
-    
+
     s = ""
     While Not rs.EOF
         Call X.vendor("" & rs("Vendor_ID") _
@@ -109,12 +109,12 @@ On Error GoTo eh
                     , "" & rs("ServiceEmail") _
                     , rs("tbd") _
                     , rs("active"))
-        
+
         s = s & "update tblVendors set DateSentToBuildPro=getdate() where divisionid=" & DbQuote(Num, HFApp.DivisionID) & " and Vendor_ID=" & DbQuote(Str, "" & rs("Vendor_ID"))
-                
+
         rs.MoveNext
     Wend
-    
+
     If s <> "" Then
         X.CloseVendors
         X.CloseMessage
@@ -122,8 +122,8 @@ On Error GoTo eh
         If X.PostMessage Then Call HFApp.SqlExec(s, dbHomefront)
     End If
     Screen.MousePointer = vbNormal
-    
-    
+
+
 Exit Sub
 eh: Call errHandler(SRCFILE & "SendBuildProVendors")
 End Sub
@@ -135,14 +135,14 @@ On Error GoTo eh
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
     Dim lastDoc As String
-    
+
     If Not BuildProEnabled Then Exit Sub
     Screen.MousePointer = vbHourglass
 
     'for payments which cross divisions BP needs to be configured with a 3rd AP only division.
     divCode = Trim(HFApp.Options.ValueByName("BuildProAPDivCode"))
     If divCode = "" Then divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
-        
+
     s = ""
     s = s & "select * from dbo.BuildPro_RemittanceAdvice_Checks" & vbCrLf
     s = s & "Where DivisionID = " & DbQuote(Num, HFApp.DivisionID)
@@ -150,9 +150,9 @@ On Error GoTo eh
     s = s & "order by ChequeNumber"
     Set rs = HFApp.SqlExec(s, dbHomefront)
     While Not rs.EOF
-    
+
         If lastDoc <> "" & rs("ChequeNumber") Then
-            
+
             If lastDoc <> "" Then
                 Call X.CloseRemittanceDoc
                 Call X.CloseRemittanceAdvice
@@ -163,19 +163,19 @@ On Error GoTo eh
                     Call HFApp.SqlExec(s)
                 End If
             End If
-            
+
             lastDoc = "" & rs("ChequeNumber")
             Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
             Call X.OpenRemittanceAdvice
             Call X.AddRemittanceDoc_Cheque("" & rs("ActionCode"), "" & rs("IssueDate"), "" & rs("ChequeNumber"), "" & rs("ChequeAmount"), "" & rs("ChequeDate"), "" & rs("ChequeType"), "" & rs("Vendor"))
-        
+
         End If
-            
+
         Call X.AddRemittanceDoc_Line("" & rs("Job"), "" & rs("PONumber"), "" & rs("InvoiceNumber"), "" & rs("InvoiceDate"), "" & rs("AmountPaid"), "" & rs("POIndex"), "" & rs("Status"))
-        
+
         rs.MoveNext
     Wend
-        
+
     If lastDoc <> "" Then
         Call X.CloseRemittanceDoc
         Call X.CloseRemittanceAdvice
@@ -186,10 +186,10 @@ On Error GoTo eh
             Call HFApp.SqlExec(s)
         End If
     End If
-    
+
     Screen.MousePointer = vbNormal
-    
-    
+
+
 Exit Sub
 eh: Call errHandler(SRCFILE & "SendBuildProChecks")
 End Sub
@@ -201,12 +201,12 @@ On Error GoTo eh
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
     Dim lastDoc As String
-    
+
     If Not BuildProEnabled Then Exit Sub
     Screen.MousePointer = vbHourglass
 
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
-        
+
     s = ""
     s = s & "select * from dbo.BuildPro_RemittanceAdvice_Vouchers" & vbCrLf
     s = s & "Where DivisionID = " & DbQuote(Num, HFApp.DivisionID) & vbCrLf
@@ -214,9 +214,9 @@ On Error GoTo eh
     s = s & "order by Voucher"
     Set rs = HFApp.SqlExec(s, dbHomefront)
     While Not rs.EOF
-    
+
         If lastDoc <> "" & rs("Voucher") Then
-            
+
             If lastDoc <> "" Then
                 Call X.CloseRemittanceDoc
                 Call X.CloseRemittanceAdvice
@@ -227,19 +227,19 @@ On Error GoTo eh
                     Call HFApp.SqlExec(s)
                 End If
             End If
-            
+
             lastDoc = "" & rs("Voucher")
             Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
             Call X.OpenRemittanceAdvice
             Call X.AddRemittanceDoc_Voucher("" & rs("ActionCode"), "" & rs("IssueDate"), "" & rs("Voucher"), "" & rs("VoucherDate"), "" & rs("VoucherAmount"), "" & rs("Vendor"))
-        
+
         End If
-            
+
         Call X.AddRemittanceDoc_Line("" & rs("Job"), "" & rs("PONumber"), "" & rs("InvoiceNumber"), "" & rs("InvoiceDate"), "" & rs("AmountPaid"), "" & rs("POIndex"), "" & rs("Status"))
-        
+
         rs.MoveNext
     Wend
-        
+
     If lastDoc <> "" Then
         Call X.CloseRemittanceDoc
         Call X.CloseRemittanceAdvice
@@ -250,9 +250,9 @@ On Error GoTo eh
             Call HFApp.SqlExec(s)
         End If
     End If
-    
+
     Screen.MousePointer = vbNormal
-    
+
 Exit Sub
 eh: Call errHandler(SRCFILE & "SendBuildProVouchers")
 End Sub
@@ -264,13 +264,13 @@ On Error GoTo eh
     Dim X As New HyphenSys.BuildProWrapper
     Dim Y As New HyphenSys.BuildProWrapper
     Dim divCode As String
-    
+
     If Not BuildProEnabled Then Exit Sub
     Screen.MousePointer = vbHourglass
-    
+
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
-    
-    
+
+
     'communities
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenCommunities
@@ -296,8 +296,8 @@ On Error GoTo eh
         LogXML "communities", X.xml
         X.PostMessage
     End If
-    
-    
+
+
     'phases
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenCommunities
@@ -323,9 +323,9 @@ On Error GoTo eh
         LogXML "phases", X.xml
         X.PostMessage
     End If
-    
+
     Screen.MousePointer = vbNormal
-    
+
 
 Exit Sub
 eh: Call errHandler(SRCFILE & "SendBuildCommunities")
@@ -338,11 +338,11 @@ On Error GoTo eh
     Dim rs As Recordset
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
-    
+
     If Not BuildProEnabled Then Exit Function
-    
+
     If Job = "" Then
-    
+
         s = ""
         s = s & "New Jobs" & Chr(1)
         s = s & "select HFJob Job" & IIf(HFApp.Options(MultiFamily), ",job Schedule", "") & ", Description,CommunityNumber Community,PhaseNumber Phase, LotNumber, BuyerName, isnull(AddressLine1,'') Address, City" & vbCrLf
@@ -354,7 +354,7 @@ On Error GoTo eh
         s = s & "select HFJob Job" & IIf(HFApp.Options(MultiFamily), ",job Schedule", "") & ",Description,CommunityNumber Community,PhaseNumber Phase, LotNumber, BuyerName, isnull(AddressLine1,'') Address, City" & vbCrLf
         s = s & "from BuildPro_Jobs" & vbCrLf
         s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID)
-        
+
         If Not FPickList.Choose(HFApp.Databases(dbHomefront), "Job", s, , , , , , True) Then Exit Function
         For i = 1 To FPickList.SelectedItems
             Job = Job & "," & DbQuote(Str, FPickList.SelectedItem("Job", i))
@@ -367,20 +367,20 @@ On Error GoTo eh
     Else
         Job = DbQuote(Str, Job)
     End If
-    
+
     Screen.MousePointer = vbHourglass
-    
+
   '  Call SendBuildProCommunities
 
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenJobs
-            
+
     s = "select * from BuildPro_Jobs where hfjob in(" & Job & ")"
     Set rs = HFApp.SqlExec(s, dbHomefront)
     s = ""
     While Not rs.EOF
-    
+
         Call X.Job("" & rs("Job"), "" & rs("Description"), "" & rs("CommunityNumber"), "" & rs("County"), Val("" & rs("PhaseNumber")), "" & rs("LotNumber"), "" & rs("Building"), _
                    "" & rs("Unit"), "" & rs("Plan"), "" & rs("Elevation"), "" & rs("Swing"), "" & rs("ColorPackage"), "" & rs("ScheduleTemplate"), "" & rs("StartDate"), _
                    "" & rs("PromisedDeliveryDate"), "" & rs("BuyerCloseDate"), "" & rs("PermitReceivedDate"), "" & rs("PermitNumber"), "" & rs("LegalLotNumber"), "" & rs("BlockNumber"), _
@@ -391,10 +391,10 @@ On Error GoTo eh
                    "" & rs("CoBuyerFName"), "" & rs("CoBuyerLName"), "" & rs("CoBuyerAddressLine1"), "" & rs("CoBuyerAddressLine2"), "" & rs("CoBuyerCity"), "" & rs("CoBuyerState"), _
                    "" & rs("CoBuyerPostalCode"), "" & rs("CoBuyerHomePhone"), "" & rs("CoBuyerWorkPhone"), "" & rs("CoBuyerMobilePhone"), "" & rs("CoBuyerFax"), "" & rs("CoBuyerEmail"), "" & rs("CoBuyerType"), _
                    "" & rs("TarionBuilderNumber"), "" & rs("TarionEnrollmentNumber"))
-        
+
         rs.MoveNext
     Wend
-    
+
     X.CloseJobs
     X.CloseMessage
     LogXML "jobs", X.xml
@@ -404,7 +404,7 @@ On Error GoTo eh
         SendBuildProJobs = True
     End If
     Screen.MousePointer = vbNormal
-    
+
 Exit Function
 eh: Call errHandler(SRCFILE & "SendBuildProJobs")
 End Function
@@ -412,9 +412,9 @@ End Function
 Public Function CancelBuildProPO(Job As String, PONumber As String) As Boolean
     Dim s As String
     Dim rs As Recordset
-    
+
     If Not BuildProEnabled Then Exit Function
-    
+
     'if not posted then do nothing.. NO ALWAYS SEND IT BUT IGNORE ANY ERRORS
 '    s = "select * from pomaster where datesenttobuildpro is not null and divisionid=" & HFApp.DivisionID & " and PONumber=" & DbQuote(Str, PONumber)
 '    Set rs = HFApp.SqlExec(s, dbHomefront)
@@ -422,11 +422,11 @@ Public Function CancelBuildProPO(Job As String, PONumber As String) As Boolean
 '        CancelBuildProPO = True
 '        Exit Function
 '    End If
-    
+
     'reset date so it can be sent and send it
     s = "update pomaster set datesenttobuildpro=null where divisionid=" & HFApp.DivisionID & " and PONumber=" & DbQuote(Str, PONumber)
     Call HFApp.SqlExec(s, dbHomefront)
-    
+
     If SendBuildProPOs(DbQuote(Str, Job), DbQuote(Str, PONumber), True) Then
         CancelBuildProPO = True
     Else
@@ -434,7 +434,7 @@ Public Function CancelBuildProPO(Job As String, PONumber As String) As Boolean
         s = "update pomaster set datesenttobuildpro=getdate() where divisionid=" & HFApp.DivisionID & " and PONumber=" & DbQuote(Str, PONumber)
         Call HFApp.SqlExec(s, dbHomefront)
     End If
-    
+
 
 End Function
 
@@ -447,10 +447,10 @@ On Error GoTo eh
     Dim rs As Recordset
     Dim X As New HyphenSys.BuildProWrapper
     Dim divCode As String
-    
+
     If Not BuildProEnabled Then Exit Function
-        
-        
+
+
     If Job = "" And Pos = "" Then
         s = ""
         s = s & "Un-sent POs" & Chr(1)
@@ -479,30 +479,43 @@ On Error GoTo eh
             Pos = Mid(Pos, 2)
         End If
     End If
-    
-    
+
+
     Screen.MousePointer = vbHourglass
-    
+
     divCode = HFApp.SqlExec("select divisioncode from divisions where divisionid=" & DbQuote(Num, HFApp.DivisionID))(0)
     Call X.OpenMessage(HFApp.Options.ValueByName("BuildProCompanyCode"), divCode, HFApp.Options.ValueByName("BuildProURL"), HFApp.Options.ValueByName("BuildProUID"), HFApp.Options.ValueByName("BuildProPwd"))
     X.OpenCommitments
-        
-    s = ""
-    s = s & "select * from buildpro_POs" & vbCrLf
-    s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID) & vbCrLf
-    If Pos <> "" Then
-        s = s & "and PONumber in(" & Pos & ")" & vbCrLf
+
+'    s = ""
+'    s = s & "select * from buildpro_POs" & vbCrLf
+'    s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID) & vbCrLf
+'    If Pos <> "" Then
+'        s = s & "and PONumber in(" & Pos & ")" & vbCrLf
+'    Else
+'        s = s & "and Job=" & DbQuote(Str, Job) & vbCrLf
+'        s = s & "and isnull(EPOID,'')=''" & vbCrLf           'dont send epos
+'        s = s & "and DateSentToBuildPro is null" & vbCrLf    'only send new things
+'    End If
+'    s = s & "order by ponumber,linenumber"
+
+' -- VIEW IS 2-3 TIMES SLOWER THAN PROC? use proc where possible ---
+    If Pos = "" Then
+        s = "exec dbo.BuildPro_GetPOs " & DbQuote(Num, HFApp.DivisionID) & ", " & DbQuote(Str, Job)
     Else
-        s = s & "and Job=" & DbQuote(Str, Job) & vbCrLf
-        s = s & "and isnull(EPOID,'')=''" & vbCrLf           'dont send epos
-        s = s & "and DateSentToBuildPro is null" & vbCrLf    'only send new things
+        s = ""
+        s = s & "select * from buildpro_POs" & vbCrLf
+        s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID) & vbCrLf
+        s = s & "and PONumber in(" & Pos & ")" & vbCrLf
+        s = s & "order by ponumber,linenumber"
     End If
-    s = s & "order by ponumber,linenumber"
+
+
     Set rs = HFApp.SqlExec(s, dbHomefront)
-    
+
     Pos = ""
     While Not rs.EOF
-    
+
         Call X.CommitmentLine("" & rs("PONumber"), "" & rs("PODate"), "" & rs("PODocType"), "" & rs("PODocSuffix"), "" & rs("EPOid"), "" & rs("EPODocType"), "" & rs("EPODocSuffix"), _
             "" & rs("Vendor"), "" & rs("POIndex"), "" & rs("POCancelled"), "" & rs("Job"), "" & rs("Community"), Val("" & rs("CommunityPhase")), "" & rs("SKU"), _
             Val("" & rs("LineNumber")), "" & rs("ItemDescription"), Val("" & rs("Qty")), "" & rs("UOM"), Val("" & rs("UnitPrice")), Val("" & rs("Pretax")), _
@@ -510,37 +523,37 @@ On Error GoTo eh
             Val("" & rs("NJCTax")), _
             "" & rs("OptionID"), "" & rs("OptionDesc"), "" & rs("OptionQty"), Val("" & rs("OptionCost")), "" & rs("OptionNotes"), _
             "" & rs("AttrColor"), "" & rs("AttrFinish"), "" & rs("AttrStyle"), "" & rs("AttrLocation"), "" & rs("AttrOther"), "" & rs("itemComments"))
-        
+
         Pos = Pos & "," & DbQuote(Str, "" & rs("PONumber"))
         rs.MoveNext
     Wend
     Pos = Mid(Pos, 2)
-    
+
     If Pos <> "" Then
         X.CloseCommitments
         X.CloseMessage
         LogXML "commitments", X.xml
-        
+
         If HideErrors Then
             Call X.PostMessageQuietly
         Else
-        
+
             If X.PostMessage Then
                 SendBuildProPOs = True
-                
+
                 s = ""
                 s = s & "update pomaster set DateSentToBuildPro=getdate(),EPOid=''" & vbCrLf
                 s = s & "where divisionid=" & DbQuote(Num, HFApp.DivisionID) & vbCrLf
                 s = s & "and PONumber in(" & Pos & ")"
                 Call HFApp.SqlExec(s, dbHomefront)
-                
+
             End If
         End If
     End If
     Screen.MousePointer = vbNormal
-    
-    
-        
+
+
+
 Exit Function
 eh: Call errHandler(SRCFILE & "SendBuildProPOs")
 End Function

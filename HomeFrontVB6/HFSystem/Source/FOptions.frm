@@ -25,18 +25,152 @@ Begin VB.Form FOptions
       Caption         =   "Accounting Integration"
       Height          =   12075
       Index           =   4
-      Left            =   4770
-      TabIndex        =   172
+      Left            =   2400
+      TabIndex        =   182
       Tag             =   "Security"
-      Top             =   1110
+      Top             =   270
       Visible         =   0   'False
       Width           =   23145
+      Begin VB.Frame AccountingFrame 
+         Caption         =   "D365 -- ABN"
+         Height          =   2325
+         Index           =   8
+         Left            =   30
+         TabIndex        =   410
+         Top             =   930
+         Width           =   6375
+         Begin VB.TextBox txtABND01Division 
+            BorderStyle     =   0  'None
+            Height          =   240
+            Left            =   1605
+            TabIndex        =   419
+            Top             =   1500
+            Width           =   2370
+         End
+         Begin VB.TextBox txtABNLegalEntity 
+            BorderStyle     =   0  'None
+            Height          =   240
+            Left            =   1605
+            TabIndex        =   20
+            Top             =   1245
+            Width           =   2370
+         End
+         Begin VB.TextBox txtABNResource 
+            BorderStyle     =   0  'None
+            Height          =   240
+            Left            =   2550
+            TabIndex        =   16
+            Top             =   105
+            Width           =   3615
+         End
+         Begin VB.TextBox txtABNClientSecret 
+            BorderStyle     =   0  'None
+            Height          =   240
+            IMEMode         =   3  'DISABLE
+            Left            =   2550
+            PasswordChar    =   "*"
+            TabIndex        =   19
+            Top             =   870
+            Width           =   3615
+         End
+         Begin VB.TextBox txtABNClientID 
+            BorderStyle     =   0  'None
+            Height          =   240
+            IMEMode         =   3  'DISABLE
+            Left            =   2565
+            PasswordChar    =   "*"
+            TabIndex        =   18
+            Top             =   615
+            Width           =   3615
+         End
+         Begin VB.TextBox txtABNTenantID 
+            BorderStyle     =   0  'None
+            Height          =   240
+            Left            =   2550
+            TabIndex        =   17
+            Top             =   360
+            Width           =   3615
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            AutoSize        =   -1  'True
+            Caption         =   "D01_Division"
+            ForeColor       =   &H80000008&
+            Height          =   195
+            Index           =   76
+            Left            =   615
+            TabIndex        =   418
+            Top             =   1530
+            Width           =   945
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            AutoSize        =   -1  'True
+            Caption         =   "Legal Entity"
+            ForeColor       =   &H80000008&
+            Height          =   195
+            Index           =   75
+            Left            =   720
+            TabIndex        =   415
+            Top             =   1290
+            Width           =   825
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            Caption         =   "Base Url"
+            Height          =   195
+            Index           =   74
+            Left            =   1140
+            TabIndex        =   414
+            Top             =   105
+            Width           =   1365
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            Caption         =   "Client Secret"
+            Height          =   195
+            Index           =   72
+            Left            =   915
+            TabIndex        =   413
+            Top             =   870
+            Width           =   1575
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            Caption         =   "Application (client) ID"
+            Height          =   195
+            Index           =   71
+            Left            =   915
+            TabIndex        =   412
+            Top             =   615
+            Width           =   1575
+         End
+         Begin VB.Label Label1 
+            Alignment       =   1  'Right Justify
+            Caption         =   "Directory (tenant) ID"
+            Height          =   195
+            Index           =   70
+            Left            =   915
+            TabIndex        =   411
+            Top             =   360
+            Width           =   1575
+         End
+         Begin VB.Image Image1 
+            Height          =   480
+            Index           =   8
+            Left            =   390
+            Picture         =   "FOptions.frx":000C
+            Stretch         =   -1  'True
+            Top             =   240
+            Width           =   480
+         End
+      End
       Begin VB.Frame AccountingFrame 
          Caption         =   "Quickbooks Online"
          Height          =   1425
          Index           =   6
          Left            =   13590
-         TabIndex        =   361
+         TabIndex        =   369
          Top             =   6180
          Width           =   6375
          Begin VB.OptionButton optQBOJobHeirarchy 
@@ -44,7 +178,7 @@ Begin VB.Form FOptions
             Height          =   225
             Index           =   1
             Left            =   2265
-            TabIndex        =   363
+            TabIndex        =   371
             Top             =   660
             Value           =   -1  'True
             Width           =   4035
@@ -54,14 +188,14 @@ Begin VB.Form FOptions
             Height          =   225
             Index           =   0
             Left            =   2265
-            TabIndex        =   362
+            TabIndex        =   370
             Top             =   420
             Width           =   4035
          End
          Begin HFSystem.VBCombo cboQuickBooksOnlineVersion 
             Height          =   240
             Left            =   2265
-            TabIndex        =   364
+            TabIndex        =   372
             Top             =   45
             Width           =   705
             _ExtentX        =   1244
@@ -75,7 +209,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   121
             Left            =   1710
-            TabIndex        =   366
+            TabIndex        =   374
             Top             =   60
             Width           =   480
          End
@@ -86,7 +220,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   120
             Left            =   1305
-            TabIndex        =   365
+            TabIndex        =   373
             Top             =   420
             Width           =   885
          End
@@ -94,7 +228,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   15
             Left            =   390
-            Picture         =   "FOptions.frx":000C
+            Picture         =   "FOptions.frx":08D6
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -106,7 +240,7 @@ Begin VB.Form FOptions
          Enabled         =   0   'False
          Height          =   195
          Left            =   4890
-         TabIndex        =   37
+         TabIndex        =   41
          Top             =   6180
          Value           =   1  'Checked
          Width           =   1020
@@ -117,7 +251,7 @@ Begin VB.Form FOptions
          Enabled         =   0   'False
          Height          =   195
          Left            =   4890
-         TabIndex        =   38
+         TabIndex        =   42
          Top             =   6405
          Value           =   1  'Checked
          Width           =   1020
@@ -127,7 +261,7 @@ Begin VB.Form FOptions
          Caption         =   "required"
          Height          =   195
          Left            =   4890
-         TabIndex        =   39
+         TabIndex        =   43
          Top             =   6630
          Width           =   1020
       End
@@ -136,14 +270,14 @@ Begin VB.Form FOptions
          Height          =   1425
          Index           =   7
          Left            =   13575
-         TabIndex        =   302
+         TabIndex        =   312
          Top             =   315
          Width           =   6375
          Begin VB.Image Image1 
             Height          =   480
             Index           =   10
             Left            =   390
-            Picture         =   "FOptions.frx":08D6
+            Picture         =   "FOptions.frx":11A0
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -155,7 +289,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   8
          Left            =   2325
-         TabIndex        =   26
+         TabIndex        =   30
          Text            =   "2"
          Top             =   5310
          Width           =   255
@@ -166,7 +300,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   7
          Left            =   2175
-         TabIndex        =   25
+         TabIndex        =   29
          Text            =   "/"
          Top             =   5310
          Width           =   135
@@ -175,7 +309,7 @@ Begin VB.Form FOptions
          Caption         =   "Use job and PO specific numbering."
          Height          =   225
          Left            =   375
-         TabIndex        =   21
+         TabIndex        =   25
          Top             =   5100
          Width           =   2955
       End
@@ -186,7 +320,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   4
          Left            =   1485
-         TabIndex        =   22
+         TabIndex        =   26
          Text            =   "4"
          Top             =   5310
          Width           =   255
@@ -197,7 +331,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   6
          Left            =   1905
-         TabIndex        =   24
+         TabIndex        =   28
          Text            =   "4"
          Top             =   5310
          Width           =   255
@@ -208,7 +342,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   5
          Left            =   1755
-         TabIndex        =   23
+         TabIndex        =   27
          Text            =   "/"
          Top             =   5310
          Width           =   135
@@ -218,14 +352,14 @@ Begin VB.Form FOptions
          Height          =   1425
          Index           =   2
          Left            =   6990
-         TabIndex        =   244
+         TabIndex        =   254
          Top             =   3270
          Width           =   6375
          Begin VB.CheckBox chkQBPostRevenueToJob 
             Caption         =   "Post revenue to job"
             Height          =   195
             Left            =   2580
-            TabIndex        =   96
+            TabIndex        =   106
             Top             =   1080
             Width           =   3135
          End
@@ -234,7 +368,7 @@ Begin VB.Form FOptions
             Height          =   225
             Index           =   0
             Left            =   2265
-            TabIndex        =   94
+            TabIndex        =   104
             Top             =   570
             Width           =   4035
          End
@@ -243,7 +377,7 @@ Begin VB.Form FOptions
             Height          =   225
             Index           =   1
             Left            =   2265
-            TabIndex        =   95
+            TabIndex        =   105
             Top             =   810
             Value           =   -1  'True
             Width           =   4035
@@ -252,14 +386,14 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2280
-            TabIndex        =   92
+            TabIndex        =   102
             Top             =   0
             Width           =   3615
          End
          Begin HFSystem.VBCombo cboQuickBooksVersion 
             Height          =   240
             Left            =   2280
-            TabIndex        =   93
+            TabIndex        =   103
             Top             =   255
             Width           =   705
             _ExtentX        =   1244
@@ -273,7 +407,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   65
             Left            =   1305
-            TabIndex        =   288
+            TabIndex        =   298
             Top             =   570
             Width           =   885
          End
@@ -284,7 +418,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   25
             Left            =   1710
-            TabIndex        =   259
+            TabIndex        =   269
             Top             =   270
             Width           =   480
          End
@@ -292,7 +426,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   0
             Left            =   5925
-            Picture         =   "FOptions.frx":11A0
+            Picture         =   "FOptions.frx":1A6A
             Top             =   0
             Width           =   240
          End
@@ -300,7 +434,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   6
             Left            =   390
-            Picture         =   "FOptions.frx":172A
+            Picture         =   "FOptions.frx":1FF4
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -311,7 +445,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   54
             Left            =   1035
-            TabIndex        =   245
+            TabIndex        =   255
             Top             =   0
             Width           =   1155
          End
@@ -321,7 +455,7 @@ Begin VB.Form FOptions
          Height          =   1425
          Index           =   3
          Left            =   6990
-         TabIndex        =   265
+         TabIndex        =   275
          Top             =   1800
          Width           =   6375
          Begin VB.TextBox txtSimplyPswd 
@@ -330,7 +464,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2265
             PasswordChar    =   "*"
-            TabIndex        =   90
+            TabIndex        =   100
             Top             =   510
             Width           =   1755
          End
@@ -338,7 +472,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   89
+            TabIndex        =   99
             Top             =   255
             Width           =   1755
          End
@@ -346,14 +480,14 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   88
+            TabIndex        =   98
             Top             =   0
             Width           =   3615
          End
          Begin HFSystem.VBCombo cboSimplyInternalCustomer 
             Height          =   240
             Left            =   2265
-            TabIndex        =   91
+            TabIndex        =   101
             Top             =   765
             Width           =   2445
             _ExtentX        =   4313
@@ -366,7 +500,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   63
             Left            =   960
-            TabIndex        =   275
+            TabIndex        =   285
             Top             =   795
             Width           =   1230
          End
@@ -376,7 +510,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   55
             Left            =   1035
-            TabIndex        =   268
+            TabIndex        =   278
             Top             =   525
             Width           =   1155
          End
@@ -386,7 +520,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   33
             Left            =   1035
-            TabIndex        =   267
+            TabIndex        =   277
             Top             =   270
             Width           =   1155
          End
@@ -396,7 +530,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   44
             Left            =   1035
-            TabIndex        =   266
+            TabIndex        =   276
             Top             =   0
             Width           =   1155
          End
@@ -404,7 +538,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   4
             Left            =   390
-            Picture         =   "FOptions.frx":1FF4
+            Picture         =   "FOptions.frx":28BE
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -413,7 +547,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   2
             Left            =   5925
-            Picture         =   "FOptions.frx":28BE
+            Picture         =   "FOptions.frx":3188
             Top             =   0
             Width           =   240
          End
@@ -424,7 +558,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   1485
          Locked          =   -1  'True
-         TabIndex        =   28
+         TabIndex        =   32
          Text            =   "8000"
          Top             =   5955
          Width           =   1215
@@ -435,7 +569,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   2
          Left            =   1755
-         TabIndex        =   19
+         TabIndex        =   23
          Text            =   "/"
          Top             =   4725
          Width           =   135
@@ -446,7 +580,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   3
          Left            =   1905
-         TabIndex        =   20
+         TabIndex        =   24
          Text            =   "3"
          Top             =   4725
          Width           =   255
@@ -458,7 +592,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   1
          Left            =   1485
-         TabIndex        =   18
+         TabIndex        =   22
          Text            =   "8"
          Top             =   4725
          Width           =   255
@@ -468,7 +602,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   1485
          MaxLength       =   4
-         TabIndex        =   29
+         TabIndex        =   33
          Text            =   "8000"
          Top             =   6210
          Width           =   525
@@ -477,7 +611,7 @@ Begin VB.Form FOptions
          Caption         =   "Use job specific numbering."
          Height          =   225
          Left            =   375
-         TabIndex        =   17
+         TabIndex        =   21
          Top             =   4455
          Value           =   -1  'True
          Width           =   2565
@@ -486,7 +620,7 @@ Begin VB.Form FOptions
          Caption         =   "Use sequential numbering"
          Height          =   255
          Left            =   345
-         TabIndex        =   27
+         TabIndex        =   31
          Top             =   5640
          Width           =   2535
       End
@@ -495,14 +629,14 @@ Begin VB.Form FOptions
          Caption         =   "required"
          Height          =   195
          Left            =   4890
-         TabIndex        =   36
+         TabIndex        =   40
          Top             =   5955
          Width           =   1020
       End
       Begin HFSystem.VBCombo cboAccountingSystem 
          Height          =   240
          Left            =   2265
-         TabIndex        =   1
+         TabIndex        =   46
          Top             =   675
          Width           =   3420
          _ExtentX        =   6033
@@ -513,7 +647,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   0
          Left            =   5340
-         TabIndex        =   30
+         TabIndex        =   34
          Top             =   4365
          Width           =   915
          _ExtentX        =   1614
@@ -524,7 +658,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   1
          Left            =   5340
-         TabIndex        =   31
+         TabIndex        =   35
          Top             =   4620
          Width           =   915
          _ExtentX        =   1614
@@ -535,7 +669,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   2
          Left            =   5340
-         TabIndex        =   32
+         TabIndex        =   36
          Top             =   4875
          Width           =   915
          _ExtentX        =   1614
@@ -546,7 +680,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   3
          Left            =   5340
-         TabIndex        =   33
+         TabIndex        =   37
          Top             =   5130
          Width           =   915
          _ExtentX        =   1614
@@ -557,7 +691,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   4
          Left            =   5340
-         TabIndex        =   34
+         TabIndex        =   38
          Top             =   5385
          Width           =   915
          _ExtentX        =   1614
@@ -568,7 +702,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   5
          Left            =   5340
-         TabIndex        =   35
+         TabIndex        =   39
          Top             =   5640
          Width           =   915
          _ExtentX        =   1614
@@ -580,14 +714,14 @@ Begin VB.Form FOptions
          Height          =   1425
          Index           =   5
          Left            =   6990
-         TabIndex        =   85
+         TabIndex        =   95
          Top             =   330
          Width           =   6375
          Begin VB.CheckBox chkmbUseSubAcct 
             Caption         =   "Use Job as Sub Account"
             Height          =   195
             Left            =   2925
-            TabIndex        =   87
+            TabIndex        =   97
             Top             =   1080
             Width           =   2460
          End
@@ -595,7 +729,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   83
+            TabIndex        =   93
             Top             =   510
             Width           =   1755
          End
@@ -605,14 +739,14 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2265
             PasswordChar    =   "*"
-            TabIndex        =   84
+            TabIndex        =   94
             Top             =   765
             Width           =   1755
          End
          Begin HFSystem.VBCombo cboMBCompany 
             Height          =   240
             Left            =   2265
-            TabIndex        =   82
+            TabIndex        =   92
             Top             =   255
             Width           =   3435
             _ExtentX        =   6059
@@ -621,7 +755,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboMBAPILevel 
             Height          =   240
             Left            =   4995
-            TabIndex        =   86
+            TabIndex        =   96
             Top             =   630
             Width           =   705
             _ExtentX        =   1244
@@ -631,7 +765,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboMBDrive 
             Height          =   240
             Left            =   2265
-            TabIndex        =   80
+            TabIndex        =   90
             Top             =   0
             Width           =   1095
             _ExtentX        =   1931
@@ -641,7 +775,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboMBInstance 
             Height          =   240
             Left            =   2265
-            TabIndex        =   81
+            TabIndex        =   91
             Top             =   0
             Width           =   3435
             _ExtentX        =   6059
@@ -653,7 +787,7 @@ Begin VB.Form FOptions
             Height          =   255
             Index           =   81
             Left            =   4155
-            TabIndex        =   306
+            TabIndex        =   316
             Top             =   630
             Width           =   750
          End
@@ -663,7 +797,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   2
             Left            =   1035
-            TabIndex        =   196
+            TabIndex        =   206
             Top             =   -30
             Width           =   1155
          End
@@ -673,7 +807,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   20
             Left            =   1035
-            TabIndex        =   195
+            TabIndex        =   205
             Top             =   480
             Width           =   1155
          End
@@ -683,7 +817,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   19
             Left            =   1035
-            TabIndex        =   194
+            TabIndex        =   204
             Top             =   720
             Width           =   1155
          End
@@ -691,7 +825,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   3
             Left            =   390
-            Picture         =   "FOptions.frx":2E48
+            Picture         =   "FOptions.frx":3712
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -702,14 +836,14 @@ Begin VB.Form FOptions
          Height          =   1425
          Index           =   1
          Left            =   13590
-         TabIndex        =   189
+         TabIndex        =   199
          Top             =   4710
          Width           =   6375
          Begin VB.TextBox txtTLARFolder 
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   77
+            TabIndex        =   87
             Top             =   255
             Width           =   3615
          End
@@ -719,7 +853,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2265
             PasswordChar    =   "*"
-            TabIndex        =   79
+            TabIndex        =   89
             Top             =   765
             Width           =   1755
          End
@@ -727,7 +861,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   78
+            TabIndex        =   88
             Text            =   " "
             Top             =   504
             Width           =   1755
@@ -736,7 +870,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   76
+            TabIndex        =   86
             Top             =   0
             Width           =   3615
          End
@@ -744,7 +878,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   1
             Left            =   5940
-            Picture         =   "FOptions.frx":3C8A
+            Picture         =   "FOptions.frx":4554
             Top             =   255
             Width           =   240
          End
@@ -754,7 +888,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   37
             Left            =   1035
-            TabIndex        =   197
+            TabIndex        =   207
             Top             =   255
             Width           =   1155
          End
@@ -762,7 +896,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   0
             Left            =   390
-            Picture         =   "FOptions.frx":4214
+            Picture         =   "FOptions.frx":4ADE
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -773,7 +907,7 @@ Begin VB.Form FOptions
             Height          =   192
             Index           =   12
             Left            =   1032
-            TabIndex        =   192
+            TabIndex        =   202
             Top             =   756
             Width           =   1152
          End
@@ -783,7 +917,7 @@ Begin VB.Form FOptions
             Height          =   192
             Index           =   13
             Left            =   1032
-            TabIndex        =   191
+            TabIndex        =   201
             Top             =   504
             Width           =   1152
          End
@@ -791,7 +925,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   0
             Left            =   5940
-            Picture         =   "FOptions.frx":4ADE
+            Picture         =   "FOptions.frx":53A8
             Top             =   0
             Width           =   240
          End
@@ -801,7 +935,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   11
             Left            =   1035
-            TabIndex        =   190
+            TabIndex        =   200
             Top             =   0
             Width           =   1155
          End
@@ -809,7 +943,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboVarianceCat 
          Height          =   240
          Left            =   4710
-         TabIndex        =   40
+         TabIndex        =   44
          Top             =   6870
          Width           =   1995
          _ExtentX        =   3519
@@ -821,13 +955,13 @@ Begin VB.Form FOptions
          Height          =   2325
          Index           =   4
          Left            =   3510
-         TabIndex        =   341
+         TabIndex        =   349
          Top             =   8820
          Width           =   6375
          Begin HFSystem.VBCombo cboIntacctPOCOType 
             Height          =   240
             Left            =   4530
-            TabIndex        =   12
+            TabIndex        =   58
             Top             =   1035
             Width           =   1830
             _ExtentX        =   3228
@@ -839,7 +973,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1575
-            TabIndex        =   8
+            TabIndex        =   54
             Top             =   1530
             Width           =   1830
          End
@@ -847,7 +981,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   2
+            TabIndex        =   48
             Top             =   0
             Width           =   3615
          End
@@ -855,7 +989,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2265
-            TabIndex        =   3
+            TabIndex        =   49
             Top             =   255
             Width           =   1755
          End
@@ -865,14 +999,14 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2265
             PasswordChar    =   "*"
-            TabIndex        =   4
+            TabIndex        =   50
             Top             =   510
             Width           =   1755
          End
          Begin HFSystem.VBCombo cboIntacctPOType 
             Height          =   240
             Left            =   4530
-            TabIndex        =   11
+            TabIndex        =   57
             Top             =   780
             Width           =   1830
             _ExtentX        =   3228
@@ -883,7 +1017,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboIntacctSubContractType 
             Height          =   240
             Left            =   4530
-            TabIndex        =   13
+            TabIndex        =   59
             Top             =   1290
             Width           =   1830
             _ExtentX        =   3228
@@ -894,7 +1028,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboIntacctInvoiceType 
             Height          =   240
             Left            =   4530
-            TabIndex        =   15
+            TabIndex        =   61
             Top             =   1800
             Width           =   1830
             _ExtentX        =   3228
@@ -906,7 +1040,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   0
             Left            =   1575
-            TabIndex        =   6
+            TabIndex        =   52
             Top             =   1020
             Width           =   1830
             _ExtentX        =   1455
@@ -918,7 +1052,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   1
             Left            =   1575
-            TabIndex        =   7
+            TabIndex        =   53
             Top             =   1275
             Width           =   1830
             _ExtentX        =   1455
@@ -929,7 +1063,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboIntacctEntity 
             Height          =   240
             Left            =   1575
-            TabIndex        =   5
+            TabIndex        =   51
             Top             =   765
             Width           =   1830
             _ExtentX        =   3228
@@ -940,7 +1074,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboIntacctEstimateType 
             Height          =   240
             Left            =   4530
-            TabIndex        =   16
+            TabIndex        =   62
             Top             =   2055
             Width           =   1830
             _ExtentX        =   3228
@@ -951,7 +1085,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboIntacctSubContractCOType 
             Height          =   240
             Left            =   4515
-            TabIndex        =   14
+            TabIndex        =   60
             Top             =   1545
             Width           =   1830
             _ExtentX        =   3228
@@ -962,7 +1096,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboPOReferenceFld 
             Height          =   240
             Left            =   1575
-            TabIndex        =   9
+            TabIndex        =   55
             Top             =   1785
             Width           =   1830
             _ExtentX        =   1455
@@ -973,7 +1107,7 @@ Begin VB.Form FOptions
          Begin HFSystem.VBCombo cboInvReferenceFld 
             Height          =   240
             Left            =   1575
-            TabIndex        =   10
+            TabIndex        =   56
             Top             =   2040
             Width           =   1830
             _ExtentX        =   1455
@@ -989,7 +1123,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   125
             Left            =   225
-            TabIndex        =   391
+            TabIndex        =   399
             Top             =   2070
             Width           =   1275
          End
@@ -1001,7 +1135,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   124
             Left            =   225
-            TabIndex        =   390
+            TabIndex        =   398
             Top             =   1815
             Width           =   1275
          End
@@ -1012,7 +1146,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   82
             Left            =   3585
-            TabIndex        =   385
+            TabIndex        =   393
             Top             =   1560
             Width           =   870
          End
@@ -1023,7 +1157,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   80
             Left            =   3975
-            TabIndex        =   384
+            TabIndex        =   392
             Top             =   1050
             Width           =   495
          End
@@ -1035,7 +1169,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   119
             Left            =   660
-            TabIndex        =   359
+            TabIndex        =   367
             Top             =   1305
             Width           =   840
          End
@@ -1047,7 +1181,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   114
             Left            =   735
-            TabIndex        =   354
+            TabIndex        =   362
             Top             =   1575
             Width           =   765
          End
@@ -1058,7 +1192,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   113
             Left            =   3855
-            TabIndex        =   353
+            TabIndex        =   361
             Top             =   2085
             Width           =   600
          End
@@ -1070,7 +1204,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   24
             Left            =   1125
-            TabIndex        =   350
+            TabIndex        =   358
             Top             =   795
             Width           =   390
          End
@@ -1082,7 +1216,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   111
             Left            =   315
-            TabIndex        =   349
+            TabIndex        =   357
             Top             =   1050
             Width           =   1200
          End
@@ -1093,7 +1227,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   110
             Left            =   3915
-            TabIndex        =   348
+            TabIndex        =   356
             Top             =   1830
             Width           =   525
          End
@@ -1104,7 +1238,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   109
             Left            =   3855
-            TabIndex        =   347
+            TabIndex        =   355
             Top             =   1305
             Width           =   600
          End
@@ -1115,7 +1249,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   108
             Left            =   4230
-            TabIndex        =   346
+            TabIndex        =   354
             Top             =   795
             Width           =   225
          End
@@ -1126,7 +1260,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   1
             Left            =   4530
-            TabIndex        =   345
+            TabIndex        =   353
             Top             =   555
             Width           =   1320
          End
@@ -1134,7 +1268,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   1
             Left            =   390
-            Picture         =   "FOptions.frx":5068
+            Picture         =   "FOptions.frx":5932
             Stretch         =   -1  'True
             Top             =   240
             Width           =   480
@@ -1145,7 +1279,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   35
             Left            =   1035
-            TabIndex        =   344
+            TabIndex        =   352
             Top             =   0
             Width           =   1155
          End
@@ -1155,7 +1289,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   34
             Left            =   1035
-            TabIndex        =   343
+            TabIndex        =   351
             Top             =   270
             Width           =   1155
          End
@@ -1166,7 +1300,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   4
             Left            =   1500
-            TabIndex        =   342
+            TabIndex        =   350
             Top             =   525
             Width           =   690
          End
@@ -1174,7 +1308,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboBookOfAccount 
          Height          =   240
          Left            =   2265
-         TabIndex        =   0
+         TabIndex        =   45
          Top             =   420
          Width           =   1830
          _ExtentX        =   3228
@@ -1199,7 +1333,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   11
          Left            =   750
-         TabIndex        =   367
+         TabIndex        =   375
          Top             =   450
          Width           =   1425
       End
@@ -1210,7 +1344,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   7
          Left            =   3345
-         TabIndex        =   351
+         TabIndex        =   359
          Top             =   6630
          Width           =   1425
       End
@@ -1221,7 +1355,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   77
          Left            =   3480
-         TabIndex        =   290
+         TabIndex        =   300
          Top             =   6885
          Width           =   1170
       End
@@ -1232,14 +1366,14 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   73
          Left            =   900
-         TabIndex        =   289
+         TabIndex        =   299
          Top             =   5310
          Width           =   480
       End
       Begin VB.Image cmdNextPO 
          Height          =   240
          Left            =   2700
-         Picture         =   "FOptions.frx":5932
+         Picture         =   "FOptions.frx":61FC
          Top             =   5970
          Width           =   240
       End
@@ -1259,7 +1393,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   16
          Left            =   3120
-         TabIndex        =   218
+         TabIndex        =   228
          Top             =   4155
          Width           =   2250
       End
@@ -1279,7 +1413,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   8
          Left            =   225
-         TabIndex        =   221
+         TabIndex        =   231
          Top             =   4155
          Width           =   1290
       End
@@ -1290,7 +1424,7 @@ Begin VB.Form FOptions
          ForeColor       =   &H80000008&
          Height          =   195
          Left            =   660
-         TabIndex        =   223
+         TabIndex        =   233
          Top             =   5970
          Width           =   705
       End
@@ -1303,7 +1437,7 @@ Begin VB.Form FOptions
          ForeColor       =   &H80000008&
          Height          =   195
          Left            =   930
-         TabIndex        =   166
+         TabIndex        =   176
          Top             =   6750
          Width           =   2040
       End
@@ -1314,7 +1448,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   17
          Left            =   900
-         TabIndex        =   222
+         TabIndex        =   232
          Top             =   4725
          Width           =   480
       End
@@ -1341,7 +1475,7 @@ Begin VB.Form FOptions
          ForeColor       =   &H80000008&
          Height          =   195
          Left            =   975
-         TabIndex        =   220
+         TabIndex        =   230
          Top             =   6225
          Width           =   390
       End
@@ -1355,7 +1489,7 @@ Begin VB.Form FOptions
          ForeColor       =   &H80000008&
          Height          =   195
          Left            =   195
-         TabIndex        =   219
+         TabIndex        =   229
          Top             =   6750
          Width           =   555
       End
@@ -1375,7 +1509,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   2
          Left            =   3825
-         TabIndex        =   217
+         TabIndex        =   227
          Top             =   5955
          Width           =   930
       End
@@ -1395,7 +1529,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   1
          Left            =   3825
-         TabIndex        =   216
+         TabIndex        =   226
          Top             =   6405
          Width           =   885
       End
@@ -1415,7 +1549,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   0
          Left            =   3840
-         TabIndex        =   215
+         TabIndex        =   225
          Top             =   6180
          Width           =   930
       End
@@ -1426,7 +1560,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   10
          Left            =   4065
-         TabIndex        =   211
+         TabIndex        =   221
          Top             =   5685
          Width           =   1185
       End
@@ -1437,7 +1571,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   8
          Left            =   3750
-         TabIndex        =   210
+         TabIndex        =   220
          Top             =   5430
          Width           =   1500
       End
@@ -1448,7 +1582,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   7
          Left            =   3705
-         TabIndex        =   209
+         TabIndex        =   219
          Top             =   5175
          Width           =   1545
       End
@@ -1459,7 +1593,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   6
          Left            =   3585
-         TabIndex        =   208
+         TabIndex        =   218
          Top             =   4920
          Width           =   1665
       End
@@ -1470,7 +1604,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   5
          Left            =   3900
-         TabIndex        =   207
+         TabIndex        =   217
          Top             =   4665
          Width           =   1350
       End
@@ -1481,7 +1615,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   9
          Left            =   3945
-         TabIndex        =   206
+         TabIndex        =   216
          Top             =   4410
          Width           =   1290
       End
@@ -1501,7 +1635,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   3
          Left            =   8430
-         TabIndex        =   205
+         TabIndex        =   215
          Top             =   6855
          Visible         =   0   'False
          Width           =   2205
@@ -1513,7 +1647,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   3
          Left            =   1035
-         TabIndex        =   193
+         TabIndex        =   203
          Top             =   705
          Width           =   1155
       End
@@ -1533,7 +1667,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   12
          Left            =   240
-         TabIndex        =   188
+         TabIndex        =   198
          Top             =   165
          Width           =   1695
       End
@@ -1559,9 +1693,448 @@ Begin VB.Form FOptions
          ForeColor       =   &H80000008&
          Height          =   345
          Left            =   870
-         TabIndex        =   224
+         TabIndex        =   234
          Top             =   6690
          Width           =   2220
+      End
+   End
+   Begin VB.Frame TabFrame 
+      Caption         =   "Document Management"
+      Height          =   7185
+      Index           =   0
+      Left            =   17910
+      TabIndex        =   333
+      Tag             =   "Security"
+      Top             =   3330
+      Visible         =   0   'False
+      Width           =   6795
+      Begin VB.CheckBox chkUseBPDocManagment 
+         Caption         =   "Use BuildPro Document Managment"
+         Height          =   195
+         Left            =   450
+         TabIndex        =   0
+         ToolTipText     =   "Ensure that user passwords are complex."
+         Top             =   555
+         Width           =   3525
+      End
+      Begin VSFlex8Ctl.VSFlexGrid gDocumentClasses 
+         Height          =   5475
+         Left            =   300
+         TabIndex        =   1
+         Top             =   1425
+         Width           =   6180
+         _cx             =   10901
+         _cy             =   9657
+         Appearance      =   2
+         BorderStyle     =   1
+         Enabled         =   -1  'True
+         BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   400
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         MousePointer    =   0
+         BackColor       =   -2147483643
+         ForeColor       =   -2147483640
+         BackColorFixed  =   -2147483633
+         ForeColorFixed  =   -2147483630
+         BackColorSel    =   -2147483635
+         ForeColorSel    =   -2147483634
+         BackColorBkg    =   -2147483643
+         BackColorAlternate=   -2147483643
+         GridColor       =   -2147483633
+         GridColorFixed  =   -2147483632
+         TreeColor       =   -2147483632
+         FloodColor      =   192
+         SheetBorder     =   -2147483643
+         FocusRect       =   1
+         HighLight       =   1
+         AllowSelection  =   -1  'True
+         AllowBigSelection=   0   'False
+         AllowUserResizing=   1
+         SelectionMode   =   3
+         GridLines       =   1
+         GridLinesFixed  =   2
+         GridLineWidth   =   1
+         Rows            =   3
+         Cols            =   2
+         FixedRows       =   1
+         FixedCols       =   0
+         RowHeightMin    =   0
+         RowHeightMax    =   0
+         ColWidthMin     =   0
+         ColWidthMax     =   0
+         ExtendLastCol   =   -1  'True
+         FormatString    =   $"FOptions.frx":6346
+         ScrollTrack     =   0   'False
+         ScrollBars      =   3
+         ScrollTips      =   0   'False
+         MergeCells      =   0
+         MergeCompare    =   0
+         AutoResize      =   -1  'True
+         AutoSizeMode    =   0
+         AutoSearch      =   0
+         AutoSearchDelay =   2
+         MultiTotals     =   -1  'True
+         SubtotalPosition=   1
+         OutlineBar      =   0
+         OutlineCol      =   0
+         Ellipsis        =   0
+         ExplorerBar     =   0
+         PicturesOver    =   0   'False
+         FillStyle       =   0
+         RightToLeft     =   0   'False
+         PictureType     =   0
+         TabBehavior     =   0
+         OwnerDraw       =   0
+         Editable        =   2
+         ShowComboButton =   1
+         WordWrap        =   0   'False
+         TextStyle       =   0
+         TextStyleFixed  =   0
+         OleDragMode     =   0
+         OleDropMode     =   0
+         DataMode        =   0
+         VirtualData     =   -1  'True
+         DataMember      =   ""
+         ComboSearch     =   3
+         AutoSizeMouse   =   -1  'True
+         FrozenRows      =   0
+         FrozenCols      =   0
+         AllowUserFreezing=   0
+         BackColorFrozen =   0
+         ForeColorFrozen =   0
+         WallPaperAlignment=   9
+         AccessibleName  =   ""
+         AccessibleDescription=   ""
+         AccessibleValue =   ""
+         AccessibleRole  =   24
+      End
+      Begin VB.Label Label3 
+         AutoSize        =   -1  'True
+         Caption         =   "Document Management "
+         BeginProperty Font 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   700
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         ForeColor       =   &H8000000D&
+         Height          =   195
+         Index           =   3
+         Left            =   255
+         TabIndex        =   417
+         Top             =   240
+         Width           =   2055
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000010&
+         Index           =   47
+         X1              =   735
+         X2              =   6135
+         Y1              =   330
+         Y2              =   330
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000014&
+         Index           =   46
+         X1              =   735
+         X2              =   6135
+         Y1              =   345
+         Y2              =   345
+      End
+      Begin VB.Label Label3 
+         AutoSize        =   -1  'True
+         Caption         =   "Document Classes "
+         BeginProperty Font 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   700
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         ForeColor       =   &H8000000D&
+         Height          =   195
+         Index           =   27
+         Left            =   255
+         TabIndex        =   334
+         Top             =   1140
+         Width           =   1635
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000014&
+         Index           =   41
+         X1              =   735
+         X2              =   6135
+         Y1              =   1245
+         Y2              =   1245
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000010&
+         Index           =   40
+         X1              =   735
+         X2              =   6135
+         Y1              =   1230
+         Y2              =   1230
+      End
+   End
+   Begin VB.Frame TabFrameDEPRECATED 
+      Caption         =   "Supply Chain Integration DEPRECATED"
+      Height          =   7185
+      Index           =   11
+      Left            =   21390
+      TabIndex        =   259
+      Top             =   270
+      Visible         =   0   'False
+      Width           =   6795
+      Begin VB.TextBox txtWebAttachmentsFolder 
+         BorderStyle     =   0  'None
+         Height          =   240
+         Left            =   1860
+         TabIndex        =   139
+         Text            =   " "
+         Top             =   3645
+         Width           =   4005
+      End
+      Begin VB.CheckBox chkUseDetailedFieldPOView 
+         Caption         =   "Use detailed edit view for all Field PO users"
+         Height          =   195
+         Left            =   1650
+         TabIndex        =   138
+         Top             =   2805
+         Width           =   3645
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Tax Group"
+         Height          =   195
+         Index           =   7
+         Left            =   2940
+         TabIndex        =   137
+         Top             =   2115
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Category"
+         Height          =   195
+         Index           =   6
+         Left            =   2940
+         TabIndex        =   136
+         Top             =   1905
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Cost Code"
+         Height          =   195
+         Index           =   5
+         Left            =   2940
+         TabIndex        =   135
+         Top             =   1695
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Extra"
+         Height          =   195
+         Index           =   4
+         Left            =   2940
+         TabIndex        =   134
+         Top             =   1485
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Job"
+         Height          =   195
+         Index           =   3
+         Left            =   1650
+         TabIndex        =   133
+         Top             =   2115
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Rate"
+         Height          =   195
+         Index           =   2
+         Left            =   1650
+         TabIndex        =   132
+         Top             =   1905
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Quantity"
+         Height          =   195
+         Index           =   1
+         Left            =   1650
+         TabIndex        =   131
+         Top             =   1695
+         Width           =   1275
+      End
+      Begin VB.CheckBox chkFieldPOField 
+         Caption         =   "Description"
+         Height          =   195
+         Index           =   0
+         Left            =   1650
+         TabIndex        =   130
+         Top             =   1485
+         Width           =   1275
+      End
+      Begin VB.TextBox txtFieldPOPrefix 
+         BorderStyle     =   0  'None
+         Height          =   240
+         Left            =   2475
+         MaxLength       =   50
+         TabIndex        =   129
+         Text            =   " "
+         Top             =   840
+         Width           =   3375
+      End
+      Begin HFSystem.VBCombo cboPurchasingManager 
+         Height          =   240
+         Left            =   2490
+         TabIndex        =   128
+         Top             =   585
+         Width           =   3375
+         _ExtentX        =   5953
+         _ExtentY        =   423
+      End
+      Begin VB.Image cmdChooseFolder 
+         Height          =   240
+         Index           =   2
+         Left            =   5910
+         Picture         =   "FOptions.frx":63BD
+         Top             =   3615
+         Width           =   240
+      End
+      Begin VB.Label Label3 
+         AutoSize        =   -1  'True
+         Caption         =   "Vendor and Customer Portals "
+         BeginProperty Font 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   700
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         ForeColor       =   &H8000000D&
+         Height          =   195
+         Index           =   2
+         Left            =   240
+         TabIndex        =   279
+         Top             =   3345
+         Width           =   2535
+      End
+      Begin VB.Label Label1 
+         AutoSize        =   -1  'True
+         Caption         =   "Attachments Folder"
+         Height          =   195
+         Index           =   62
+         Left            =   390
+         TabIndex        =   280
+         Top             =   3645
+         Width           =   1365
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000014&
+         Index           =   5
+         X1              =   750
+         X2              =   6150
+         Y1              =   3480
+         Y2              =   3480
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000010&
+         Index           =   4
+         X1              =   750
+         X2              =   6150
+         Y1              =   3465
+         Y2              =   3465
+      End
+      Begin VB.Label Label6 
+         AutoSize        =   -1  'True
+         Caption         =   "Options"
+         Height          =   195
+         Index           =   1
+         Left            =   1380
+         TabIndex        =   271
+         Top             =   2535
+         Width           =   540
+      End
+      Begin VB.Label Label6 
+         AutoSize        =   -1  'True
+         Caption         =   "Fields Required on a request:"
+         Height          =   195
+         Index           =   0
+         Left            =   1380
+         TabIndex        =   270
+         Top             =   1245
+         Width           =   2070
+      End
+      Begin VB.Label Label3 
+         AutoSize        =   -1  'True
+         Caption         =   "Field PO Settings"
+         BeginProperty Font 
+            Name            =   "MS Sans Serif"
+            Size            =   8.25
+            Charset         =   0
+            Weight          =   700
+            Underline       =   0   'False
+            Italic          =   0   'False
+            Strikethrough   =   0   'False
+         EndProperty
+         ForeColor       =   &H8000000D&
+         Height          =   195
+         Index           =   21
+         Left            =   240
+         TabIndex        =   260
+         Top             =   315
+         Width           =   1485
+      End
+      Begin VB.Label Label1 
+         Alignment       =   1  'Right Justify
+         AutoSize        =   -1  'True
+         Caption         =   "Default Purchasing Manager"
+         Height          =   195
+         Index           =   58
+         Left            =   390
+         TabIndex        =   262
+         Top             =   585
+         Width           =   2025
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000010&
+         Index           =   33
+         X1              =   750
+         X2              =   6150
+         Y1              =   435
+         Y2              =   435
+      End
+      Begin VB.Line Line1 
+         BorderColor     =   &H80000014&
+         Index           =   32
+         X1              =   750
+         X2              =   6150
+         Y1              =   450
+         Y2              =   450
+      End
+      Begin VB.Label Label1 
+         Alignment       =   1  'Right Justify
+         AutoSize        =   -1  'True
+         Caption         =   "Field PO Prefix"
+         Height          =   195
+         Index           =   46
+         Left            =   1380
+         TabIndex        =   261
+         Top             =   840
+         Width           =   1035
       End
    End
    Begin VB.Frame TabFrame 
@@ -1569,17 +2142,26 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   6
       Left            =   585
-      TabIndex        =   173
+      TabIndex        =   183
       Tag             =   "Security"
       Top             =   6600
       Visible         =   0   'False
       Width           =   6795
+      Begin VB.CheckBox chkAllowJobReassignInBudgetsAndPOs 
+         Caption         =   "Allow job reassignment in budgets and POs."
+         Height          =   195
+         Left            =   480
+         TabIndex        =   416
+         ToolTipText     =   "This is occasionally useful for multi-family builders but should almost never be turned on."
+         Top             =   1905
+         Width           =   5865
+      End
       Begin VB.CheckBox chkPostPOQtyToAccounting 
          Caption         =   "Post PO order quantity to accounting."
          Height          =   195
          Left            =   420
-         TabIndex        =   400
-         Top             =   2145
+         TabIndex        =   408
+         Top             =   2385
          Width           =   5715
       End
       Begin VB.OptionButton optUseAltCostCodesForCO 
@@ -1587,8 +2169,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   1
          Left            =   660
-         TabIndex        =   399
-         Top             =   5100
+         TabIndex        =   407
+         Top             =   5340
          Width           =   2040
       End
       Begin VB.OptionButton optUseAltCostCodesForCO 
@@ -1596,8 +2178,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   0
          Left            =   660
-         TabIndex        =   398
-         Top             =   4860
+         TabIndex        =   406
+         Top             =   5100
          Value           =   -1  'True
          Width           =   2190
       End
@@ -1605,31 +2187,31 @@ Begin VB.Form FOptions
          Caption         =   "Post budgets summarized by job, cost code and category."
          Height          =   195
          Left            =   420
-         TabIndex        =   394
-         Top             =   2385
+         TabIndex        =   402
+         Top             =   2625
          Width           =   5535
       End
       Begin VB.CheckBox chkPostAssembliesAsSalesInvoices 
          Caption         =   "Post Precision Builder job assemblies as AR estimates."
          Height          =   195
          Left            =   420
-         TabIndex        =   393
-         Top             =   2610
+         TabIndex        =   401
+         Top             =   2850
          Width           =   5535
       End
       Begin VB.CheckBox chkPostJCExtraAsSubJob 
          Caption         =   "Post JC Extra as sub job"
          Height          =   195
          Left            =   420
-         TabIndex        =   392
-         Top             =   2835
+         TabIndex        =   400
+         Top             =   3075
          Width           =   5535
       End
       Begin VB.CheckBox chkUseComponents 
          Caption         =   "Use components in assembly definitions."
          Height          =   195
          Left            =   480
-         TabIndex        =   315
+         TabIndex        =   325
          Top             =   1665
          Width           =   3195
       End
@@ -1637,7 +2219,7 @@ Begin VB.Form FOptions
          Caption         =   "Jobs require Sales approval before purchasing can begin."
          Height          =   195
          Left            =   480
-         TabIndex        =   139
+         TabIndex        =   149
          Top             =   495
          Width           =   5535
       End
@@ -1645,7 +2227,7 @@ Begin VB.Form FOptions
          Caption         =   "Let purchasers change the sale quantity."
          Height          =   195
          Left            =   480
-         TabIndex        =   143
+         TabIndex        =   153
          Top             =   1425
          Width           =   3195
       End
@@ -1653,15 +2235,15 @@ Begin VB.Form FOptions
          Caption         =   "When looking up prices don't use the item db. Use vendor pricelists only."
          Height          =   195
          Left            =   480
-         TabIndex        =   146
-         Top             =   3795
+         TabIndex        =   156
+         Top             =   4035
          Width           =   5715
       End
       Begin VB.CheckBox chkCanAddContractItemsFromPurchasing 
          Caption         =   "Let me add and remove contract items (model and option assemblies) on jobs."
          Height          =   195
          Left            =   480
-         TabIndex        =   142
+         TabIndex        =   152
          Top             =   1185
          Width           =   6075
       End
@@ -1669,16 +2251,16 @@ Begin VB.Form FOptions
          Caption         =   "When the vendor changes set the item rate to zero if no value can be found."
          Height          =   195
          Left            =   480
-         TabIndex        =   145
-         Top             =   3570
+         TabIndex        =   155
+         Top             =   3810
          Width           =   5715
       End
       Begin VB.CheckBox chkZeroRateOnRefeshCosts 
          Caption         =   "When costs are refreshed set the item rate to zero if no value can be found."
          Height          =   195
          Left            =   480
-         TabIndex        =   144
-         Top             =   3345
+         TabIndex        =   154
+         Top             =   3585
          Width           =   5895
       End
       Begin VB.CheckBox chkWarnForecast 
@@ -1686,7 +2268,7 @@ Begin VB.Form FOptions
          Enabled         =   0   'False
          Height          =   195
          Left            =   720
-         TabIndex        =   141
+         TabIndex        =   151
          Top             =   945
          Width           =   5535
       End
@@ -1694,15 +2276,15 @@ Begin VB.Form FOptions
          Caption         =   "Let me use a forecasted cost basis to refresh PO costs."
          Height          =   195
          Left            =   480
-         TabIndex        =   140
+         TabIndex        =   150
          Top             =   720
          Width           =   5535
       End
       Begin VSFlex8Ctl.VSFlexGrid gFormatting 
          Height          =   960
          Left            =   510
-         TabIndex        =   147
-         Top             =   5670
+         TabIndex        =   157
+         Top             =   5910
          Width           =   4065
          _cx             =   1981946882
          _cy             =   1981941405
@@ -1750,7 +2332,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FOptions.frx":5A7C
+         FormatString    =   $"FOptions.frx":6947
          ScrollTrack     =   0   'False
          ScrollBars      =   0
          ScrollTips      =   0   'False
@@ -1798,8 +2380,8 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboZeroQtyTakeoffMode 
          Height          =   240
          Left            =   3525
-         TabIndex        =   396
-         Top             =   4365
+         TabIndex        =   404
+         Top             =   4605
          Width           =   2205
          _ExtentX        =   3228
          _ExtentY        =   423
@@ -1810,8 +2392,8 @@ Begin VB.Form FOptions
          Caption         =   "When are the alternate cost codes and categories used?"
          Height          =   210
          Left            =   480
-         TabIndex        =   397
-         Top             =   4605
+         TabIndex        =   405
+         Top             =   4845
          Width           =   4110
       End
       Begin VB.Label Label3 
@@ -1830,8 +2412,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   1
          Left            =   195
-         TabIndex        =   395
-         Top             =   1920
+         TabIndex        =   403
+         Top             =   2160
          Width           =   1410
       End
       Begin VB.Line Line1 
@@ -1839,16 +2421,16 @@ Begin VB.Form FOptions
          Index           =   6
          X1              =   675
          X2              =   6075
-         Y1              =   2040
-         Y2              =   2040
+         Y1              =   2280
+         Y2              =   2280
       End
       Begin VB.Line Line1 
          BorderColor     =   &H80000014&
          Index           =   7
          X1              =   675
          X2              =   6075
-         Y1              =   2055
-         Y2              =   2055
+         Y1              =   2295
+         Y2              =   2295
       End
       Begin VB.Label Label3 
          AutoSize        =   -1  'True
@@ -1866,8 +2448,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   10
          Left            =   210
-         TabIndex        =   225
-         Top             =   5430
+         TabIndex        =   235
+         Top             =   5670
          Width           =   1905
       End
       Begin VB.Line Line1 
@@ -1875,16 +2457,16 @@ Begin VB.Form FOptions
          Index           =   21
          X1              =   690
          X2              =   6090
-         Y1              =   5550
-         Y2              =   5550
+         Y1              =   5790
+         Y2              =   5790
       End
       Begin VB.Line Line1 
          BorderColor     =   &H80000014&
          Index           =   20
          X1              =   690
          X2              =   6090
-         Y1              =   5565
-         Y2              =   5565
+         Y1              =   5805
+         Y2              =   5805
       End
       Begin VB.Label Label3 
          AutoSize        =   -1  'True
@@ -1902,8 +2484,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   5
          Left            =   240
-         TabIndex        =   204
-         Top             =   4125
+         TabIndex        =   214
+         Top             =   4365
          Width           =   1545
       End
       Begin VB.Line Line1 
@@ -1911,24 +2493,24 @@ Begin VB.Form FOptions
          Index           =   10
          X1              =   690
          X2              =   6090
-         Y1              =   4245
-         Y2              =   4245
+         Y1              =   4485
+         Y2              =   4485
       End
       Begin VB.Line Line1 
          BorderColor     =   &H80000014&
          Index           =   11
          X1              =   690
          X2              =   6090
-         Y1              =   4260
-         Y2              =   4260
+         Y1              =   4500
+         Y2              =   4500
       End
       Begin VB.Label Label1 
          Caption         =   "How do you want to handle zero quantity takeoff items?"
          Height          =   225
          Index           =   18
          Left            =   465
-         TabIndex        =   203
-         Top             =   4365
+         TabIndex        =   213
+         Top             =   4605
          Width           =   2970
       End
       Begin VB.Label Label3 
@@ -1947,8 +2529,8 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   9
          Left            =   240
-         TabIndex        =   182
-         Top             =   3105
+         TabIndex        =   192
+         Top             =   3345
          Width           =   1965
       End
       Begin VB.Line Line1 
@@ -1956,16 +2538,16 @@ Begin VB.Form FOptions
          Index           =   19
          X1              =   720
          X2              =   6120
-         Y1              =   3240
-         Y2              =   3240
+         Y1              =   3480
+         Y2              =   3480
       End
       Begin VB.Line Line1 
          BorderColor     =   &H80000010&
          Index           =   18
          X1              =   720
          X2              =   6120
-         Y1              =   3225
-         Y2              =   3225
+         Y1              =   3465
+         Y2              =   3465
       End
       Begin VB.Label Label3 
          AutoSize        =   -1  'True
@@ -1983,7 +2565,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   6
          Left            =   240
-         TabIndex        =   180
+         TabIndex        =   190
          Top             =   240
          Width           =   2100
       End
@@ -2007,76 +2589,92 @@ Begin VB.Form FOptions
    Begin VB.Frame TabFrame 
       Caption         =   "BuildPro Integration"
       Height          =   7185
-      Index           =   14
+      Index           =   13
       Left            =   7470
-      TabIndex        =   328
+      TabIndex        =   336
       Top             =   1155
       Visible         =   0   'False
       Width           =   6795
+      Begin VB.CheckBox chkAutoApproveTBDVendorAssignments 
+         Caption         =   "Auto-approve TBD vendor assignments"
+         Height          =   285
+         Left            =   2055
+         TabIndex        =   10
+         Top             =   2610
+         Width           =   4095
+      End
+      Begin VB.CheckBox chkPrecon 
+         Caption         =   "Enable Preconstruction schedules in BuildPro"
+         Height          =   285
+         Left            =   2055
+         TabIndex        =   9
+         Top             =   2355
+         Width           =   4095
+      End
+      Begin VB.TextBox txtBuildProWarrantyDocType 
+         BorderStyle     =   0  'None
+         Height          =   240
+         Left            =   1965
+         TabIndex        =   11
+         Text            =   " "
+         Top             =   3000
+         Width           =   1000
+      End
       Begin VB.CheckBox chkTarion 
          Caption         =   "Integrate with Tarion Warranty Services"
          Height          =   285
          Left            =   2055
-         TabIndex        =   48
-         Top             =   2430
+         TabIndex        =   8
+         Top             =   2100
          Width           =   4095
       End
       Begin VB.TextBox txtBuildProWarrantyCoOwnerType 
          BorderStyle     =   0  'None
          Height          =   240
-         Left            =   3585
-         TabIndex        =   50
+         Left            =   4635
+         TabIndex        =   13
          Text            =   " "
-         Top             =   3015
-         Width           =   1755
+         Top             =   3255
+         Width           =   1000
       End
       Begin VB.CheckBox chkBuildProSendPhases 
          Caption         =   "Send phases to BuildPro"
          Height          =   285
          Left            =   2055
-         TabIndex        =   47
-         ToolTipText     =   $"FOptions.frx":5B7A
-         Top             =   2175
+         TabIndex        =   7
+         ToolTipText     =   $"FOptions.frx":6A45
+         Top             =   1845
          Width           =   4095
       End
       Begin VB.CheckBox chkMultiFamily 
          Caption         =   "Send shell and unit schedules for Multi family construction"
          Height          =   285
          Left            =   2055
-         TabIndex        =   46
-         Top             =   1920
+         TabIndex        =   6
+         Top             =   1590
          Width           =   4575
       End
       Begin VB.TextBox txtBuildProWarrantyOwnerType 
          BorderStyle     =   0  'None
          Height          =   240
-         Left            =   3585
-         TabIndex        =   49
+         Left            =   4635
+         TabIndex        =   12
          Text            =   " "
-         Top             =   2760
-         Width           =   1755
-      End
-      Begin VB.CheckBox chkBuildProSendPOsImmediately 
-         Caption         =   "Publish POs to BuildPro immediately upon generation"
-         ForeColor       =   &H0000011D&
-         Height          =   285
-         Left            =   2055
-         TabIndex        =   45
-         Top             =   1665
-         Width           =   4350
+         Top             =   3000
+         Width           =   1000
       End
       Begin VB.TextBox txtBuildProCompany 
          BorderStyle     =   0  'None
          Height          =   240
          Left            =   2010
-         TabIndex        =   41
+         TabIndex        =   2
          Top             =   495
          Width           =   1230
       End
       Begin zybCombo.zybCombobox cboBuildProEnvironment 
          Height          =   240
          Left            =   2010
-         TabIndex        =   42
+         TabIndex        =   3
          Top             =   750
          Width           =   2850
          _ExtentX        =   5027
@@ -2100,7 +2698,7 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2010
          PasswordChar    =   "*"
-         TabIndex        =   44
+         TabIndex        =   5
          Top             =   1260
          Width           =   1755
       End
@@ -2108,7 +2706,7 @@ Begin VB.Form FOptions
          BorderStyle     =   0  'None
          Height          =   240
          Left            =   2010
-         TabIndex        =   43
+         TabIndex        =   4
          Text            =   " "
          Top             =   1005
          Width           =   1755
@@ -2116,7 +2714,7 @@ Begin VB.Form FOptions
       Begin VSFlex8Ctl.VSFlexGrid gEPOReasons 
          Height          =   3075
          Left            =   315
-         TabIndex        =   51
+         TabIndex        =   14
          Top             =   3930
          Width           =   3315
          _cx             =   5847
@@ -2165,7 +2763,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   0   'False
-         FormatString    =   $"FOptions.frx":5C01
+         FormatString    =   $"FOptions.frx":6ACC
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -2216,19 +2814,29 @@ Begin VB.Form FOptions
          Left            =   3705
          MultiLine       =   -1  'True
          ScrollBars      =   2  'Vertical
-         TabIndex        =   52
-         Text            =   "FOptions.frx":5C6C
-         Top             =   3915
+         TabIndex        =   15
+         Text            =   "FOptions.frx":6B37
+         Top             =   3930
          Width           =   2925
+      End
+      Begin VB.Label Label1 
+         Alignment       =   1  'Right Justify
+         Caption         =   "Warranty doc type"
+         Height          =   195
+         Index           =   68
+         Left            =   120
+         TabIndex        =   409
+         Top             =   3015
+         Width           =   1770
       End
       Begin VB.Label Label1 
          Alignment       =   1  'Right Justify
          Caption         =   "co buyer type"
          Height          =   195
          Index           =   115
-         Left            =   1740
-         TabIndex        =   355
-         Top             =   3030
+         Left            =   2790
+         TabIndex        =   363
+         Top             =   3270
          Width           =   1770
       End
       Begin VB.Label Label1 
@@ -2236,9 +2844,9 @@ Begin VB.Form FOptions
          Caption         =   "Warranty buyer type"
          Height          =   195
          Index           =   0
-         Left            =   1740
-         TabIndex        =   340
-         Top             =   2775
+         Left            =   2790
+         TabIndex        =   348
+         Top             =   3015
          Width           =   1770
       End
       Begin VB.Label Label3 
@@ -2257,7 +2865,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   28
          Left            =   270
-         TabIndex        =   335
+         TabIndex        =   343
          Top             =   195
          Width           =   1530
       End
@@ -2283,7 +2891,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   99
          Left            =   765
-         TabIndex        =   334
+         TabIndex        =   342
          Top             =   1260
          Width           =   1155
       End
@@ -2293,7 +2901,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   100
          Left            =   765
-         TabIndex        =   333
+         TabIndex        =   341
          Top             =   1005
          Width           =   1155
       End
@@ -2303,7 +2911,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   102
          Left            =   765
-         TabIndex        =   332
+         TabIndex        =   340
          Top             =   750
          Width           =   1155
       End
@@ -2313,7 +2921,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   103
          Left            =   405
-         TabIndex        =   331
+         TabIndex        =   339
          Top             =   495
          Width           =   1515
       End
@@ -2333,7 +2941,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   30
          Left            =   255
-         TabIndex        =   330
+         TabIndex        =   338
          Top             =   3630
          Width           =   1185
       End
@@ -2353,7 +2961,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   29
          Left            =   3645
-         TabIndex        =   329
+         TabIndex        =   337
          Top             =   3630
          Width           =   1800
       End
@@ -2379,7 +2987,7 @@ Begin VB.Form FOptions
       Height          =   6690
       Index           =   2
       Left            =   24060
-      TabIndex        =   170
+      TabIndex        =   180
       Top             =   8985
       Visible         =   0   'False
       Width           =   13395
@@ -2389,14 +2997,14 @@ Begin VB.Form FOptions
          Height          =   2145
          Index           =   2
          Left            =   7425
-         TabIndex        =   336
+         TabIndex        =   344
          Top             =   885
          Width           =   6090
          Begin VB.CheckBox chkSageSqlEstConsolidateItems 
             Caption         =   "Consolidate items to lump sum when importing estimates."
             Height          =   195
             Left            =   1095
-            TabIndex        =   389
+            TabIndex        =   397
             Top             =   960
             Width           =   5535
          End
@@ -2404,7 +3012,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2040
-            TabIndex        =   102
+            TabIndex        =   112
             Top             =   0
             Width           =   3435
          End
@@ -2414,7 +3022,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   3510
             PasswordChar    =   "*"
-            TabIndex        =   105
+            TabIndex        =   115
             Top             =   510
             Width           =   1464
          End
@@ -2422,14 +3030,14 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2025
-            TabIndex        =   104
+            TabIndex        =   114
             Top             =   510
             Width           =   1464
          End
          Begin HFSystem.VBCombo cboSageSqlEstDatabase 
             Height          =   240
             Left            =   2025
-            TabIndex        =   103
+            TabIndex        =   113
             Top             =   255
             Width           =   3435
             _ExtentX        =   6059
@@ -2442,7 +3050,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   107
             Left            =   1245
-            TabIndex        =   339
+            TabIndex        =   347
             Top             =   255
             Width           =   690
          End
@@ -2453,7 +3061,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   106
             Left            =   1110
-            TabIndex        =   338
+            TabIndex        =   346
             Top             =   15
             Width           =   825
          End
@@ -2463,7 +3071,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   105
             Left            =   795
-            TabIndex        =   337
+            TabIndex        =   345
             Top             =   510
             Width           =   1155
          End
@@ -2471,7 +3079,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   14
             Left            =   150
-            Picture         =   "FOptions.frx":5C72
+            Picture         =   "FOptions.frx":6B3D
             Stretch         =   -1  'True
             Top             =   0
             Width           =   480
@@ -2480,7 +3088,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboTOSystem 
          Height          =   240
          Left            =   2265
-         TabIndex        =   110
+         TabIndex        =   120
          Top             =   4830
          Width           =   1845
          _ExtentX        =   3254
@@ -2493,7 +3101,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2265
          Locked          =   -1  'True
-         TabIndex        =   109
+         TabIndex        =   119
          Text            =   " "
          Top             =   3930
          Width           =   3495
@@ -2503,7 +3111,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2265
          Locked          =   -1  'True
-         TabIndex        =   107
+         TabIndex        =   117
          Text            =   " "
          Top             =   3420
          Width           =   3495
@@ -2513,7 +3121,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2265
          Locked          =   -1  'True
-         TabIndex        =   108
+         TabIndex        =   118
          Text            =   " "
          Top             =   3675
          Width           =   3495
@@ -2522,7 +3130,7 @@ Begin VB.Form FOptions
          BorderStyle     =   0  'None
          Height          =   240
          Left            =   2265
-         TabIndex        =   106
+         TabIndex        =   116
          Text            =   "55"
          Top             =   3165
          Width           =   675
@@ -2530,7 +3138,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboEstimatingSystem 
          Height          =   240
          Left            =   2040
-         TabIndex        =   97
+         TabIndex        =   107
          Top             =   450
          Width           =   3420
          _ExtentX        =   6033
@@ -2543,14 +3151,14 @@ Begin VB.Form FOptions
          Height          =   1965
          Index           =   1
          Left            =   336
-         TabIndex        =   307
+         TabIndex        =   317
          Top             =   5070
          Width           =   6252
          Begin VB.TextBox txtOnScreenServer 
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1875
-            TabIndex        =   114
+            TabIndex        =   124
             Top             =   840
             Width           =   3615
          End
@@ -2560,7 +3168,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   1875
             PasswordChar    =   "*"
-            TabIndex        =   117
+            TabIndex        =   127
             Top             =   1605
             Width           =   1755
          End
@@ -2568,7 +3176,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1875
-            TabIndex        =   116
+            TabIndex        =   126
             Text            =   " "
             Top             =   1350
             Width           =   1755
@@ -2577,7 +3185,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1875
-            TabIndex        =   112
+            TabIndex        =   122
             Top             =   315
             Width           =   3615
          End
@@ -2586,7 +3194,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   0
             Left            =   690
-            TabIndex        =   111
+            TabIndex        =   121
             Top             =   60
             Value           =   -1  'True
             Width           =   2805
@@ -2596,7 +3204,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   1
             Left            =   690
-            TabIndex        =   113
+            TabIndex        =   123
             Top             =   600
             Width           =   2805
          End
@@ -2604,7 +3212,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1875
-            TabIndex        =   115
+            TabIndex        =   125
             Top             =   1095
             Width           =   3615
          End
@@ -2612,7 +3220,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   7
             Left            =   0
-            Picture         =   "FOptions.frx":653C
+            Picture         =   "FOptions.frx":7407
             Stretch         =   -1  'True
             Top             =   0
             Width           =   480
@@ -2624,7 +3232,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   56
             Left            =   1305
-            TabIndex        =   312
+            TabIndex        =   322
             Top             =   840
             Width           =   465
          End
@@ -2635,7 +3243,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   57
             Left            =   1080
-            TabIndex        =   311
+            TabIndex        =   321
             Top             =   1605
             Width           =   690
          End
@@ -2646,7 +3254,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   59
             Left            =   915
-            TabIndex        =   310
+            TabIndex        =   320
             Top             =   1365
             Width           =   855
          End
@@ -2657,7 +3265,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   60
             Left            =   1065
-            TabIndex        =   309
+            TabIndex        =   319
             Top             =   300
             Width           =   705
          End
@@ -2668,7 +3276,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   61
             Left            =   1080
-            TabIndex        =   308
+            TabIndex        =   318
             Top             =   1110
             Width           =   690
          End
@@ -2676,7 +3284,7 @@ Begin VB.Form FOptions
             Height          =   240
             Index           =   3
             Left            =   5550
-            Picture         =   "FOptions.frx":6E06
+            Picture         =   "FOptions.frx":7CD1
             Top             =   330
             Width           =   240
          End
@@ -2687,14 +3295,14 @@ Begin VB.Form FOptions
          Height          =   1965
          Index           =   2
          Left            =   336
-         TabIndex        =   314
+         TabIndex        =   324
          Top             =   5070
          Width           =   6252
          Begin VB.Image Image1 
             Height          =   480
             Index           =   11
             Left            =   0
-            Picture         =   "FOptions.frx":7390
+            Picture         =   "FOptions.frx":825B
             Stretch         =   -1  'True
             Top             =   0
             Width           =   480
@@ -2706,7 +3314,7 @@ Begin VB.Form FOptions
          Height          =   2145
          Index           =   1
          Left            =   0
-         TabIndex        =   318
+         TabIndex        =   328
          Top             =   705
          Width           =   6600
          Begin VB.OptionButton optPipelineCommunityStyle 
@@ -2714,7 +3322,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   1
             Left            =   2025
-            TabIndex        =   387
+            TabIndex        =   395
             Top             =   1680
             Width           =   3720
          End
@@ -2723,7 +3331,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   0
             Left            =   2025
-            TabIndex        =   386
+            TabIndex        =   394
             Top             =   1440
             Width           =   2775
          End
@@ -2731,7 +3339,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2010
-            TabIndex        =   101
+            TabIndex        =   111
             Text            =   " "
             Top             =   975
             Width           =   1755
@@ -2740,7 +3348,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2025
-            TabIndex        =   98
+            TabIndex        =   108
             Top             =   0
             Width           =   3615
          End
@@ -2750,7 +3358,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2025
             PasswordChar    =   "*"
-            TabIndex        =   100
+            TabIndex        =   110
             Top             =   510
             Width           =   1755
          End
@@ -2758,7 +3366,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2025
-            TabIndex        =   99
+            TabIndex        =   109
             Text            =   " "
             Top             =   255
             Width           =   1755
@@ -2770,7 +3378,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   84
             Left            =   1080
-            TabIndex        =   388
+            TabIndex        =   396
             Top             =   1425
             Width           =   825
          End
@@ -2781,7 +3389,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   104
             Left            =   480
-            TabIndex        =   327
+            TabIndex        =   335
             Top             =   990
             Width           =   1440
          End
@@ -2789,7 +3397,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   13
             Left            =   150
-            Picture         =   "FOptions.frx":7C5A
+            Picture         =   "FOptions.frx":8B25
             Stretch         =   -1  'True
             Top             =   0
             Width           =   480
@@ -2801,7 +3409,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   101
             Left            =   1260
-            TabIndex        =   321
+            TabIndex        =   331
             Top             =   15
             Width           =   675
          End
@@ -2812,7 +3420,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   98
             Left            =   1245
-            TabIndex        =   320
+            TabIndex        =   330
             Top             =   510
             Width           =   690
          End
@@ -2823,7 +3431,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   97
             Left            =   780
-            TabIndex        =   319
+            TabIndex        =   329
             Top             =   270
             Width           =   1155
          End
@@ -2844,7 +3452,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   20
          Left            =   240
-         TabIndex        =   322
+         TabIndex        =   332
          Top             =   2910
          Width           =   720
       End
@@ -2871,7 +3479,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   69
          Left            =   810
-         TabIndex        =   317
+         TabIndex        =   327
          Top             =   495
          Width           =   1155
       End
@@ -2882,7 +3490,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   83
          Left            =   1050
-         TabIndex        =   313
+         TabIndex        =   323
          Top             =   4830
          Width           =   1125
       End
@@ -2902,7 +3510,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   19
          Left            =   240
-         TabIndex        =   248
+         TabIndex        =   258
          Top             =   4560
          Width           =   1395
       End
@@ -2938,7 +3546,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   10
          Left            =   1500
-         TabIndex        =   247
+         TabIndex        =   257
          Top             =   4260
          Width           =   2235
       End
@@ -2958,7 +3566,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   0
          Left            =   240
-         TabIndex        =   212
+         TabIndex        =   222
          Top             =   240
          Width           =   1605
       End
@@ -2985,7 +3593,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   27
          Left            =   930
-         TabIndex        =   187
+         TabIndex        =   197
          Top             =   3930
          Width           =   1245
       End
@@ -2993,7 +3601,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   2
          Left            =   2265
-         Picture         =   "FOptions.frx":889C
+         Picture         =   "FOptions.frx":9767
          Top             =   3930
          Width           =   240
       End
@@ -3004,7 +3612,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   16
          Left            =   1005
-         TabIndex        =   185
+         TabIndex        =   195
          Top             =   3420
          Width           =   1170
       End
@@ -3012,7 +3620,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   0
          Left            =   2265
-         Picture         =   "FOptions.frx":89E6
+         Picture         =   "FOptions.frx":98B1
          Top             =   3420
          Width           =   240
       End
@@ -3020,7 +3628,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   1
          Left            =   2265
-         Picture         =   "FOptions.frx":8B30
+         Picture         =   "FOptions.frx":99FB
          Top             =   3675
          Width           =   240
       End
@@ -3031,7 +3639,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   15
          Left            =   1380
-         TabIndex        =   184
+         TabIndex        =   194
          Top             =   3675
          Width           =   795
       End
@@ -3042,7 +3650,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   21
          Left            =   1035
-         TabIndex        =   183
+         TabIndex        =   193
          Top             =   3165
          Width           =   1140
       End
@@ -3052,7 +3660,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   5
       Left            =   270
-      TabIndex        =   291
+      TabIndex        =   301
       Tag             =   "Security"
       Top             =   7350
       Visible         =   0   'False
@@ -3063,8 +3671,8 @@ Begin VB.Form FOptions
          Left            =   330
          MultiLine       =   -1  'True
          ScrollBars      =   2  'Vertical
-         TabIndex        =   360
-         Text            =   "FOptions.frx":8C7A
+         TabIndex        =   368
+         Text            =   "FOptions.frx":9B45
          Top             =   1500
          Width           =   6270
       End
@@ -3073,7 +3681,7 @@ Begin VB.Form FOptions
          Height          =   225
          Index           =   1
          Left            =   1500
-         TabIndex        =   294
+         TabIndex        =   304
          Top             =   780
          Value           =   -1  'True
          Width           =   4935
@@ -3083,7 +3691,7 @@ Begin VB.Form FOptions
          Height          =   225
          Index           =   0
          Left            =   1500
-         TabIndex        =   293
+         TabIndex        =   303
          Top             =   540
          Width           =   4035
       End
@@ -3093,7 +3701,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   79
          Left            =   315
-         TabIndex        =   296
+         TabIndex        =   306
          Top             =   1260
          Width           =   3510
       End
@@ -3103,7 +3711,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   78
          Left            =   315
-         TabIndex        =   295
+         TabIndex        =   305
          Top             =   555
          Width           =   1080
       End
@@ -3123,7 +3731,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   25
          Left            =   240
-         TabIndex        =   292
+         TabIndex        =   302
          Top             =   240
          Width           =   1245
       End
@@ -3144,154 +3752,10 @@ Begin VB.Form FOptions
          Y2              =   345
       End
    End
-   Begin VB.Frame TabFrame 
-      Caption         =   "Document Management"
-      Height          =   7185
-      Index           =   0
-      Left            =   22995
-      TabIndex        =   324
-      Tag             =   "Security"
-      Top             =   1410
-      Visible         =   0   'False
-      Width           =   6795
-      Begin VSFlex8Ctl.VSFlexGrid gDocumentClasses 
-         Height          =   6375
-         Left            =   300
-         TabIndex        =   326
-         Top             =   525
-         Width           =   6180
-         _cx             =   10901
-         _cy             =   11245
-         Appearance      =   2
-         BorderStyle     =   1
-         Enabled         =   -1  'True
-         BeginProperty Font {0BE35203-8F91-11CE-9DE3-00AA004BB851} 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   400
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         MousePointer    =   0
-         BackColor       =   -2147483643
-         ForeColor       =   -2147483640
-         BackColorFixed  =   -2147483633
-         ForeColorFixed  =   -2147483630
-         BackColorSel    =   -2147483635
-         ForeColorSel    =   -2147483634
-         BackColorBkg    =   -2147483643
-         BackColorAlternate=   -2147483643
-         GridColor       =   -2147483633
-         GridColorFixed  =   -2147483632
-         TreeColor       =   -2147483632
-         FloodColor      =   192
-         SheetBorder     =   -2147483643
-         FocusRect       =   1
-         HighLight       =   1
-         AllowSelection  =   -1  'True
-         AllowBigSelection=   0   'False
-         AllowUserResizing=   1
-         SelectionMode   =   3
-         GridLines       =   1
-         GridLinesFixed  =   2
-         GridLineWidth   =   1
-         Rows            =   3
-         Cols            =   3
-         FixedRows       =   1
-         FixedCols       =   0
-         RowHeightMin    =   0
-         RowHeightMax    =   0
-         ColWidthMin     =   0
-         ColWidthMax     =   0
-         ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":8C80
-         ScrollTrack     =   0   'False
-         ScrollBars      =   3
-         ScrollTips      =   0   'False
-         MergeCells      =   0
-         MergeCompare    =   0
-         AutoResize      =   -1  'True
-         AutoSizeMode    =   0
-         AutoSearch      =   0
-         AutoSearchDelay =   2
-         MultiTotals     =   -1  'True
-         SubtotalPosition=   1
-         OutlineBar      =   0
-         OutlineCol      =   0
-         Ellipsis        =   0
-         ExplorerBar     =   0
-         PicturesOver    =   0   'False
-         FillStyle       =   0
-         RightToLeft     =   0   'False
-         PictureType     =   0
-         TabBehavior     =   0
-         OwnerDraw       =   0
-         Editable        =   2
-         ShowComboButton =   1
-         WordWrap        =   0   'False
-         TextStyle       =   0
-         TextStyleFixed  =   0
-         OleDragMode     =   0
-         OleDropMode     =   0
-         DataMode        =   0
-         VirtualData     =   -1  'True
-         DataMember      =   ""
-         ComboSearch     =   3
-         AutoSizeMouse   =   -1  'True
-         FrozenRows      =   0
-         FrozenCols      =   0
-         AllowUserFreezing=   0
-         BackColorFrozen =   0
-         ForeColorFrozen =   0
-         WallPaperAlignment=   9
-         AccessibleName  =   ""
-         AccessibleDescription=   ""
-         AccessibleValue =   ""
-         AccessibleRole  =   24
-      End
-      Begin VB.Label Label3 
-         AutoSize        =   -1  'True
-         Caption         =   "Document Classes "
-         BeginProperty Font 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   700
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         ForeColor       =   &H8000000D&
-         Height          =   195
-         Index           =   27
-         Left            =   240
-         TabIndex        =   325
-         Top             =   240
-         Width           =   1635
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000014&
-         Index           =   41
-         X1              =   720
-         X2              =   6120
-         Y1              =   345
-         Y2              =   345
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000010&
-         Index           =   40
-         X1              =   720
-         X2              =   6120
-         Y1              =   330
-         Y2              =   330
-      End
-   End
    Begin VSFlex8Ctl.VSFlexGrid gTOC 
       Height          =   7215
       Left            =   0
-      TabIndex        =   323
+      TabIndex        =   47
       Top             =   0
       Width           =   2595
       _cx             =   1981944289
@@ -3340,7 +3804,7 @@ Begin VB.Form FOptions
       ColWidthMin     =   0
       ColWidthMax     =   0
       ExtendLastCol   =   -1  'True
-      FormatString    =   $"FOptions.frx":8D2C
+      FormatString    =   $"FOptions.frx":9B4B
       ScrollTrack     =   0   'False
       ScrollBars      =   3
       ScrollTips      =   0   'False
@@ -3387,7 +3851,7 @@ Begin VB.Form FOptions
       Begin VB.Image Image2 
          Height          =   240
          Left            =   2040
-         Picture         =   "FOptions.frx":8D92
+         Picture         =   "FOptions.frx":9BB1
          Top             =   390
          Visible         =   0   'False
          Width           =   240
@@ -3398,7 +3862,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   1
       Left            =   15930
-      TabIndex        =   230
+      TabIndex        =   240
       Top             =   5940
       Visible         =   0   'False
       Width           =   6795
@@ -3406,7 +3870,7 @@ Begin VB.Form FOptions
          Caption         =   "Setup User Permissions"
          Height          =   375
          Left            =   1620
-         TabIndex        =   305
+         TabIndex        =   315
          Top             =   6480
          Width           =   2055
       End
@@ -3414,7 +3878,7 @@ Begin VB.Form FOptions
          Caption         =   "Enforce password complexity"
          Height          =   195
          Left            =   2280
-         TabIndex        =   304
+         TabIndex        =   314
          ToolTipText     =   "Ensure that user passwords are complex."
          Top             =   3780
          Width           =   2625
@@ -3425,7 +3889,7 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2280
          MaxLength       =   150
-         TabIndex        =   164
+         TabIndex        =   174
          Top             =   2910
          Width           =   3375
       End
@@ -3435,7 +3899,7 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2280
          MaxLength       =   30
-         TabIndex        =   163
+         TabIndex        =   173
          Top             =   2655
          Width           =   1755
       End
@@ -3444,7 +3908,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2280
          MaxLength       =   50
-         TabIndex        =   154
+         TabIndex        =   164
          Text            =   " "
          Top             =   510
          Width           =   3375
@@ -3454,7 +3918,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2280
          MaxLength       =   50
-         TabIndex        =   155
+         TabIndex        =   165
          Text            =   " "
          Top             =   810
          Width           =   3375
@@ -3464,7 +3928,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2280
          MaxLength       =   50
-         TabIndex        =   161
+         TabIndex        =   171
          Text            =   " "
          Top             =   2145
          Width           =   3375
@@ -3474,7 +3938,7 @@ Begin VB.Form FOptions
          Height          =   240
          Left            =   2280
          MaxLength       =   10
-         TabIndex        =   159
+         TabIndex        =   169
          Text            =   " "
          Top             =   1575
          Width           =   1755
@@ -3485,7 +3949,7 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2280
          MaxLength       =   30
-         TabIndex        =   162
+         TabIndex        =   172
          Top             =   2400
          Width           =   1755
       End
@@ -3495,7 +3959,7 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2280
          MaxLength       =   50
-         TabIndex        =   156
+         TabIndex        =   166
          Top             =   1065
          Width           =   3375
       End
@@ -3505,14 +3969,14 @@ Begin VB.Form FOptions
          IMEMode         =   3  'DISABLE
          Left            =   2280
          MaxLength       =   30
-         TabIndex        =   157
+         TabIndex        =   167
          Top             =   1320
          Width           =   2565
       End
       Begin VSFlex8Ctl.VSFlexGrid gDivisions 
          Height          =   1815
          Left            =   300
-         TabIndex        =   165
+         TabIndex        =   175
          Top             =   4410
          Width           =   5805
          _cx             =   1981949951
@@ -3561,7 +4025,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":931C
+         FormatString    =   $"FOptions.frx":A13B
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -3609,7 +4073,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboCompanyCountry 
          Height          =   240
          Left            =   2280
-         TabIndex        =   160
+         TabIndex        =   170
          Top             =   1830
          Width           =   915
          _ExtentX        =   1614
@@ -3618,7 +4082,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboCompanyProvince 
          Height          =   240
          Left            =   4860
-         TabIndex        =   158
+         TabIndex        =   168
          Top             =   1320
          Width           =   795
          _ExtentX        =   1402
@@ -3627,7 +4091,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboBuilderType 
          Height          =   240
          Left            =   2280
-         TabIndex        =   276
+         TabIndex        =   286
          Top             =   3360
          Width           =   2505
          _ExtentX        =   4419
@@ -3639,7 +4103,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   64
          Left            =   1050
-         TabIndex        =   277
+         TabIndex        =   287
          Top             =   3375
          Width           =   1155
       End
@@ -3659,7 +4123,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   18
          Left            =   270
-         TabIndex        =   243
+         TabIndex        =   253
          Top             =   4140
          Width           =   780
       End
@@ -3669,7 +4133,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   53
          Left            =   1050
-         TabIndex        =   240
+         TabIndex        =   250
          Top             =   1845
          Width           =   1155
       End
@@ -3679,7 +4143,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   52
          Left            =   1050
-         TabIndex        =   239
+         TabIndex        =   249
          Top             =   2910
          Width           =   1155
       End
@@ -3689,7 +4153,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   45
          Left            =   1050
-         TabIndex        =   238
+         TabIndex        =   248
          Top             =   2655
          Width           =   1155
       End
@@ -3709,7 +4173,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   17
          Left            =   270
-         TabIndex        =   232
+         TabIndex        =   242
          Top             =   240
          Width           =   1290
       End
@@ -3719,7 +4183,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   50
          Left            =   1050
-         TabIndex        =   237
+         TabIndex        =   247
          Top             =   2160
          Width           =   1155
       End
@@ -3729,7 +4193,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   49
          Left            =   1050
-         TabIndex        =   236
+         TabIndex        =   246
          Top             =   810
          Width           =   1155
       End
@@ -3739,7 +4203,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   48
          Left            =   1050
-         TabIndex        =   235
+         TabIndex        =   245
          Top             =   1590
          Width           =   1155
       End
@@ -3749,7 +4213,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   47
          Left            =   1050
-         TabIndex        =   234
+         TabIndex        =   244
          Top             =   2400
          Width           =   1155
       End
@@ -3759,7 +4223,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   39
          Left            =   1050
-         TabIndex        =   233
+         TabIndex        =   243
          Top             =   1320
          Width           =   1155
       End
@@ -3786,7 +4250,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   51
          Left            =   1080
-         TabIndex        =   231
+         TabIndex        =   241
          Top             =   510
          Width           =   1125
       End
@@ -3796,7 +4260,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   7
       Left            =   16035
-      TabIndex        =   174
+      TabIndex        =   184
       Top             =   6135
       Visible         =   0   'False
       Width           =   6795
@@ -3804,7 +4268,7 @@ Begin VB.Form FOptions
          Caption         =   "Enable community standards to automatically replace items during takeoff."
          Height          =   195
          Left            =   330
-         TabIndex        =   201
+         TabIndex        =   211
          Top             =   540
          Width           =   5895
       End
@@ -3812,14 +4276,14 @@ Begin VB.Form FOptions
          Caption         =   "Community standards are also phase specific."
          Height          =   195
          Left            =   330
-         TabIndex        =   200
+         TabIndex        =   210
          Top             =   780
          Width           =   5895
       End
       Begin VSFlex8Ctl.VSFlexGrid gStdItems 
          Height          =   4935
          Left            =   300
-         TabIndex        =   198
+         TabIndex        =   208
          Top             =   1470
          Width           =   6045
          _cx             =   1981950375
@@ -3868,7 +4332,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":9523
+         FormatString    =   $"FOptions.frx":A342
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -3919,7 +4383,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   14
          Left            =   300
-         TabIndex        =   202
+         TabIndex        =   212
          Top             =   1230
          Width           =   1065
       End
@@ -3939,7 +4403,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   15
          Left            =   240
-         TabIndex        =   199
+         TabIndex        =   209
          Top             =   240
          Width           =   1890
       End
@@ -3965,7 +4429,7 @@ Begin VB.Form FOptions
       Height          =   375
       Index           =   0
       Left            =   6780
-      TabIndex        =   177
+      TabIndex        =   187
       Top             =   7335
       Width           =   1215
    End
@@ -3975,7 +4439,7 @@ Begin VB.Form FOptions
       Height          =   375
       Index           =   1
       Left            =   8100
-      TabIndex        =   178
+      TabIndex        =   188
       Top             =   7335
       Width           =   1215
    End
@@ -3984,7 +4448,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   8
       Left            =   10110
-      TabIndex        =   175
+      TabIndex        =   185
       Tag             =   "Security"
       Top             =   11145
       Visible         =   0   'False
@@ -3993,7 +4457,7 @@ Begin VB.Form FOptions
          Caption         =   "Calculate incentive retail when incentive cost changes."
          Height          =   195
          Left            =   480
-         TabIndex        =   131
+         TabIndex        =   141
          Top             =   750
          Width           =   5535
       End
@@ -4001,8 +4465,8 @@ Begin VB.Form FOptions
          Caption         =   "Use Maximum price if no vendor price found."
          Height          =   195
          Left            =   480
-         TabIndex        =   135
-         ToolTipText     =   $"FOptions.frx":95A6
+         TabIndex        =   145
+         ToolTipText     =   $"FOptions.frx":A3C5
          Top             =   1980
          Width           =   5535
       End
@@ -4010,7 +4474,7 @@ Begin VB.Form FOptions
          Caption         =   "Selling prices include GST && PST less rebates."
          Height          =   195
          Left            =   480
-         TabIndex        =   179
+         TabIndex        =   189
          Top             =   1725
          Width           =   5535
       End
@@ -4018,7 +4482,7 @@ Begin VB.Form FOptions
          Caption         =   "Calculate selling prices when costs change."
          Height          =   195
          Left            =   480
-         TabIndex        =   130
+         TabIndex        =   140
          Top             =   510
          Width           =   5535
       End
@@ -4026,7 +4490,7 @@ Begin VB.Form FOptions
          Caption         =   "Lock worksheets when they are published."
          Height          =   195
          Left            =   480
-         TabIndex        =   132
+         TabIndex        =   142
          Top             =   1005
          Width           =   5535
       End
@@ -4034,7 +4498,7 @@ Begin VB.Form FOptions
          Caption         =   "Hide marketing worksheet interface."
          Height          =   195
          Left            =   480
-         TabIndex        =   133
+         TabIndex        =   143
          Top             =   1245
          Width           =   5535
       End
@@ -4042,7 +4506,7 @@ Begin VB.Form FOptions
          Caption         =   "Refresh costs when a marketing worksheet opens."
          Height          =   195
          Left            =   480
-         TabIndex        =   134
+         TabIndex        =   144
          Top             =   1485
          Width           =   5535
       End
@@ -4062,7 +4526,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   7
          Left            =   240
-         TabIndex        =   186
+         TabIndex        =   196
          Top             =   240
          Width           =   1605
       End
@@ -4086,16 +4550,16 @@ Begin VB.Form FOptions
    Begin VB.Frame TabFrame 
       Caption         =   "Departmental Approvals "
       Height          =   7185
-      Index           =   13
+      Index           =   12
       Left            =   10770
-      TabIndex        =   297
+      TabIndex        =   307
       Top             =   10860
       Visible         =   0   'False
       Width           =   6795
       Begin VSFlex8Ctl.VSFlexGrid gDepartments 
          Height          =   6015
          Left            =   390
-         TabIndex        =   299
+         TabIndex        =   309
          Top             =   600
          Width           =   2025
          _cx             =   1981943284
@@ -4144,7 +4608,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":9633
+         FormatString    =   $"FOptions.frx":A452
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -4192,7 +4656,7 @@ Begin VB.Form FOptions
       Begin VSFlex8Ctl.VSFlexGrid gDepartmentApprovers 
          Height          =   2865
          Left            =   2640
-         TabIndex        =   300
+         TabIndex        =   310
          Top             =   600
          Width           =   3825
          _cx             =   1981946459
@@ -4241,7 +4705,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":9692
+         FormatString    =   $"FOptions.frx":A4B1
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -4289,7 +4753,7 @@ Begin VB.Form FOptions
       Begin VSFlex8Ctl.VSFlexGrid gDepartmentGLs 
          Height          =   2895
          Left            =   2610
-         TabIndex        =   301
+         TabIndex        =   311
          Top             =   3690
          Width           =   3825
          _cx             =   1981946459
@@ -4338,7 +4802,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":9741
+         FormatString    =   $"FOptions.frx":A560
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -4399,7 +4863,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   26
          Left            =   270
-         TabIndex        =   298
+         TabIndex        =   308
          Top             =   240
          Width           =   2100
       End
@@ -4423,9 +4887,9 @@ Begin VB.Form FOptions
    Begin VB.Frame TabFrame 
       Caption         =   "Role Definitions "
       Height          =   7185
-      Index           =   12
+      Index           =   11
       Left            =   11325
-      TabIndex        =   271
+      TabIndex        =   281
       Tag             =   "Security"
       Top             =   10545
       Visible         =   0   'False
@@ -4436,8 +4900,8 @@ Begin VB.Form FOptions
          Left            =   3360
          MultiLine       =   -1  'True
          ScrollBars      =   2  'Vertical
-         TabIndex        =   138
-         Text            =   "FOptions.frx":97C8
+         TabIndex        =   148
+         Text            =   "FOptions.frx":A5E7
          Top             =   690
          Width           =   2625
       End
@@ -4447,8 +4911,8 @@ Begin VB.Form FOptions
          Left            =   360
          MultiLine       =   -1  'True
          ScrollBars      =   2  'Vertical
-         TabIndex        =   137
-         Text            =   "FOptions.frx":97CE
+         TabIndex        =   147
+         Text            =   "FOptions.frx":A5ED
          Top             =   2790
          Width           =   2625
       End
@@ -4458,8 +4922,8 @@ Begin VB.Form FOptions
          Left            =   330
          MultiLine       =   -1  'True
          ScrollBars      =   2  'Vertical
-         TabIndex        =   136
-         Text            =   "FOptions.frx":97D4
+         TabIndex        =   146
+         Text            =   "FOptions.frx":A5F3
          Top             =   690
          Width           =   2625
       End
@@ -4479,7 +4943,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   24
          Left            =   3240
-         TabIndex        =   274
+         TabIndex        =   284
          Top             =   450
          Width           =   1875
       End
@@ -4499,7 +4963,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   23
          Left            =   240
-         TabIndex        =   273
+         TabIndex        =   283
          Top             =   2520
          Width           =   2055
       End
@@ -4519,7 +4983,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   22
          Left            =   210
-         TabIndex        =   272
+         TabIndex        =   282
          Top             =   420
          Width           =   1875
       End
@@ -4529,7 +4993,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   3
       Left            =   13725
-      TabIndex        =   171
+      TabIndex        =   181
       Top             =   990
       Visible         =   0   'False
       Width           =   6795
@@ -4539,14 +5003,14 @@ Begin VB.Form FOptions
          Height          =   4635
          Index           =   1
          Left            =   0
-         TabIndex        =   213
+         TabIndex        =   223
          Top             =   720
          Width           =   6675
          Begin VB.TextBox txtCrmClientID 
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2280
-            TabIndex        =   73
+            TabIndex        =   83
             Text            =   " "
             Top             =   0
             Width           =   3045
@@ -4557,14 +5021,14 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   2280
             PasswordChar    =   "*"
-            TabIndex        =   74
+            TabIndex        =   84
             Top             =   255
             Width           =   3045
          End
          Begin zybCombo.zybCombobox cboCrmEnvironment 
             Height          =   240
             Left            =   2280
-            TabIndex        =   75
+            TabIndex        =   85
             Top             =   510
             Width           =   2850
             _ExtentX        =   5027
@@ -4588,7 +5052,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   118
             Left            =   1035
-            TabIndex        =   358
+            TabIndex        =   366
             Top             =   510
             Width           =   1155
          End
@@ -4598,7 +5062,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   117
             Left            =   1035
-            TabIndex        =   357
+            TabIndex        =   365
             Top             =   0
             Width           =   1155
          End
@@ -4608,7 +5072,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   116
             Left            =   1230
-            TabIndex        =   356
+            TabIndex        =   364
             Top             =   255
             Width           =   960
          End
@@ -4616,7 +5080,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   2
             Left            =   390
-            Picture         =   "FOptions.frx":97DA
+            Picture         =   "FOptions.frx":A5F9
             Stretch         =   -1  'True
             Top             =   30
             Width           =   480
@@ -4628,7 +5092,7 @@ Begin VB.Form FOptions
          Height          =   3465
          Index           =   0
          Left            =   0
-         TabIndex        =   226
+         TabIndex        =   236
          Top             =   705
          Width           =   6675
          Begin VB.Label lblEditList 
@@ -4647,7 +5111,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   9
             Left            =   1500
-            TabIndex        =   246
+            TabIndex        =   256
             Top             =   870
             Width           =   1545
          End
@@ -4667,7 +5131,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   8
             Left            =   1500
-            TabIndex        =   242
+            TabIndex        =   252
             Top             =   1230
             Width           =   1410
          End
@@ -4687,7 +5151,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   6
             Left            =   1500
-            TabIndex        =   241
+            TabIndex        =   251
             Top             =   1440
             Width           =   1665
          End
@@ -4707,7 +5171,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   5
             Left            =   1500
-            TabIndex        =   228
+            TabIndex        =   238
             Top             =   510
             Width           =   1755
          End
@@ -4727,7 +5191,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   4
             Left            =   1500
-            TabIndex        =   227
+            TabIndex        =   237
             Top             =   300
             Width           =   1320
          End
@@ -4735,7 +5199,7 @@ Begin VB.Form FOptions
       Begin HFSystem.VBCombo cboSalesSystem 
          Height          =   240
          Left            =   2280
-         TabIndex        =   72
+         TabIndex        =   82
          Top             =   450
          Width           =   2445
          _ExtentX        =   4313
@@ -4747,14 +5211,14 @@ Begin VB.Form FOptions
          Height          =   4785
          Index           =   2
          Left            =   0
-         TabIndex        =   253
+         TabIndex        =   263
          Top             =   705
          Width           =   6675
          Begin VB.OptionButton optWebUploadbyDivision 
             Caption         =   "Prompt for divisions when uploading"
             Height          =   240
             Left            =   1350
-            TabIndex        =   264
+            TabIndex        =   274
             Top             =   3300
             Width           =   3195
          End
@@ -4762,7 +5226,7 @@ Begin VB.Form FOptions
             Caption         =   "Prompt for communities when uploading"
             Height          =   240
             Left            =   1350
-            TabIndex        =   263
+            TabIndex        =   273
             Top             =   3030
             Value           =   -1  'True
             Width           =   3195
@@ -4771,7 +5235,7 @@ Begin VB.Form FOptions
             Caption         =   "Append UOM to option descriptions."
             Height          =   240
             Left            =   1350
-            TabIndex        =   153
+            TabIndex        =   163
             Top             =   2640
             Width           =   4005
          End
@@ -4780,7 +5244,7 @@ Begin VB.Form FOptions
             Height          =   240
             Left            =   2280
             MaxLength       =   50
-            TabIndex        =   149
+            TabIndex        =   159
             Text            =   " "
             Top             =   255
             Width           =   1755
@@ -4790,7 +5254,7 @@ Begin VB.Form FOptions
             Height          =   240
             Left            =   2280
             MaxLength       =   15
-            TabIndex        =   148
+            TabIndex        =   158
             Text            =   " "
             Top             =   0
             Width           =   1755
@@ -4800,7 +5264,7 @@ Begin VB.Form FOptions
             Height          =   240
             Left            =   2280
             MaxLength       =   50
-            TabIndex        =   151
+            TabIndex        =   161
             Text            =   " "
             Top             =   1005
             Width           =   1755
@@ -4812,7 +5276,7 @@ Begin VB.Form FOptions
             Left            =   2280
             MaxLength       =   50
             PasswordChar    =   "*"
-            TabIndex        =   152
+            TabIndex        =   162
             Top             =   1260
             Width           =   1755
          End
@@ -4820,7 +5284,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   2280
-            TabIndex        =   150
+            TabIndex        =   160
             Text            =   " "
             Top             =   750
             Width           =   4335
@@ -4831,7 +5295,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   32
             Left            =   930
-            TabIndex        =   262
+            TabIndex        =   272
             Top             =   2370
             Width           =   585
          End
@@ -4839,7 +5303,7 @@ Begin VB.Form FOptions
             Height          =   480
             Index           =   5
             Left            =   390
-            Picture         =   "FOptions.frx":A0A4
+            Picture         =   "FOptions.frx":AEC3
             Stretch         =   -1  'True
             Top             =   30
             Width           =   480
@@ -4850,7 +5314,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   26
             Left            =   1050
-            TabIndex        =   258
+            TabIndex        =   268
             Top             =   0
             Width           =   1155
          End
@@ -4860,7 +5324,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   38
             Left            =   1050
-            TabIndex        =   257
+            TabIndex        =   267
             Top             =   255
             Width           =   1155
          End
@@ -4870,7 +5334,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   40
             Left            =   1050
-            TabIndex        =   256
+            TabIndex        =   266
             Top             =   1005
             Width           =   1155
          End
@@ -4880,7 +5344,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   41
             Left            =   1050
-            TabIndex        =   255
+            TabIndex        =   265
             Top             =   1260
             Width           =   1155
          End
@@ -4890,7 +5354,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   42
             Left            =   1050
-            TabIndex        =   254
+            TabIndex        =   264
             Top             =   750
             Width           =   1155
          End
@@ -4902,7 +5366,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   36
          Left            =   1050
-         TabIndex        =   229
+         TabIndex        =   239
          Top             =   450
          Width           =   1155
       End
@@ -4922,7 +5386,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   13
          Left            =   270
-         TabIndex        =   214
+         TabIndex        =   224
          Top             =   240
          Width           =   1200
       End
@@ -4948,7 +5412,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   10
       Left            =   15765
-      TabIndex        =   176
+      TabIndex        =   186
       Top             =   5625
       Visible         =   0   'False
       Width           =   6795
@@ -4957,7 +5421,7 @@ Begin VB.Form FOptions
          Enabled         =   0   'False
          Height          =   315
          Left            =   5340
-         TabIndex        =   316
+         TabIndex        =   326
          Top             =   5805
          Width           =   735
       End
@@ -4965,7 +5429,7 @@ Begin VB.Form FOptions
          Caption         =   "Delete"
          Height          =   315
          Left            =   4560
-         TabIndex        =   169
+         TabIndex        =   179
          Top             =   5820
          Width           =   735
       End
@@ -4973,14 +5437,14 @@ Begin VB.Form FOptions
          Caption         =   "Add"
          Height          =   315
          Left            =   3780
-         TabIndex        =   168
+         TabIndex        =   178
          Top             =   5820
          Width           =   735
       End
       Begin VSFlex8Ctl.VSFlexGrid gCustomFields 
          Height          =   5235
          Left            =   300
-         TabIndex        =   167
+         TabIndex        =   177
          Top             =   465
          Width           =   6045
          _cx             =   10663
@@ -5029,7 +5493,7 @@ Begin VB.Form FOptions
          ColWidthMin     =   0
          ColWidthMax     =   0
          ExtendLastCol   =   -1  'True
-         FormatString    =   $"FOptions.frx":A96E
+         FormatString    =   $"FOptions.frx":B78D
          ScrollTrack     =   0   'False
          ScrollBars      =   3
          ScrollTips      =   0   'False
@@ -5089,259 +5553,9 @@ Begin VB.Form FOptions
          Height          =   315
          Index           =   22
          Left            =   240
-         TabIndex        =   181
+         TabIndex        =   191
          Top             =   240
          Width           =   2175
-      End
-   End
-   Begin VB.Frame TabFrame 
-      Caption         =   "Supply Chain Integration"
-      Height          =   7185
-      Index           =   11
-      Left            =   15000
-      TabIndex        =   249
-      Top             =   4815
-      Visible         =   0   'False
-      Width           =   6795
-      Begin VB.TextBox txtWebAttachmentsFolder 
-         BorderStyle     =   0  'None
-         Height          =   240
-         Left            =   1860
-         TabIndex        =   129
-         Text            =   " "
-         Top             =   3645
-         Width           =   4005
-      End
-      Begin VB.CheckBox chkUseDetailedFieldPOView 
-         Caption         =   "Use detailed edit view for all Field PO users"
-         Height          =   195
-         Left            =   1650
-         TabIndex        =   128
-         Top             =   2805
-         Width           =   3645
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Tax Group"
-         Height          =   195
-         Index           =   7
-         Left            =   2940
-         TabIndex        =   127
-         Top             =   2115
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Category"
-         Height          =   195
-         Index           =   6
-         Left            =   2940
-         TabIndex        =   126
-         Top             =   1905
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Cost Code"
-         Height          =   195
-         Index           =   5
-         Left            =   2940
-         TabIndex        =   125
-         Top             =   1695
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Extra"
-         Height          =   195
-         Index           =   4
-         Left            =   2940
-         TabIndex        =   124
-         Top             =   1485
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Job"
-         Height          =   195
-         Index           =   3
-         Left            =   1650
-         TabIndex        =   123
-         Top             =   2115
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Rate"
-         Height          =   195
-         Index           =   2
-         Left            =   1650
-         TabIndex        =   122
-         Top             =   1905
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Quantity"
-         Height          =   195
-         Index           =   1
-         Left            =   1650
-         TabIndex        =   121
-         Top             =   1695
-         Width           =   1275
-      End
-      Begin VB.CheckBox chkFieldPOField 
-         Caption         =   "Description"
-         Height          =   195
-         Index           =   0
-         Left            =   1650
-         TabIndex        =   120
-         Top             =   1485
-         Width           =   1275
-      End
-      Begin VB.TextBox txtFieldPOPrefix 
-         BorderStyle     =   0  'None
-         Height          =   240
-         Left            =   2475
-         MaxLength       =   50
-         TabIndex        =   119
-         Text            =   " "
-         Top             =   840
-         Width           =   3375
-      End
-      Begin HFSystem.VBCombo cboPurchasingManager 
-         Height          =   240
-         Left            =   2490
-         TabIndex        =   118
-         Top             =   585
-         Width           =   3375
-         _ExtentX        =   5953
-         _ExtentY        =   423
-      End
-      Begin VB.Image cmdChooseFolder 
-         Height          =   240
-         Index           =   2
-         Left            =   5910
-         Picture         =   "FOptions.frx":A9F3
-         Top             =   3615
-         Width           =   240
-      End
-      Begin VB.Label Label3 
-         AutoSize        =   -1  'True
-         Caption         =   "Vendor and Customer Portals "
-         BeginProperty Font 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   700
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         ForeColor       =   &H8000000D&
-         Height          =   195
-         Index           =   2
-         Left            =   240
-         TabIndex        =   269
-         Top             =   3345
-         Width           =   2535
-      End
-      Begin VB.Label Label1 
-         AutoSize        =   -1  'True
-         Caption         =   "Attachments Folder"
-         Height          =   195
-         Index           =   62
-         Left            =   390
-         TabIndex        =   270
-         Top             =   3645
-         Width           =   1365
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000014&
-         Index           =   5
-         X1              =   750
-         X2              =   6150
-         Y1              =   3480
-         Y2              =   3480
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000010&
-         Index           =   4
-         X1              =   750
-         X2              =   6150
-         Y1              =   3465
-         Y2              =   3465
-      End
-      Begin VB.Label Label6 
-         AutoSize        =   -1  'True
-         Caption         =   "Options"
-         Height          =   195
-         Index           =   1
-         Left            =   1380
-         TabIndex        =   261
-         Top             =   2535
-         Width           =   540
-      End
-      Begin VB.Label Label6 
-         AutoSize        =   -1  'True
-         Caption         =   "Fields Required on a request:"
-         Height          =   195
-         Index           =   0
-         Left            =   1380
-         TabIndex        =   260
-         Top             =   1245
-         Width           =   2070
-      End
-      Begin VB.Label Label3 
-         AutoSize        =   -1  'True
-         Caption         =   "Field PO Settings"
-         BeginProperty Font 
-            Name            =   "MS Sans Serif"
-            Size            =   8.25
-            Charset         =   0
-            Weight          =   700
-            Underline       =   0   'False
-            Italic          =   0   'False
-            Strikethrough   =   0   'False
-         EndProperty
-         ForeColor       =   &H8000000D&
-         Height          =   195
-         Index           =   21
-         Left            =   240
-         TabIndex        =   250
-         Top             =   315
-         Width           =   1485
-      End
-      Begin VB.Label Label1 
-         Alignment       =   1  'Right Justify
-         AutoSize        =   -1  'True
-         Caption         =   "Default Purchasing Manager"
-         Height          =   195
-         Index           =   58
-         Left            =   390
-         TabIndex        =   252
-         Top             =   585
-         Width           =   2025
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000010&
-         Index           =   33
-         X1              =   750
-         X2              =   6150
-         Y1              =   435
-         Y2              =   435
-      End
-      Begin VB.Line Line1 
-         BorderColor     =   &H80000014&
-         Index           =   32
-         X1              =   750
-         X2              =   6150
-         Y1              =   450
-         Y2              =   450
-      End
-      Begin VB.Label Label1 
-         Alignment       =   1  'Right Justify
-         AutoSize        =   -1  'True
-         Caption         =   "Field PO Prefix"
-         Height          =   195
-         Index           =   46
-         Left            =   1380
-         TabIndex        =   251
-         Top             =   840
-         Width           =   1035
       End
    End
    Begin VB.Frame TabFrame 
@@ -5350,7 +5564,7 @@ Begin VB.Form FOptions
       Height          =   7185
       Index           =   9
       Left            =   6120
-      TabIndex        =   278
+      TabIndex        =   288
       Tag             =   "Security"
       Top             =   30
       Visible         =   0   'False
@@ -5360,14 +5574,14 @@ Begin VB.Form FOptions
          Caption         =   "Frame1"
          Height          =   840
          Left            =   690
-         TabIndex        =   379
+         TabIndex        =   387
          Top             =   6180
          Width           =   4755
          Begin VB.TextBox txtEmailAddress 
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   990
-            TabIndex        =   382
+            TabIndex        =   390
             Text            =   "info@HomeFront-Software.com"
             Top             =   510
             Width           =   3675
@@ -5376,7 +5590,7 @@ Begin VB.Form FOptions
             Caption         =   "Send from the corporate address"
             Height          =   240
             Left            =   120
-            TabIndex        =   381
+            TabIndex        =   389
             Top             =   255
             Width           =   2715
          End
@@ -5384,7 +5598,7 @@ Begin VB.Form FOptions
             Caption         =   "Send from the current users email address"
             Height          =   240
             Left            =   120
-            TabIndex        =   380
+            TabIndex        =   388
             Top             =   0
             Value           =   -1  'True
             Width           =   3375
@@ -5396,7 +5610,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   31
             Left            =   345
-            TabIndex        =   383
+            TabIndex        =   391
             Top             =   525
             Width           =   570
          End
@@ -5406,7 +5620,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   1
          Left            =   450
-         TabIndex        =   57
+         TabIndex        =   67
          Top             =   4155
          Width           =   2355
       End
@@ -5415,7 +5629,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   0
          Left            =   450
-         TabIndex        =   56
+         TabIndex        =   66
          Top             =   3915
          Value           =   -1  'True
          Width           =   4605
@@ -5425,7 +5639,7 @@ Begin VB.Form FOptions
          Height          =   240
          Index           =   2
          Left            =   450
-         TabIndex        =   58
+         TabIndex        =   68
          Top             =   4395
          Width           =   2685
       End
@@ -5434,7 +5648,7 @@ Begin VB.Form FOptions
          Height          =   2310
          Index           =   2
          Left            =   435
-         TabIndex        =   372
+         TabIndex        =   380
          Top             =   4785
          Visible         =   0   'False
          Width           =   5340
@@ -5442,7 +5656,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1335
-            TabIndex        =   68
+            TabIndex        =   78
             Top             =   1005
             Width           =   1950
          End
@@ -5452,7 +5666,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   4215
             PasswordChar    =   "*"
-            TabIndex        =   69
+            TabIndex        =   79
             Top             =   1005
             Width           =   795
          End
@@ -5460,7 +5674,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1335
-            TabIndex        =   67
+            TabIndex        =   77
             Top             =   750
             Width           =   3675
          End
@@ -5468,7 +5682,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1335
-            TabIndex        =   66
+            TabIndex        =   76
             Top             =   495
             Width           =   3675
          End
@@ -5476,7 +5690,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1335
-            TabIndex        =   65
+            TabIndex        =   75
             Top             =   240
             Width           =   3675
          End
@@ -5487,7 +5701,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   123
             Left            =   900
-            TabIndex        =   377
+            TabIndex        =   385
             Top             =   1020
             Width           =   330
          End
@@ -5498,7 +5712,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   122
             Left            =   3255
-            TabIndex        =   376
+            TabIndex        =   384
             Top             =   1035
             Width           =   885
          End
@@ -5509,7 +5723,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   30
             Left            =   315
-            TabIndex        =   375
+            TabIndex        =   383
             Top             =   765
             Width           =   915
          End
@@ -5520,7 +5734,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   29
             Left            =   510
-            TabIndex        =   374
+            TabIndex        =   382
             Top             =   510
             Width           =   720
          End
@@ -5531,7 +5745,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   28
             Left            =   240
-            TabIndex        =   373
+            TabIndex        =   381
             Top             =   255
             Width           =   990
          End
@@ -5542,7 +5756,7 @@ Begin VB.Form FOptions
          Height          =   2175
          Index           =   0
          Left            =   360
-         TabIndex        =   281
+         TabIndex        =   291
          Top             =   840
          Width           =   5985
          Begin VB.TextBox txtNotification 
@@ -5551,8 +5765,8 @@ Begin VB.Form FOptions
             Index           =   0
             Left            =   705
             MultiLine       =   -1  'True
-            TabIndex        =   53
-            Text            =   "FOptions.frx":AF7D
+            TabIndex        =   63
+            Text            =   "FOptions.frx":B812
             Top             =   90
             Width           =   5205
          End
@@ -5562,8 +5776,8 @@ Begin VB.Form FOptions
             Index           =   1
             Left            =   75
             MultiLine       =   -1  'True
-            TabIndex        =   54
-            Text            =   "FOptions.frx":AF83
+            TabIndex        =   64
+            Text            =   "FOptions.frx":B818
             Top             =   390
             Width           =   5835
          End
@@ -5574,7 +5788,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   14
             Left            =   60
-            TabIndex        =   282
+            TabIndex        =   292
             Top             =   105
             Width           =   540
          End
@@ -5583,7 +5797,7 @@ Begin VB.Form FOptions
          Caption         =   "Always CC: the project manager"
          Height          =   285
          Left            =   450
-         TabIndex        =   55
+         TabIndex        =   65
          Top             =   3525
          Width           =   3525
       End
@@ -5592,7 +5806,7 @@ Begin VB.Form FOptions
          Caption         =   "Frame2"
          Height          =   255
          Left            =   4560
-         TabIndex        =   279
+         TabIndex        =   289
          Top             =   540
          Width           =   2055
          Begin VB.Label lblReplacementParameters 
@@ -5610,7 +5824,7 @@ Begin VB.Form FOptions
             ForeColor       =   &H8000000D&
             Height          =   195
             Left            =   0
-            TabIndex        =   280
+            TabIndex        =   290
             Top             =   0
             Width           =   1785
          End
@@ -5621,7 +5835,7 @@ Begin VB.Form FOptions
          Height          =   2175
          Index           =   1
          Left            =   360
-         TabIndex        =   283
+         TabIndex        =   293
          Top             =   840
          Visible         =   0   'False
          Width           =   5985
@@ -5631,8 +5845,8 @@ Begin VB.Form FOptions
             Index           =   3
             Left            =   75
             MultiLine       =   -1  'True
-            TabIndex        =   71
-            Text            =   "FOptions.frx":AF89
+            TabIndex        =   81
+            Text            =   "FOptions.frx":B81E
             Top             =   390
             Width           =   5835
          End
@@ -5642,8 +5856,8 @@ Begin VB.Form FOptions
             Index           =   2
             Left            =   705
             MultiLine       =   -1  'True
-            TabIndex        =   70
-            Text            =   "FOptions.frx":AF8F
+            TabIndex        =   80
+            Text            =   "FOptions.frx":B824
             Top             =   90
             Width           =   5205
          End
@@ -5654,7 +5868,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   23
             Left            =   60
-            TabIndex        =   284
+            TabIndex        =   294
             Top             =   105
             Width           =   540
          End
@@ -5662,7 +5876,7 @@ Begin VB.Form FOptions
       Begin MSComctlLib.TabStrip tabNotices 
          Height          =   2535
          Left            =   330
-         TabIndex        =   285
+         TabIndex        =   295
          Top             =   510
          Width           =   6045
          _ExtentX        =   10663
@@ -5685,7 +5899,7 @@ Begin VB.Form FOptions
          Height          =   2265
          Index           =   1
          Left            =   435
-         TabIndex        =   368
+         TabIndex        =   376
          Top             =   4785
          Visible         =   0   'False
          Width           =   5340
@@ -5693,7 +5907,7 @@ Begin VB.Form FOptions
             Caption         =   "STARTTLS"
             Height          =   195
             Left            =   555
-            TabIndex        =   62
+            TabIndex        =   72
             Top             =   1020
             Width           =   1290
          End
@@ -5701,7 +5915,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   3435
-            TabIndex        =   63
+            TabIndex        =   73
             Top             =   645
             Width           =   1350
          End
@@ -5709,7 +5923,7 @@ Begin VB.Form FOptions
             Caption         =   "SSL"
             Height          =   195
             Left            =   555
-            TabIndex        =   61
+            TabIndex        =   71
             Top             =   795
             Width           =   675
          End
@@ -5717,7 +5931,7 @@ Begin VB.Form FOptions
             Caption         =   "Require Authentication?"
             Height          =   255
             Left            =   555
-            TabIndex        =   60
+            TabIndex        =   70
             Top             =   495
             Width           =   2325
          End
@@ -5727,7 +5941,7 @@ Begin VB.Form FOptions
             IMEMode         =   3  'DISABLE
             Left            =   3435
             PasswordChar    =   "*"
-            TabIndex        =   64
+            TabIndex        =   74
             Top             =   900
             Width           =   1350
          End
@@ -5735,7 +5949,7 @@ Begin VB.Form FOptions
             BorderStyle     =   0  'None
             Height          =   240
             Left            =   1110
-            TabIndex        =   59
+            TabIndex        =   69
             Top             =   255
             Width           =   3675
          End
@@ -5746,7 +5960,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   43
             Left            =   225
-            TabIndex        =   371
+            TabIndex        =   379
             Top             =   270
             Width           =   795
          End
@@ -5757,7 +5971,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   66
             Left            =   2730
-            TabIndex        =   370
+            TabIndex        =   378
             Top             =   645
             Width           =   600
          End
@@ -5768,7 +5982,7 @@ Begin VB.Form FOptions
             Height          =   195
             Index           =   67
             Left            =   2475
-            TabIndex        =   369
+            TabIndex        =   377
             Top             =   930
             Width           =   885
          End
@@ -5788,7 +6002,7 @@ Begin VB.Form FOptions
          ForeColor       =   &H8000000D&
          Height          =   195
          Left            =   3555
-         TabIndex        =   378
+         TabIndex        =   386
          Top             =   4410
          Width           =   1620
       End
@@ -5808,7 +6022,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   4
          Left            =   240
-         TabIndex        =   287
+         TabIndex        =   297
          Top             =   240
          Width           =   720
       End
@@ -5828,7 +6042,7 @@ Begin VB.Form FOptions
          Height          =   195
          Index           =   11
          Left            =   240
-         TabIndex        =   286
+         TabIndex        =   296
          Top             =   3240
          Width           =   1710
       End
@@ -5872,7 +6086,7 @@ Begin VB.Form FOptions
       Height          =   195
       Index           =   112
       Left            =   255
-      TabIndex        =   352
+      TabIndex        =   360
       Top             =   780
       Width           =   525
    End
@@ -5882,7 +6096,7 @@ Begin VB.Form FOptions
       Height          =   195
       Index           =   85
       Left            =   0
-      TabIndex        =   303
+      TabIndex        =   313
       Top             =   0
       Width           =   1155
    End
@@ -6440,20 +6654,19 @@ Private Sub lblEditList_Click(Index As Integer)
     
     Select Case Index
         
+        
         Case 11 'book of account
             If HFApp.Options(AccountingSystem) = asTimberline Then
-                s = "select BookOfAccount,WalletBankAccount,DataSourceID WalletPartyID,Sage300GLPrefixLength,'' Sage300GLPrefixes from DataSources"
+                s = "select BookOfAccount,WalletBankAccount,lower(DataSourceID) WalletPartyID,Sage300GLPrefixLength,'' Sage300GLPrefixes from DataSources"
             Else
-                s = "select BookOfAccount,WalletBankAccount,DataSourceID WalletPartyID from DataSources"
+                s = "select BookOfAccount,WalletBankAccount,lower(DataSourceID) WalletPartyID from DataSources"
             End If
-            Call FDBGrid.ShowForm("Book of Accounts", s, "DataSources", "BookOfAccount", False, , "DataSourceID")
-            Call HFApp.SqlExec("update DataSources set Datasourceid=newid() where datasourceid is null")
+            Call FDBGrid.ShowForm("Book of Accounts", s, "DataSources", "BookOfAccount", False, , "WalletPartyID")
+            Call HFApp.SqlExec("update DataSources set Datasourceid=lower(newid()) where datasourceid is null")
             
             s = cboBookOfAccount.Text
             Call LoadComboBox(cboBookOfAccount, HFApp.Databases(dbHomefront), "select distinct BookOfAccount,'',0 from DataSources order by 1")
             Call SetComboBoxListIndex(cboBookOfAccount, s)
-        
-        
         
         Case 10
             s = "select Item,Custom_Description from customDescriptions where item like 'WBS__' order by item"
@@ -6976,6 +7189,9 @@ On Error GoTo eh
         
         chkLetPurchaserChangeSaleQty.Value = IIf("" & .ValueByName("LetPurchaserChangeSaleQty") = "True", vbChecked, vbUnchecked)
         chkUseComponents.Value = IIf("" & .ValueByName("UseComponents") = "True", vbChecked, vbUnchecked)
+        chkAllowJobReassignInBudgetsAndPOs.Value = IIf("" & .ValueByName("AllowJobReassignInBudgetsAndPOs") = "True", vbChecked, vbUnchecked)
+        
+        
         
         chkZeroRateOnRefeshCosts.Value = IIf(.Value(ZeroRateOnRefreshCosts), vbChecked, vbUnchecked)
         chkZeroRateOnChangeVendor.Value = IIf(.Value(ZeroRateOnChangeVendor), vbChecked, vbUnchecked)
@@ -7271,13 +7487,14 @@ Private Sub ReadAccountingSystems()
     
     With cboAccountingSystem
         .AddItem "No accounting integration":              .ItemData(.NewIndex) = AccountingSystems.asNone
+        .AddItem "D365 -- ABN":                            .ItemData(.NewIndex) = asD365_ABN
+        .AddItem "QuickBooks":                             .ItemData(.NewIndex) = asQuickBooks
+        .AddItem "Quickbooks Online":                      .ItemData(.NewIndex) = asQuickbooksOnline
     
         .AddItem "Sage 300 Construction and Real Estate":  .ItemData(.NewIndex) = asTimberline
         .AddItem "Sage 100 Contractor":                    .ItemData(.NewIndex) = asMasterBuilder
         .AddItem "Sage 50 Accounting":                     .ItemData(.NewIndex) = asSimply
         .AddItem "Sage Intacct":                           .ItemData(.NewIndex) = asIntacct
-        .AddItem "QuickBooks":                             .ItemData(.NewIndex) = asQuickBooks
-        .AddItem "Quickbooks Online":                      .ItemData(.NewIndex) = asQuickbooksOnline
         .AddItem "Xero":                                   .ItemData(.NewIndex) = asXero
             
         Call SetListIndex(cboAccountingSystem, Val(HFApp.Options.Value(AccountingSystem)))
@@ -7289,6 +7506,14 @@ Private Sub ReadAccountingSystems()
     If s = "" Then s = "Main"
     Call SetComboBoxListIndex(cboBookOfAccount, s)
     If cboBookOfAccount.ListIndex = -1 Then cboBookOfAccount.ListIndex = 0
+    
+    'ABN-D365
+    txtABNResource.Text = HFApp.Options.ValueByName("ABN_Resource")
+    txtABNTenantID.Text = HFApp.Options.ValueByName("ABN_TenantID")
+    txtABNClientID.Text = HFApp.Options.ValueByName("ABN_ClientID")
+    txtABNClientSecret.Text = HFApp.Options.ValueByName("ABN_ClientSecret")
+    txtABNLegalEntity.Text = HFApp.Options.ValueByName("ABN_LegalEntity")
+    txtABND01Division.Text = HFApp.Options.ValueByName("ABN_D01Division")
     
                 
     'Sage Intacct
@@ -7321,17 +7546,20 @@ Private Sub ReadAccountingSystems()
         .Clear
         .AddItem "Job Number"
         .AddItem "PO Number"
-        .ListIndex = IIf(HFApp.Options.ValueByName("IntacctPOReferenceFld") = "PO Number", 1, 0)
+        Call SetListIndex(cboPOReferenceFld, , HFApp.Options.ValueByName("IntacctPOReferenceFld"))
+        If .ListIndex = -1 Then .ListIndex = 0
     End With
+    
     With cboInvReferenceFld
         .Clear
         .AddItem "Job Number"
         .AddItem "Job Description"
         .AddItem "Invoice Description"
         .AddItem "PO Number"
-        .ListIndex = Decode(HFApp.Options.ValueByName("IntacctInvReferenceFld"), "Job Number", 0, "Invoice Description", 2, 1)
+        Call SetListIndex(cboInvReferenceFld, , HFApp.Options.ValueByName("IntacctInvReferenceFld"))
+        If .ListIndex = -1 Then .ListIndex = 0
     End With
-    
+   
     
     
     
@@ -7431,19 +7659,20 @@ Private Sub SaveAccountingSystem()
     
     
     Select Case cboAccountingSystem.ItemData(cboAccountingSystem.ListIndex)
-        
-        Case 0 'none
-            HFApp.Options.Value(Timberline_Data_Path) = ""
-            HFApp.Options.Value(TL_AR_Data_Path) = ""
-            HFApp.Options.Value(Timberline_UID) = ""
-            HFApp.Options.Value(Timberline_PWD) = ""
-            HFApp.Options.Value(MasterBuilderCompany) = ""
-            HFApp.Options.Value(MasterBuilderDataFolder) = ""
-            HFApp.Options.Value(MasterBuilderUID) = ""
-            HFApp.Options.Value(MasterBuilderPWD) = ""
+    
+        Case AccountingSystems.asD365_ABN
+            HFApp.Options.ValueByName("ABN_Resource") = txtABNResource.Text
+            HFApp.Options.ValueByName("ABN_TenantID") = txtABNTenantID.Text
+            HFApp.Options.ValueByName("ABN_ClientID") = txtABNClientID.Text
+            HFApp.Options.ValueByName("ABN_ClientSecret") = txtABNClientSecret.Text
+            HFApp.Options.ValueByName("ABN_LegalEntity") = txtABNLegalEntity.Text
+            HFApp.Options.ValueByName("ABN_D01Division") = txtABND01Division.Text
+
+
+        Case AccountingSystems.asNone
             
             
-        Case 1 'timberline
+        Case AccountingSystems.asTimberline
             HFApp.Options.Value(Timberline_Data_Path) = txtTLFolder.Text
             HFApp.Options.Value(TL_AR_Data_Path) = txtTLARFolder.Text
             HFApp.Options.Value(Timberline_UID) = txtTLUser.Text
@@ -7454,7 +7683,7 @@ Private Sub SaveAccountingSystem()
             HFApp.Options.Value(MasterBuilderPWD) = ""
         
         
-        Case 2 'masterbuilder
+        Case AccountingSystems.asMasterBuilder
             HFApp.Options.Value(Timberline_Data_Path) = ""
             HFApp.Options.Value(TL_AR_Data_Path) = ""
             HFApp.Options.Value(Timberline_UID) = txtMBUser.Text
@@ -7473,12 +7702,12 @@ Private Sub SaveAccountingSystem()
             HFApp.Options.ValueByName("UseJobAsSubAcct") = IIf(chkmbUseSubAcct.Value = 1, "True", "False")
             
 
-        Case 10 'quickbooks online
+        Case AccountingSystems.asQuickbooksOnline
             HFApp.Options.ValueByName("AccountingVersion") = cboQuickBooksOnlineVersion.Text
             HFApp.Options.ValueByName("QuickBooksJobStyle") = IIf(optQBOJobHeirarchy(0).Value, "Simple", "Heirarchical")
             
  
-        Case 3 'quickbooks
+        Case AccountingSystems.asQuickBooks
             HFApp.Options.Value(QuickBooksDataFile) = txtQuickBooksFile.Text
             If cboQuickBooksVersion.Text = "" Then cboQuickBooksVersion.Text = "US"
             HFApp.Options.ValueByName("AccountingVersion") = cboQuickBooksVersion.Text
@@ -7487,17 +7716,17 @@ Private Sub SaveAccountingSystem()
             HFApp.Options.ValueByName("PostAssembliesAsSalesInvoices") = chkPostAssembliesAsSalesInvoices.Value = vbChecked
                 
                 
-        Case 4 'simply accounting
+        Case AccountingSystems.asSimply
             HFApp.Options.Value(SimplyDataFile) = txtSimplyFile.Text
             HFApp.Options.ValueByName("SimplyUID") = txtSimplyUser.Text
             HFApp.Options.ValueByName("SimplyPWD") = txtSimplyPswd.Text
             HFApp.Options.ValueByName("SimplyInternalCustomer") = GetComboBoxListKey(cboSimplyInternalCustomer)
             
-        Case 7 'Xero
+        Case AccountingSystems.asXero
             HFApp.Options.ValueByName("XeroJobName") = "" 'txtXeroJobName.Text
             HFApp.Options.ValueByName("XeroCostCodeName") = "" 'txtXeroCostCodeName.Text
                 
-        Case 9 'Sage Intacct
+        Case AccountingSystems.asIntacct
             HFApp.Options.ValueByName("IntacctCompanyID") = txtIntacctCompanyID.Text
             HFApp.Options.ValueByName("IntacctUID") = txtIntacctUID.Text
             HFApp.Options.ValueByName("IntacctPWD") = txtIntacctPWD.Text
@@ -7663,6 +7892,7 @@ Private Function SaveData() As Boolean
         .Value(IncentiveItemDescription) = Parse(txtIncentiveItem.tag, 3, Chr(1))
         .ValueByName("LetPurchaserChangeSaleQty") = chkLetPurchaserChangeSaleQty.Value = vbChecked
         .ValueByName("UseComponents") = chkUseComponents.Value = vbChecked
+        .ValueByName("AllowJobReassignInBudgetsAndPOs") = chkAllowJobReassignInBudgetsAndPOs.Value = vbChecked
         
         .Value(SelectAtTakeoffPhase) = Parse(txtSelectAtTakeoffItem.tag, 1, Chr(1))
         .Value(SelectAtTakeoffItem) = Parse(txtSelectAtTakeoffItem.tag, 2, Chr(1))
@@ -7753,6 +7983,7 @@ Private Function SaveData() As Boolean
 
 
     Call SaveDivisions
+    
     'ensure change to system_setup address is also saved to division
     s = ""
     s = s & "update d set" & vbCrLf
@@ -7767,6 +7998,29 @@ Private Function SaveData() As Boolean
     s = s & "from system_setup s" & vbCrLf
     s = s & "join divisions d on s.id=d.divisionid" & vbCrLf
     s = s & "where s.id=" & HFApp.DivisionID
+    Call HFApp.SqlExec(s)
+    
+    
+    
+    s = ""
+    s = s & "---------------------------------------------------------------------------------------------------- " & vbCrLf
+    s = s & "-- Invoice creation trigger slows down the app so only use it if needed." & vbCrLf
+    s = s & "-- Is needed if a division does not use buildpro and autopay or autorelease is turned on." & vbCrLf
+    s = s & "---------------------------------------------------------------------------------------------------- " & vbCrLf
+    s = s & "if exists(" & vbCrLf
+    s = s & "    select" & vbCrLf
+    s = s & "      --a.divisionid,isnull(a.optionvalue,''),isnull(b.optionvalue,''),isnull(c.optionvalue,'')" & vbCrLf
+    s = s & "      --,case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end TriggerReq" & vbCrLf
+    s = s & "      max(case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end) TriggerReq" & vbCrLf
+    s = s & "    from appoptions a" & vbCrLf
+    s = s & "    join appoptions b on a.divisionid=b.divisionid and b.optionname='AutoPayApprovedPOs'" & vbCrLf
+    s = s & "    join appoptions c on a.divisionid=c.divisionid and c.optionname='AutoReleaseHeldPOInvoices'" & vbCrLf
+    s = s & "    where a.optionname='BuildProCompanyCode'" & vbCrLf
+    s = s & "    having max(case when isnull(a.optionvalue,'')='' and (b.optionvalue='True' or c.optionvalue='True') then 1 else 0 end)=1" & vbCrLf
+    s = s & ")" & vbCrLf
+    s = s & "    enable trigger POMaster_CreateInvoice on POMaster" & vbCrLf
+    s = s & "else" & vbCrLf
+    s = s & "    disable trigger POMaster_CreateInvoice on POMaster" & vbCrLf
     Call HFApp.SqlExec(s)
     
     SaveData = True
@@ -7800,6 +8054,7 @@ Private Sub tabNotices_Click()
         frmNotices(i).Visible = tabNotices.SelectedItem.Index = i + 1
     Next
 End Sub
+
 
 
 Private Sub txtCompanyFax_Validate(Cancel As Boolean)
@@ -8302,25 +8557,33 @@ On Error Resume Next
     Dim r As Long
     Dim s As String
     
+    Dim url1 As String
+    Dim url2 As String
+    
+    
     With HFApp.Options
         .ValueByName("BuildProCompanyCode") = txtBuildProCompany.Text
         .ValueByName("BuildProEnvironment") = cboBuildProEnvironment.Text
         .ValueByName("BuildProUID") = txtBuildProUID.Text
         .ValueByName("BuildProPwd") = txtBuildProPwd.Text
-        .ValueByName("BuildProSendPOsImmediately") = IIf(chkBuildProSendPOsImmediately.Value = vbChecked, "true", "false")
         .ValueByName("BuildProDontSendPhases") = IIf(chkBuildProSendPhases.Value = vbUnchecked, "true", "false")
         
         .ValueByName("EnableTarionFields") = IIf(chkTarion.Value = vbChecked, "true", "false")
+        .ValueByName("EnablePreconJobs") = IIf(chkPrecon.Value = vbChecked, "true", "false")
+        .ValueByName("AutoApproveTBDVendorAssignments") = IIf(chkAutoApproveTBDVendorAssignments.Value = vbChecked, "true", "false")
         
+
         If cboBuildProEnvironment.Text = "Production" Then
             .ValueByName("BuildProURL") = "https://xml.hyphensolutions.com/httpreceive.aspx"
-            .ValueByName("BuildProIntegrationURL") = "https://integration.hyphensolutions.com/BuildProIntegration.svc"
+            .ValueByName("BuildProIntegrationURL") = "https://integration2.hyphensolutions.com/BuildProIntegration.svc"
         Else
             .ValueByName("BuildProURL") = "https://uatxml.hyphensolutions.com/httpreceive.aspx"
             .ValueByName("BuildProIntegrationURL") = "https://uatintegration.hyphensolutions.com/BuildProIntegration.svc"
         End If
         
+        
         .ValueByName("BuildProMultiFamily") = chkMultiFamily.Value = vbChecked
+        .ValueByName("BuildProWarrantyDocType") = Trim(Me.txtBuildProWarrantyDocType.Text)
         .ValueByName("BuildProWarrantyOwnerType") = Trim(Me.txtBuildProWarrantyOwnerType.Text)
         .ValueByName("BuildProWarrantyCoOwnerType") = Trim(Me.txtBuildProWarrantyCoOwnerType.Text)
         
@@ -8359,12 +8622,13 @@ Private Sub ReadBuildProOptions()
         txtBuildProPwd.Text = .ValueByName("BuildProPwd")
         txtScheduleTemplates.Text = Replace(HFApp.Options.ValueByName("ScheduleTemplates"), "|", vbCrLf)
     
-        chkBuildProSendPOsImmediately.Value = IIf(.ValueByName("BuildProSendPOsImmediately") = "true", vbChecked, vbUnchecked)
         chkBuildProSendPhases.Value = IIf(.ValueByName("BuildProDontSendPhases") = "true", vbUnchecked, vbChecked)
         chkTarion.Value = IIf(.ValueByName("EnableTarionFields") = "true", vbChecked, vbUnchecked)
-        
+        chkPrecon.Value = IIf(.ValueByName("EnablePreconJobs") = "true", vbChecked, vbUnchecked)
+        chkAutoApproveTBDVendorAssignments.Value = IIf(.ValueByName("AutoApproveTBDVendorAssignments") = "true", vbChecked, vbUnchecked)
         chkMultiFamily.Value = IIf(.ValueByName("BuildProMultiFamily") = "True", vbChecked, vbUnchecked)
         
+        txtBuildProWarrantyDocType.Text = Trim(.ValueByName("BuildProWarrantyDocType"))
         txtBuildProWarrantyOwnerType.Text = Trim(.ValueByName("BuildProWarrantyOwnerType"))
         txtBuildProWarrantyCoOwnerType.Text = Trim(.ValueByName("BuildProWarrantyCoOwnerType"))
     
@@ -8820,6 +9084,10 @@ Private Sub ReadDocumentManagement()
     Dim s As String
     Dim rs As Recordset
     Dim r As Integer
+    
+    
+    chkUseBPDocManagment.Value = IIf(HFApp.Options.ValueByName("UseBPDocManagment") = "True", vbChecked, vbUnchecked)
+    
     With gDocumentClasses
         
         .Rows = 1
@@ -8827,7 +9095,7 @@ Private Sub ReadDocumentManagement()
         s = "select * from dms_documentclasses order by documentclass"
         Set rs = HFApp.SqlExec(s)
         While Not rs.EOF
-            .AddItem "" & rs("customervisible") & vbTab & rs("vendorvisible") & vbTab & rs("documentclass")
+            .AddItem "" & rs("vendorvisible") & vbTab & rs("documentclass")
             r = r + 1
             .Cell(flexcpData, r, .ColIndex("documentclass")) = "" & rs("documentclass")
             rs.MoveNext
@@ -8844,15 +9112,16 @@ On Error GoTo eh
     Dim r As Long
     Dim i As Long
     
+    HFApp.Options.ValueByName("UseBPDocManagment") = chkUseBPDocManagment.Value = vbChecked
+    
     With gDocumentClasses
     For r = .Rows - 2 To 1 Step -1
         Select Case .RowData(r)
             Case "insert"
                 s = ""
-                s = s & "insert into dms_documentclasses(documentclass,vendorvisible,customervisible) values" & vbCrLf
+                s = s & "insert into dms_documentclasses(documentclass,vendorvisible) values" & vbCrLf
                 s = s & "(" & DbQuote(Str, .TextMatrix(r, .ColIndex("documentclass")))
                 s = s & "," & DbQuote(Bit, .TextMatrix(r, .ColIndex("vendorvisible")))
-                s = s & "," & DbQuote(Bit, .TextMatrix(r, .ColIndex("customervisible")))
                 s = s & ")"
                 Call HFApp.SqlExec(s)
                 .Cell(flexcpData, r, .ColIndex("documentclass")) = .TextMatrix(r, .ColIndex("documentclass"))
@@ -8862,7 +9131,6 @@ On Error GoTo eh
                 s = s & "update dms_documentclasses set" & vbCrLf
                 s = s & " documentclass=" & DbQuote(Str, .TextMatrix(r, .ColIndex("documentclass"))) & vbCrLf
                 s = s & ",vendorvisible=" & DbQuote(Bit, .TextMatrix(r, .ColIndex("vendorvisible"))) & vbCrLf
-                s = s & ",customervisible=" & DbQuote(Bit, .TextMatrix(r, .ColIndex("customervisible"))) & vbCrLf
                 s = s & "where documentclass=" & DbQuote(Str, .Cell(flexcpData, r, .ColIndex("documentclass"))) & vbCrLf
                 Call HFApp.SqlExec(s)
                 .Cell(flexcpData, r, .ColIndex("documentclass")) = .TextMatrix(r, .ColIndex("documentclass"))

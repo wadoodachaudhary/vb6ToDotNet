@@ -456,17 +456,21 @@ End Sub
 Private Sub gData_MouseMove(Button As Integer, Shift As Integer, X As Single, Y As Single)
 On Error Resume Next
     With gData
-        If .ColKey(.MouseCol) = "Sage300GLPrefixLength" Then
-            .ToolTipText = "Number of digits of the gl account that make up the company number"
-        Else
+        If .MouseCol = -1 Then
             .ToolTipText = ""
+        Else
+            If .ColKey(.MouseCol) = "Sage300GLPrefixLength" Then
+                .ToolTipText = "Number of digits of the gl account that make up the company number"
+            Else
+                .ToolTipText = ""
+            End If
         End If
     End With
 End Sub
 
 Private Sub gData_ValidateEdit(ByVal Row As Long, ByVal Col As Long, Cancel As Boolean)
     Dim r As Long
-    
+    Dim s As String
     With gData
     
         'you have to do this to catch mouse clicks into checkboxes. stupid.
@@ -478,13 +482,25 @@ Private Sub gData_ValidateEdit(ByVal Row As Long, ByVal Col As Long, Cancel As B
         If mAddRecords And Row = .Rows - 1 Then
             .RowData(.Rows - 1) = "insert"
             If .ColIndex("WalletPartyID") <> -1 Then
-                .TextMatrix(.Rows - 1, .ColIndex("WalletPartyID")) = CreateGUID()
+                .TextMatrix(.Rows - 1, .ColIndex("WalletPartyID")) = Replace(Replace(LCase(CreateGUID()), "{", ""), "}", "")
             End If
             .AddItem ""
         End If
         
         
         Select Case True
+            
+            'dimensions - typed value should be enclosed in quotes, list value does not need quotes
+            Case .ColKey(Col) = "Value" And mTableName = "D365_DimensionConfig"
+                If .ComboIndex = -1 Then
+                    s = .EditText
+                    s = DeQuote(s, True) 'remove surrounding quotes
+                    s = Replace(s, "'", "''") 'double up embedded quotes
+                    s = "'" & s & "'" 'add surrounding quotes
+                    .EditText = s
+                    
+                End If
+        
             'int col
             Case mFields(.ColKey(Col)).Type = adInteger
                 .EditText = Int(Val(.EditText))
@@ -583,7 +599,7 @@ On Error Resume Next
         
         'Set rs = HFApp.SqlExec("" & SQLStatement, dbHomefront)
         Set rs = New Recordset
-        Call rs.Open(SQLStatement, HFApp.Databases(dbHomeFront), adOpenDynamic)
+        Call rs.Open(SQLStatement, HFApp.Databases(dbHomefront), adOpenDynamic)
 
         
         Set mFields = rs.fields
@@ -708,9 +724,12 @@ Private Sub gData_BeforeEdit(ByVal Row As Long, ByVal Col As Long, Cancel As Boo
             Case .ColDataType(Col) = flexDTDate
                 s = "|..."
                 
-            Case IsIn(.ColKey(Col), "DebitAccount", "Group_Code")
+            Case IsIn(.ColKey(Col), "DebitAccount", "Group_Code", "D03_CostCentre", "D06_Brand", "D04_SpendCategory")
                 s = "..."
             
+            Case .ColKey(Col) = "WalletBankAccount"
+                s = "|..."
+                
             Case IsIn(.ColKey(Col), "Sage300GLPrefixes")
                 If .ValueMatrix(Row, .ColIndex("Sage300glPrefixlength")) > 0 Then
                     s = "..."
@@ -730,6 +749,7 @@ Private Sub gData_BeforeEdit(ByVal Row As Long, ByVal Col As Long, Cancel As Boo
     End With
 End Sub
 
+
 Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
     
     Dim c As String
@@ -747,8 +767,29 @@ Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
                 .AddItem ""
             End If
         
+        Case .ColKey(Col) = "WalletBankAccount"
+            s = ""
+            s = s & "select distinct p.BankAccount" & vbCrLf
+            s = s & "from divisions i" & vbCrLf
+            s = s & "join datasources d on i.bookofaccount=d.bookofaccount" & vbCrLf
+            s = s & "join accountingap p on d.datasourceid=p.datasourceid" & vbCrLf
+            s = s & "where i.divisionid=" & DbQuote(Num, HFApp.DivisionID)
+            If FPickList.Choose(HFApp.Databases(dbHomefront), "BankAccount", s, gData.TextMatrix(Row, Col)) Then
+                For r = Min(Row, .RowSel) To Max(Row, .RowSel)
+                    .Cell(flexcpText, r, Col, r, Col) = FPickList.SelectedItem("BankAccount")
+                    If mAddRecords And r = .Rows - 1 Then
+                        .RowData(r) = "insert"
+                        .AddItem ""
+                    End If
+                    If .RowData(r) = "" Then .RowData(r) = "Update"
+                Next
+                
+            End If
+            mDirty = True
+        
+        
         Case .ColKey(Col) = "Group_Code"
-            If FPickList.Choose(HFApp.Databases(dbHomeFront), "Group", "select Major_Group,Description from tblmajorgroups", gData.TextMatrix(Row, Col)) Then
+            If FPickList.Choose(HFApp.Databases(dbHomefront), "Group", "select Major_Group,Description from tblmajorgroups", gData.TextMatrix(Row, Col)) Then
                 For r = Min(Row, .RowSel) To Max(Row, .RowSel)
                     .Cell(flexcpText, r, Col, r, Col) = FPickList.SelectedItem("major_group")
                     If mAddRecords And r = .Rows - 1 Then
@@ -762,8 +803,23 @@ Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
             mDirty = True
         
         
+        Case IsIn(.ColKey(Col), "D03_CostCentre", "D06_Brand", "D04_SpendCategory")
+                s = "select Value,Description from D365FinancialDimensionValues where Dimension=" & DbQuote(Str, .ColKey(Col)) & " order by 1"
+                If FPickList.Choose(HFApp.Databases(dbHomefront), .ColKey(Col), s, gData.TextMatrix(Row, Col)) Then
+                For r = Min(Row, .RowSel) To Max(Row, .RowSel)
+                    .Cell(flexcpText, r, Col, r, Col) = FPickList.SelectedItem("value")
+                    If mAddRecords And r = .Rows - 1 Then
+                        .RowData(r) = "insert"
+                        .AddItem ""
+                    End If
+                    If .RowData(r) = "" Then .RowData(r) = "Update"
+                Next
+                
+            End If
+            mDirty = True
+            
         Case .ColKey(Col) = "DebitAccount"
-            If FPickList.Choose(HFApp.Databases(dbHomeFront), "GL Account", "select Account, Description from GLAccounts where divisionid=" & DbQuote(Num, HFApp.DivisionID), gData.TextMatrix(Row, Col)) Then
+            If FPickList.Choose(HFApp.Databases(dbHomefront), "GL Account", "select Account, Description from GLAccounts where divisionid=" & DbQuote(Num, HFApp.DivisionID), gData.TextMatrix(Row, Col)) Then
                 For r = Min(Row, .RowSel) To Max(Row, .RowSel)
                     .Cell(flexcpText, r, Col, r, Col) = FPickList.SelectedItem("account")
                     If mAddRecords And r = .Rows - 1 Then
@@ -779,7 +835,7 @@ Private Sub gData_CellButtonClick(ByVal Row As Long, ByVal Col As Long)
             
         Case .ColKey(Col) = "Sage300GLPrefixes"
             Dim f As New FDBGrid
-            s = "select DataSourceID,GLPrefix,Description,WalletCompanyID from Wallet_Sage300GLPrefixes where datasourceid=" & DbQuote(Str, .TextMatrix(Row, .ColIndex("WalletPartyID"))) & " and len(glprefix)=" & .TextMatrix(Row, .ColIndex("Sage300glPrefixlength"))
+            s = "select lower(DataSourceID) DataSourceID,GLPrefix,Description,WalletCompanyID from Wallet_Sage300GLPrefixes where datasourceid=" & DbQuote(Str, .TextMatrix(Row, .ColIndex("WalletPartyID"))) & " and len(glprefix)=" & .TextMatrix(Row, .ColIndex("Sage300glPrefixlength"))
             Call f.ShowForm("GLPrefixes", s, "Wallet_Sage300GLPrefixes", "DataSourceID,GLPrefix", False, "DataSourceID", "GLPrefix,Description", False)
 
         
@@ -837,7 +893,7 @@ On Error GoTo eh
         WhereClause = Mid(WhereClause, 6)
         If WhereClause <> "" Then
             s = "delete " & mTableName & " where " & WhereClause
-            Call HFApp.SqlExec(s, dbHomeFront)
+            Call HFApp.SqlExec(s, dbHomefront)
             Call .RemoveItem(r)
         End If
     End If
@@ -892,7 +948,7 @@ On Error GoTo eh
             End If
             Next
             s = "update " & mTableName & " set " & Mid(ValuesClause, 2) & " where " & WhereClause
-            Call HFApp.SqlExec(s, dbHomeFront)
+            Call HFApp.SqlExec(s, dbHomefront)
             .RowData(r) = ""
             
             'preserve key column values incase the user changes them.
@@ -950,7 +1006,7 @@ On Error GoTo eh
         End If
         Next
         s = Mid(ValuesClause, 1, Len(ValuesClause) - 1) & ")"
-        Call HFApp.SqlExec(s, dbHomeFront)
+        Call HFApp.SqlExec(s, dbHomefront)
         .RowData(r) = ""
         
         'get new identity value
