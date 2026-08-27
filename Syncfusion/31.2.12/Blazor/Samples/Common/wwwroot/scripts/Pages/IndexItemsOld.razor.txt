@@ -1,0 +1,980 @@
+@page "/itemsOld"
+@namespace BlazorDemos.Pages
+
+@using Syncfusion.Blazor.TreeGrid
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Spinner
+@using Syncfusion.Blazor.DropDowns
+@using System;
+@using Syncfusion.Blazor.DropDowns
+@using Syncfusion.Blazor.Buttons
+@using Syncfusion.Blazor.Navigations
+@using System.IO
+@using System.Collections.Generic
+@using System.Data
+@using System.Dynamic
+@using BlazorDemos.Pages.Grid
+@using Microsoft.AspNetCore.Components.Forms
+@inject NavigationManager NavigationManager
+@inject NavigationManager UriHelper
+@inject IJSRuntime JSRuntime
+@using hyphen_data
+@using Microsoft.Data.SqlClient
+@using Syncfusion.Blazor.Inputs
+@using Syncfusion.Blazor.Data;
+@using ChangeEventArgs = Syncfusion.Blazor.Navigations.ChangeEventArgs
+@inherits SampleBaseComponent;
+
+<style>
+    .visible {
+        display: inline-block;
+        font-size: 18px;
+        color: rgba(0, 0, 0, 1);
+    }
+
+    .loading {
+        position: absolute;
+        height: 92%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        padding-left: 44%;
+    }
+
+    .e-grid .e-groupcaption {
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-weight: bold !important;
+        padding: 8px !important;
+    }
+
+    /* GROUP FOOTER (TOTALS) - GREEN BACKGROUND + WHITE TEXT */
+    /* Group Footer Totals - Green Background */
+    .e-grid .e-summaryrow .e-summarycell {
+        background-color: #e3e3e3 !important; /* Green */
+        color: black !important;
+        font-weight: bold !important;
+    }
+
+    /* FIXED: Correct CSS for selected cells in SfGrid */
+    .e-grid .e-rowcell.e-selectionbackground.e-cellselectionbackground,
+    .e-grid .e-rowcell.e-cellselectionbackground {
+        background-color: #1976d2 !important; /* Bright blue */
+        color: white !important; /* White text */
+        font-weight: bold !important; /* Bold */
+        border: 1px solid #0d47a1 !important; /* Blue border */
+    }
+
+    /* Light blue for selected rows */
+    .e-grid .e-row.e-selected .e-rowcell,
+    .e-grid .e-rowcell.e-selectionbackground {
+        background-color: #e3f2fd !important; /* Light blue */
+    }
+
+    /* Hover effect on group header */
+    .e-grid .e-groupcaption:hover {
+        background-color: #1565c0 !important;
+    }
+
+
+    .highcontrast .e-grid .empimg {
+        background-color: #ffd939;
+    }
+
+    _:-ms-fullscreen, :root .highcontrast .e-userimg.sf-icon-Male::before,
+    _:-ms-fullscreen, :root .highcontrast .e-userimg.sf-icon-FeMale::before,
+    .highcontrast .e-userimg.sf-icon-Male::before,
+    .highcontrast .e-userimg.sf-icon-FeMale::before {
+        color: black;
+    }
+
+    .bootstrap .e-grid .empimg,
+    .bootstrap4 .e-grid .empimg,
+    .bootstrap5 .e-grid .empimg,
+    .bootstrap5\.3 .e-grid .empimg,
+    .fluent .e-grid .empimg,
+    .fabric .e-grid .empimg {
+        background-color: #0078d6;
+    }
+
+    .tailwind .e-grid .empimg,
+    .tailwind3 .e-grid .empimg {
+        background-color: #4f46e5;
+    }
+
+    /* Remove manual positioning */
+    .empimg + #Emptext {
+        position: static !important;
+    }
+
+    /* Style the icon container (make it a perfect circle) */
+    .empimg {
+        display: inline-flex; /* Flexbox for centering content */
+        justify-content: center;
+        align-items: center;
+        vertical-align: middle;
+        border-radius: 50%;
+    }
+
+    /* Ensure text and icon align vertically */
+    .empimg, #Emptext {
+        vertical-align: middle;
+        display: inline-block;
+    }
+
+    /* Spacing between icon and text (LTR) */
+    .e-grid:not(.e-rtl) .empimg {
+        margin-right: 6px;
+        margin-left: 0;
+    }
+
+    /* Spacing between icon and text (RTL) */
+    .e-grid.e-rtl .empimg {
+        margin-left: 6px;
+        margin-right: 0;
+    }
+
+    .e-userimg.sf-icon-Male::before,
+    .e-userimg.sf-icon-FeMale::before {
+        font-size: 13px;
+    }
+
+    .e-userimg.sf-icon-Male, .e-userimg.sf-icon-FeMale {
+        margin: 0px 8px;
+        line-height: 26px;
+        color: white;
+        font-size: 13px;
+    }
+
+    .e-userimg.sf-icon-Male::before {
+        content: '\e700';
+    }
+
+    .e-userimg.sf-icon-FeMale::before {
+        content: '\e701';
+    }
+
+    .highcontrast .e-grid td.e-rowcell.e-selectionbackground.e-active,
+    .fluent2-highcontrast .e-grid td.e-rowcell.e-selectionbackground.e-active {
+        background-color: transparent;
+        color: white;
+    }
+
+    .e-bigger .e-grid .statustxt {
+        position: relative;
+        top: -2px;
+    }
+
+    .rating .star {
+        font-size: 132%;
+        color: lightgrey;
+    }
+
+    .rating .star.checked {
+        color: orange;
+    }
+
+    .e-grid .e-headercell {
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    .e-grid .e-rowcell {
+        font-size: 14px !important;
+    }
+
+    .e-grid .e-headercell .e-headertext {
+        color: white !important;
+    }
+
+    .e-grid .e-headercell .e-sortfilter .e-icon-ascending,
+    .e-grid .e-headercell .e-sortfilter .e-icon-descending {
+        color: white !important;
+    }
+
+    .e-grid .e-headercell:hover {
+        background-color: #1565c0 !important;
+    }
+
+    .e-grid .e-rowcell {
+        background-color: #ffffff !important;
+    }
+
+    .e-grid .e-altrow .e-rowcell {
+        background-color: #f5f5f5 !important;
+    }
+
+    .e-grid .e-row:hover .e-rowcell {
+        background-color: #e3f2fd !important;
+    }
+
+    .e-grid .e-row.e-focused .e-rowcell {
+        background-color: #bbdefb !important;
+    }
+
+    .e-grid .e-toolbar {
+        background-color: #f5f5f5 !important;
+    }
+
+    .e-grid .e-toolbar .e-btn {
+        background-color: #1976d2 !important;
+        color: white !important;
+    }
+
+    .e-grid .e-toolbar .e-btn:hover {
+        background-color: #1565c0 !important;
+    }
+
+    .e-grid .e-pager {
+        background-color: #f5f5f5 !important;
+    }
+
+    .e-grid .e-pager .e-numericitem {
+        color: #1976d2 !important;
+    }
+
+    .e-grid .e-pager .e-numericitem:hover {
+        background-color: #e3f2fd !important;
+    }
+
+    .e-grid .e-pager .e-currentitem {
+        background-color: #1976d2 !important;
+        color: white !important;
+    }
+
+    .e-grid .e-gridheader {
+        border-bottom: 2px solid #1976d2 !important;
+    }
+
+    .e-grid .e-content {
+        border: 1px solid #ddd !important;
+    }
+
+    .e-grid .e-rowcell {
+        border-bottom: 1px solid #eee !important;
+    }
+
+    /* Style for edited cells */
+    .edited-cell {
+        background-color: #4caf50 !important; /* Green */
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    /* Style for deleted rows */
+    .deleted-row {
+        text-decoration: line-through;
+        color: red !important;
+        background-color: #ffebee !important; /* Light red */
+    }
+
+    /* Style for new items */
+    .new-item {
+        background-color: #e8f5e9 !important; /* Light green */
+        font-style: italic;
+    }
+
+    /* Hover effect for rows */
+    .e-grid .e-row:hover .e-rowcell {
+        background-color: #bbdefb !important; /* Light blue hover */
+        cursor: pointer;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+    }
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        padding-left:22px;
+        margin-bottom:22px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+    }
+        .toolbar-cntr div.e-tbtn-align{
+            display:none !important;
+        }
+
+        .tree-toggle-img,
+        .tree-icon-img {
+            width: 24px;
+            height: auto;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+    /* .folder-grid tbody, .folder-grid tr, .folder-grid td{
+        display:block !important;
+        width:100% !important
+    } */
+
+    .e-treeview .e-ul{
+        height:1636px;
+    }
+
+    .e-columnheader, .e-headercell, .e-grid th.e-headercell .e-sortfilterdiv, .e-grid th.e-headercell[aria-sort=ascending]:not(.e-columnselection) .e-headertext {
+        background-color: #1976d2 !important;
+        color: #fff !important;
+    }
+        
+ </style>
+
+<div class="row">
+    <div class="toolbar-cntr">
+
+    <SfToolbar>
+        <ToolbarItems>
+
+            <!-- Save -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@(!mDirty)">
+                        <img src="images/32/save.ico" class="tbar-icon" />
+                        <span class="tool-label">Save</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <!-- View -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn">
+                            <img src="images/32/ViewVilter2.ico" class="tbar-icon" />
+                        <span class="tool-label">View</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <!-- Import Items -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn">
+                            <img src="images/32/excelimport.ico" class="tbar-icon" />
+                        <span class="tool-label">Import Items</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <!-- Export Items -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn">
+                            <img src="images/32/excelexport.ico" class="tbar-icon" />
+                        <span class="tool-label">Export Items</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+        </ToolbarItems>
+    </SfToolbar>
+
+</div>
+
+    <div class="col-md-3 folder-grid">
+        <!-- Left Panel: Phases TreeGrid (Hierarchical) -->
+        <SfTreeGrid DataSource="@TreePhaseData" IdMapping="NodeID" ParentIdMapping="ParentID" TreeColumnIndex="1"
+                    AllowPaging="false" GridLines="GridLine.Both" Height="1734">
+            <TreeGridPageSettings PageSize="2"></TreeGridPageSettings>
+            <TreeGridTemplates>
+                <RowTemplate>
+                    @{
+                        var data = (context as PhaseTreeData);
+                        var hasChildren = data.HasChildren;
+                        var isExpanded = data.Expanded;
+                        var indent = data.Level * 20; // Approximate indent in pixels
+                    }
+                    <tr>
+                        <td style="padding-left: @(indent + 20)px;">
+                            <div style="display: flex; align-items: center;">
+                                @if (hasChildren){
+                                    <i class="@(isExpanded ? "e-icons e-icon-collapsing" : "e-icons e-icon-expanding")"
+                                       style="cursor: pointer; margin-right: 5px; font-size: 14px;"></i>
+                                }
+                                else{
+                                    <span style="width: 72px; display: inline-block;"></span>
+                                    <!-- Spacer for leaf nodes -->
+                                }
+                                @* <i class="@(hasChildren ? (isExpanded ? "images/32/open.ico" : "images/32/folder.ico") : "images/32/new.ico")"
+                                   style="margin-right: 8px; font-size: 14px;"></i> *@
+                                <img src="@(hasChildren
+                                          ? (isExpanded ? "images/32/open.ico" : "images/32/folder.ico")
+                                                                                          : "images/32/new.ico")"
+                                     class="tree-icon-img" />
+                                <span>@data.Node</span>
+                            </div>
+                        </td>
+                        <td>@data.GrpDesc</td>
+                        <td>@data.PhaseDesc</td>
+                    </tr>
+                </RowTemplate>
+            </TreeGridTemplates>
+            <TreeGridColumns>
+                <TreeGridColumn Field="NodeID" HeaderText="Task ID" Width="80"
+                                TextAlign="TextAlign.Right"></TreeGridColumn>
+                <TreeGridColumn Field="Node" HeaderText="Task Name" Width="200"></TreeGridColumn>
+            </TreeGridColumns>
+
+        </SfTreeGrid>
+    </div>
+    <div class="col-md-9">
+        <!-- Right Panel: Items Grid -->
+        <SfGrid @ref="ItemsGrid" TValue="ExpandoObject" DataSource="@ItemDataList" AllowPaging="false"
+                AllowSorting="true" AllowGrouping="true" AllowFiltering="true" AllowResizing="true"
+                AllowReordering="true" AllowExcelExport="true" AllowPdfExport="true" Height="1600" AllowSelection="true">
+            <GridEvents OnActionBegin="OnActionBegin" OnActionComplete="OnActionComplete"
+                        QueryCellInfo="OnQueryCellInfo" TValue="ExpandoObject"></GridEvents>
+            <GridSelectionSettings Type="Syncfusion.Blazor.Grids.SelectionType.Multiple"></GridSelectionSettings>
+            <GridEditSettings AllowAdding="true" AllowEditing="true" AllowDeleting="true"
+                              Mode="Syncfusion.Blazor.Grids.EditMode.Batch" ShowConfirmDialog="true"></GridEditSettings>
+            @* <GridToolbar> *@
+            @*     <GridToolbarItems> *@
+            @*         <ToolbarItem Text="Add"></ToolbarItem> *@
+            @*         <ToolbarItem Text="Edit"></ToolbarItem> *@
+            @*         <ToolbarItem Text="Delete"></ToolbarItem> *@
+            @*         <ToolbarItem Text="Update"></ToolbarItem> *@
+            @*         <ToolbarItem Text="Cancel"></ToolbarItem> *@
+            @*         <ToolbarItem Text="ExcelExport"></ToolbarItem> *@
+            @*         <ToolbarItem Text="PdfExport"></ToolbarItem> *@
+            @*         <ToolbarItem Text="Search"></ToolbarItem> *@
+            @*     </GridToolbarItems> *@
+            @* </GridToolbar> *@
+            <GridColumns>
+                <GridColumn Field="Item" HeaderText="Item" Width="120"></GridColumn>
+                <GridColumn Field="PricingGroup" HeaderText="Item" Width="120"></GridColumn>
+                <GridColumn Field="PartNumber" HeaderText="Item" Width="120"></GridColumn>
+                <GridColumn Field="ItemDesc" HeaderText="Description" Width="200"></GridColumn>
+                <GridColumn Field="Phase" HeaderText="Phase" Width="120"></GridColumn>
+                <GridColumn Field="Notes" HeaderText="Phase" Width="120"></GridColumn>
+                <GridColumn Field="POIndex" HeaderText="Phase" Width="120"></GridColumn>
+                <GridColumn Field="UOM" HeaderText="UOM" Width="100"></GridColumn>
+                <GridColumn Field="JCCostCode" HeaderText="UOM" Width="100"></GridColumn>
+                <GridColumn Field="JCCategory" HeaderText="UOM" Width="100"></GridColumn>
+                <GridColumn Field="Cost" HeaderText="Cost" Format="C2" TextAlign="TextAlign.Right"
+                            Width="120"></GridColumn>
+                <!-- Dynamic WBS columns -->
+                @foreach (var kv in WBSDescriptions){
+                    <GridColumn Field="@kv.Key" HeaderText="@kv.Value" Width="120" Visible="true"></GridColumn>
+                }
+            </GridColumns>
+            <GridAggregates>
+                <GridAggregate>
+                    <GridAggregateColumns>
+                        <GridAggregateColumn Field="Cost" Type="AggregateType.Sum" Format="C2">
+                            <FooterTemplate>
+                                @{
+                                    var aggregate = (context as AggregateTemplateContext);
+                                    <div>Sum: @aggregate.Sum</div>
+                                }
+                            </FooterTemplate>
+                        </GridAggregateColumn>
+                    </GridAggregateColumns>
+                </GridAggregate>
+            </GridAggregates>
+            <GridPageSettings PageSize="20"></GridPageSettings>
+        </SfGrid>
+    </div>
+</div>
+
+<!-- PickList Modal for various selections (e.g., Renumber, Duplicate) -->
+@if (PickListVisible){
+    <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@PickListTitle</h5>
+                    <button type="button" class="close" @onclick="() => PickListCallback(null)">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <SfGrid TValue="ExpandoObject" DataSource="@PickListItems" AllowPaging="true" AllowSorting="true">
+                        <GridEvents RowSelected="OnPickListRowSelected" TValue="ExpandoObject"></GridEvents>
+                        <GridColumns>
+                            @foreach (var col in PickListColumns){
+                                <GridColumn Field="@col" HeaderText="@col"></GridColumn>
+                            }
+                        </GridColumns>
+                    </SfGrid>
+                </div>
+                <div class="modal-footer">
+                    <SfButton Content="Select" IsPrimary="true" @onclick="OnPickListSelect"></SfButton>
+                    <SfButton Content="Cancel" @onclick="() => PickListCallback(null)"></SfButton>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+// Database wrapper
+    private DbWrapperSqlServer db = new DbWrapperSqlServer();
+
+// Grids
+    public SfTreeGrid<ExpandoObject> PhaseTreeGrid{ get; set; }
+    public SfGrid<ExpandoObject> ItemsGrid{ get; set; }
+
+// Data sources
+    public List<ExpandoObject> PhaseDataList{ get; set; } = new List<ExpandoObject>();
+    public List<ExpandoObject> ItemDataList{ get; set; } = new List<ExpandoObject>();
+
+// WBS descriptions
+    public Dictionary<string, string> WBSDescriptions{ get; set; } = new Dictionary<string, string>();
+
+// PickList modal properties
+    private bool PickListVisible = false;
+    private string PickListTitle = "";
+    private List<ExpandoObject> PickListItems = new();
+    private Action<ExpandoObject> PickListCallback;
+    private List<string> PickListColumns = new();
+    private ExpandoObject SelectedPickListItem;
+
+// Dirty flag for unsaved changes
+    private bool mDirty = false;
+    public List<PhaseTreeData> TreePhaseData{ get; set; } = new List<PhaseTreeData>();
+
+    protected void OnInitializedTree(){
+        TreePhaseData = PhaseTreeData.GetTree().ToList();
+    }
+
+// Selected phase
+    private string SelectedPhase = "";
+
+    protected override void OnInitialized(){
+//Hidden:Lines
+        Console.WriteLine("Initialized");
+    }
+
+    protected override async Task OnInitializedAsync(){
+// Initialize database wrapper
+        Console.WriteLine("OnInitializedAsSync");
+
+// Load Phases (hierarchical)
+        await LoadPhasesAsync();
+
+// Load WBS Descriptions dynamically
+        await LoadWBSDescriptionsAsync();
+
+// Load initial items (perhaps for first phase)
+//if (PhaseDataList.Any()){
+//dynamic firstPhase = PhaseDataList.First();
+        SelectedPhase = "03010"; //firstPhase.Phase;
+        Console.WriteLine($" SelectedPhase: {SelectedPhase}");
+        await LoadItemsForPhaseAsync(SelectedPhase);
+//}
+    }
+
+// Load Phases into TreeGrid (assuming self-referential hierarchy)
+    private async Task LoadPhasesAsync(){
+        OnInitializedTree();
+//db.ToString();
+// var parameters = new {
+//     DivisionID = 1,
+//     LimitToCommunity = 2
+// };
+// var rows = db.SqlExec(@"
+//      SELECT 1 as PhaseID, Phase, Description, 4 as ParentPhaseID
+//      FROM tblPhaseItem
+//      ORDER BY Phase", parameters); // Adjust query to match your DB schema
+    }
+
+// Load Items for selected phase
+// Replace the existing LoadItemsForPhaseAsync method in the previous Items.razor with this fully converted version
+    private bool IsDirty = false;
+    private string sql = "";
+
+    private async Task LoadItemsForPhaseAsync(string phase){
+// Equivalent of On Error GoTo eh
+        try{
+// --- SaveData(True) equivalent: prompt to save if dirty ---
+            if (IsDirty){
+                var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                    "You have unsaved changes in the current phase. Save them before loading new items?");
+                if (confirm){
+//await SaveAllChanges();
+                }
+                else{
+// User chose not to save - discard changes
+// No action needed because we reload fresh data anyway
+                }
+            }
+
+// --- Determine max WBS column count (exact translation of VB6) ---
+            int maxWBS = 0;
+            var maxResult = await db.ExecuteScalarAsync<object>(
+                @"SELECT MAX(CAST(RIGHT(Item,2) AS INT)) 
+                  FROM customDescriptions 
+                  WHERE Item LIKE 'WBS__' 
+                    AND ISNULL(Custom_Description,'') <> ''");
+            if (maxResult != null && int.TryParse(maxResult.ToString(), out int parsed)){
+                maxWBS = parsed;
+            }
+
+// --- Build the exact SQL from VB6 LoadItems ---
+            string whereClause = "";
+
+// In VB6, WhereClause came from gPhases.RowData(gPhases.Row)
+// In our TreeGrid, we only have the selected Phase string
+// The original used a stored filter like "and Phase = '01'"
+            if (!string.IsNullOrEmpty(phase)){
+                whereClause = $"AND i.Phase = '{phase}'"; // Direct equivalent (parameters used below for safety)
+            }
+            sql = @"
+            SELECT 
+                x.jccostcode AS ItemCostCode,
+                y.description AS ItemCostCodeDesc,
+                ISNULL(v.phase + '/' + v.item + ' - ' + v.Description, '') AS InverseItemDesc,
+                i.*,
+                g.*
+            FROM EstimatingItems i
+            LEFT OUTER JOIN PriceGroups g 
+                ON (i.PriceLink = g.PriceGroup AND i.DivisionID = g.DivisionID)
+            LEFT OUTER JOIN tblphaseitem x 
+                ON i.DivisionID = x.DivisionID AND i.phase = x.phase AND i.item = x.item
+            LEFT OUTER JOIN tblphaseitem v 
+                ON x.DivisionID = v.DivisionID AND x.inversephase = v.phase AND x.inverseitem = v.item
+            LEFT OUTER JOIN standardcostcodes y 
+                ON i.DivisionID = y.DivisionID AND x.jccostcode = y.costcode
+            WHERE i.DivisionID = @DivisionID " + whereClause + @"
+            ORDER BY i.Phase, i.Item"; // Using Phase/Item as default sort (mViews sort not implemented yet)
+
+// --- Execute query using DBWrapperSqlServer ---
+            var parameters = new { DivisionID = /* HFApp.DivisionID - replace with your app's current division */ 1 }; // Adjust to your actual source
+            ItemDataList = await db.QueryDynamicAsync(sql, parameters);
+            String csv = "";
+// foreach (var row in ItemList){
+//     var dict = (IDictionary<string, object>)row;
+//
+//     csv += $"{dict.}\n"; // commented out build string
+// }
+
+// --- Post-process each row exactly as VB6 did ---
+            foreach (dynamic item in ItemDataList){
+                var dict = (IDictionary<string, object>)item;
+
+// PriceLink display + icon logic (Syncfusion doesn't have CellPicture, so we store for custom template if needed)
+                if (dict.ContainsKey("PriceLink") && dict.ContainsKey("PriceGroupDesc")){
+// We keep PriceLink as hidden data, display PriceGroupDesc
+// If you need icon, add a column with image template later
+                    dict["PriceLinkDisplay"] = dict["PriceGroupDesc"]; // Optional display field
+                }
+
+// Direct field assignments (VB6 used TextMatrix)
+                SafeSet(dict, "OptionCategory");
+                SafeSet(dict, "OptionID");
+                SafeSet(dict, "Color");
+                SafeSet(dict, "RetailPretax");
+                SafeSet(dict, "Formula");
+                SafeSet(dict, "TaxGroup");
+                SafeSet(dict, "ItemNumber");
+                SafeSet(dict, "CostCategory");
+                SafeSet(dict, "Item");
+                SafeSet(dict, "ItemDesc");
+                SafeSet(dict, "Notes");
+                SafeSet(dict, "Phase");
+                SafeSet(dict, "PartNumber");
+                SafeSet(dict, "PhaseDesc");
+                SafeSet(dict, "POIndex");
+                SafeSet(dict, "POIndexDescription");
+                SafeSet(dict, "JCCostCode");
+                SafeSet(dict, "JCCostCodeDesc");
+                SafeSet(dict, "JCCategory");
+                SafeSet(dict, "JCCategoryDesc");
+                SafeSet(dict, "AltJCCostCode");
+                SafeSet(dict, "AltJCCostCodeDesc");
+                SafeSet(dict, "AltJCCategory");
+                SafeSet(dict, "AltJCCategoryDesc");
+                SafeSet(dict, "InverseItemDesc");
+                SafeSet(dict, "Price");
+                SafeSet(dict, "TakeoffUOM");
+                SafeSet(dict, "OrderUOM");
+                SafeSet(dict, "ConversionFactor");
+                SafeSet(dict, "WastePercent");
+                SafeSet(dict, "RoundDir");
+//SafeSet(dict, "Roundto"); // Note: field name in DB is RoundTo
+                SafeSet(dict, "IsQuote");
+                SafeSet(dict, "UseInFieldPO");
+                SafeSet(dict, "Location");
+                if (false){
+// WBS columns loop
+                    for (int w = 1; w <= maxWBS; w++){
+                        string wbsField = $"WBS{w.ToString("00")}";
+                        if (dict.ContainsKey(wbsField)){
+                            dict[wbsField] = item[wbsField] ?? DBNull.Value;
+                        }
+                    }
+
+// ConversionFactor default = 1 if <= 0
+                    if (dict.ContainsKey("ConversionFactor")){
+                        if (Convert.ToDecimal(dict["ConversionFactor"] ?? 0) <= 0){
+                            dict["ConversionFactor"] = 1;
+                        }
+                    }
+
+// Add tracking flags
+                    dict["IsDirty"] = false;
+                    dict["IsDeleted"] = false;
+                    dict["IsNew"] = false;
+                }
+            }
+
+// --- Final UI updates ---
+            IsDirty = false;
+            await ItemsGrid.Refresh();
+        }
+        catch (Exception ex){
+            Console.WriteLine("----------------------------------------------");
+            Console.WriteLine($"Error loading items: {ex.Message}\nSQL: {sql}");
+            Console.WriteLine("----------------------------------------------");
+// Equivalent of errHandler(SRCFILE & "LoadItems", s)
+//await JSRuntime.InvokeVoidAsync("alert", $"Error loading items: {ex.Message}\nSQL: {sql}");
+        }
+    }
+
+// Replace the existing LoadItemsForPhaseAsync method in the previous Items.razor with this fully converted version
+
+// Helper to safely set values (handles null/DBNull)
+    private void SafeSe2t(IDictionary<string, object> dict, string key, object value){
+        if (value == DBNull.Value || value == null)
+            dict[key] = "";
+        else
+            dict[key] = value;
+    }
+
+// Helper to safely set values (handles null/DBNull)
+    private void SafeSet(IDictionary<string, object> dict, string key){
+        object value = dict[key];
+        if (value == DBNull.Value || value == null)
+            dict[key] = "";
+        else
+            dict[key] = value;
+    }
+
+// Dynamic WBS columns
+    private async Task LoadWBSDescriptionsAsync(){
+        var wbsList = db.SqlExec(@"
+            SELECT Item, custom_description AS Description
+            FROM customDescriptions
+            WHERE custom_description <> '' AND Item LIKE 'WBS__'
+            ORDER BY Item");
+        foreach (DataRow row in wbsList.Rows){
+//var item = new AssemblyItemRow();
+//item.Sequence = (int)row["sequence"];
+//item.Phase = row["Phase"]?.ToString();
+//item.Item = row["Item"]?.ToString();
+            WBSDescriptions.Add(row["Item"].ToString(), row["Description"].ToString());
+        }
+
+// WBSDescriptions = wbsList.ToDictionary(
+//     row => row["Item"].ToString(),
+//     row => row["Description"].ToString()
+// );
+//var dt = db.SqlExec("SELECT Description, Area FROM tblLocality ORDER BY Description");
+// communityData = dt.AsEnumerable().Select(row => new ComboBoxItem {
+//     Text = row["Description"].ToString(),
+//     Value = row["Area"].ToString()
+// }).ToList();
+//StateHasChanged();
+    }
+
+// Phase selection handler
+    private async Task OnPhaseSelected(RowSelectEventArgs<ExpandoObject> args){
+        if (mDirty){
+// Prompt to save changes (similar to VB6)
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Unsaved changes. Save before switching?");
+            if (confirm){
+                await SaveItemsAsync();
+            }
+        }
+        dynamic selected = args.Data;
+        SelectedPhase = selected.Phase;
+        await LoadItemsForPhaseAsync(SelectedPhase);
+        mDirty = false;
+    }
+
+// Save changes (Batch edit mode saves on Update)
+    private async Task SaveItemsAsync(){
+// End batch edit
+        await ItemsGrid.EndEditAsync();
+
+// Save each modified/deleted/new item
+        foreach (dynamic item in ItemDataList){
+            if (item.IsDeleted){
+                await db.ExecuteAsync(@"
+                    DELETE FROM tblItems 
+                    WHERE Phase = @Phase AND Item = @Item",
+                    new { Phase = item.Phase, Item = item.Item });
+            }
+            else if (item.IsNew){
+// Build INSERT sql dynamically, excluding flags
+                var fields = new List<string>();
+                var values = new List<string>();
+                var parameters = new ExpandoObject() as IDictionary<string, object>;
+                foreach (var kv in (IDictionary<string, object>)item){
+                    if (kv.Key != "IsDirty" && kv.Key != "IsDeleted" && kv.Key != "IsNew"){
+                        fields.Add(kv.Key);
+                        values.Add("@" + kv.Key);
+                        parameters.Add(kv.Key, kv.Value);
+                    }
+                }
+                var sql = $"INSERT INTO tblItems ({string.Join(",", fields)}) VALUES ({string.Join(",", values)})";
+                await db.ExecuteAsync(sql, parameters);
+            }
+            else if (item.IsDirty){
+// Build UPDATE sql dynamically, excluding keys and flags
+                var sets = new List<string>();
+                var parameters = new ExpandoObject() as IDictionary<string, object>;
+                foreach (var kv in (IDictionary<string, object>)item){
+                    if (kv.Key != "Phase" && kv.Key != "Item" && kv.Key != "IsDirty" && kv.Key != "IsDeleted" && kv.Key != "IsNew"){
+                        sets.Add($"{kv.Key} = @{kv.Key}");
+                        parameters.Add(kv.Key, kv.Value);
+                    }
+                }
+                parameters.Add("Phase", item.Phase);
+                parameters.Add("Item", item.Item);
+                var sql = $"UPDATE tblItems SET {string.Join(", ", sets)} WHERE Phase = @Phase AND Item = @Item";
+                await db.ExecuteAsync(sql, parameters);
+            }
+        }
+        mDirty = false;
+        await JSRuntime.InvokeVoidAsync("alert", "Changes saved.");
+// Reload to reflect changes
+        await LoadItemsForPhaseAsync(SelectedPhase);
+    }
+
+// Action handlers (from menus in VB6)
+    private async Task OnActionBegin(ActionEventArgs<ExpandoObject> args){
+        if (args.RequestType == Syncfusion.Blazor.Grids.Action.Delete){
+            dynamic data = args.Data;
+            data.IsDeleted = true;
+            mDirty = true;
+            args.Cancel = true; // Prevent default delete, mark instead
+        }
+        else if (args.RequestType == Syncfusion.Blazor.Grids.Action.Add){
+            dynamic data = args.Data;
+            data.IsNew = true;
+            mDirty = true;
+        }
+    }
+
+    private async Task OnActionComplete(ActionEventArgs<ExpandoObject> args){
+        if (args.RequestType == Syncfusion.Blazor.Grids.Action.Save){
+            dynamic data = args.Data;
+            data.IsDirty = true;
+            mDirty = true;
+        }
+    }
+
+// Cell styling (deleted, new, edited)
+    private void OnQueryCellInfo(QueryCellInfoEventArgs<ExpandoObject> args){
+        dynamic data = args.Data;
+// if (data.IsDeleted){
+//     args.Cell.AddClass(new[] { "deleted-row" });
+// }
+// if (data.IsNew){
+//     args.Cell.AddClass(new[] { "new-item" });
+// }
+// if (data.IsDirty){
+//     args.Cell.AddClass(new[] { "edited-cell" });
+// }
+    }
+
+// View Attachments (similar to VB6 mcITEM_VIEWFILES)
+    private async Task ViewAttachments(){
+        var selected = await ItemsGrid.GetSelectedRecordsAsync();
+        if (selected.Any()){
+            dynamic item = selected.First();
+// Open file dialog or list attachments
+// Use InputFile or custom modal
+            await JSRuntime.InvokeVoidAsync("alert", $"Viewing attachments for {item.Phase}~{item.Item}");
+// Implement attachment logic similar to template's file selection
+        }
+    }
+
+// Renumber Item
+    private async Task RenumberItem(){
+        var selected = await ItemsGrid.GetSelectedRecordsAsync();
+        if (selected.Any()){
+            dynamic item = selected.First();
+// Prompt for new number or use picklist
+            PickListTitle = "Renumber Item";
+            PickListItems = await db.QueryDynamicAsync("/* Query for options */");
+            PickListColumns = new List<string> { "Value", "Text" /* Adjust */ };
+            PickListVisible = true;
+            StateHasChanged();
+            var result = await ShowPickListAsync();
+            if (result != null){
+// Update item number and save
+//item.Item = result.NewItem; // Assume field
+                item.IsDirty = true;
+                mDirty = true;
+                await ItemsGrid.Refresh();
+            }
+        }
+    }
+
+// New Item
+    private async Task NewItem(){
+// Add new row to grid
+        dynamic newItem = new ExpandoObject();
+        newItem.Phase = SelectedPhase;
+        newItem.IsNew = true;
+// Set defaults
+        await ItemsGrid.AddRecordAsync(newItem);
+        mDirty = true;
+    }
+
+// Duplicate Items
+    private async Task DuplicateItems(){
+        var selected = await ItemsGrid.GetSelectedRecordsAsync();
+        if (selected.Any()){
+            foreach (dynamic sel in selected){
+                dynamic duplicate = new ExpandoObject();
+                foreach (var kv in (IDictionary<string, object>)sel){
+                    ((IDictionary<string, object>)duplicate)[kv.Key] = kv.Value;
+                }
+                duplicate.Item = duplicate.Item + "_copy"; // Adjust
+                duplicate.IsNew = true;
+                ItemDataList.Add(duplicate);
+            }
+            await ItemsGrid.Refresh();
+            mDirty = true;
+        }
+    }
+
+// Delete Items (mark hidden/deleted)
+    private async Task DeleteItems(){
+        var selected = await ItemsGrid.GetSelectedRecordsAsync();
+        foreach (dynamic item in selected){
+            item.IsDeleted = true;
+        }
+        await ItemsGrid.Refresh();
+        mDirty = true;
+    }
+
+// PickList handlers
+    private Task<ExpandoObject> ShowPickListAsync(){
+        var tcs = new TaskCompletionSource<ExpandoObject>();
+        PickListCallback = (result) => {
+            PickListVisible = false;
+            tcs.SetResult(result);
+            StateHasChanged();
+        };
+        return tcs.Task;
+    }
+
+    private void OnPickListRowSelected(RowSelectEventArgs<ExpandoObject> args){
+        SelectedPickListItem = args.Data;
+    }
+
+    private void OnPickListSelect(){
+        PickListCallback(SelectedPickListItem);
+    }
+
+}

@@ -1,0 +1,469 @@
+@page "/fitems-tree-load"
+@rendermode InteractiveServer
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Components.Web
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>FItems Tree Load Bench</PageTitle>
+
+<main class="tree-load-page">
+    <header class="tree-load-header">
+        <div>
+            <h1>FItems tree first-load bench</h1>
+            <p>Separates simulated database round trips, node construction, and the TreeGridControl first server render.</p>
+        </div>
+        <div class="tree-load-status @(_isLoading ? "is-loading" : "")">@_status</div>
+    </header>
+
+    <section class="tree-load-controls" aria-label="Benchmark settings">
+        <label>
+            <span>Groups</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_groupCount"
+                                   ValueChanged="SetGroupCount"
+                                   Min="1"
+                                   Max="200"
+                                   Width="88px" />
+        </label>
+        <label>
+            <span>Phases per group</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_phasesPerGroup"
+                                   ValueChanged="SetPhasesPerGroup"
+                                   Min="1"
+                                   Max="200"
+                                   Width="88px" />
+        </label>
+        <label>
+            <span>Round trip delay (ms)</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_roundTripDelayMs"
+                                   ValueChanged="SetRoundTripDelay"
+                                   Min="0"
+                                   Max="2000"
+                                   Width="100px" />
+        </label>
+        <label>
+            <span>Calls before tree</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_preTreeCallCount"
+                                   ValueChanged="SetPreTreeCallCount"
+                                   Min="0"
+                                   Max="30"
+                                   Width="88px" />
+        </label>
+        <label class="tree-load-mode">
+            <span>Load path</span>
+            <DropDownListControl TValue="TreeLoadScenario"
+                                 TItem="TreeLoadScenarioChoice"
+                                 DataSource="@ScenarioChoices"
+                                 TextFieldName="@nameof(TreeLoadScenarioChoice.Label)"
+                                 ValueFieldName="@nameof(TreeLoadScenarioChoice.Value)"
+                                 Value="@_scenario"
+                                 ValueChanged="SetScenario"
+                                 Width="250px" />
+        </label>
+        <div class="tree-load-actions">
+            <ButtonControl Disabled="@_isLoading" OnClick="RunSelectedAsync">Run selected</ButtonControl>
+            <ButtonControl Disabled="@_isLoading" OnClick="RunComparisonAsync">Run all four</ButtonControl>
+            <ButtonControl Disabled="@_isLoading" OnClick="ResetAsync">Reset</ButtonControl>
+        </div>
+    </section>
+
+    <section class="tree-load-results" aria-labelledby="tree-load-results-title">
+        <div class="tree-load-section-heading">
+            <h2 id="tree-load-results-title">Measurements</h2>
+            <span>@TotalConfiguredNodes.ToString("N0") nodes configured</span>
+        </div>
+        <div class="tree-load-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Load path</th>
+                        <th>Setup calls</th>
+                        <th>Tree calls</th>
+                        <th>Loaded nodes</th>
+                        <th>Simulated wait</th>
+                        <th>Node build</th>
+                        <th>First server render</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var scenario in ScenarioOrder)
+                    {
+                        _measurements.TryGetValue(scenario, out var result);
+                        <tr class="@(scenario == _scenario ? "is-current" : "")">
+                            <td>@ScenarioLabel(scenario)</td>
+                            <td>@Metric(result?.SetupCalls)</td>
+                            <td>@Metric(result?.TreeCalls)</td>
+                            <td>@Metric(result?.NodeCount)</td>
+                            <td>@Milliseconds(result?.SimulatedWaitMs)</td>
+                            <td>@Milliseconds(result?.NodeBuildMs)</td>
+                            <td>@Milliseconds(result?.FirstServerRenderMs)</td>
+                            <td>@Milliseconds(result?.TotalMs)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="tree-load-diagnosis">@Diagnosis</p>
+    </section>
+
+    <section class="tree-load-preview" aria-labelledby="tree-load-preview-title">
+        <div class="tree-load-section-heading">
+            <h2 id="tree-load-preview-title">FItems-style tree</h2>
+            <span>@_treeNodes.Count.ToString("N0") loaded nodes; roots initially collapsed</span>
+        </div>
+        <div class="tree-load-tree-host">
+            <TreeGridControl @key="_treeGeneration"
+                             TValue="BenchTreeNode"
+                             DataSource="@_treeNodes"
+                             IdMapping="NodeID"
+                             ParentIdMapping="ParentID"
+                             TreeColumnIndex="0"
+                             EnableCollapseAll="true"
+                             AllowSelection="true"
+                             ToggleOnRowClick="false"
+                             Height="100%"
+                             CssClass="fx-treegrid-compact fx-treegrid-yellow-folder fx-treegrid-dotted-lines"
+                             NodeExpandIconStyle="GroupExpandIconStyle.PlusMinus"
+                             TreatAsParent="TreatAsParent"
+                             Expanded="OnNodeExpandedAsync">
+                <TreeGridColumn Field="NodeID" HeaderText="" Width="20px" Visible="false" />
+                <TreeGridColumn Field="Node" HeaderText="Group and Phase" Width="460px" />
+            </TreeGridControl>
+        </div>
+    </section>
+
+    <aside class="tree-load-notes">
+        <strong>What this models</strong>
+        <span>The current path includes the lookup/layout calls that finish before FItems calls LoadTreeAsync, followed by one group query and one awaited phase query per group.</span>
+        <span>The bulk path keeps the same setup calls but replaces the tree N+1 calls with one result set. VB6 lazy roots loads phases when a root opens. Tree-only removes all I/O.</span>
+    </aside>
+</main>
+
+@code {
+    private static readonly TreeLoadScenario[] ScenarioOrder =
+    [
+        TreeLoadScenario.TreeOnly,
+        TreeLoadScenario.CurrentSequential,
+        TreeLoadScenario.SingleBulkQuery,
+        TreeLoadScenario.LegacyLazyRoots
+    ];
+
+    private static readonly IReadOnlyList<TreeLoadScenarioChoice> ScenarioChoices =
+    [
+        new("Tree render only", TreeLoadScenario.TreeOnly),
+        new("Current sequential N+1", TreeLoadScenario.CurrentSequential),
+        new("Single bulk tree query", TreeLoadScenario.SingleBulkQuery),
+        new("VB6 lazy roots", TreeLoadScenario.LegacyLazyRoots)
+    ];
+
+    private readonly Dictionary<TreeLoadScenario, LoadMeasurement> _measurements = new();
+    private readonly HashSet<int> _lazyLoadedRootIds = [];
+    private List<BenchTreeNode> _treeNodes = [];
+    private TreeLoadScenario _scenario = TreeLoadScenario.CurrentSequential;
+    private int _groupCount = 12;
+    private int _phasesPerGroup = 30;
+    private int _roundTripDelayMs = 120;
+    private int _preTreeCallCount = 6;
+    private int _treeGeneration;
+    private int _serverRenderCount;
+    private bool _isLoading;
+    private string _status = "Ready";
+    private long _dataAssignedTimestamp;
+    private LoadMeasurement? _pendingMeasurement;
+    private TaskCompletionSource<bool>? _firstRenderCompletion;
+
+    private int TotalConfiguredNodes => _groupCount * (_phasesPerGroup + 1);
+
+    private string Diagnosis
+    {
+        get
+        {
+            if (!_measurements.TryGetValue(TreeLoadScenario.TreeOnly, out var treeOnly))
+                return "Run all four paths to separate database latency from TreeGridControl work.";
+
+            if (!_measurements.TryGetValue(TreeLoadScenario.CurrentSequential, out var current)
+                || !_measurements.TryGetValue(TreeLoadScenario.SingleBulkQuery, out var bulk)
+                || !_measurements.TryGetValue(TreeLoadScenario.LegacyLazyRoots, out var lazy))
+                return $"Tree-only first render is {treeOnly.FirstServerRenderMs:N1} ms. Run the database simulations for comparison.";
+
+            var nPlusOneCost = Math.Max(0, current.TotalMs - bulk.TotalMs);
+            return $"The sequential group/phase calls add about {nPlusOneCost:N0} ms here. "
+                 + $"VB6-style lazy roots reach first render in {lazy.TotalMs:N0} ms; "
+                 + $"Tree construction plus first server render is {treeOnly.NodeBuildMs + treeOnly.FirstServerRenderMs:N1} ms.";
+        }
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        _serverRenderCount++;
+        if (_pendingMeasurement is null)
+            return Task.CompletedTask;
+
+        var completed = _pendingMeasurement;
+        completed.FirstServerRenderMs = Stopwatch.GetElapsedTime(_dataAssignedTimestamp).TotalMilliseconds;
+        completed.TotalMs = Stopwatch.GetElapsedTime(completed.StartTimestamp).TotalMilliseconds;
+        completed.ServerRenderNumber = _serverRenderCount;
+        _measurements[completed.Scenario] = completed;
+        _pendingMeasurement = null;
+
+        var completion = _firstRenderCompletion;
+        _firstRenderCompletion = null;
+        completion?.TrySetResult(true);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void SetGroupCount(int value) => _groupCount = Math.Clamp(value, 1, 200);
+    private void SetPhasesPerGroup(int value) => _phasesPerGroup = Math.Clamp(value, 1, 200);
+    private void SetRoundTripDelay(int value) => _roundTripDelayMs = Math.Clamp(value, 0, 2000);
+    private void SetPreTreeCallCount(int value) => _preTreeCallCount = Math.Clamp(value, 0, 30);
+    private void SetScenario(TreeLoadScenario value) => _scenario = value;
+
+    private async Task RunSelectedAsync(MouseEventArgs _)
+    {
+        if (_isLoading)
+            return;
+
+        _isLoading = true;
+        try
+        {
+            await RunScenarioCoreAsync(_scenario);
+            _status = $"{ScenarioLabel(_scenario)} complete";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task RunComparisonAsync(MouseEventArgs _)
+    {
+        if (_isLoading)
+            return;
+
+        _isLoading = true;
+        try
+        {
+            _measurements.Clear();
+            foreach (var scenario in ScenarioOrder)
+            {
+                _scenario = scenario;
+                await RunScenarioCoreAsync(scenario);
+            }
+
+            _status = "Four-path comparison complete";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private Task ResetAsync(MouseEventArgs _)
+    {
+        _measurements.Clear();
+        _lazyLoadedRootIds.Clear();
+        _treeNodes = [];
+        _treeGeneration++;
+        _status = "Ready";
+        return Task.CompletedTask;
+    }
+
+    private async Task RunScenarioCoreAsync(TreeLoadScenario scenario)
+    {
+        _status = $"Running {ScenarioLabel(scenario)}";
+        _lazyLoadedRootIds.Clear();
+        _treeNodes = [];
+        _treeGeneration++;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        var measurement = new LoadMeasurement
+        {
+            Scenario = scenario,
+            StartTimestamp = Stopwatch.GetTimestamp(),
+            NodeCount = TotalConfiguredNodes
+        };
+
+        if (scenario != TreeLoadScenario.TreeOnly)
+        {
+            measurement.SetupCalls = _preTreeCallCount;
+            await SimulateRoundTripsAsync(_preTreeCallCount);
+        }
+
+        measurement.TreeCalls = scenario switch
+        {
+            TreeLoadScenario.CurrentSequential => _groupCount + 1,
+            TreeLoadScenario.SingleBulkQuery => 1,
+            TreeLoadScenario.LegacyLazyRoots => 1,
+            _ => 0
+        };
+        await SimulateRoundTripsAsync(measurement.TreeCalls);
+        measurement.SimulatedWaitMs = (measurement.SetupCalls + measurement.TreeCalls) * _roundTripDelayMs;
+
+        var buildTimer = Stopwatch.StartNew();
+        var nodes = BuildNodes(
+            _groupCount,
+            _phasesPerGroup,
+            includeChildren: scenario != TreeLoadScenario.LegacyLazyRoots);
+        measurement.NodeCount = nodes.Count;
+        buildTimer.Stop();
+        measurement.NodeBuildMs = buildTimer.Elapsed.TotalMilliseconds;
+
+        _firstRenderCompletion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingMeasurement = measurement;
+        _dataAssignedTimestamp = Stopwatch.GetTimestamp();
+        _treeNodes = nodes;
+        _treeGeneration++;
+        await InvokeAsync(StateHasChanged);
+        await _firstRenderCompletion.Task;
+    }
+
+    private async Task SimulateRoundTripsAsync(int count)
+    {
+        if (_roundTripDelayMs <= 0 || count <= 0)
+            return;
+
+        for (var index = 0; index < count; index++)
+            await Task.Delay(_roundTripDelayMs);
+    }
+
+    private async Task OnNodeExpandedAsync(TreeNodeEventArgs<BenchTreeNode> args)
+    {
+        var node = args.Data;
+        if (_scenario != TreeLoadScenario.LegacyLazyRoots
+            || node is null
+            || node.ParentID is not null
+            || !_lazyLoadedRootIds.Add(node.NodeID))
+            return;
+
+        var timer = Stopwatch.StartNew();
+        _status = $"Loading phases for {node.Node}";
+        await SimulateRoundTripsAsync(1);
+
+        var groupIndex = (node.NodeID - 1) / (_phasesPerGroup + 1);
+        _treeNodes = _treeNodes
+            .Concat(BuildPhaseNodes(groupIndex, node.NodeID, _phasesPerGroup))
+            .ToList();
+        timer.Stop();
+        _status = $"Loaded {_phasesPerGroup:N0} phases on demand in {timer.Elapsed.TotalMilliseconds:N0} ms";
+    }
+
+    private static List<BenchTreeNode> BuildNodes(int groupCount, int phasesPerGroup, bool includeChildren)
+    {
+        var capacity = includeChildren ? groupCount * (phasesPerGroup + 1) : groupCount;
+        var nodes = new List<BenchTreeNode>(capacity);
+
+        for (var groupIndex = 0; groupIndex < groupCount; groupIndex++)
+        {
+            var groupId = groupIndex * (phasesPerGroup + 1) + 1;
+            var groupCode = (groupIndex * 1000).ToString("00000");
+            nodes.Add(new BenchTreeNode
+            {
+                NodeID = groupId,
+                ParentID = null,
+                Node = $"{groupCode} - {GroupDescription(groupIndex)}"
+            });
+
+            if (!includeChildren)
+                continue;
+
+            nodes.AddRange(BuildPhaseNodes(groupIndex, groupId, phasesPerGroup));
+        }
+
+        return nodes;
+    }
+
+    private static IEnumerable<BenchTreeNode> BuildPhaseNodes(int groupIndex, int groupId, int phasesPerGroup)
+    {
+        for (var phaseIndex = 0; phaseIndex < phasesPerGroup; phaseIndex++)
+        {
+            var phaseCode = (groupIndex * 1000 + (phaseIndex + 1) * 10).ToString("00000");
+            yield return new BenchTreeNode
+            {
+                NodeID = groupId + phaseIndex + 1,
+                ParentID = groupId,
+                Node = $"{phaseCode} - {PhaseDescription(groupIndex, phaseIndex)}"
+            };
+        }
+    }
+
+    private static string GroupDescription(int index) => (index % 10) switch
+    {
+        0 => "Design",
+        1 => "Admin",
+        2 => "Foundation",
+        3 => "Framing & Materials",
+        4 => "Exterior",
+        5 => "Electrical, Plumbing, Heating",
+        6 => "Interior Finishing",
+        7 => "Flat Work",
+        8 => "Cleaning",
+        _ => "Service"
+    };
+
+    private static string PhaseDescription(int groupIndex, int phaseIndex)
+    {
+        var noun = (phaseIndex % 8) switch
+        {
+            0 => "Planning",
+            1 => "Materials",
+            2 => "Installation",
+            3 => "Labour",
+            4 => "Inspection",
+            5 => "Finishing",
+            6 => "Allowances",
+            _ => "Warranty"
+        };
+        return $"{GroupDescription(groupIndex)} {noun} {phaseIndex + 1}";
+    }
+
+    private static bool TreatAsParent(BenchTreeNode node) => node.ParentID is null;
+
+    private static string ScenarioLabel(TreeLoadScenario scenario) => scenario switch
+    {
+        TreeLoadScenario.TreeOnly => "Tree render only",
+        TreeLoadScenario.CurrentSequential => "Current sequential N+1",
+        TreeLoadScenario.SingleBulkQuery => "Single bulk tree query",
+        TreeLoadScenario.LegacyLazyRoots => "VB6 lazy roots",
+        _ => scenario.ToString()
+    };
+
+    private static string Metric(int? value) => value?.ToString("N0") ?? "-";
+    private static string Milliseconds(double? value) => value.HasValue ? $"{value.Value:N1} ms" : "-";
+
+    private enum TreeLoadScenario
+    {
+        TreeOnly,
+        CurrentSequential,
+        SingleBulkQuery,
+        LegacyLazyRoots
+    }
+
+    private sealed record TreeLoadScenarioChoice(string Label, TreeLoadScenario Value);
+
+    private sealed class BenchTreeNode
+    {
+        public int NodeID { get; init; }
+        public int? ParentID { get; init; }
+        public string Node { get; init; } = "";
+    }
+
+    private sealed class LoadMeasurement
+    {
+        public TreeLoadScenario Scenario { get; init; }
+        public long StartTimestamp { get; init; }
+        public int SetupCalls { get; set; }
+        public int TreeCalls { get; set; }
+        public int NodeCount { get; set; }
+        public double SimulatedWaitMs { get; set; }
+        public double NodeBuildMs { get; set; }
+        public double FirstServerRenderMs { get; set; }
+        public double TotalMs { get; set; }
+        public int ServerRenderNumber { get; set; }
+    }
+}

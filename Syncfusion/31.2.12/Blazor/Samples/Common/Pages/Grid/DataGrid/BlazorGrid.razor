@@ -1,0 +1,199 @@
+@page "/pure-grid"
+@inject IJSRuntime JS
+
+<h3>Pure Blazor Grid - Click to Sort • Drag Rows • Drag Headers to Group</h3>
+
+<div class="mb-3">
+    <strong>Click headers to sort • Drag rows to reorder • Drag headers to group</strong>
+</div>
+
+<table class="pure-grid">
+    <thead>
+        <tr>
+            @foreach (var col in Columns)
+            {
+                var isSorted = SortColumn == col.Field;
+                var icon = isSorted ? (SortDescending ? "↓" : "↑") : "↕";
+
+                <th @onclick="() => ToggleSort(col.Field)"
+                    @ondragstart="() => StartGroupDrag(col)"
+                    @ondragover="@OnDragOver"
+                    @ondrop="() => HandleGroupDrop(col)"
+                    draggable="true"
+                    style="cursor: move; user-select: none;">
+                    @col.Header <span class="ms-2">@icon</span>
+                </th>
+            }
+        </tr>
+        @if (GroupedColumns.Any())
+        {
+            <tr>
+                <td colspan="@Columns.Count" style="background:#1976d2; color:white; font-weight:bold; padding:10px;">
+                    Grouped by: @string.Join(" → ", GroupedColumns.Select(g => g.Header))
+                </td>
+            </tr>
+        }
+    </thead>
+    <tbody>
+        @foreach (var row in DisplayRows)
+        {
+            var rowId = row.Id;
+            <tr @ondragstart="() => StartRowDrag(row)"
+                @ondragover="@OnDragOver"
+                @ondrop="() => HandleRowDrop(row)"
+                @ondragenter="() => OnRowDragEnter(rowId)"
+                @ondragleave="() => OnRowDragLeave(rowId)"
+                draggable="true"
+                style="@(DraggedRow?.Id == rowId ? "opacity:0.5; background:#bbdefb;" : "")">
+                @foreach (var col in Columns)
+                {
+                    <td>@col.GetValue(row)</td>
+                }
+            </tr>
+        }
+    </tbody>
+</table>
+
+<style>
+    .pure-grid { border-collapse: collapse; width: 100%; font-family: Arial; }
+    .pure-grid th, .pure-grid td { border: 1px solid #ddd; padding: 10px; }
+    .pure-grid th { background: #f5f5f5; }
+    .pure-grid tr:hover { background: #f0f8ff; }
+    .pure-grid tr.drag-over { background: #e3f2fd !important; }
+</style>
+
+@code {
+    private List<RowData> Rows = new()
+    {
+        new RowData { Id = 1, Name = "John", City = "New York", Age = 30 },
+        new RowData { Id = 2, Name = "Jane", City = "Chicago", Age = 25 },
+        new RowData { Id = 3, Name = "Bob", City = "New York", Age = 35 },
+        new RowData { Id = 4, Name = "Alice", City = "Boston", Age = 28 },
+        new RowData { Id = 5, Name = "Mike", City = "Chicago", Age = 45 }
+    };
+
+    private List<ColumnDef> Columns = new()
+    {
+        new ColumnDef { Field = "Name", Header = "Name", GetValue = r => ((RowData)r).Name },
+        new ColumnDef { Field = "City", Header = "City", GetValue = r => ((RowData)r).City },
+        new ColumnDef { Field = "Age", Header = "Age", GetValue = r => ((RowData)r).Age.ToString() }
+    };
+
+    private List<GroupInfo> GroupedColumns = new();
+    private RowData? DraggedRow;
+    private ColumnDef? DraggedColumn;
+
+    // Sorting
+    private string SortColumn = "";
+    private bool SortDescending = false;
+
+    private IEnumerable<RowData> SortedRows => SortColumn == ""
+        ? Rows
+        : SortDescending
+            ? Rows.OrderByDescending(r => GetValue(r, SortColumn))
+            : Rows.OrderBy(r => GetValue(r, SortColumn));
+
+    private IEnumerable<RowData> DisplayRows => GroupedColumns.Any()
+        ? SortedRows.GroupBy(r => string.Join("|", GroupedColumns.Select(g => g.GetValue(r))))
+                    .SelectMany(g => g)
+        : SortedRows;
+
+    private object GetValue(RowData row, string field) => field switch
+    {
+        "Name" => row.Name,
+        "City" => row.City,
+        "Age" => row.Age,
+        _ => ""
+    };
+
+    private void ToggleSort(string field)
+    {
+        if (SortColumn == field)
+            SortDescending = !SortDescending;
+        else
+        {
+            SortColumn = field;
+            SortDescending = false;
+        }
+    }
+
+    // Drag & Drop — 100% CORRECT BLAZOR SYNTAX
+    private void StartRowDrag(RowData row) => DraggedRow = row;
+    private void StartGroupDrag(ColumnDef col) => DraggedColumn = col;
+
+    private void HandleRowDrop(RowData targetRow)
+    {
+        if (DraggedRow == null || DraggedRow == targetRow) return;
+
+        var oldIndex = Rows.IndexOf(DraggedRow);
+        var newIndex = Rows.IndexOf(targetRow);
+
+        Rows.RemoveAt(oldIndex);
+        Rows.Insert(newIndex > oldIndex ? newIndex - 1 : newIndex, DraggedRow);
+
+        DraggedRow = null;
+        StateHasChanged();
+    }
+    
+    private void OnDragOver(DragEventArgs args)
+    {
+        //args.PreventDefault(); // This is the correct way
+    }
+
+    private void HandleGroupDrop(ColumnDef targetCol)
+    {
+        if (DraggedColumn == null) return;
+
+        var existing = GroupedColumns.FirstOrDefault(g => g.Field == targetCol.Field);
+        if (existing != null)
+            GroupedColumns.Remove(existing);
+        else
+            GroupedColumns.Add(new GroupInfo
+            {
+                Field = targetCol.Field,
+                Header = targetCol.Header,
+                GetValue = targetCol.GetValue
+            });
+
+        DraggedColumn = null;
+        StateHasChanged();
+    }
+
+    // Visual feedback using row ID (no e.Target!)
+    private void OnRowDragEnter(int rowId)
+    {
+        var row = Rows.FirstOrDefault(r => r.Id == rowId);
+        if (row != null && DraggedRow != row)
+            row.IsDragOver = true;
+    }
+
+    private void OnRowDragLeave(int rowId)
+    {
+        var row = Rows.FirstOrDefault(r => r.Id == rowId);
+        if (row != null)
+            row.IsDragOver = false;
+    }
+
+    public class RowData
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string City { get; set; } = "";
+        public int Age { get; set; }
+        public bool IsDragOver { get; set; }
+    }
+
+    public class ColumnDef
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public Func<object, string> GetValue { get; set; } = _ => "";
+    }
+
+    public class GroupInfo
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public Func<object, string> GetValue { get; set; } = _ => "";
+    }
+}

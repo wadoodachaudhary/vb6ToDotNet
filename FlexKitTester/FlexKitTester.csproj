@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <!-- 2026-07-25 (owner): the bench now references FlexCore, NOT FlexKit, so
+         perf work (row virtualization) is developed + tested against FlexCore in
+         isolation. FlexKit (used by HomeFront/PB/GhostWriter) stays untouched
+         until the owner says to sync. Namespace is Fx.ControlKit.* in BOTH, so no
+         @using changes are needed. -->
+    <ProjectReference Include="..\..\FlexCore\FlexCore.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Optional latency probes read credentials from user-secrets or environment
+         variables only. No connection string is committed to this project. -->
+    <UserSecretsId>c4eb4c27-c614-45f9-9dbb-01f45e63ec6b</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Used only by the explicitly-invoked, read-only SELECT 1 latency probe. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK's **\*.json glob already publishes Data\; these are explicit so
+         a glob change cannot silently drop the exports the benches need. -->
+    <Content Update="Data\estimating-items-full.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\assembly-details-full.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\interior-finishing-items.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\vendors-200.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\vendor-contacts.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\vendor-paypoints.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Data\vendor-taxgroups.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Remove="run-bench.ps1" />
+    <None Remove="run-bench.cmd" />
+    <None Remove="README.txt" />
+    <Content Include="run-bench.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="run-bench.cmd" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="README.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Opt-in with -p:TrimTorchNatives=true. TorchSharp reaches the publish set
+       through FlexCore/Llm, which no bench executes; the native payload is
+       250 MB+. -->
+  <Target Name="TrimTorchNatives" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(TrimTorchNatives)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(Filename)').StartsWith('torch')) Or $([System.String]::Copy('%(Filename)').StartsWith('libtorch')) Or $([System.String]::Copy('%(Filename)').StartsWith('c10')) Or $([System.String]::Copy('%(Filename)').StartsWith('fbgemm')) Or $([System.String]::Copy('%(Filename)').StartsWith('asmjit')) Or $([System.String]::Copy('%(Filename)').StartsWith('libiomp')) Or $([System.String]::Copy('%(Filename)').StartsWith('nvfuser'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

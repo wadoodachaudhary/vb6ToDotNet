@@ -1,0 +1,1685 @@
+@page "/Assembly/{Id?}"
+
+@namespace BlazorDemos.Pages
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Spinner
+@using Syncfusion.Blazor.DropDowns
+@using Syncfusion.Blazor.Buttons
+@using Syncfusion.Blazor.Navigations
+@using Syncfusion.Blazor.Inputs
+@using Syncfusion.Blazor.Data
+@using System.Data
+@using System.Dynamic
+@using System.Collections.Generic
+@using BlazorDemos.Pages.Grid
+@using Microsoft.AspNetCore.Components.Forms
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<style>
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+    }
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+    .e-btn {
+        margin-right: 5px;
+    }
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+    .form-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    .form-section-title {
+        font-weight: bold;
+        margin-bottom: 15px;
+        color: #333;
+        border-bottom: 1px solid #dee2e6;
+        padding-bottom: 8px;
+    }
+    .cost-display {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #28a745;
+    }
+    .e-grid .e-rowcell.e-selectionbackground {
+        background-color: #e3f2fd !important;
+    }
+    .field-label {
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+    .clickable-label {
+        cursor: pointer;
+        color: #0066cc;
+        text-decoration: underline;
+    }
+    .slider-container {
+        height: 8px;
+        background: #dee2e6;
+        cursor: row-resize;
+        margin: 5px 0;
+    }
+</style>
+
+<!-- TOOLBAR -->
+<div class="toolbar-cntr">
+    <SfToolbar>
+        <ToolbarItems>
+            <!-- New Dropdown -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <SfDropDownButton Content="New">
+                        <DropDownButtonItems>
+                            <DropDownButtonItem Text="New Model" OnClick="() => OnNewAssembly(AssemblyTypes.atModel)" />
+                            <DropDownButtonItem Text="New Model Option" OnClick="() => OnNewAssembly(AssemblyTypes.atoption)" />
+                            <DropDownButtonItem Text="New Global Option" OnClick="() => OnNewAssembly(AssemblyTypes.atGlobal)" />
+                            <DropDownButtonItem Text="New Design Center Option" OnClick="() => OnNewAssembly(AssemblyTypes.atDesignCenter)" />
+                        </DropDownButtonItems>
+                    </SfDropDownButton>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <!-- Open -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" @onclick="OnOpenClick">
+                        <span class="tool-label">Open</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <!-- Save -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@(!mDirty)" @onclick="OnSaveClick">
+                        <span class="tool-label">Save</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem Type="ItemType.Separator" />
+
+            <!-- Takeoff Buttons -->
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="() => OnTakeoff()">
+                        <span class="tool-label">One Time</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="() => OnTakeoff()">
+                        <span class="tool-label">Item</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="() => OnTakeoff()">
+                        <span class="tool-label">Assembly</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            @if (ShowPlanSwift)
+            {
+                <ToolbarItem>
+                    <ToolbarItemTemplate>
+                        <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="() => OnTakeoff()">
+                            <span class="tool-label">PlanSwift</span>
+                        </button>
+                    </ToolbarItemTemplate>
+                </ToolbarItem>
+            }
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="() => OnTakeoff()">
+                        <span class="tool-label">Custom</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" disabled="@mReadOnly" @onclick="OnItemChart">
+                        <span class="tool-label">Item Chart</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem Type="ItemType.Separator" />
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" @onclick="OnMassChange">
+                        <span class="tool-label">Change</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            <ToolbarItem Type="ItemType.Separator" />
+
+            <ToolbarItem>
+                <ToolbarItemTemplate>
+                    <button class="e-btn e-tbar-btn" @onclick="OnExportPricelist">
+                        <span class="tool-label">Pricelist</span>
+                    </button>
+                </ToolbarItemTemplate>
+            </ToolbarItem>
+
+            @if (ShowImportButton)
+            {
+                <ToolbarItem>
+                    <ToolbarItemTemplate>
+                        <SfDropDownButton Content="Import">
+                            <DropDownButtonItems>
+                                <DropDownButtonItem Text="Models and Options" OnClick="OnImportModels" />
+                                <DropDownButtonItem Text="Global Options" OnClick="OnImportGlobals" />
+                            </DropDownButtonItems>
+                        </SfDropDownButton>
+                    </ToolbarItemTemplate>
+                </ToolbarItem>
+            }
+        </ToolbarItems>
+    </SfToolbar>
+</div>
+
+<!-- PAGE TITLE -->
+<h3 class="mb-4 mt-3">@PageTitle</h3>
+
+<!-- HEADER FORM -->
+<div class="row">
+    <!-- LEFT PANEL - Assembly Info -->
+    <div class="col-md-4">
+        <div class="form-section">
+            <div class="form-section-title">Assembly Information</div>
+            
+            <!-- Community -->
+            <div class="mb-3">
+                <label class="field-label clickable-label" @onclick="OnCommunityLabelClick">@CommunityLabel</label>
+                <SfComboBox TValue="string" TItem="ComboBoxItem"
+                            @bind-Value="CommunityValue"
+                            DataSource="@CommunityItems"
+                            Placeholder="Select Community"
+                            Enabled="@CommunityEnabled">
+                    <ComboBoxFieldSettings Text="Text" Value="Value" />
+                    <ComboBoxEvents TValue="string" TItem="ComboBoxItem" ValueChange="OnCommunityChanged" />
+                </SfComboBox>
+            </div>
+
+            <!-- Model (visible for Model/Option types) -->
+            @if (ShowModelField)
+            {
+                <div class="mb-3">
+                    <label class="field-label">@ModelOptionLabel</label>
+                    <SfComboBox TValue="string" TItem="ComboBoxItem"
+                                @bind-Value="ModelValue"
+                                DataSource="@ModelItems"
+                                Placeholder="Select Model"
+                                Enabled="@ModelEnabled"
+                                AllowCustom="@(mAssemblyType == AssemblyTypes.atModel)">
+                        <ComboBoxFieldSettings Text="Text" Value="Value" />
+                        <ComboBoxEvents TValue="string" TItem="ComboBoxItem" ValueChange="OnModelChanged" />
+                    </SfComboBox>
+                </div>
+            }
+
+            <!-- Option ID (visible for non-Model types) -->
+            @if (ShowOptionField)
+            {
+                <div class="mb-3">
+                    <label class="field-label">Option</label>
+                    <SfTextBox @bind-Value="OptionID" Enabled="@OptionEnabled" />
+                </div>
+            }
+
+            <!-- Assembly Code -->
+            <div class="mb-3">
+                <label class="field-label">Assembly</label>
+                <SfTextBox @bind-Value="AssemblyCode" Enabled="@AssemblyEnabled" />
+            </div>
+
+            <!-- Description -->
+            <div class="mb-3">
+                <label class="field-label">Description</label>
+                <SfTextBox @bind-Value="Description" />
+            </div>
+
+            <!-- Active Checkbox -->
+            <div class="mb-3">
+                <SfCheckBox Label="Active" @bind-Checked="IsActive" />
+            </div>
+
+            <!-- Base Assembly Checkbox -->
+            <div class="mb-3">
+                <SfCheckBox Label="Base assembly. Will not be published to sales." @bind-Checked="IsBaseAssembly" />
+            </div>
+        </div>
+    </div>
+
+    <!-- MIDDLE PANEL - Additional Fields -->
+    <div class="col-md-4">
+        <!-- Series Fields (Model/Option types) -->
+        @if (ShowSeriesFields)
+        {
+            <div class="form-section">
+                <div class="form-section-title">Series</div>
+                
+                <div class="mb-3">
+                    <label class="field-label clickable-label" @onclick="OnSeriesLabelClick">Series</label>
+                    <SfComboBox TValue="string" TItem="string"
+                                @bind-Value="SeriesValue"
+                                DataSource="@SeriesItems"
+                                Placeholder="Select Series" />
+                </div>
+
+                @if (ShowElevation)
+                {
+                    <div class="mb-3">
+                        <label class="field-label">Elevation</label>
+                        <SfTextBox @bind-Value="Elevation" MaxLength="20" />
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Model Fields -->
+        @if (ShowModelFields)
+        {
+            <div class="form-section">
+                <div class="form-section-title">Model Details</div>
+                
+                <div class="row mb-2">
+                    <div class="col-4">
+                        <label class="field-label">Bedrooms</label>
+                        <SfNumericTextBox TValue="int" @bind-Value="Bedrooms" Min="0" />
+                    </div>
+                    <div class="col-4">
+                        <label class="field-label">Bathrooms</label>
+                        <SfNumericTextBox TValue="int" @bind-Value="Bathrooms" Min="0" />
+                    </div>
+                    <div class="col-4">
+                        <label class="field-label">Floor Area</label>
+                        <SfNumericTextBox TValue="int" @bind-Value="FloorArea" Min="0" />
+                    </div>
+                </div>
+
+                <div class="row mb-2">
+                    <div class="col-6">
+                        <label class="field-label">Max Width</label>
+                        <SfNumericTextBox TValue="double" @bind-Value="MaxWidth" Format="N2" />
+                    </div>
+                    <div class="col-6">
+                        <label class="field-label">Max Length</label>
+                        <SfNumericTextBox TValue="double" @bind-Value="MaxLength" Format="N2" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label">Style</label>
+                    @if (UseStyleCombo)
+                    {
+                        <SfComboBox TValue="string" TItem="string" @bind-Value="StyleValue" DataSource="@StyleItems" />
+                    }
+                    else
+                    {
+                        <SfTextBox @bind-Value="StyleText" MaxLength="30" />
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Option Fields -->
+        @if (ShowOptionFields)
+        {
+            <div class="form-section">
+                <div class="form-section-title">Option Details</div>
+                
+                <div class="mb-3">
+                    <label class="field-label clickable-label" @onclick="OnCategoryLabelClick">Category</label>
+                    <SfComboBox TValue="string" TItem="ComboBoxItem"
+                                @bind-Value="CategoryValue"
+                                DataSource="@CategoryItems"
+                                Placeholder="Select Category">
+                        <ComboBoxFieldSettings Text="Text" Value="Value" />
+                    </SfComboBox>
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label">UOM</label>
+                    <SfComboBox TValue="string" TItem="string"
+                                @bind-Value="UOM"
+                                DataSource="@UomItems"
+                                Placeholder="Select UOM"
+                                AllowCustom="true"
+                                Enabled="@UOMEnabled" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label">Qty</label>
+                    <SfNumericTextBox TValue="double" @bind-Value="Qty" Format="N2" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label clickable-label" @onclick="OnLocationLabelClick">Location</label>
+                    <SfComboBox TValue="string" TItem="ComboBoxItem"
+                                @bind-Value="LocationValue"
+                                DataSource="@LocationItems"
+                                Placeholder="Select Location">
+                        <ComboBoxFieldSettings Text="Text" Value="Value" />
+                    </SfComboBox>
+                </div>
+
+                <div class="mb-2">
+                    <SfCheckBox Label="Included Option" @bind-Checked="IsIncludedOption" />
+                </div>
+                <div class="mb-2">
+                    <SfCheckBox Label="Design Center Sales Only" @bind-Checked="IsDCSalesOnly" />
+                </div>
+                <div class="mb-2">
+                    <SfCheckBox Label="Select By Room" @bind-Checked="IsSelectByRoom" />
+                </div>
+                <div class="mb-2">
+                    <SfCheckBox Label="Display Total Only" @bind-Checked="IsDisplayTotalOnly" />
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="col-md-4">
+        <!-- Estimator Notes -->
+        <div class="form-section">
+            <div class="form-section-title">Estimator Notes</div>
+            <SfTextBox @bind-Value="Notes" Multiline="true" RowCount="4" />
+        </div>
+
+        <!-- Pricing Community -->
+        <div class="form-section">
+            <div class="form-section-title">Pricing</div>
+            
+            <div class="mb-3">
+                <label class="field-label">Pricing Community</label>
+                <SfComboBox TValue="string" TItem="CommunityItem"
+                            @bind-Value="SelectedPriceCommunity"
+                            DataSource="@PricingCommunities"
+                            Placeholder="Select Pricing Community">
+                    <ComboBoxFieldSettings Text="PricingCommunityPhase" Value="PricingCommunity" />
+                    <ComboBoxEvents TValue="string" TItem="CommunityItem" ValueChange="OnPriceCommunityChanged" />
+                </SfComboBox>
+            </div>
+
+            <div class="row">
+                <div class="col-4">
+                    <label class="field-label">Assembly</label>
+                    <div class="cost-display">@AssemblyCostLabel</div>
+                </div>
+                @if (ShowComponentsGrid)
+                {
+                    <div class="col-4">
+                        <label class="field-label">Components</label>
+                        <div class="cost-display">@ComponentCostLabel</div>
+                    </div>
+                    <div class="col-4">
+                        <label class="field-label">Total</label>
+                        <div class="cost-display">@TotalCostLabel</div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Billing (if enabled) -->
+        @if (mUseBilling)
+        {
+            <div class="form-section">
+                <div class="form-section-title">Billing</div>
+                
+                <div class="mb-3">
+                    <label class="field-label">Factor</label>
+                    <SfNumericTextBox TValue="double" @bind-Value="BillingFactor" Format="N2" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label">Code</label>
+                    <SfComboBox TValue="string" TItem="ComboBoxItem"
+                                @bind-Value="BillingCodeValue"
+                                DataSource="@BillingCodeItems"
+                                Placeholder="Select Code">
+                        <ComboBoxFieldSettings Text="Text" Value="Value" />
+                    </SfComboBox>
+                </div>
+
+                <div class="mb-3">
+                    <label class="field-label">Category</label>
+                    <SfComboBox TValue="string" TItem="ComboBoxItem"
+                                @bind-Value="BillingCategoryValue"
+                                DataSource="@BillingCategoryItems"
+                                Placeholder="Select Category">
+                        <ComboBoxFieldSettings Text="Text" Value="Value" />
+                    </SfComboBox>
+                </div>
+            </div>
+        }
+
+        <!-- File Paths -->
+        <div class="form-section">
+            <div class="form-section-title">Documents</div>
+            
+            <div class="mb-3">
+                <label class="field-label">Graphic Path</label>
+                <div class="input-group">
+                    <SfTextBox @bind-Value="GraphicPath" Readonly="true" />
+                    <button class="btn btn-outline-secondary" @onclick="() => BrowseFile(0)">Browse</button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="field-label">Spec Document</label>
+                <div class="input-group">
+                    <SfTextBox @bind-Value="SpecDocument" Readonly="true" />
+                    <button class="btn btn-outline-secondary" @onclick="() => BrowseFile(1)">Browse</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- COMPONENTS GRID (if enabled) -->
+@if (ShowComponentsGrid)
+{
+    <div class="mt-3">
+        <h5>Components</h5>
+        <SfGrid @ref="ComponentsGrid" DataSource="@ComponentsData"
+                AllowSelection="true" AllowSorting="true">
+            <GridEditSettings AllowEditing="true" Mode="EditMode.Batch" />
+            <GridColumns>
+                <GridColumn Field="Community" HeaderText="Community" Width="120" />
+                <GridColumn Field="Model" HeaderText="Model" Width="100" />
+                <GridColumn Field="Option" HeaderText="Option" Width="100" />
+                <GridColumn Field="Assembly" HeaderText="Assembly" Width="120" />
+                <GridColumn Field="Description" HeaderText="Description" Width="200" />
+                <GridColumn Field="Qty" HeaderText="Qty" Width="80" Format="N2" />
+                <GridColumn Field="Cost" HeaderText="Cost" Width="100" Format="C2" />
+            </GridColumns>
+            <GridEvents TValue="AssemblyComponentRow" ContextMenuOpen="OnComponentsContextMenu" />
+        </SfGrid>
+    </div>
+    
+    <!-- Resizable Slider -->
+    <div class="slider-container"></div>
+}
+
+<!-- ITEMS GRID -->
+<div class="mt-3">
+    <h5>Items</h5>
+    <SfGrid @ref="ItemsGrid" DataSource="@ItemsData"
+            AllowSelection="true" AllowSorting="true" AllowGrouping="true"
+            AllowResizing="true" Height="400">
+        <GridEditSettings AllowEditing="true" AllowAdding="true" AllowDeleting="true" Mode="EditMode.Batch" />
+        <GridSelectionSettings Type="Syncfusion.Blazor.Grids.SelectionType.Multiple" Mode="Syncfusion.Blazor.Grids.SelectionMode.Row" />
+        <GridColumns>
+            <GridColumn Field="Phase" HeaderText="Phase" Width="80" />
+            <GridColumn Field="Item" HeaderText="Item" Width="100" />
+            <GridColumn Field="ItemNumber" HeaderText="Item #" Width="80" />
+            <GridColumn Field="Description" HeaderText="Description" Width="200" />
+            <GridColumn Field="TakeoffUOM" HeaderText="Takeoff UOM" Width="100" />
+            <GridColumn Field="TakeoffQty" HeaderText="Takeoff Qty" Width="100" Format="N2" />
+            <GridColumn Field="OrderUOM" HeaderText="Order UOM" Width="100" />
+            <GridColumn Field="OrderQty" HeaderText="Order Qty" Width="100" Format="N2" />
+            <GridColumn Field="Formula" HeaderText="Formula" Width="150" />
+            @if (!string.IsNullOrEmpty(PricingCommunity))
+            {
+                <GridColumn Field="Vendor" HeaderText="Vendor" Width="100" />
+                <GridColumn Field="VendorDesc" HeaderText="Vendor Name" Width="150" />
+                <GridColumn Field="PriceLevel" HeaderText="Price Level" Width="120" />
+                <GridColumn Field="Price" HeaderText="Price" Width="100" Format="C2" />
+                <GridColumn Field="ExtendedAmount" HeaderText="Extended" Width="120" Format="C2" />
+            }
+            <GridColumn Field="Notes" HeaderText="Notes" Width="150" />
+            <GridColumn Field="Location" HeaderText="Location" Width="100" />
+        </GridColumns>
+        <GridAggregates>
+            <GridAggregate>
+                <GridAggregateColumns>
+                    <GridAggregateColumn Field="ExtendedAmount" Type="AggregateType.Sum" Format="C2">
+                        <FooterTemplate>
+                            @{
+                                var aggregate = (context as AggregateTemplateContext);
+                                <span>Total: @aggregate.Sum</span>
+                            }
+                        </FooterTemplate>
+                    </GridAggregateColumn>
+                </GridAggregateColumns>
+            </GridAggregate>
+        </GridAggregates>
+        <GridEvents TValue="AssemblyItemRow" 
+                    OnCellSave="OnItemCellSaved"
+                    RowSelected="OnItemRowSelected" />
+    </SfGrid>
+</div>
+
+<!-- Hidden File Inputs -->
+<InputFile @ref="_fileInputGraphic" OnChange="e => OnFileSelected(e, 0)" style="display:none" accept="image/*" />
+<InputFile @ref="_fileInputSpecDoc" OnChange="e => OnFileSelected(e, 1)" style="display:none" accept=".pdf,.doc,.docx" />
+
+@code {
+    // === ROUTE PARAMETER ===
+    [Parameter] public string? Id { get; set; }
+
+    // === DATABASE ===
+    private DbWrapperSqlServer db = new DbWrapperSqlServer();
+
+    // === GRID REFERENCES ===
+    private SfGrid<AssemblyItemRow>? ItemsGrid;
+    private SfGrid<AssemblyComponentRow>? ComponentsGrid;
+
+    // === STATE FLAGS ===
+    private bool mDirty = false;
+    private bool mReadOnly = true;
+    private bool mUseComponents = true;
+    private bool mUseBilling = false;
+    private bool ShowPlanSwift = false;
+    private bool ShowImportButton = true;
+
+    // === ASSEMBLY DATA ===
+    private long mAssemblyID = 0;
+    private string mCommunity = "";
+    private string mModel = "";
+    private string mOptionID = "";
+    private string mAssembly = "";
+    private string mAssemblyDesc = "";
+    private AssemblyTypes mAssemblyType = AssemblyTypes.atModel;
+    private int mDataSource = 0;
+    private string mPricingCommunity = "";
+    private string mPricingCommunityPhase = "";
+    private int AppState_DivisionID = 1;
+
+    // === COPIED ASSEMBLY (for Save As) ===
+    private string mCopiedCommunity = "";
+    private string mCopiedAssembly = "";
+    private long mCopiedAssemblyID = 0;
+    private string mCopiedModel = "";
+
+    // === FORM FIELD VALUES ===
+    private string CommunityValue = "";
+    private string ModelValue = "";
+    private string OptionID = "";
+    private string AssemblyCode = "";
+    private string Description = "";
+    private bool IsActive = true;
+    private bool IsBaseAssembly = false;
+    private string SeriesValue = "";
+    private string Elevation = "";
+    private int Bedrooms = 0;
+    private int Bathrooms = 0;
+    private int FloorArea = 0;
+    private double MaxWidth = 0;
+    private double MaxLength = 0;
+    private double ConstCutoff = 0;
+    private string StyleText = "";
+    private string StyleValue = "";
+    private string CategoryValue = "";
+    private string UOM = "";
+    private double Qty = 1;
+    private string LocationValue = "";
+    private bool IsIncludedOption = false;
+    private bool IsDCSalesOnly = false;
+    private bool IsSelectByRoom = false;
+    private bool IsDisplayTotalOnly = false;
+    private bool IsTakeoffRequired = false;
+    private bool UseNormalSalesQtyFactors = true;
+    private string Notes = "";
+    private string Comments = "";
+    private string GraphicPath = "";
+    private string SpecDocument = "";
+    private string ScheduleTemplateValue = "";
+    private double BillingFactor = 1.0;
+    private string BillingCodeValue = "";
+    private string BillingCategoryValue = "";
+    private string? SelectedPriceCommunity = "";
+    private string PricingCommunity = "";
+    private string PricingCommunityPhase = "";
+
+    // === UI VISIBILITY FLAGS ===
+    private bool ShowModelField = true;
+    private bool ShowOptionField = false;
+    private bool ShowSeriesFields = true;
+    private bool ShowModelFields = true;
+    private bool ShowOptionFields = false;
+    private bool ShowComponentsGrid = false;
+    private bool ShowElevation = true;
+    private bool UseStyleCombo = false;
+    private bool UOMEnabled = true;
+    private bool CommunityEnabled = true;
+    private bool ModelEnabled = true;
+    private bool OptionEnabled = true;
+    private bool AssemblyEnabled = true;
+    private string ModelOptionLabel = "Model";
+    private string CommunityLabel = "Community";
+
+    // === COST LABELS ===
+    private string AssemblyCostLabel = "$0.00";
+    private string ComponentCostLabel = "$0.00";
+    private string TotalCostLabel = "$0.00";
+    private double AssemblyCost = 0;
+    private double ComponentCost = 0;
+
+    // === COMBO BOX DATA ===
+    private List<ComboBoxItem> CommunityItems = new();
+    private List<ComboBoxItem> ModelItems = new();
+    private List<ComboBoxItem> CategoryItems = new();
+    private List<ComboBoxItem> LocationItems = new();
+    private List<ComboBoxItem> BillingCodeItems = new();
+    private List<ComboBoxItem> BillingCategoryItems = new();
+    private List<string> SeriesItems = new();
+    private List<string> UomItems = new();
+    private List<string> StyleItems = new() { "Single-Family", "Condo", "Townhouse" };
+    private List<string> ScheduleTemplateItems = new();
+    private List<CommunityItem> PricingCommunities = new();
+
+    // === GRID DATA ===
+    private List<AssemblyItemRow> ItemsData = new();
+    private List<AssemblyComponentRow> ComponentsData = new();
+
+    // === FILE INPUT REFS ===
+    private InputFile? _fileInputGraphic;
+    private InputFile? _fileInputSpecDoc;
+
+    // === COMPUTED PROPERTIES ===
+    private string PageTitle => string.IsNullOrEmpty(AssemblyCode) 
+        ? "Model & Option Library" 
+        : $"{AssemblyCode} - {Description}";
+
+    // === ENUMS ===
+    public enum AssemblyTypes {
+        atModel = 0,
+        atoption = 2,
+        atGlobal = 3,
+        atDesignCenter = 4,
+        atCustomOption = 5
+    }
+
+    // === MODEL CLASSES ===
+    public class ComboBoxItem {
+        public string Text { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    public class CommunityItem {
+        public string PricingCommunityPhase { get; set; } = "";
+        public string PricingCommunity { get; set; } = "";
+        public int SortOrder { get; set; }
+    }
+
+    public class AssemblyItemRow {
+        public int Sequence { get; set; }
+        public string Phase { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string ItemNumber { get; set; } = "";
+        public string ItemChart { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string TakeoffUOM { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public string Formula { get; set; } = "";
+        public double TakeoffQty { get; set; }
+        public double OrderQty { get; set; }
+        public double WastePercent { get; set; }
+        public string Notes { get; set; } = "";
+        public string Location { get; set; } = "";
+        public bool IsQuote { get; set; }
+        public bool Invertable { get; set; }
+        public bool UseModelCost { get; set; }
+        public string POIndex { get; set; } = "";
+        public string POIndexDescription { get; set; } = "";
+        public string JCCostCode { get; set; } = "";
+        public string JCCategory { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string VendorDesc { get; set; } = "";
+        public string PriceLevel { get; set; } = "";
+        public string ItemType { get; set; } = "";
+        public double Price { get; set; }
+        public double TaxRate { get; set; }
+        public double TaxAmount { get; set; }
+        public double PretaxAmount { get; set; }
+        public double ExtendedAmount { get; set; }
+        public string OldPriceLevel { get; set; } = "";
+        public string OldItemType { get; set; } = "";
+        public double AssemblyConversionFactor { get; set; }
+        public double ItemConversionFactor { get; set; }
+        public Dictionary<int, string> WBS { get; set; } = new();
+        public string RowStatus { get; set; } = ""; // "new", "update", "delete"
+    }
+
+    public class AssemblyComponentRow {
+        public long AssemblyId { get; set; }
+        public string Community { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Option { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string Description { get; set; } = "";
+        public double Qty { get; set; }
+        public double Cost { get; set; }
+        public string RowStatus { get; set; } = "";
+    }
+
+    // === LIFECYCLE ===
+    protected override async Task OnInitializedAsync() {
+        await LoadComboBoxes();
+        await LoadPricingCommunitiesAsync(null);
+        
+        if (!string.IsNullOrEmpty(Id)) {
+            // Parse the ID to load specific assembly
+            await LoadDataAsync();
+        }
+    }
+
+    // === LOAD COMBO BOXES ===
+    private async Task LoadComboBoxes() {
+        // Communities
+        var communityData = await db.QueryAsync(@"
+            SELECT c.Description + ' - ' + c.Area AS Text, c.Area AS Value
+            FROM tblLocality c
+            LEFT OUTER JOIN DivisionCommunities d ON d.Community = c.Area
+            WHERE ISNULL(c.inactive, 0) = 0
+              AND (@DivisionID = 0 OR d.DivisionID = @DivisionID)
+            ORDER BY c.Description", 
+            new { DivisionID = AppState_DivisionID });
+        CommunityItems = communityData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+        CommunityItems.Insert(0, new ComboBoxItem { Text = "", Value = "" });
+
+        // Models
+        var modelData = await db.QueryAsync(@"
+            SELECT DISTINCT Model AS Text, Model AS Value
+            FROM tblDBAssemblyMaster
+            WHERE AssemblyType = 0 AND DivisionID = @DivisionID
+            ORDER BY Model",
+            new { DivisionID = AppState_DivisionID });
+        ModelItems = modelData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+
+        // Categories
+        var categoryData = await db.QueryAsync(@"
+            SELECT ISNULL(Description, Category) AS Text, Category AS Value
+            FROM tblCategories
+            ORDER BY 1");
+        CategoryItems = categoryData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+
+        // Locations
+        var locationData = await db.QueryAsync(@"
+            SELECT Description AS Text, Area AS Value
+            FROM tblAreas
+            ORDER BY Description");
+        LocationItems = locationData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+
+        // UOMs
+        var uomData = await db.QueryAsync(@"
+            SELECT DISTINCT ISNULL(AssemblyUOM, '') AS UOM
+            FROM tblDBAssemblyMaster
+            WHERE DivisionID = @DivisionID
+            ORDER BY 1",
+            new { DivisionID = AppState_DivisionID });
+        UomItems = uomData.Select(r => r["UOM"]?.ToString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList();
+
+        // Series
+        var seriesData = await db.QueryAsync(@"
+            SELECT ISNULL(Description, Series) AS Text
+            FROM tblSeries
+            WHERE DivisionID = @DivisionID
+            ORDER BY 1",
+            new { DivisionID = AppState_DivisionID });
+        SeriesItems = seriesData.Select(r => r["Text"]?.ToString() ?? "").ToList();
+
+        // Billing Codes
+        var billingCodeData = await db.QueryAsync(@"
+            SELECT Description AS Text, CostCode AS Value
+            FROM StandardCostCodes
+            WHERE DivisionID = @DivisionID
+            ORDER BY Description",
+            new { DivisionID = AppState_DivisionID });
+        BillingCodeItems = billingCodeData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+
+        // Billing Categories
+        var billingCatData = await db.QueryAsync(@"
+            SELECT Description AS Text, Category AS Value
+            FROM StandardCategories
+            WHERE DivisionID = @DivisionID
+            ORDER BY Description",
+            new { DivisionID = AppState_DivisionID });
+        BillingCategoryItems = billingCatData.Select(r => new ComboBoxItem {
+            Text = r["Text"]?.ToString() ?? "",
+            Value = r["Value"]?.ToString() ?? ""
+        }).ToList();
+    }
+
+    // === LOAD PRICING COMMUNITIES ===
+    private async Task LoadPricingCommunitiesAsync(string? limitToCommunity = null) {
+        var limitClause = string.IsNullOrEmpty(limitToCommunity) ? "" : "AND c.area = @LimitToCommunity";
+        var sql = $@"
+            SELECT c.Description, c.area + CHAR(2) AS Value, 0 AS SortOrder
+            FROM tbllocality c
+            LEFT OUTER JOIN DivisionCommunities d ON d.Community = c.Area AND d.DivisionID = @DivisionID
+            WHERE ISNULL(c.inactive, 0) = 0
+              AND (@DivisionID = 0 OR d.DivisionID = @DivisionID)
+              {limitClause}
+            UNION
+            SELECT c.Description + ISNULL(' ' + p.description, ''), 
+                   c.area + CHAR(2) + ISNULL(p.communityphase, '') AS Value, 0 AS SortOrder
+            FROM tbllocality c
+            LEFT OUTER JOIN communityphase p ON c.area = p.community
+            LEFT OUTER JOIN DivisionCommunities d ON d.Community = c.Area AND d.DivisionID = @DivisionID
+            WHERE ISNULL(c.inactive, 0) = 0
+              AND (@DivisionID = 0 OR d.DivisionID = @DivisionID)
+              {limitClause}
+            ORDER BY 1";
+        
+        var rows = await db.QueryAsync(sql, new { 
+            DivisionID = AppState_DivisionID, 
+            LimitToCommunity = limitToCommunity 
+        });
+        
+        PricingCommunities = rows.Select(row => new CommunityItem {
+            PricingCommunityPhase = row["Description"]?.ToString() ?? "",
+            PricingCommunity = row["Value"]?.ToString() ?? "",
+            SortOrder = Convert.ToInt32(row["SortOrder"])
+        }).OrderBy(x => x.PricingCommunityPhase).ToList();
+
+        PricingCommunities.Insert(0, new CommunityItem { 
+            PricingCommunityPhase = "", 
+            PricingCommunity = "", 
+            SortOrder = 0 
+        });
+    }
+
+    // === LOAD DATA ===
+    private async Task LoadDataAsync() {
+        try {
+            mReadOnly = false;
+            
+            var masterQuery = @"
+                SELECT AssemblyId, BillingFactor, BillingCode, BillingCategory, GraphicPath, SpecDocument,
+                       ScheduleTemplate, MaxWidth, MaxLength, ConstCutoff, Community, AssemblyType, Model,
+                       Elevation, OptionID, Assembly, Inactive, Description, Comments, Notes, Series, Style,
+                       AssemblyUOM, Bedrooms, Bathrooms, FloorArea, Category, JCExtra, Qty, Location,
+                       IncludedOption, ColorListID, StyleListID, FinishListID, OtherListID, Color, StyleValue,
+                       FinishValue, OtherValue, TakeoffRequired, UseNormalSalesQtyFactors, IsBaseAssembly,
+                       DesignCenterSalesOnly, SelectByRoom, DisplayTotalOnly
+                FROM tblDBAssemblyMaster m
+                WHERE m.DivisionID = @DivisionID
+                  AND ISNULL(m.Community, '') = @Community
+                  AND ISNULL(m.Model, '') = @Model
+                  AND ISNULL(m.OptionID, '') = @OptionID
+                  AND ISNULL(m.Assembly, '') = @Assembly";
+
+            var masterData = await db.QueryAsync(masterQuery, new {
+                DivisionID = AppState_DivisionID,
+                Community = mCommunity ?? "",
+                Model = mModel ?? "",
+                OptionID = mOptionID ?? "",
+                Assembly = mAssembly ?? ""
+            });
+
+            if (!masterData.Any()) {
+                // New record
+                mAssemblyID = 0;
+                SetDefaultValues();
+            } else {
+                // Existing record
+                var row = masterData.First();
+                mAssemblyID = Convert.ToInt64(row["AssemblyId"]);
+                mCommunity = row["Community"]?.ToString() ?? "";
+                mAssemblyType = (AssemblyTypes)Convert.ToInt32(row["AssemblyType"]);
+
+                CommunityValue = mCommunity;
+                ModelValue = row["Model"]?.ToString() ?? "";
+                OptionID = mOptionID;
+                AssemblyCode = row["Assembly"]?.ToString() ?? "";
+                Description = row["Description"]?.ToString() ?? "";
+                Elevation = row["Elevation"]?.ToString() ?? "";
+                IsActive = row["Inactive"]?.ToString() != "True";
+                GraphicPath = row["GraphicPath"]?.ToString() ?? "";
+                SpecDocument = row["SpecDocument"]?.ToString() ?? "";
+                MaxWidth = ToDouble(row["MaxWidth"]);
+                MaxLength = ToDouble(row["MaxLength"]);
+                ConstCutoff = ToDouble(row["ConstCutoff"]);
+                Comments = row["Comments"]?.ToString() ?? "";
+                Notes = row["Notes"]?.ToString() ?? "";
+                SeriesValue = row["Series"]?.ToString() ?? "";
+                StyleText = row["Style"]?.ToString() ?? "";
+                UOM = row["AssemblyUOM"]?.ToString() ?? "";
+                Bedrooms = ToInt(row["Bedrooms"]);
+                Bathrooms = ToInt(row["Bathrooms"]);
+                FloorArea = ToInt(row["FloorArea"]);
+                CategoryValue = row["Category"]?.ToString() ?? "";
+                Qty = ToDouble(row["Qty"]);
+                LocationValue = row["Location"]?.ToString() ?? "";
+                IsIncludedOption = row["IncludedOption"]?.ToString() == "True";
+                IsDCSalesOnly = row["DesignCenterSalesOnly"]?.ToString() == "True";
+                IsSelectByRoom = row["SelectByRoom"]?.ToString() == "True";
+                IsDisplayTotalOnly = row["DisplayTotalOnly"]?.ToString() == "True";
+                BillingFactor = ToDouble(row["BillingFactor"]);
+                BillingCodeValue = row["BillingCode"]?.ToString() ?? "";
+                BillingCategoryValue = row["BillingCategory"]?.ToString() ?? "";
+                IsTakeoffRequired = row["TakeoffRequired"]?.ToString() == "True";
+                UseNormalSalesQtyFactors = row["UseNormalSalesQtyFactors"]?.ToString() == "True";
+                IsBaseAssembly = row["IsBaseAssembly"]?.ToString() == "True";
+            }
+
+            UpdateUIVisibility();
+            await LoadItemsGridAsync();
+            await LoadComponentsGridAsync();
+
+            if (!string.IsNullOrEmpty(PricingCommunity)) {
+                ComponentCostLabel = ComponentCost.ToString("$#,##0.00");
+                TotalCostLabel = (AssemblyCost + ComponentCost).ToString("$#,##0.00");
+            }
+
+            mDirty = false;
+            StateHasChanged();
+        } catch (Exception ex) {
+            Console.WriteLine($"Error loading data: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading data: {ex.Message}");
+        }
+    }
+
+    private void SetDefaultValues() {
+        CommunityValue = mCommunity;
+        ModelValue = mModel;
+        OptionID = mOptionID;
+        AssemblyCode = mAssembly;
+        Description = mAssemblyDesc;
+        Elevation = "";
+        GraphicPath = "";
+        SpecDocument = "";
+        MaxWidth = 0;
+        MaxLength = 0;
+        ConstCutoff = 0;
+        Comments = "";
+        Notes = "";
+        IsActive = true;
+        SeriesValue = "";
+        UOM = "";
+        StyleText = "";
+        CategoryValue = "";
+        IsBaseAssembly = false;
+        BillingFactor = 1.0;
+        BillingCodeValue = "";
+        BillingCategoryValue = "";
+        Qty = 1;
+        LocationValue = "";
+        IsIncludedOption = false;
+        IsDCSalesOnly = false;
+        IsSelectByRoom = false;
+        IsDisplayTotalOnly = false;
+        IsTakeoffRequired = false;
+        UseNormalSalesQtyFactors = true;
+        Bedrooms = 0;
+        Bathrooms = 0;
+        FloorArea = 0;
+
+        CommunityEnabled = true;
+        ModelEnabled = mAssemblyType == AssemblyTypes.atModel || mAssemblyType == AssemblyTypes.atoption;
+        OptionEnabled = mAssemblyType != AssemblyTypes.atModel;
+        AssemblyEnabled = true;
+    }
+
+    private void UpdateUIVisibility() {
+        switch (mAssemblyType) {
+            case AssemblyTypes.atModel:
+                ShowOptionField = false;
+                ShowModelField = true;
+                ShowSeriesFields = true;
+                ShowModelFields = true;
+                ShowOptionFields = false;
+                ModelOptionLabel = "Model";
+                break;
+            case AssemblyTypes.atoption:
+                ShowOptionField = true;
+                ShowModelField = true;
+                ShowSeriesFields = true;
+                ShowModelFields = false;
+                ShowOptionFields = true;
+                ModelOptionLabel = "Model";
+                break;
+            case AssemblyTypes.atGlobal:
+            case AssemblyTypes.atDesignCenter:
+            case AssemblyTypes.atCustomOption:
+                ShowOptionField = true;
+                ShowModelField = false;
+                ShowSeriesFields = false;
+                ShowModelFields = false;
+                ShowOptionFields = true;
+                ModelOptionLabel = "Option";
+                break;
+        }
+        UOMEnabled = mAssemblyType != AssemblyTypes.atModel;
+    }
+
+    // === LOAD ITEMS GRID ===
+    private async Task LoadItemsGridAsync() {
+        var itemsQuery = string.IsNullOrEmpty(PricingCommunity) 
+            ? BuildItemsQuery_NoPricing() 
+            : BuildItemsQuery_WithPricing();
+
+        var itemsData = await db.QueryAsync(itemsQuery, new {
+            DivisionID = AppState_DivisionID,
+            Community = mCommunity?.Trim() ?? "",
+            Model = mModel?.Trim() ?? "",
+            OptionID = mOptionID?.Trim() ?? "",
+            Assembly = mAssembly?.Trim() ?? "",
+            PricingCommunity = mPricingCommunity?.Trim() ?? "",
+            PricingCommunityPhase = mPricingCommunityPhase?.Trim() ?? ""
+        });
+
+        var items = new List<AssemblyItemRow>();
+        AssemblyCost = 0;
+
+        foreach (var row in itemsData) {
+            var item = new AssemblyItemRow {
+                Sequence = ToInt(row["sequence"]),
+                Phase = row["Phase"]?.ToString() ?? "",
+                Item = row["Item"]?.ToString() ?? "",
+                ItemNumber = row["itemnumber"]?.ToString() ?? "",
+                ItemChart = row["itemchart"]?.ToString() ?? "",
+                Description = row["Description"]?.ToString() ?? "",
+                TakeoffUOM = row["TakeoffUOM"]?.ToString() ?? "",
+                OrderUOM = row["OrderUOM"]?.ToString() ?? "",
+                Formula = row["Formula"]?.ToString() ?? "",
+                TakeoffQty = ToDouble(row["TakeoffQty"]),
+                OrderQty = ToDouble(row["OrderQty"]),
+                WastePercent = ToDouble(row["WastePercent"]),
+                Notes = row["notes"]?.ToString() ?? "",
+                Location = row["Location"]?.ToString() ?? "",
+                IsQuote = row["IsQuote"]?.ToString() == "True",
+                Invertable = row["Invertable"]?.ToString() == "True" && ToInt(row["hasInverseItem"]) == 1,
+                UseModelCost = row["UseModelCost"]?.ToString() == "True",
+                POIndex = row["POIndex"]?.ToString() ?? "",
+                POIndexDescription = row["POIndexDescription"]?.ToString() ?? "",
+                JCCostCode = row["JCCostCode"]?.ToString() ?? "",
+                JCCategory = row["JCCategory"]?.ToString() ?? ""
+            };
+
+            // WBS fields
+            for (int i = 1; i <= 40; i++) {
+                item.WBS[i] = row[$"WBS{i:D2}"]?.ToString() ?? "";
+            }
+
+            if (!string.IsNullOrEmpty(PricingCommunity)) {
+                var quality = ToInt(row["RateQuality"]);
+                item.PriceLevel = quality switch {
+                    4 or 5 or 6 => "Quote",
+                    9 => "Phase Specific",
+                    10 => "Community Specific",
+                    11 => "Global (any Community)",
+                    12 => "Corporate (any Division)",
+                    13 => "Item DB",
+                    _ => "Unit Price"
+                };
+                item.Price = ToDouble(row["Rate"]);
+                item.TaxRate = ToDouble(row["JCTaxRate"]) / 100;
+                item.PretaxAmount = item.Price * item.OrderQty;
+                item.TaxAmount = item.PretaxAmount * item.TaxRate;
+                item.ExtendedAmount = item.PretaxAmount + item.TaxAmount;
+                AssemblyCost += item.ExtendedAmount;
+                item.Vendor = row["Vendor"]?.ToString() ?? "";
+                item.VendorDesc = row["VendorDesc"]?.ToString() ?? "";
+                item.OldPriceLevel = item.PriceLevel;
+            } else {
+                item.ItemType = item.IsQuote ? "Quote" : "Unit Price";
+            }
+
+            items.Add(item);
+        }
+
+        ItemsData = items;
+        AssemblyCostLabel = AssemblyCost.ToString("$#,##0.00");
+    }
+
+    private string BuildItemsQuery_NoPricing() {
+        return @"
+            SELECT d.sequence, d.Invertable,
+                   CASE WHEN v.phase IS NULL THEN 0 ELSE 1 END AS hasInverseItem,
+                   d.UseModelCost, i.Description, i.OrderUOM,
+                   ISNULL(NULLIF(d.POIndex,''), ISNULL(i.POIndex,'')) AS POIndex,
+                   p.FullDescription AS POIndexDescription,
+                   cc.CostCode AS JCCostCode, cc.Description AS JCCostCodeDesc,
+                   ct.Category AS JCCategory, ct.Description AS JCCategoryDesc,
+                   i.TakeoffUOM, i.rounddir, i.roundto, d.Phase, d.Item, d.itemchart,
+                   i.itemnumber, d.Formula, d.TakeoffQty, d.OrderQty, d.notes,
+                   i.IsQuote, i.WastePercent, d.Location,
+                   d.WBS01, d.WBS02, d.WBS03, d.WBS04, d.WBS05, d.WBS06, d.WBS07, d.WBS08, d.WBS09, d.WBS10,
+                   d.WBS11, d.WBS12, d.WBS13, d.WBS14, d.WBS15, d.WBS16, d.WBS17, d.WBS18, d.WBS19, d.WBS20,
+                   d.WBS21, d.WBS22, d.WBS23, d.WBS24, d.WBS25, d.WBS26, d.WBS27, d.WBS28, d.WBS29, d.WBS30,
+                   d.WBS31, d.WBS32, d.WBS33, d.WBS34, d.WBS35, d.WBS36, d.WBS37, d.WBS38, d.WBS39, d.WBS40,
+                   d.ConversionFactor AS AssemblyConversionFactor,
+                   i.ConversionFactor AS ItemConversionFactor
+            FROM tblDBAssemblyDetails d
+            LEFT OUTER JOIN tblPhaseItem i ON d.DivisionID = i.DivisionID AND d.Phase = i.Phase AND d.Item = i.Item
+            LEFT OUTER JOIN tblPhaseItem v ON i.DivisionID = v.DivisionID AND i.inversePhase = v.Phase AND i.inverseItem = v.Item
+            LEFT OUTER JOIN tblPOIndex p ON p.DivisionID = d.DivisionID AND ISNULL(NULLIF(d.POIndex,''), ISNULL(i.POIndex,'')) = p.POIndex
+            LEFT OUTER JOIN StandardCostCodes cc ON cc.DivisionID = i.DivisionID AND cc.costcode = ISNULL(i.JCCostCode, p.JCCostCode)
+            LEFT OUTER JOIN StandardCategories ct ON i.DivisionID = ct.DivisionID AND i.JCCategory = ct.Category
+            WHERE d.DivisionID = @DivisionID
+              AND ISNULL(d.Community,'') = @Community
+              AND ISNULL(d.Model,'') = @Model
+              AND ISNULL(d.OptionID,'') = @OptionID
+              AND ISNULL(d.Assembly,'') = @Assembly
+            ORDER BY d.sequence";
+    }
+
+    private string BuildItemsQuery_WithPricing() {
+        return @"
+            SELECT d.sequence, d.Invertable,
+                   CASE WHEN v.phase IS NULL THEN 0 ELSE 1 END AS hasInverseItem,
+                   d.UseModelCost, i.Description, i.OrderUOM,
+                   ISNULL(NULLIF(d.POIndex,''), ISNULL(i.POIndex,'')) AS POIndex,
+                   p.FullDescription AS POIndexDescription,
+                   cc.CostCode AS JCCostCode, cc.Description AS JCCostCodeDesc,
+                   ct.Category AS JCCategory, ct.Description AS JCCategoryDesc,
+                   i.TakeoffUOM, i.rounddir, i.roundto, d.Phase, d.Item, d.itemchart,
+                   i.itemnumber, d.Formula, d.TakeoffQty, d.OrderQty, d.notes,
+                   i.IsQuote, i.WastePercent, d.Location,
+                   vn.Vendor_ID AS Vendor, vn.Vendor_Name AS VendorDesc,
+                   ISNULL(dbo.Purch_GetItemRate(0,0,@PricingCommunity,@PricingCommunityPhase,d.Assembly,d.Model,d.OptionID,d.Phase,d.Item,d.Sequence,vn.Vendor_id,GETDATE(),@DivisionID),0) AS Rate,
+                   ISNULL(dbo.Purch_GetItemRateQuality(0,0,@PricingCommunity,@PricingCommunityPhase,d.Assembly,d.Model,d.OptionID,d.Phase,d.Item,d.Sequence,vn.Vendor_id,GETDATE(),@DivisionID),0) AS RateQuality,
+                   ISNULL(t.JCRate,0) AS JCTaxRate,
+                   d.WBS01, d.WBS02, d.WBS03, d.WBS04, d.WBS05, d.WBS06, d.WBS07, d.WBS08, d.WBS09, d.WBS10,
+                   d.WBS11, d.WBS12, d.WBS13, d.WBS14, d.WBS15, d.WBS16, d.WBS17, d.WBS18, d.WBS19, d.WBS20,
+                   d.WBS21, d.WBS22, d.WBS23, d.WBS24, d.WBS25, d.WBS26, d.WBS27, d.WBS28, d.WBS29, d.WBS30,
+                   d.WBS31, d.WBS32, d.WBS33, d.WBS34, d.WBS35, d.WBS36, d.WBS37, d.WBS38, d.WBS39, d.WBS40,
+                   d.ConversionFactor AS AssemblyConversionFactor,
+                   i.ConversionFactor AS ItemConversionFactor
+            FROM tblDBAssemblyDetails d
+            LEFT OUTER JOIN tblPhaseItem i ON d.DivisionID = i.DivisionID AND d.Phase = i.Phase AND d.Item = i.Item
+            LEFT OUTER JOIN tblPhaseItem v ON i.DivisionID = v.DivisionID AND i.inversePhase = v.Phase AND i.inverseItem = v.Item
+            LEFT OUTER JOIN tblPOIndex p ON p.DivisionID = d.DivisionID AND ISNULL(NULLIF(d.POIndex,''), ISNULL(i.POIndex,'')) = p.POIndex
+            LEFT OUTER JOIN StandardCostCodes cc ON cc.DivisionID = i.DivisionID AND cc.costcode = ISNULL(i.JCCostCode, p.JCCostCode)
+            LEFT OUTER JOIN StandardCategories ct ON i.DivisionID = ct.DivisionID AND i.JCCategory = ct.Category
+            LEFT OUTER JOIN tblVendors vn ON vn.DivisionID = d.DivisionID AND vn.vendor_id = dbo.Purch_GetCommunityVendor(@PricingCommunity, p.POIndex, @DivisionID)
+            LEFT OUTER JOIN taxGroups t ON t.DivisionID = @DivisionID AND t.TaxGroup = dbo.Purch_GetDefaultTaxGroup('', @PricingCommunity, '', d.Model, d.Assembly, i.phase, i.item, vn.Vendor_ID, i.JCCategory, @DivisionID)
+            WHERE d.DivisionID = @DivisionID
+              AND ISNULL(d.Community,'') = @Community
+              AND ISNULL(d.Model,'') = @Model
+              AND ISNULL(d.OptionID,'') = @OptionID
+              AND ISNULL(d.Assembly,'') = @Assembly
+            ORDER BY d.sequence";
+    }
+
+    // === LOAD COMPONENTS GRID ===
+    private async Task LoadComponentsGridAsync() {
+        var checkData = await db.QueryAsync(
+            "SELECT parentassemblyid FROM tblDBAssemblyComponents WHERE ComponentAssemblyID = @Id",
+            new { Id = mAssemblyID });
+        
+        var isChildComponent = checkData.Any();
+        ShowComponentsGrid = !isChildComponent && mUseComponents;
+
+        if (!ShowComponentsGrid) {
+            ComponentsData = new List<AssemblyComponentRow>();
+            return;
+        }
+
+        var compQuery = @"
+            SELECT m.assemblyid, m.community, m.assembly, m.model, m.optionid, m.description, c.qty,
+                   ROUND(SUM(
+                       ISNULL(dbo.Purch_GetItemRate(0,0,@PricingCommunity,@PricingCommunityPhase,d.Assembly,d.Model,d.OptionID,d.Phase,d.Item,d.Sequence,v.Vendor_id,GETDATE(),@DivisionID),0)
+                       * (100 + ISNULL(t.JCRate,0)) / 100
+                       * ISNULL(d.OrderQty,0)
+                   ), 2) AS Cost
+            FROM tblDBAssemblyComponents c
+            JOIN tblDBAssemblyMaster m ON c.componentassemblyid = m.assemblyid
+            LEFT OUTER JOIN tblDBAssemblyDetails d ON m.assemblyid = d.assemblyid
+            LEFT OUTER JOIN tblPhaseItem i ON d.DivisionID = i.DivisionID AND d.Phase = i.Phase AND d.Item = i.Item
+            LEFT OUTER JOIN tblPOIndex p ON p.DivisionID = @DivisionID AND ISNULL(NULLIF(d.POIndex,''), ISNULL(i.POIndex,'')) = p.POIndex
+            LEFT OUTER JOIN tblVendors v ON v.DivisionID = d.DivisionID AND v.vendor_id = dbo.Purch_GetCommunityVendor(@PricingCommunity, p.POIndex, @DivisionID)
+            LEFT OUTER JOIN taxGroups t ON t.DivisionID = @DivisionID AND t.TaxGroup = dbo.Purch_GetDefaultTaxGroup('', @PricingCommunity, '', d.Model, d.Assembly, i.phase, i.item, v.Vendor_ID, i.JCCategory, @DivisionID)
+            WHERE c.ParentAssemblyid = @ParentAssemblyId
+            GROUP BY m.assemblyid, m.community, m.assembly, m.model, m.optionid, m.description, c.qty";
+
+        var compData = await db.QueryAsync(compQuery, new {
+            ParentAssemblyId = mAssemblyID,
+            DivisionID = AppState_DivisionID,
+            PricingCommunity = mPricingCommunity ?? "",
+            PricingCommunityPhase = mPricingCommunityPhase ?? ""
+        });
+
+        var components = new List<AssemblyComponentRow>();
+        ComponentCost = 0;
+
+        foreach (var row in compData) {
+            var comp = new AssemblyComponentRow {
+                AssemblyId = Convert.ToInt64(row["assemblyid"]),
+                Community = row["community"]?.ToString() ?? "",
+                Model = row["model"]?.ToString() ?? "",
+                Option = row["optionid"]?.ToString() ?? "",
+                Assembly = row["assembly"]?.ToString() ?? "",
+                Description = row["description"]?.ToString() ?? "",
+                Qty = ToDouble(row["qty"]),
+                Cost = !string.IsNullOrEmpty(PricingCommunity) ? ToDouble(row["Cost"]) : 0
+            };
+            ComponentCost += comp.Cost * comp.Qty;
+            components.Add(comp);
+        }
+
+        ComponentsData = components;
+    }
+
+    // === SAVE DATA ===
+    private async Task<bool> SaveDataAsync() {
+        if (!ValidateData()) return false;
+
+        try {
+            // Insert or Update Master
+            if (mAssemblyID == 0) {
+                await InsertAssemblyMasterAsync();
+            } else {
+                await UpdateAssemblyMasterAsync();
+            }
+
+            // Save Items
+            await SaveItemsAsync();
+
+            // Save Components
+            await SaveComponentsAsync();
+
+            mDirty = false;
+            await JSRuntime.InvokeVoidAsync("alert", "Assembly saved successfully!");
+            return true;
+        } catch (Exception ex) {
+            Console.WriteLine($"Error saving: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task InsertAssemblyMasterAsync() {
+        var sql = @"
+            INSERT INTO tblDBAssemblyMaster(
+                DivisionID, UStmp, TStmp, AssemblyType, InActive, Community, Model, ScheduleTemplate,
+                BillingFactor, BillingCode, BillingCategory, OptionID, Assembly, AssemblyUOM, Description,
+                GraphicPath, MaxWidth, MaxLength, ConstCutoff, SpecDocument, Comments, Notes, Series,
+                Elevation, Style, Bedrooms, Bathrooms, FloorArea, Category, TakeoffRequired,
+                UseNormalSalesQtyFactors, IsBaseAssembly, Qty, Location, IncludedOption,
+                DesignCenterSalesOnly, SelectByRoom, DisplayTotalOnly
+            ) VALUES (
+                @DivisionID, @UStmp, GETDATE(), @AssemblyType, @InActive, @Community, @Model, @ScheduleTemplate,
+                @BillingFactor, @BillingCode, @BillingCategory, @OptionID, @Assembly, @AssemblyUOM, @Description,
+                @GraphicPath, @MaxWidth, @MaxLength, @ConstCutoff, @SpecDocument, @Comments, @Notes, @Series,
+                @Elevation, @Style, @Bedrooms, @Bathrooms, @FloorArea, @Category, @TakeoffRequired,
+                @UseNormalSalesQtyFactors, @IsBaseAssembly, @Qty, @Location, @IncludedOption,
+                @DesignCenterSalesOnly, @SelectByRoom, @DisplayTotalOnly
+            );
+            SELECT SCOPE_IDENTITY();";
+
+        var newId = await db.ExecuteScalarAsync<long>(sql, new {
+            DivisionID = AppState_DivisionID,
+            UStmp = "system",
+            AssemblyType = (int)mAssemblyType,
+            InActive = !IsActive,
+            Community = CommunityValue ?? "",
+            Model = ModelValue ?? "",
+            ScheduleTemplate = ScheduleTemplateValue ?? "",
+            BillingFactor,
+            BillingCode = BillingCodeValue ?? "",
+            BillingCategory = BillingCategoryValue ?? "",
+            OptionID = OptionID ?? "",
+            Assembly = AssemblyCode ?? "",
+            AssemblyUOM = UOM ?? "",
+            Description = Description ?? "",
+            GraphicPath = GraphicPath ?? "",
+            MaxWidth,
+            MaxLength,
+            ConstCutoff,
+            SpecDocument = SpecDocument ?? "",
+            Comments = Comments ?? "",
+            Notes = Notes ?? "",
+            Series = SeriesValue ?? "",
+            Elevation = Elevation ?? "",
+            Style = StyleText ?? "",
+            Bedrooms,
+            Bathrooms,
+            FloorArea,
+            Category = CategoryValue ?? "",
+            TakeoffRequired = IsTakeoffRequired,
+            UseNormalSalesQtyFactors,
+            IsBaseAssembly,
+            Qty,
+            Location = LocationValue ?? "",
+            IncludedOption = IsIncludedOption,
+            DesignCenterSalesOnly = IsDCSalesOnly,
+            SelectByRoom = IsSelectByRoom,
+            DisplayTotalOnly = IsDisplayTotalOnly
+        });
+
+        mAssemblyID = newId;
+    }
+
+    private async Task UpdateAssemblyMasterAsync() {
+        var sql = @"
+            UPDATE tblDBAssemblyMaster SET
+                UStmp = @UStmp, TStmp = GETDATE(), AssemblyType = @AssemblyType, InActive = @InActive,
+                Community = @Community, Model = @Model, ScheduleTemplate = @ScheduleTemplate,
+                BillingFactor = @BillingFactor, BillingCode = @BillingCode, BillingCategory = @BillingCategory,
+                OptionID = @OptionID, Assembly = @Assembly, AssemblyUOM = @AssemblyUOM, Description = @Description,
+                GraphicPath = @GraphicPath, MaxWidth = @MaxWidth, MaxLength = @MaxLength, ConstCutoff = @ConstCutoff,
+                SpecDocument = @SpecDocument, Comments = @Comments, Notes = @Notes, Series = @Series,
+                Elevation = @Elevation, Style = @Style, Bedrooms = @Bedrooms, Bathrooms = @Bathrooms,
+                FloorArea = @FloorArea, Category = @Category, TakeoffRequired = @TakeoffRequired,
+                UseNormalSalesQtyFactors = @UseNormalSalesQtyFactors, IsBaseAssembly = @IsBaseAssembly,
+                Qty = @Qty, Location = @Location, IncludedOption = @IncludedOption,
+                DesignCenterSalesOnly = @DesignCenterSalesOnly, SelectByRoom = @SelectByRoom,
+                DisplayTotalOnly = @DisplayTotalOnly
+            WHERE AssemblyId = @AssemblyId";
+
+        await db.ExecuteAsync(sql, new {
+            AssemblyId = mAssemblyID,
+            UStmp = "system",
+            AssemblyType = (int)mAssemblyType,
+            InActive = !IsActive,
+            Community = CommunityValue ?? "",
+            Model = ModelValue ?? "",
+            ScheduleTemplate = ScheduleTemplateValue ?? "",
+            BillingFactor,
+            BillingCode = BillingCodeValue ?? "",
+            BillingCategory = BillingCategoryValue ?? "",
+            OptionID = OptionID ?? "",
+            Assembly = AssemblyCode ?? "",
+            AssemblyUOM = UOM ?? "",
+            Description = Description ?? "",
+            GraphicPath = GraphicPath ?? "",
+            MaxWidth,
+            MaxLength,
+            ConstCutoff,
+            SpecDocument = SpecDocument ?? "",
+            Comments = Comments ?? "",
+            Notes = Notes ?? "",
+            Series = SeriesValue ?? "",
+            Elevation = Elevation ?? "",
+            Style = StyleText ?? "",
+            Bedrooms,
+            Bathrooms,
+            FloorArea,
+            Category = CategoryValue ?? "",
+            TakeoffRequired = IsTakeoffRequired,
+            UseNormalSalesQtyFactors,
+            IsBaseAssembly,
+            Qty,
+            Location = LocationValue ?? "",
+            IncludedOption = IsIncludedOption,
+            DesignCenterSalesOnly = IsDCSalesOnly,
+            SelectByRoom = IsSelectByRoom,
+            DisplayTotalOnly = IsDisplayTotalOnly
+        });
+    }
+
+    private async Task SaveItemsAsync() {
+        foreach (var item in ItemsData) {
+            if (item.RowStatus == "delete" && item.Sequence != 0) {
+                await db.ExecuteAsync(
+                    "DELETE FROM tblDBAssemblyDetails WHERE Sequence = @Sequence",
+                    new { item.Sequence });
+            } else if (item.RowStatus == "new") {
+                await db.ExecuteAsync(@"
+                    INSERT INTO tblDBAssemblyDetails(
+                        AssemblyID, DivisionID, Community, Assembly, Model, OptionID, Phase, Item,
+                        ItemChart, Notes, UStmp, TStmp, Formula, TakeoffQty, OrderQty, POIndex,
+                        Location, UseModelCost, Invertable, ConversionFactor
+                    ) VALUES (
+                        @AssemblyID, @DivisionID, @Community, @Assembly, @Model, @OptionID, @Phase, @Item,
+                        @ItemChart, @Notes, @UStmp, GETDATE(), @Formula, @TakeoffQty, @OrderQty, @POIndex,
+                        @Location, @UseModelCost, @Invertable, @ConversionFactor
+                    )", new {
+                        AssemblyID = mAssemblyID,
+                        DivisionID = AppState_DivisionID,
+                        Community = CommunityValue ?? "",
+                        Assembly = AssemblyCode ?? "",
+                        Model = ModelValue ?? "",
+                        OptionID = OptionID ?? "",
+                        item.Phase,
+                        item.Item,
+                        item.ItemChart,
+                        item.Notes,
+                        UStmp = "system",
+                        item.Formula,
+                        item.TakeoffQty,
+                        item.OrderQty,
+                        item.POIndex,
+                        item.Location,
+                        item.UseModelCost,
+                        item.Invertable,
+                        ConversionFactor = item.AssemblyConversionFactor
+                    });
+            } else if (item.RowStatus == "update") {
+                await db.ExecuteAsync(@"
+                    UPDATE tblDBAssemblyDetails SET
+                        Phase = @Phase, Item = @Item, ItemChart = @ItemChart, Notes = @Notes,
+                        UStmp = @UStmp, TStmp = GETDATE(), Formula = @Formula, TakeoffQty = @TakeoffQty,
+                        OrderQty = @OrderQty, POIndex = @POIndex, Location = @Location,
+                        UseModelCost = @UseModelCost, Invertable = @Invertable, ConversionFactor = @ConversionFactor
+                    WHERE Sequence = @Sequence", new {
+                        item.Sequence,
+                        item.Phase,
+                        item.Item,
+                        item.ItemChart,
+                        item.Notes,
+                        UStmp = "system",
+                        item.Formula,
+                        item.TakeoffQty,
+                        item.OrderQty,
+                        item.POIndex,
+                        item.Location,
+                        item.UseModelCost,
+                        item.Invertable,
+                        ConversionFactor = item.AssemblyConversionFactor
+                    });
+            }
+        }
+    }
+
+    private async Task SaveComponentsAsync() {
+        foreach (var comp in ComponentsData) {
+            if (comp.RowStatus == "delete") {
+                await db.ExecuteAsync(
+                    "DELETE FROM tblDBAssemblyComponents WHERE ParentAssemblyId = @ParentId AND ComponentAssemblyId = @CompId",
+                    new { ParentId = mAssemblyID, CompId = comp.AssemblyId });
+            } else if (comp.RowStatus == "new") {
+                await db.ExecuteAsync(@"
+                    INSERT INTO tblDBAssemblyComponents(ParentAssemblyId, ComponentAssemblyId, Qty)
+                    VALUES (@ParentId, @CompId, @Qty)",
+                    new { ParentId = mAssemblyID, CompId = comp.AssemblyId, comp.Qty });
+            }
+        }
+    }
+
+    private bool ValidateData() {
+        if (string.IsNullOrWhiteSpace(AssemblyCode)) {
+            JSRuntime.InvokeVoidAsync("alert", "Assembly code is required");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(Description)) {
+            JSRuntime.InvokeVoidAsync("alert", "Description is required");
+            return false;
+        }
+        return true;
+    }
+
+    // === EVENT HANDLERS ===
+    private async void OnPriceCommunityChanged(Syncfusion.Blazor.DropDowns.ChangeEventArgs<string, CommunityItem> args) {
+        SelectedPriceCommunity = args.Value;
+        if (!string.IsNullOrEmpty(SelectedPriceCommunity)) {
+            var parts = SelectedPriceCommunity.Split((char)2);
+            mPricingCommunity = parts[0];
+            mPricingCommunityPhase = parts.Length > 1 ? parts[1] : "";
+        } else {
+            mPricingCommunity = "";
+            mPricingCommunityPhase = "";
+        }
+        PricingCommunity = mPricingCommunity;
+        PricingCommunityPhase = mPricingCommunityPhase;
+        await LoadDataAsync();
+        StateHasChanged();
+    }
+
+    private void OnCommunityChanged(Syncfusion.Blazor.DropDowns.ChangeEventArgs<string, ComboBoxItem> args) {
+        mDirty = true;
+    }
+
+    private void OnModelChanged(Syncfusion.Blazor.DropDowns.ChangeEventArgs<string, ComboBoxItem> args) {
+        mDirty = true;
+    }
+
+    private async Task OnNewAssembly(AssemblyTypes type) {
+        if (mDirty && !await ConfirmSaveAsync()) return;
+        
+        mAssemblyID = 0;
+        mCommunity = "";
+        mModel = "";
+        mOptionID = "";
+        mAssembly = "";
+        mAssemblyType = type;
+        mReadOnly = false;
+
+        SetDefaultValues();
+        UpdateUIVisibility();
+        ItemsData = new List<AssemblyItemRow>();
+        ComponentsData = new List<AssemblyComponentRow>();
+        mDirty = false;
+        StateHasChanged();
+    }
+
+    private async Task OnOpenClick() {
+        if (mDirty && !await ConfirmSaveAsync()) return;
+        await JSRuntime.InvokeVoidAsync("alert", "Open dialog - implement picklist for assembly selection");
+    }
+
+    private async Task OnSaveClick() {
+        await SaveDataAsync();
+    }
+
+    private async Task OnTakeoff(string type) {
+        await JSRuntime.InvokeVoidAsync("alert", $"Takeoff {type} - Not implemented in demo");
+    }
+    
+    private async Task OnTakeoff() {
+        await JSRuntime.InvokeVoidAsync("alert", $"Takeoff - Not implemented in demo");
+    }
+
+
+    private async Task OnItemChart() {
+        await JSRuntime.InvokeVoidAsync("alert", "Item Chart selection - Not implemented in demo");
+    }
+
+    private async Task OnMassChange() {
+        await JSRuntime.InvokeVoidAsync("alert", "Mass Change - Not implemented in demo");
+    }
+
+    private async Task OnExportPricelist() {
+        await JSRuntime.InvokeVoidAsync("alert", "Export Pricelist - Not implemented in demo");
+    }
+
+    private async Task OnImportModels() {
+        await JSRuntime.InvokeVoidAsync("alert", "Import Models from Pipeline - Not implemented in demo");
+    }
+
+    private async Task OnImportGlobals() {
+        await JSRuntime.InvokeVoidAsync("alert", "Import Global Options - Not implemented in demo");
+    }
+
+    private void OnCommunityLabelClick() {
+        // Open community editor
+    }
+
+    private void OnSeriesLabelClick() {
+        // Open series editor
+    }
+
+    private void OnCategoryLabelClick() {
+        // Open category editor
+    }
+
+    private void OnLocationLabelClick() {
+        // Open location editor
+    }
+
+    private void OnItemCellSaved(CellSaveArgs<AssemblyItemRow> args) {
+        mDirty = true;
+        args.Data.RowStatus = args.Data.Sequence == 0 ? "new" : "update";
+    }
+
+    private void OnItemRowSelected(RowSelectEventArgs<AssemblyItemRow> args) {
+        // Handle row selection
+    }
+
+    private void OnComponentsContextMenu(ContextMenuOpenEventArgs<AssemblyComponentRow> args) {
+        // Handle context menu for components
+    }
+
+    private async Task BrowseFile(int index) {
+        // Trigger file input click via JS
+        await JSRuntime.InvokeVoidAsync("triggerFileInput", index == 0 ? "_fileInputGraphic" : "_fileInputSpecDoc");
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e, int targetField) {
+        var file = e.File;
+        if (file == null) return;
+
+        switch (targetField) {
+            case 0:
+                GraphicPath = file.Name;
+                break;
+            case 1:
+                SpecDocument = file.Name;
+                break;
+        }
+        mDirty = true;
+        StateHasChanged();
+    }
+
+    private async Task<bool> ConfirmSaveAsync() {
+        if (!mDirty) return true;
+        var result = await JSRuntime.InvokeAsync<bool>("confirm", "Save changes?");
+        if (result) await SaveDataAsync();
+        return true;
+    }
+
+    // === HELPER METHODS ===
+    private static int ToInt(object? val, int defaultValue = 0) {
+        if (val == null || val is DBNull) return defaultValue;
+        return int.TryParse(val.ToString(), out var result) ? result : defaultValue;
+    }
+
+    private static double ToDouble(object? val, double defaultValue = 0) {
+        if (val == null || val is DBNull) return defaultValue;
+        return double.TryParse(val.ToString(), out var result) ? result : defaultValue;
+    }
+}

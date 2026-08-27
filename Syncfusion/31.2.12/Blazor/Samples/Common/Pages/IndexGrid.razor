@@ -1,0 +1,335 @@
+@page "/Grid"
+@namespace BlazorDemos.Pages
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Data
+@using System.Collections.Generic
+@using Syncfusion.Blazor.Inputs
+
+<style>
+    /* FIXED: Correct CSS for selected cells in SfGrid */
+    .e-grid .e-rowcell.e-selectionbackground.e-cellselectionbackground,
+    .e-grid .e-rowcell.e-cellselectionbackground {
+        background-color: #d32f2f !important; /* Bright red */
+        color: white !important; /* White text */
+        font-weight: bold !important; /* Bold */
+        border: 1px solid #b71c1c !important; /* Red border */
+    }
+
+    /* Light red for selected rows */
+    .e-grid .e-row.e-selected .e-rowcell,
+    .e-grid .e-rowcell.e-selectionbackground {
+        background-color: #ffebee !important; /* Light red */
+    }
+
+    /* Darker red for cell in selected row */
+    .e-grid .e-row.e-selected .e-cellselectionbackground {
+        background-color: #b71c1c !important;
+
+
+    }
+
+    /* Green color for edited Qty cell */
+    .edited-qty-cell {
+        background-color: #4caf50 !important; /* Green */
+        color: white !important;
+        font-weight: bold !important;
+    }
+
+    .keystroke-log {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #f5f5f5;
+        border-radius: 8px;
+        font-family: Consolas, monospace;
+        max-height: 450px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+    }
+</style>
+<SfGrid @ref="Grid" TValue="OrderData" DataSource="@GridData" AllowGrouping="true" Height="715">
+    <GridSelectionSettings CellSelectionMode="CellSelectionMode.Box"
+                           Type="SelectionType.Multiple" Mode="SelectionMode.Cell"></GridSelectionSettings>
+    <GridEditSettings AllowAdding="true" AllowEditing="true" AllowDeleting="true"
+                      Mode="EditMode.Batch"></GridEditSettings>
+    @*<GridEvents CellSelected = "OnCellSelected" TValue="OrderData"></GridEvents>
+    <GridEvents OnCellEdit="CellEdit" TValue="OrderData"></GridEvents>
+    <GridEvents CellSelected = "OnCellSelected" TValue="OrderData"></GridEvents>
+    <GridEvents OnCellSave="CellSaved" TValue="OrderData"></GridEvents>
+    <GridEvents CellSaved="CellSavedHandler" TValue="OrderData"></GridEvents>*@
+    <!-- MULTIPLE EVENTS – ALL IN ONE TAG --->
+    <GridEvents CellSelected="OnCellSelected"
+                CellSaved="AfterCellSaved"
+                OnCellEdit="CellEdit"
+                OnCellSave="CellSaved"
+                OnBeginEdit="OnBeginEdit"
+                RowSelected="OnRowSelected"
+                OnActionBegin="OnActionBegin"
+                OnActionComplete="OnActionComplete"
+                QueryCellInfo="OnQueryCellInfo"
+                TValue="OrderData">
+    </GridEvents>
+    <GridColumns>
+        <GridColumn Field="@nameof(OrderData.OrderID)" HeaderText="Order ID" TextAlign="TextAlign.Right" Width="120"
+                    AllowEditing="false" IsPrimaryKey="true"></GridColumn>
+        <GridColumn Field="@nameof(OrderData.CustomerName)" HeaderText="Customer Name" Width="50"
+                    AllowEditing="false"></GridColumn>
+
+        <GridColumn Field="@nameof(OrderData.Freight)" HeaderText="Freight" TextAlign="TextAlign.Right" Format="C2"
+                    Width="120" AllowEditing="false">
+            <GridAggregates>
+                <GridAggregate>
+                    <GridAggregateColumns>
+                        <GridAggregateColumn Field="@nameof(OrderData.Freight)" Type="AggregateType.Sum">
+                            <GroupFooterTemplate>
+                                @{
+                                    // The context is a dictionary containing the aggregate results for the group
+                                    var data = context as AggregateTemplateContext;
+                                    <div>Group Sum: @data.Sum</div>
+                                }
+                            </GroupFooterTemplate>
+                        </GridAggregateColumn>
+                    </GridAggregateColumns>
+                </GridAggregate>
+            </GridAggregates>
+        </GridColumn>
+        <!-- ONLY THIS COLUMN IS EDITABLE 
+        <GridColumn Field="Qty" HeaderText="Qty" Format="N2" TextAlign="TextAlign.Right" Width="100" AllowEditing="true">
+            <EditTemplate>
+                @{
+                    var order = (context as OrderData);
+                    <SfNumericTextBox @bind-Value="EditedQty"
+                                      Min="0"
+                                      Decimals="2"
+                                      Format="N2"
+                                      @onkeydown="((e) => OnQtyKeyDown(e, order))"
+                                      @oninput="((e) => OnQtyInput(e, order))"
+                                      Placeholder="Enter Qty">
+                    </SfNumericTextBox>
+                }
+            </EditTemplate>
+        </GridColumn>  -->
+        <GridColumn Field="@nameof(OrderData.Qty)" HeaderText="Qty" Format="N2" TextAlign="TextAlign.Right" Width="100"
+                    AllowEditing="true">
+
+        </GridColumn>
+        <GridColumn Field="@nameof(OrderData.ShipCity)" HeaderText="Ship City" Width="150"
+                    AllowEditing="false"></GridColumn>
+    </GridColumns>
+
+</SfGrid>
+<!-- Live Keystroke Log Display 
+<div class="keystroke-log">
+    <h5>Live Keystrokes (as you type in Qty):</h5>
+    <div>@((MarkupString)KeystrokeLog.Replace("\n", "<br/>"))</div>
+    <small style="color: #666;">Current Edited Row: @CurrentEditingRow | Keys Typed: @(KeystrokeLog.Split('\n').Length - 1)</small>
+</div>
+-->
+
+@code {
+    public SfGrid<OrderData> Grid{ get; set; } = null!;
+    public List<OrderData> GridData{ get; set; }
+    // These hold the latest edit
+    public double LastEditedQty{ get; set; }
+    public double EditedQty{ get; set; }
+    public string LastEditedItem{ get; set; } = "";
+    public decimal LastEditedPrice{ get; set; }
+
+    protected override void OnInitialized(){
+        // Populate the data source (replace with actual data fetching logic)
+        GridData = GetOrderData();
+    }
+
+    private List<OrderData> GetOrderData(){
+        // Mock data initialization
+        return new List<OrderData> {
+            new() { OrderID = 10248, CustomerName = "VINET", Freight = 32.38, Qty = 1.0, ShipCity = "Reims" },
+            new() { OrderID = 10249, CustomerName = "VINET", Freight = 11.61, Qty = 5.0, ShipCity = "Hanover" },
+            new() { OrderID = 10250, CustomerName = "TOMSP", Freight = 65.83, Qty = 12, ShipCity = "Lyon" },
+            new() { OrderID = 10251, CustomerName = "VICTE", Freight = 41.34, Qty = 1, ShipCity = "Bern" },
+            new() { OrderID = 10252, CustomerName = "TOMSP", Freight = 24.12, Qty = 1, ShipCity = "Marseille" },
+            new() { OrderID = 10253, CustomerName = "TOMSP", Freight = 45.67, Qty = 1, ShipCity = "London" },
+            new() { OrderID = 10254, CustomerName = "VINET", Freight = 78.90, Qty = 1, ShipCity = "Berlin" },
+            new() { OrderID = 10255, CustomerName = "VICTE", Freight = 15.00, Qty = 1, ShipCity = "Paris" }
+        };
+    }
+
+    public class OrderData {
+        public int OrderID{ get; set; }
+        public string CustomerName{ get; set; }
+        public double Freight{ get; set; }
+        public double Qty{ get; set; }
+        public string ShipCity{ get; set; }
+        public bool IsQtyEdited{ get; set; } = false;
+    }
+    private string KeystrokeLog{ get; set; } = "No typing yet...\n";
+    private int CurrentEditingRow{ get; set; } = -1;
+    private string CurrentTypingBuffer{ get; set; } = "";
+    private List<int> rows = new();
+
+    // Captures every key press
+    private void OnQtyKeyDown(KeyboardEventArgs e, OrderData order){
+        var rowIndex = GridData.IndexOf(order);
+        CurrentEditingRow = rowIndex;
+        var keyInfo = $"[KeyDown] Row {rowIndex} | Key: {e.Key} | Code: {e.Code} | Ctrl: {e.CtrlKey} | Shift: {e.ShiftKey}";
+        AppendLog(keyInfo);
+    }
+
+    // Captures actual text input (best for seeing what user is typing)
+    private void OnQtyInput(ChangeEventArgs e, OrderData order){
+        var rowIndex = GridData.IndexOf(order);
+        var typedValue = e.Value?.ToString() ?? "";
+
+        // Build live typing preview
+        CurrentTypingBuffer = typedValue;
+        AppendLog($"[Typing] Row {rowIndex} → Current value: {typedValue}");
+    }
+
+    private void AppendLog(string message){
+        var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        KeystrokeLog += $"[{timestamp}] {message}\n";
+
+        // Keep only last 50 lines
+        var lines = KeystrokeLog.Split('\n').TakeLast(500).ToArray();
+        KeystrokeLog = string.Join("\n", lines);
+        StateHasChanged();
+    }
+
+    Task<List<(int, int)>> taskRowCellsSelected;
+    List<(int, int)> rowCellsSelected;
+
+    private async Task OnCellSelected(CellSelectEventArgs<OrderData> args){
+        // Check if Ctrl key was pressed during the click
+        if (args.IsCtrlPressed || args.IsShiftPressed){
+            var rowIndex = args.RowIndex;
+            var colIndex = args.CellIndex;
+            var item = GridData[rowIndex];
+            var orderData = args.Data;
+            var cellValue = args.CurrentValue?.ToString() ?? "null";
+            var cellValueQty = orderData.Qty;
+            //taskRowCellsSelected =Grid.GetSelectedRowCellIndexesAsync();
+            rowCellsSelected = await Grid.GetSelectedRowCellIndexesAsync();
+
+            //LastCtrlClickInfo = $"Row {rowIndex}, Column '{columnName}' = {cellValue}";
+
+            // Optional: Add custom CSS class to the clicked cell
+            //await Grid.AddCellClassAsync(rowIndex, colIndex, "ctrl-clicked-cell");
+
+            // Optional: Remove class after 2 seconds
+            //await Task.Delay(2000);
+            //await Grid.RemoveCellClassAsync(rowIndex, colIndex, "ctrl-clicked-cell");
+            Console.WriteLine($"OnCellSelected => ({rowIndex},{colIndex}  {cellValue} Qty = {cellValueQty})");
+            StateHasChanged();
+        }
+    }
+
+    // Apply color based on flag
+    private async void OnQueryCellInfo(QueryCellInfoEventArgs<OrderData> args){
+        //Console.WriteLine("Inside QueryCellInfo");
+        if (args.Data.IsQtyEdited){
+            args.Cell.AddClass(new[] { "edited-qty-cell" });
+            Console.WriteLine("<Inside edited-qty-cell>");
+            //GridData[0].CustomerName = "Allah";
+            Console.WriteLine("</Inside edited-qty-cell>");
+            //await Grid.SetCellValueAsync(10249, "CustomerName", "Allah is Great!");
+        }
+    }
+
+    public async void CellEdit(CellEditArgs<OrderData> args){
+        //await Grid.EditCellAsync(0, nameof(OrderData.CustomerName));           // Start edit
+        //await Grid.SetCellValueAsync(2, "CustomerName", "Allah is Great!");
+        // Here, you can customize your code.
+        //Grid.Set AddClass(new[] { "edited-qty-cell" });
+        //Console.WriteLine("Inside edited-qty-cell");
+        Console.WriteLine("Inside CellEdit");
+        //GridData[0].CustomerName = "Allah";
+        var editedItem = args.Data;
+        editedItem.IsQtyEdited = true; // Set flag
+
+        //await Grid.SetCellValueAsync(10252, "CustomerName", "Allah is Greatest!");
+        var cellIndexes = new (int, int) [4];
+        cellIndexes[0] = (4, 3);
+        cellIndexes[1] = (3, 3);
+
+        //await Grid.SelectCellAsync((3,3),false);
+        await Grid.SelectCellsAsync(new (int,int)[]{(1,1),(2,1),(3,1)});
+        //await Grid.SelectCellsAsync(((4,3),(3,3));
+        await Grid.SelectCellsAsync(rowCellsSelected.ToArray());
+        foreach (var (row, col) in rowCellsSelected){
+            Console.WriteLine($"CellEdit Row Selected Row: {row}, Column: {col} ");
+            //await Grid[row], col, "custom-selected-cell");
+            //await Grid.SelectCellAsync((row,col),true);
+        }
+
+        //await Grid.SelectCellAsync((2,3),false);
+
+        //Grid.Refresh();
+    }
+
+    private async Task CellSaved(CellSaveArgs<OrderData> args){
+        // Only react when Qty column is saved
+        Console.WriteLine("Inside CellSaved");
+    }
+
+    public async void AfterCellSaved(CellSavedArgs<OrderData> args){
+        // Here, you can customize your code.
+        Console.WriteLine("Inside CellSaved Handler");
+        if (args.ColumnName == nameof(OrderData.Qty)){
+            var editedItem = args.Data;
+
+            //LastEditedItem = editedItem.Item;
+            //LastEditedPrice = editedItem.Price;
+
+            // Optional: Do something with the value
+            Console.WriteLine($"Qty {editedItem.Qty}");
+            LastEditedQty = editedItem.Qty;
+
+            // Save to database, recalculate totals, etc.
+            // CHANGE CELL COLOR TO GREEN
+
+            //var rowIndex = args.;
+            //var colIndex = args.;
+            if (rowCellsSelected != null){
+                foreach (var (row, col) in rowCellsSelected){
+                    // Example: Highlight cell in Syncfusion Grid
+                    var orderID = (int) await Grid.GetCellValueByIndexAsync(row, 0);
+                    //await Grid.SetCellValueAsync(orderID, "Qty", editedItem.Qty);
+                    await Grid.UpdateCellAsync(row, "Qty", editedItem.Qty);
+                    Console.WriteLine($"AfterCellSaved Cells Selected Row: {row}, Column: {col} => {orderID} Qty:{editedItem.Qty}");
+                    //await Grid[row], col, "custom-selected-cell");
+                }
+
+                //await Grid.SetCellValueAsync(10249, "CustomerName", "Allah is Great!");
+                editedItem.IsQtyEdited = false; // Set flag
+
+                // Optional: Remove after 3 seconds
+                rowCellsSelected.Clear();
+            }
+            StateHasChanged(); // Update the UI with the alert
+        }
+    }
+
+    public async void OnActionComplete(ActionEventArgs<OrderData> args){
+        // Here, you can customize your code.
+        Console.WriteLine("Inside OnActionComplete Handler");
+        //Grid.EditCellAsync(0, nameof(OrderData.CustomerName));           // Start edit
+        //await Grid.SetCellValueAsync(2, "CustomerName", "Allah is Great!");
+    }
+
+    public void OnActionBegin(ActionEventArgs<OrderData> args){
+        // Here, you can customize your code.
+        Console.WriteLine("Inside OnActionBegin Handler");
+    }
+
+    public void OnRowSelected(RowSelectEventArgs<OrderData> args){
+        // Here, you can customize your code.
+        Console.WriteLine("Inside OnRowSelected");
+    }
+
+    public void OnBeginEdit(BeginEditArgs<OrderData> args){
+        // Here, you can customize your code.
+        Console.WriteLine("OnBeginEdit");
+    }
+
+}
+

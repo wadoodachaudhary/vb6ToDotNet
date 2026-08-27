@@ -1,0 +1,130 @@
+@page "/fdbgrid-bench"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>FDBGrid Veto Bench</PageTitle>
+
+<h4 style="margin:8px 12px;">FDBGrid-pattern harness <span style="color:#1e6fd9;font-size:13px;">— dirty-row RowSelecting veto (the highest-risk port pattern)</span></h4>
+<p style="margin:0 12px 8px; font-size:13px;">
+    Mimics FDBGrid's dirty-check gate: edit a cell, then try to LEAVE the row by
+    click or arrow — <b>RowSelecting.Cancel blocks it until Save</b>. With the
+    client nav preview this is the wrong-row-edit risk surface: the cursor must
+    not visually settle on a row the veto refuses, and typing after a vetoed
+    move must land on the DIRTY row, never the previewed one.
+</p>
+<div style="margin:0 12px 8px; font-size:12px;">
+    <button id="fdb-save" @onclick="Save" disabled="@(!_dirty)">Save</button>
+    <span id="fdb-state" style="margin-left:10px;">
+        dirty: @_dirty · dirty row: @(_dirtyRow?.Code ?? "-") · vetoes: @_vetoCount · saves: @_saveCount
+        · host keys: @_hostKeyCount (@_hostKeys)
+    </span>
+</div>
+
+<div class="fdb-grid-host">
+    <GridControl @ref="_grid"
+                 TValue="LedgerRow"
+                 DataSource="@Rows"
+                 AllowSorting="false"
+                 AllowSelection="true"
+                 HighlightSelectedRows="true"
+                 EnableHover="true"
+                 Height="100%"
+                 RowHeight="22"
+                 MinRowHeight="22"
+                 TextEditorTypingBehavior="TextBoxTypingBehavior.ServerBacked"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings"
+                 EventsRef="@_events"
+                 CssClass="fx-grid-compact">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(LedgerRow.Code)" HeaderText="Code" Width="80px" AllowEditing="false" />
+            <GridColumn Field="@nameof(LedgerRow.Description)" HeaderText="Description" Width="260px" AllowEditing="true" />
+            <GridColumn Field="@nameof(LedgerRow.Qty)" HeaderText="Qty" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(LedgerRow.Price)" HeaderText="Price" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(LedgerRow.Notes)" HeaderText="Notes" Width="220px" AllowEditing="true" />
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+@code {
+    public class LedgerRow
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Qty { get; set; }
+        public decimal Price { get; set; }
+        public string Notes { get; set; } = "";
+    }
+
+    private GridControl<LedgerRow>? _grid;
+    private List<LedgerRow> Rows = new();
+    private GridControlEvents<LedgerRow> _events = new();
+
+    private bool _dirty;
+    private LedgerRow? _dirtyRow;
+    private int _vetoCount;
+    private int _saveCount;
+    private int _hostKeyCount;
+    private string _hostKeys = "";
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true,
+        Mode = EditMode.Batch,
+        AllowEditOnDblClick = true,
+    };
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+    };
+
+    protected override void OnInitialized()
+    {
+        Rows = Enumerable.Range(0, 80).Select(i => new LedgerRow
+        {
+            Code = $"{4000 + i * 5}",
+            Description = $"Ledger line {i} — cost distribution",
+            Qty = 1 + i % 9,
+            Price = Math.Round(2.5m * (1 + i % 13), 2),
+            Notes = i % 7 == 0 ? "carry-over" : "",
+        }).ToList();
+
+        // FDBGrid dirty-check gate: leaving a modified row is VETOED until
+        // Save. Fires for mouse AND keyboard moves (SelectProgrammaticCell
+        // raises RowSelecting for keyboard since the veto unification).
+        _events.RowSelecting = EventCallback.Factory.Create<RowSelectEventArgs<LedgerRow>>(this, args =>
+        {
+            if (_dirty && args.Data != null && !ReferenceEquals(args.Data, _dirtyRow))
+            {
+                args.Cancel = true;
+                _vetoCount++;
+                StateHasChanged();
+            }
+        });
+
+        _events.OnHostKeyDown = EventCallback.Factory.Create<KeyboardEventArgs>(this, args =>
+        {
+            _hostKeyCount++;
+            if (args.Key.Length == 1)
+                _hostKeys += args.Key;
+        });
+
+        _events.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<LedgerRow>>(this, args =>
+        {
+            if (args.Data == null) return;
+            _dirty = true;
+            _dirtyRow = args.Data;
+            StateHasChanged();
+        });
+    }
+
+    private void Save()
+    {
+        _dirty = false;
+        _dirtyRow = null;
+        _saveCount++;
+    }
+}

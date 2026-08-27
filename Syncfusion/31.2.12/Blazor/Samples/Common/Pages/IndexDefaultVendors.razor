@@ -1,0 +1,901 @@
+@page "/default-vendors"
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Popups
+@using Syncfusion.Blazor.Data
+@using System.Dynamic
+@using BlazorDemos.Pages.Grid
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+
+
+<style>
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        padding-left: 22px;
+        margin-bottom: 22px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+    }
+
+    .toolbar-cntr div.e-tbtn-align {
+        display: none !important;
+    }
+
+
+    .task-icon-vb6 {
+        width: 2000px;
+        height: auto;
+        display: block;
+
+    }
+
+    .tab-buttons {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+    }
+
+    .tab-buttons button {
+        padding: 12px 24px;
+        border: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background 0.2s;
+    }
+
+    .tab-buttons button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-buttons button.active {
+        background: #fff;
+        border-bottom: 2px solid #007bff;
+        margin-bottom: -2px;
+        color: #007bff;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-top: none;
+        background: #fff;
+    }
+
+    .panel {
+        text-align: center;
+    }
+
+    .panel img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+    }
+
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+
+
+    /* Toolbar styling */
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+    }
+
+
+    /* Filter row styling */
+
+    .e-grid .e-filterbarcell input {
+        background-color: #FFFFCC !important;
+        font-weight: bold;
+    }
+
+    /* Selected row styling */
+
+    .e-grid .e-row.e-selected .e-rowcell {
+        background-color: #e3f2fd !important;
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #333;
+    }
+
+    /* Phase tree node selected */
+    .e-columnheader, .e-headercell, .e-grid th.e-headercell, .e-grid .e-headertext {
+        background-color:#d5dadc; /* Normal state */
+        color: #333; /* Text color */
+        font-size: 16px;
+    }
+
+</style>
+
+
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">
+            .NET
+        </button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">
+            VB6
+        </button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1){
+            <PageTitle>Default Vendors</PageTitle>
+            <div class="toolbar-cntr">
+
+                <SfToolbar>
+                    <ToolbarItems>
+
+                        <!-- Save -->
+
+
+                        <!-- Save -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="() => SaveData(false)"
+                                        disabled="@(!_isDirty)">
+                                    <img src="images/32/save.ico" class="tbar-icon"/>
+                                    <span class="tool-label">Save</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="ShowFindDialog">
+                                    <img src="images/32/ViewVilter2.ico" class="tbar-icon"/>
+                                    <span class="tool-label">Find</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                    </ToolbarItems>
+                </SfToolbar>
+
+            </div>
+            <div class="default-vendors-container">
+
+                @if (_isLoading){
+                    <div class="loading-spinner">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else{
+                    <SfGrid @ref="_grid"
+                            TValue="ExpandoObject"
+                            DataSource="@_gridData"
+                            AllowSelection="true"
+                            AllowResizing="true"
+                            AllowSorting="true"
+                            EnableHover="true"
+                            Height="calc(100vh - 120px)"
+                            Width="1600"
+                            @onkeydown="HandleKeyDown">
+                        <GridEditSettings AllowEditing="true" Mode="EditMode.Batch"></GridEditSettings>
+                        <GridSelectionSettings Type="Syncfusion.Blazor.Grids.SelectionType.Multiple"
+                                               Mode="Syncfusion.Blazor.Grids.SelectionMode.Cell"
+                                               CellSelectionMode="CellSelectionMode.Box">
+                        </GridSelectionSettings>
+                        <GridEvents TValue="ExpandoObject"
+                                    CellSelected="OnCellSelected"
+                                    QueryCellInfo="OnQueryCellInfo">
+                        </GridEvents>
+                        <GridColumns>
+                            <GridColumn Field="POIndexDisplay"
+                                        HeaderText="PO Index"
+                                        IsPrimaryKey="true"
+                                        AllowEditing="false"
+                                        Width="200"
+                                        IsFrozen="true"
+                            >
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        <div class="poindex-cell">
+                                            <img src="/images/poindex-icon.png" alt="" class="poindex-icon"/>
+                                            <span>@data?["POIndexDisplay"]</span>
+                                        </div>
+                                    }
+                                </Template>
+                            </GridColumn>
+                            <GridColumn Field="Area_GBL"
+                                        HeaderText="Global Default"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_GBL";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_GBL";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_ARC"
+                                        HeaderText="Arbor Creek"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ARC";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ARC";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_AM"
+                                        HeaderText="Alcovy Meadows"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_AM";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_AM";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_NR"
+                                        HeaderText="Naples Reserve"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_NR";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_NR";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_SC"
+                                        HeaderText="South Common"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_SC";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_SC";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_ICPM"
+                                        HeaderText="The Isles of Collier Preserve - Mahogany"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ICPM";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ICPM";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                            <GridColumn Field="Area_ICPS"
+                                        HeaderText="The Isles of Collier Preserve - Sycamore"
+                                        Width="200"
+                                        AllowEditing="true">
+                                <Template>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ICPS";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : null;
+                                        <div class="@(cell?.IsDirty == true ? "dirty-cell" : "")">
+                                            @(cell?.VendorName ?? "")
+                                        </div>
+                                    }
+                                </Template>
+                                <EditTemplate>
+                                    @{
+                                        var data = context as IDictionary<string, object>;
+                                        var key = "Area_ICPS";
+                                        var cell = data?.ContainsKey(key) == true ? data[key] as VendorCell : new VendorCell();
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+                        </GridColumns>
+                    </SfGrid>
+                }
+            </div>
+        }
+        else if (activeTab == 2){
+            <div class="panel">
+                <img src="images/VB6/Screen_IndexDefaultVendor.png" class="task-icon-vb6"/>
+            </div>
+        }
+    </div>
+</div>
+
+
+
+
+@* Save Confirmation Dialog *@
+<SfDialog @bind-Visible="@_showSavePrompt"
+          Width="400px"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Header>Save Changes</Header>
+        <Content>
+            <p>This data has changed.</p>
+            <p>Do you want to save the changes?</p>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="Yes" IsPrimary="true" OnClick="@OnSaveYes"/>
+        <DialogButton Content="No" OnClick="@OnSaveNo"/>
+        <DialogButton Content="Cancel" OnClick="@OnSaveCancel"/>
+    </DialogButtons>
+</SfDialog>
+
+@* Error Dialog *@
+<SfDialog @bind-Visible="@_showErrorDialog"
+          Width="300px"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Header>Error</Header>
+        <Content>
+            <p>@_errorMessage</p>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="OK" IsPrimary="true" OnClick="@(() => _showErrorDialog = false)"/>
+    </DialogButtons>
+</SfDialog>
+
+@* Find Dialog *@
+<SfDialog @bind-Visible="@_showFindDialog"
+          Width="350px"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Header>Find</Header>
+        <Content>
+            <div class="form-group">
+                <label for="searchText">Search for:</label>
+                <input type="text" id="searchText" @bind="_findText" @bind:event="oninput" class="form-control"/>
+            </div>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="Find Next" IsPrimary="true" OnClick="@FindNext"/>
+        <DialogButton Content="Close" OnClick="@(() => _showFindDialog = false)"/>
+    </DialogButtons>
+</SfDialog>
+
+@code {
+    private int activeTab = 1;
+    private DbWrapperSqlServer DbHelper = new();
+    private SfGrid<ExpandoObject>? _grid;
+    private List<ExpandoObject> _gridData = new();
+    private List<AreaInfo> _areas = new();
+    private List<POIndexInfo> _poIndexes = new();
+    private bool _isDirty = false;
+    private bool _isLoading = true;
+    private bool _showSavePrompt = false;
+    private bool _showErrorDialog = false;
+    private bool _showFindDialog = false;
+    private string _errorMessage = string.Empty;
+    private string _findText = string.Empty;
+    private int _findIndex = 0;
+    private int _divisionId;
+    private TaskCompletionSource<SaveResult>? _savePromptResult;
+
+    // Clipboard support
+    private (int Row1, int Col1, int Row2, int Col2)? _clipboardSelection;
+    private List<List<VendorCell>>? _clipboardData;
+
+    protected override async Task OnInitializedAsync(){
+        _divisionId = await GetCurrentDivisionId();
+        await CleanupOrphanRecords();
+        await LoadData();
+        _isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender){
+    }
+
+    public void Dispose(){
+        // Cleanup JS interop if needed
+    }
+
+    private async Task<int> GetCurrentDivisionId(){
+        // Replace with actual implementation to get current division
+        return 1;
+    }
+
+    private async Task CleanupOrphanRecords(){
+        try{
+            // Delete orphan POAreaVendor records where POIndex doesn't exist
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor 
+                WHERE DivisionID = @DivisionId 
+                AND POIndex IN (
+                    SELECT a.POIndex FROM POAreaVendor a 
+                    LEFT OUTER JOIN tblPOIndex b ON a.POIndex = b.POIndex AND a.DivisionID = b.DivisionID 
+                    WHERE b.POIndex IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+
+            // Delete orphan records where Area doesn't exist
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor 
+                WHERE DivisionID = @DivisionId 
+                AND ISNULL(Area, '') <> '' 
+                AND Area IN (
+                    SELECT a.Area FROM POAreaVendor a 
+                    LEFT OUTER JOIN tblLocality b ON a.Area = b.Area 
+                    WHERE b.Area IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+
+            // Delete orphan records where Vendor doesn't exist
+            DbHelper.SqlExec(@"
+                DELETE FROM POAreaVendor 
+                WHERE DivisionID = @DivisionId 
+                AND Vendor IN (
+                    SELECT a.Vendor FROM POAreaVendor a 
+                    LEFT OUTER JOIN tblVendors b ON a.Vendor = b.Vendor_ID AND a.DivisionID = b.DivisionID 
+                    WHERE b.Vendor_ID IS NULL AND a.DivisionID = @DivisionId
+                )", new { DivisionId = _divisionId });
+        }
+        catch{
+            // Silently ignore cleanup errors (matches original VB behavior)
+        }
+    }
+
+    private async Task LoadData(){
+        // Load PO Indexes
+        var _poIndexes = (await DbHelper.QueryAsync(@"
+            SELECT POIndex, Description 
+            FROM tblPOIndex 
+            WHERE DivisionID = @DivisionId 
+            ORDER BY POIndex", new { DivisionId = _divisionId })).ToList();
+
+        // Load Areas/Communities
+        var _areas = (await DbHelper.QueryAsync(@"
+            SELECT l.Area AS AreaCode, l.Description 
+            FROM tblLocality l
+            JOIN DivisionCommunities d ON d.Community = l.Area
+            WHERE l.Area <> 'N/A' 
+            AND l.Inactive = 0 
+            AND ISNULL(l.Area, '') <> '' 
+            AND d.DivisionID = @DivisionId
+            ORDER BY l.Description", new { DivisionId = _divisionId })).ToList();
+
+        // Load existing vendor assignments
+        var vendorAssignments = await DbHelper.QueryAsync(@"
+            SELECT l.Area AS AreaCode, pav.POIndex, pav.Vendor AS VendorId, v.Vendor_Name AS VendorName
+            FROM POAreaVendor pav
+            JOIN tblVendors v ON pav.Vendor = v.Vendor_ID AND v.DivisionID = pav.DivisionID
+            LEFT OUTER JOIN tblLocality l ON pav.Area = l.Area
+            WHERE pav.DivisionID = @DivisionId 
+            AND (l.Inactive = 0 OR l.Area IS NULL)
+            ORDER BY pav.POIndex", new { DivisionId = _divisionId });
+
+        // Build grid data using ExpandoObject for dynamic columns
+        _gridData = new List<ExpandoObject>();
+        foreach (var poi in _poIndexes){
+            dynamic row = new ExpandoObject();
+            var dict = (IDictionary<string, object>)row;
+            dict["POIndex"] = poi["POIndex"]?.ToString() ?? "";
+            dict["POIndexDisplay"] = (poi["POIndex"]?.ToString() ?? "") == (poi["Description"]?.ToString() ?? "")
+                ? poi["POIndex"]?.ToString() ?? ""
+                : poi["POIndex"]?.ToString() ?? "" + " " + poi["Description"]?.ToString() ?? "";
+
+            // Initialize all area columns
+            dict["Area_GBL"] = new VendorCell();
+            foreach (var area in _areas){
+                dict["Area_" + area["AreaCode"]?.ToString()] = new VendorCell();
+            }
+            _gridData.Add(row);
+        }
+
+        // Populate with existing vendor data
+        foreach (var assignment in vendorAssignments){
+            var row = _gridData.FirstOrDefault(r => {
+                var dict = (IDictionary<string, object>)r;
+                return (dict["POIndex"]?.ToString() ?? "") == (assignment["POIndex"]?.ToString() ?? "");
+            });
+            if (row != null){
+                if (!string.IsNullOrEmpty(assignment["AreaCode"]?.ToString())){
+                    var dict = (IDictionary<string, object>)row;
+                    var key = "Area_" + assignment["AreaCode"]?.ToString() ?? "";
+                    if (dict.ContainsKey(key)){
+                        dict[key] = new VendorCell {
+                            VendorId = assignment["VendorId"]?.ToString() ?? "",
+                            VendorName = assignment["VendorName"]?.ToString() ?? "",
+                            IsDirty = false
+                        };
+                    }
+                }
+                else{
+                    var dict = (IDictionary<string, object>)row;
+                    var key = "Area_GBL";
+                    if (dict.ContainsKey(key)){
+                        dict[key] = new VendorCell {
+                            VendorId = assignment["VendorId"]?.ToString() ?? "",
+                            VendorName = assignment["VendorName"]?.ToString() ?? "",
+                            IsDirty = false
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    private void OnVendorChangedInline(IDictionary<string, object>? data, string areaCode, VendorCell? newValue){
+        if (data != null){
+            var key = $"Area_{areaCode}";
+            var cell = newValue ?? new VendorCell();
+            cell.IsDirty = true;
+            data[key] = cell;
+            _isDirty = true;
+            StateHasChanged();
+        }
+    }
+
+    private void OnCellSelected(CellSelectEventArgs<ExpandoObject> args){
+        // Handle cell selection for copy/paste
+    }
+
+    private void OnQueryCellInfo(QueryCellInfoEventArgs<ExpandoObject> args){
+        // Apply dirty cell styling
+        if (args.Column.Field?.StartsWith("Area_") == true){
+            var dict = args.Data as IDictionary<string, object>;
+            if (dict?.TryGetValue(args.Column.Field, out var value) == true && value is VendorCell cell && cell.IsDirty){
+                args.Cell.AddClass(new[] { "dirty-cell" });
+            }
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e){
+        if (e.CtrlKey){
+            switch (e.Key.ToLower()){
+                case "s":
+                    await SaveData(false);
+                    break;
+                case "f":
+                    ShowFindDialog();
+                    break;
+                case "c":
+                    CopySelection();
+                    break;
+                case "v":
+                    await PasteSelection();
+                    break;
+            }
+        }
+        else if (e.Key == "Delete"){
+            await DeleteSelection();
+        }
+        else if (e.Key == "F4"){
+            await OpenVendorPicker();
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleShortcut(string key){
+        switch (key){
+            case "save":
+                await SaveData(false);
+                break;
+            case "find":
+                ShowFindDialog();
+                break;
+        }
+    }
+
+    private void CopySelection(){
+        // Implementation for copy - would need JS interop for full clipboard support
+    }
+
+    private async Task PasteSelection(){
+        // Implementation for paste
+        _isDirty = true;
+        StateHasChanged();
+    }
+
+    private async Task DeleteSelection(){
+        // Clear selected cells
+        _isDirty = true;
+        StateHasChanged();
+    }
+
+    private async Task OpenVendorPicker(){
+        // Open vendor picker for current cell
+    }
+
+    public async Task<bool> SaveData(bool prompt = true){
+        if (!_isDirty)
+            return true;
+        if (prompt){
+            _savePromptResult = new TaskCompletionSource<SaveResult>();
+            _showSavePrompt = true;
+            StateHasChanged();
+            var result = await _savePromptResult.Task;
+            _showSavePrompt = false;
+            switch (result){
+                case SaveResult.No:
+                    return true;
+                case SaveResult.Cancel:
+                    return false;
+            }
+        }
+        try{
+            foreach (var row in _gridData){
+                var dict = (IDictionary<string, object>)row;
+                var poIndex = dict["POIndex"]?.ToString();
+                foreach (var area in _areas){
+                    var key = $"Area_{area.AreaCode}";
+                    if (dict.TryGetValue(key, out var value) && value is VendorCell cell && cell.IsDirty){
+                        // Delete existing record
+                        DbHelper.SqlExec(@"
+                            DELETE FROM POAreaVendor 
+                            WHERE DivisionID = @DivisionId 
+                            AND Area = @Area 
+                            AND POIndex = @POIndex",
+                            new { DivisionId = _divisionId, Area = area.AreaCode, POIndex = poIndex });
+
+                        // Insert new record if vendor is specified
+                        if (!string.IsNullOrWhiteSpace(cell.VendorId)){
+                            // Validate vendor exists
+                            var vendorExists = await DbHelper.QueryAsync(@"
+                                SELECT Vendor_ID FROM tblVendors 
+                                WHERE Vendor_ID = @VendorId AND DivisionID = @DivisionId",
+                                new { VendorId = cell.VendorId, DivisionId = _divisionId });
+                            if (!vendorExists.Any()){
+                                _errorMessage = "Unknown vendor";
+                                _showErrorDialog = true;
+                                return false;
+                            }
+                            DbHelper.SqlExec(@"
+                                INSERT INTO POAreaVendor (DivisionID, Area, POIndex, Vendor)
+                                VALUES (@DivisionId, @Area, @POIndex, @VendorId)",
+                                new {
+                                    DivisionId = _divisionId,
+                                    Area = area.AreaCode,
+                                    POIndex = poIndex,
+                                    VendorId = cell.VendorId
+                                });
+                        }
+                        cell.IsDirty = false;
+                    }
+                }
+            }
+            _isDirty = false;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception ex) when (ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase)){
+            return true;
+        }
+    }
+
+    private void ShowFindDialog(){
+        _showFindDialog = true;
+        _findIndex = 0;
+    }
+
+    private void FindNext(){
+        if (string.IsNullOrWhiteSpace(_findText))
+            return;
+        var searchLower = _findText.ToLower();
+        for (int i = _findIndex; i < _gridData.Count; i++){
+            var dict = (IDictionary<string, object>)_gridData[i];
+
+            // Search in PO Index
+            if (dict["POIndexDisplay"]?.ToString()?.ToLower().Contains(searchLower) == true){
+                _grid?.SelectRowAsync(i);
+                _findIndex = i + 1;
+                return;
+            }
+
+            // Search in vendor cells
+            foreach (var area in _areas){
+                var key = $"Area_{area.AreaCode}";
+                if (dict.TryGetValue(key, out var value) && value is VendorCell cell){
+                    if (cell.VendorName?.ToLower().Contains(searchLower) == true ||
+                        cell.VendorId?.ToLower().Contains(searchLower) == true){
+                        _grid?.SelectRowAsync(i);
+                        _findIndex = i + 1;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Wrap around
+        _findIndex = 0;
+    }
+
+    private void OnSaveYes() => _savePromptResult?.SetResult(SaveResult.Yes);
+    private void OnSaveNo() => _savePromptResult?.SetResult(SaveResult.No);
+    private void OnSaveCancel() => _savePromptResult?.SetResult(SaveResult.Cancel);
+    private enum SaveResult {
+        Yes,
+        No,
+        Cancel
+    }
+    public class DefaultVendorRow {
+        public string POIndex{ get; set; } = string.Empty;
+        public string POIndexDisplay{ get; set; } = string.Empty;
+        public Dictionary<string, VendorCell> VendorCells{ get; set; } = new();
+
+        /// <summary>
+        /// Gets or creates a vendor cell for the specified area
+        /// </summary>
+        public VendorCell GetVendorCell(string areaCode){
+            if (!VendorCells.TryGetValue(areaCode, out var cell)){
+                cell = new VendorCell();
+                VendorCells[areaCode] = cell;
+            }
+            return cell;
+        }
+
+        /// <summary>
+        /// Indexer to support dynamic column access by Syncfusion grid
+        /// </summary>
+        public object? this[string columnName]{
+            get {
+                if (columnName == nameof(POIndex)) return POIndex;
+                if (columnName == nameof(POIndexDisplay)) return POIndexDisplay;
+                if (VendorCells.TryGetValue(columnName, out var cell))
+                    return cell.VendorName;
+                return null;
+            }
+            set {
+                if (VendorCells.TryGetValue(columnName, out var cell)){
+                    cell.VendorName = value?.ToString() ?? string.Empty;
+                    cell.IsDirty = true;
+                }
+            }
+        }
+    }
+    /// <summary>
+    /// Represents a vendor assignment in a grid cell
+    /// </summary>
+    public class VendorCell {
+        public string VendorId{ get; set; } = string.Empty;
+        public string VendorName{ get; set; } = string.Empty;
+        public bool IsDirty{ get; set; } = false;
+    }
+    /// <summary>
+    /// Area/Community information
+    /// </summary>
+    public class AreaInfo {
+        public string AreaCode{ get; set; } = string.Empty;
+        public string Description{ get; set; } = string.Empty;
+    }
+    /// <summary>
+    /// PO Index information
+    /// </summary>
+    public class POIndexInfo {
+        public string POIndex{ get; set; } = string.Empty;
+        public string Description{ get; set; } = string.Empty;
+    }
+    /// <summary>
+    /// Vendor assignment from database
+    /// </summary>
+    public class VendorAssignment {
+        public string AreaCode{ get; set; } = string.Empty;
+        public string POIndex{ get; set; } = string.Empty;
+        public string VendorId{ get; set; } = string.Empty;
+        public string VendorName{ get; set; } = string.Empty;
+    }
+    /// <summary>
+    /// Vendor information for picker
+    /// </summary>
+    public class VendorInfo {
+        public string VendorId{ get; set; } = string.Empty;
+        public string VendorName{ get; set; } = string.Empty;
+        public string? Trade{ get; set; }
+        public string? City{ get; set; }
+        public string? Phone{ get; set; }
+    }
+}

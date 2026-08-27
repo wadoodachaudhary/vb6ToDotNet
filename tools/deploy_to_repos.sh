@@ -22,7 +22,45 @@ DEPLOY="$HF_ROOT/Deploy/repos"
 FLEXKIT_SRC="$ROOT/FlexKit"
 FLEXKIT_CSPROJ="$FLEXKIT_SRC/FlexKit.csproj"
 
+# Environment config is owned by the REMOTE, never by this machine. main carries
+# Azure token placeholders (#{Database.Server}# etc.), the per-environment
+# Auth.CookieName, Serilog sinks, InternalTools allow-list and Cognito settings;
+# a local dev tree carries localhost/sa and a stripped logging stub. Pushing the
+# local copies would silently break every pipeline deployment, so they are held
+# back and whatever `git reset --hard origin/main` restored is what ships.
+# Owner directive 2026-08-20.
+ENV_CONFIG_EXCLUDE=(
+    --exclude='appsettings*.json'
+    --exclude='App_Data/jira-settings.json'
+)
+
+# Runtime data must never ship in a repo. Tickets are per-environment feedback
+# data the app writes itself (~430MB across both apps); logs are Serilog output.
+# The Azure pipelines carry a matching -skip rule for wwwroot/tickets so a deploy
+# does not delete the server's copies. Owner directive 2026-08-24.
+RUNTIME_DATA_EXCLUDE=(
+    --exclude='wwwroot/tickets/'
+    --exclude='Logs/'
+    --exclude='*.log'
+)
+
+# Not needed by a Windows IIS deployment: AI/editor tooling, static-analysis
+# config, internal notes, and macOS cruft. Owner directive 2026-08-24.
+NON_WINDOWS_EXCLUDE=(
+    --exclude='.agents/'
+    --exclude='qodana.yaml'
+    --exclude='HomeFrontDemoTalkingPoints.md'
+    --exclude='dev-review-tickets.md'
+    --exclude='__MACOSX/'
+    --exclude='._*'
+    --exclude='*.command'
+    --exclude='*.mobileconfig'
+)
+
 RSYNC_EXCLUDE=(
+    "${ENV_CONFIG_EXCLUDE[@]}"
+    "${RUNTIME_DATA_EXCLUDE[@]}"
+    "${NON_WINDOWS_EXCLUDE[@]}"
     --exclude='.git'
     --exclude='.claude'
     --exclude='.codex-backups'
@@ -167,8 +205,8 @@ mkdir -p "$DEPLOY"
 # FORMAT: name|source_dir|deploy_git_dir|remote_url
 PROJECTS=(
     "hyphen-pb|$HF_ROOT/HomeFrontPB|$DEPLOY/hyphen-pb|git@gitlab.innovatixinc.com:application-modernization/hyphen-pb.git"
-    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@gitlab.innovatixinc.com:wchaudhary/homefront.git"
-    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@gitlab.innovatixinc.com:wchaudhary/flexkit.git"
+    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@gitlab.innovatixinc.com:application-modernization/homefront.git"
+    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@gitlab.innovatixinc.com:application-modernization/flexkit.git"
     "flexcore|$ROOT/FlexCore|$DEPLOY/flexcore|https://github.com/wadoodachaudhary/FlexCore.git"
 )
 

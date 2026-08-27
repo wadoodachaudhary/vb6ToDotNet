@@ -1,0 +1,352 @@
+@page "/datagrid/picklist"
+@namespace BlazorDemos.Pages.Grids
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.DropDowns
+@using Syncfusion.Blazor.Buttons
+@using System.Dynamic
+@using System.Collections.Generic
+@using BlazorDemos.Pages.Grid
+
+@inject IJSRuntime JSRuntime
+@inherits SampleBaseComponent
+@inject NavigationManager Navigation
+
+<style>
+    .e-grid td.e-selectionbackground {
+        background-color: #FF5733 !important; /* Replace with your desired color (e.g., a specific hex code, RGB value, or color name like 'aquamarine') */
+    }
+</style>
+
+<div >
+    <h3>@mTitle</h3>
+
+    @if (!string.IsNullOrEmpty(Prompt))
+    {
+        <p style="margin: 8px 0; color: #555;">@Prompt</p>
+    }
+
+    @* Views Dropdown - replaces VB6 cboViews *@
+    @if (!string.IsNullOrEmpty(Views))
+    {
+        <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+            <strong>View:</strong>
+            <SfDropDownList @bind-Value="@viewIndex"
+                            DataSource="@ViewItems"
+                            TItem="ViewItem"
+                            TValue="int"
+                            Width="320px"
+                            Placeholder="Select a view">
+                <DropDownListEvents TValue="int" TItem="ViewItem" ValueChange="OnViewChanged"></DropDownListEvents>
+                <DropDownListFieldSettings Text="Name" Value="Id"></DropDownListFieldSettings>
+            </SfDropDownList>
+        </div>
+    }
+
+    @* Main Syncfusion Grid - replaces VSFlexGrid gList *@
+    <SfGrid @ref="grid"
+            DataSource="@GridData"
+            TValue="ExpandoObject"
+            AllowSorting="true"
+            AllowResizing="true"
+            AllowFiltering="true"
+            AllowSelection="true"
+            Height="520"
+            Width="100%">
+
+        @* <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.FilterBar" Mode="FilterBarMode.Immediate"></GridFilterSettings> *@
+
+        <GridSelectionSettings Mode=Syncfusion.Blazor.Grids.SelectionMode.Row EnableToggle="true" Type=Syncfusion.Blazor.Grids.SelectionType.Multiple>
+        </GridSelectionSettings>
+        <GridEvents OnRecordDoubleClick="RecordDoubleClickHandler" TValue="ExpandoObject"></GridEvents>
+
+       
+
+        <GridColumns>
+            @foreach (var col in ColumnsConfig)
+            {
+                <GridColumn Field="@col.Field"
+                            HeaderText="@col.Header"
+                            Width="@col.Width.ToString()"
+                            MinWidth="60"
+                            AllowSorting="true"
+                            AllowResizing="true"
+                            Visible="@col.Visible">
+                </GridColumn>
+            }
+        </GridColumns>
+
+        @if (!string.IsNullOrEmpty(SortCol))
+        {
+            <GridSortSettings>
+                <GridSortColumns>
+                    <GridSortColumn Field="@SortCol" Direction="SortDirection.Ascending"></GridSortColumn>
+                </GridSortColumns>
+            </GridSortSettings>
+        }
+    </SfGrid>
+
+    @* Action Buttons - New / OK / Cancel *@
+    <div style="margin-top: 16px; text-align: right;">
+        @if (AllowNew)
+        {
+            <SfButton CssClass="e-flat" OnClick="OnNewClick" style="margin-right:8px;">New</SfButton>
+        }
+        <SfButton IsPrimary="true" OnClick="OnOkClick" style="margin-right:8px;">OK</SfButton>
+        <SfButton OnClick="OnCancelClick">Cancel</SfButton>
+    </div>
+
+    @* Fast Loading Checkbox *@
+    <div style="margin-top: 12px;">
+        <SfCheckBox @bind-Checked="@chkFast"
+                    Label="Fast loading (memory optimization)"
+                    CssClass="e-small"
+                    >
+        </SfCheckBox>
+    </div>
+
+    @* Debug SQL Viewer - toggle with Ctrl+F9 *@
+    @if (showSql)
+    {
+        <div style="margin-top: 16px; border: 1px solid #ddd; padding: 12px; background: #f8f9fa; border-radius: 4px;">
+            <strong>Debug SQL:</strong>
+            <pre style="white-space: pre-wrap; font-size: 12px; margin-top: 8px; background: white; padding: 10px; border: 1px solid #ccc;">@mSQL</pre>
+        </div>
+    }
+</div>
+
+@code {
+    // Parameters - mirror VB6 FPickList.Choose() call
+    [Parameter] public string Title { get; set; } = "Select List";
+    [Parameter] public string Sql { get; set; } = "";
+    [Parameter] public string Views { get; set; } = "";
+    [Parameter] public string Columns { get; set; } = "";
+    [Parameter] public string KeyColumns { get; set; } = "";
+    [Parameter] public string SortCol { get; set; } = "";
+    [Parameter] public string HiddenColumns { get; set; } = "";
+    [Parameter] public bool AllowMultiple { get; set; } = false;
+    [Parameter] public string GroupingColumns { get; set; } = "";
+    [Parameter] public bool AllowNew { get; set; } = false;
+    [Parameter] public string Prompt { get; set; } = "";
+
+    [Parameter] public EventCallback<List<IDictionary<string, object>>> OnSelected { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string CancelNavigateTo { get; set; } = $"/HF/220";// $"/details/{Id}"
+
+    // Private state
+    private readonly NavigationManager _navigationManager;
+    private SfGrid<ExpandoObject> grid = default!;
+    private string mTitle = "";
+    private string mSQL = "";
+    private int viewIndex = 1;
+    private bool chkFast = true;
+    private bool showSql = false;
+    private bool mLoading = false;
+    //private NavigationManager navigationManager = new NavigationManager();
+
+    private List<ViewItem> ViewItems = new();
+    private List<ColumnConfig> ColumnsConfig = new();
+    private List<ExpandoObject> GridData = new();
+    private List<string> KeyColumnList = new();
+    private List<string> HiddenColumnList = new();
+
+    public class ViewItem { public int Id { get; set; } public string Name { get; set; } = ""; }
+    public class ColumnConfig
+    {
+        public string Field { get; set; } = "";
+        public string Header { get; set; } = "";
+        public int Width { get; set; } = 120;
+        public bool Visible { get; set; } = true;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        mTitle = Title;
+        mSQL = Sql;
+
+        // Load persisted fast load setting
+        chkFast = true;
+
+        // Load views
+        if (!string.IsNullOrEmpty(Views))
+        {
+            var names = Views.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            ViewItems = names.Select((n, i) => new ViewItem { Id = i + 1, Name = n.Trim() }).ToList();
+            viewIndex =  1;
+        }
+
+        // Parse key/hidden columns
+        KeyColumnList = KeyColumns?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList() ?? new();
+        HiddenColumnList = HiddenColumns?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList() ?? new();
+
+        await LoadDataAndBuildColumns();
+        //await LoadSavedColumnState();
+    }
+
+    private DbWrapperSqlServer db = new();
+
+    private async Task LoadDataAndBuildColumns()
+    {
+        //var data = await db.QueryAsync(mSQL);
+        //GridData = data.Select(r => (ExpandoObject)r).ToList();
+        GridData = await db.QueryDynamicAsync(mSQL);
+
+
+        if (!GridData.Any()) return;
+
+        var first = (IDictionary<string, object>)GridData[0];
+        var fields = first.Keys.ToList();
+
+        ColumnsConfig.Clear();
+
+        if (!string.IsNullOrEmpty(Columns))
+        {
+            var headers = Columns.Split('|');
+            for (int i = 0; i < headers.Length && i < fields.Count; i++)
+            {
+                var header = headers[i].TrimStart('<');
+                var field = fields[i];
+                ColumnsConfig.Add(new ColumnConfig
+                {
+                    Field = field,
+                    Header = header,
+                    Width = 120,
+                    Visible = !HiddenColumnList.Contains(field)
+                });
+            }
+        }
+        else
+        {
+            foreach (var field in fields)
+            {
+                ColumnsConfig.Add(new ColumnConfig
+                {
+                    Field = field,
+                    Header = field,
+                    Width = 120,
+                    Visible = !HiddenColumnList.Contains(field)
+                });
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadSavedColumnState()
+    {
+        var saved = await JSRuntime.InvokeAsync<string>("localStorage.getItem", $"{mTitle}_View{viewIndex}_Columns");
+        if (string.IsNullOrEmpty(saved)) return;
+
+        foreach (var part in saved.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var kv = part.Split('=');
+            if (kv.Length != 2) continue;
+
+            var col = ColumnsConfig.FirstOrDefault(c => c.Field == kv[0]);
+            if (col == null) continue;
+
+            if (kv[1].StartsWith("w") && int.TryParse(kv[1].AsSpan(1), out int w))
+                col.Width = w;
+            else if (kv[1] == "hidden")
+                col.Visible = false;
+        }
+
+        if (grid != null)
+            await grid.RefreshColumnsAsync();
+    }
+
+    private async Task SaveColumnState()
+    {
+        var parts = new List<string>();
+        var columns = await grid.GetColumnsAsync();
+
+        foreach (var col in columns)
+        {
+            parts.Add(col.Visible ? $"{col.Field}=w{col.Width}" : $"{col.Field}=hidden");
+        }
+
+        var state = string.Join("|", parts);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", $"{mTitle}_View{viewIndex}_Columns", state);
+    }
+    
+    private async Task OnViewChanged(ChangeEventArgs<int, ViewItem> args)
+    {
+        viewIndex = args.Value;
+        //await JSRuntime.InvokeVoidAsync("localStorage.setItem", $"{Title}_LastView", viewIndex);
+        //await LoadSavedColumnState();
+    }
+    
+    
+    private void OnRecordDoubleClick(RecordDoubleClickEventArgs<ExpandoObject> args)
+    {
+        // Access the double-clicked row data
+        dynamic rowData = args.RowData;
+        Console.WriteLine($"Double click on row with ID: {rowData.ID}");
+        // Perform actions based on double click, e.g., opening a dialog or editing
+    }
+    
+    private void NavigateToProduct(int productId)
+    {
+        // Construct the URL dynamically by concatenating the base URL and the parameter value.
+        var url = $"/productdetails/{productId}";
+
+        // Use the NavigationManager to programmatically change the page.
+        // The second parameter (forceLoad: false) ensures a client-side navigation within the SPA context.
+        _navigationManager.NavigateTo(url);
+    }
+
+   
+    private async Task OnOkClick()
+    {
+        Console.WriteLine("OnClick"); 
+        var selected = await grid.GetSelectedRecordsAsync();
+        if (selected == null || selected.Count == 0) return;
+
+        var result = selected.Cast<IDictionary<string, object>>().ToList();
+        //_navigationManager.NavigateTo("/HF");
+        await OnSelected.InvokeAsync(result);
+        Navigation.NavigateTo(CancelNavigateTo);
+    }
+
+    private void OnCancelClick(){
+        //_navigationManager.NavigateTo("/HF");
+            // Trigger the original OnCancel callback if needed
+            OnCancel.InvokeAsync();
+
+            // Navigate to the specified page (or home if not set)
+            Navigation.NavigateTo(CancelNavigateTo);
+        }
+        
+    
+
+    private Task OnNewClick() => OnSelected.InvokeAsync(new List<IDictionary<string, object>>());
+
+    private async Task OnFastLoadChanged(ChangeEventArgs<bool> args)
+    {
+        if (mLoading) return;
+        chkFast = args.Checked;
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", $"{Title}_FastLoad", chkFast);
+    }
+
+    private bool IsCtrlF9(KeyboardEventArgs e) => e.CtrlKey && e.Key == "F9";
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && e.Key == "F9")
+        {
+            showSql = !showSql;
+            StateHasChanged();
+        }
+    }
+    
+    public void RecordDoubleClickHandler(RecordDoubleClickEventArgs<ExpandoObject> args)
+    {
+
+        // Here, you can customize your code.
+
+        //DoubleClicked = args.RowData;
+        dynamic rowData = args.RowData;
+        Console.WriteLine($"Double click on row with ID: {rowData.Community}");
+
+    }
+}

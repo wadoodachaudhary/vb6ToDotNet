@@ -1,0 +1,101 @@
+@page "/picklist3"
+@using BlazorDemos.Pages.Grids
+@inject NavigationManager Navigation
+
+<h1>Model &amp; Option Library</h1>
+
+<style>
+    .e-columnheader, .e-headercell, .e-grid th.e-headercell .e-sortfilterdiv, .e-grid th.e-headercell[aria-sort=ascending]:not(.e-columnselection) .e-headertext {
+        background-color: #1976d2 !important;
+        color: #fff !important;
+    }
+</style>
+
+<SfButton IsPrimary="true" Content="Open Model &amp; Option Library" OnClick="OpenPickList"></SfButton>
+
+<hr/>
+
+@if (selectedData != null && selectedData.Count > 0){
+    <h3>Selected Items:</h3>
+    <table class="table">
+        <thead>
+        <tr>
+            @foreach (var key in selectedData[0].Keys){
+                <th>@key</th>
+            }
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var row in selectedData){
+            <tr>
+                @foreach (var val in row.Values){
+                    <td>@val</td>
+                }
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+else if (selectedData != null){
+    <p><em>No items selected.</em></p>
+}
+
+<PickList @ref="pickList"
+          Title="Model &amp; Option Library"
+          Sql="@modelOptionSql"
+          Views="All|Active Only|By Community"
+          Columns="Category|Area|Community|Model|Option|Assembly|Description"
+          KeyColumns="Assembly"
+          SortCol="Model"
+          AllowMultiple="false"
+          AllowNew="true"
+          Prompt="Select a model/option assembly from the list below:"
+          OnSelected="OnItemsSelected"
+          OnCancel="OnPickListCancelled">
+</PickList>
+
+@code {
+    private PickList? pickList;
+    private List<IDictionary<string, object>>? selectedData;
+
+    // This is the exact SQL used in the original VB6 FAssembly.frm
+    private string modelOptionSql = @"
+        select c.area AreaID,c.description as Community,a.Model,a.Model modelid,a.OptionID,a.Assembly,a.Description,a.assemblytype,0 Source,a.Series,a.Style,a.Elevation 
+        from tbldbassemblymaster a left outer join tbllocality c on(a.community=c.area) 
+        where a.DivisionID = 1 and isnull(a.inactive,0)=0 and a.assemblytype=0 order by 1,2,3,4,5,6,7";
+    private string modelOptionSql2 = @"
+        SELECT 
+            ct.Description AS Category,
+            c.Area AS AreaID,
+            c.Description AS Community,
+            a.Model,
+            a.OptionID AS [Option],
+            a.Assembly,
+            a.Description
+        FROM tblDBAssemblyMaster a
+        LEFT JOIN tblLocality c ON a.Community = c.Area
+        LEFT JOIN tblCategories ct ON a.Category = ct.Category
+        WHERE a.AssemblyType = 2
+          AND ISNULL(a.Inactive, 0) = 0
+        ORDER BY a.Model, a.OptionID, a.Assembly";
+
+    private async Task OpenPickList(){
+        if (pickList != null){
+            // This triggers the modal-like behavior (Syncfusion SfDialog can be added later)
+            //await pickList.SetParametersAsync();
+        }
+    }
+
+    private void OnItemsSelected(List<IDictionary<string, object>> selected){
+        selectedData = selected;
+        StateHasChanged();
+        Console.WriteLine($"Selected {selected.Count} item(s)");
+    }
+
+    private void OnPickListCancelled(){
+        selectedData = new List<IDictionary<string, object>>();
+        StateHasChanged();
+        Console.WriteLine("PickList cancelled");
+    }
+
+}

@@ -1,0 +1,560 @@
+@page "/edit-model-options"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@inject FlexKitTester.Services.BenchDataStore BenchData
+@inject ZoomService Zoom
+@implements IDisposable
+
+<PageTitle>Edit Model &amp; Options Bench</PageTitle>
+
+<style>
+    .emo-data-error {
+        padding: 3px 8px;
+        border: 1px solid #a12a2a;
+        background: #ffe3e3;
+        color: #7a1010;
+        font-weight: 600;
+    }
+
+    .emo-page .fx-grid {
+        --fx-grid-selected-row-bg: @BuildColorHex;
+        --fx-grid-cell-selected-row-bg: @BuildColorHex;
+        --fx-grid-selected-cell-bg: @BuildColorHex;
+    }
+</style>
+<PageControl NavigationGraph="@NavigationGraph" CssClass="emo-page">
+    <div class="emo-bench-header">
+        <span>Edit Model &amp; Options bench — @Items.Count rows · build <b>@BuildStamp</b> · selection: <b>@BuildColorName</b> (stale tab shows a different color)</span>
+        <div style="margin:2px 12px;font-size:calc(11px * var(--fx-zoom, 1));color:#555;">@BenchData.LoadReport</div>
+        <div style="margin:2px 12px;font-size:calc(11px * var(--fx-zoom, 1));color:#555;" id="emo-window-controls">
+            <button id="emo-group-toggle" @onclick="ToggleGrouping">@(_groupColumns.Count > 0 ? "Ungroup" : "Group by UM")</button>
+            <button id="emo-groupwin-toggle" @onclick="() => _groupedWindowing = !_groupedWindowing">
+                grouped windowing: <b>@(_groupedWindowing ? "ON" : "OFF")</b>
+            </button>
+            <button id="emo-scrolltrack-toggle" @onclick="() => _scrollTrack = !_scrollTrack">
+                ScrollTrack: <b>@(_scrollTrack ? "LIVE" : "RELEASE ONLY")</b>
+            </button>
+            <button id="emo-boundary-guard-toggle" @onclick="() => _boundaryGuard = !_boundaryGuard">
+                blank guard: <b>@(_boundaryGuard ? "ON" : "OFF (baseline)")</b>
+            </button>
+            <button id="emo-adaptive-wheel-toggle" @onclick="() => _adaptiveWheelPacing = !_adaptiveWheelPacing">
+                adaptive wheel pacing: <b>@(_adaptiveWheelPacing ? "ON" : "OFF")</b>
+            </button>
+            <span>release buffer:</span>
+            <button @onclick="() => _deferredOverscan = 20" disabled="@(_deferredOverscan == 20)">20 (optimized)</button>
+            <button @onclick="() => _deferredOverscan = 60" disabled="@(_deferredOverscan == 60)">60 (baseline)</button>
+            <span>controlled server wait:</span>
+            @foreach (var delay in DiagnosticDelayChoices)
+            {
+                <button @onclick="() => _diagnosticWindowDelayMs = delay"
+                        disabled="@(_diagnosticWindowDelayMs == delay)">@delay ms</button>
+            }
+            <span id="emo-window-state">rows @Items.Count · grouped @(_groupColumns.Count > 0 ? "yes" : "no") · wheel 75% · adaptive rate @(_adaptiveWheelPacing ? "viewport seed → learned per grid" : "off") · edge slowdown @(_boundaryGuard ? "on" : "off") · blank guard @(_boundaryGuard ? "safe fallback" : "allows spacer baseline") · wait @_diagnosticWindowDelayMs ms</span>
+        </div>
+        @if (_dataError != null)
+        {
+            <span class="emo-data-error">DATA NOT LOADED — @_dataError</span>
+        }
+        <label class="emo-performance-mode">
+            <span>Performance</span>
+            <DropDownListControl TValue="GridPerformanceMode"
+                                 TItem="GridPerformanceModeChoice"
+                                 DataSource="@GridPerformanceModeCatalog.All"
+                                 TextFieldName="@nameof(GridPerformanceModeChoice.Label)"
+                                 ValueFieldName="@nameof(GridPerformanceModeChoice.Value)"
+                                 Value="@_performanceMode"
+                                 ValueChanged="SetPerformanceMode"
+                                 Width="300px" />
+        </label>
+    </div>
+
+    <div class="emo-diagnostics">
+        <LatencyProbePanel Context="Edit Model &amp; Options / FAssembly" />
+        <ScrollTrackLatencyPanel Context="Edit Model &amp; Options / FAssembly items"
+                                 GridSelector="#emo-items-grid .fx-grid" />
+        <WheelWindowMetricsPanel Context="Edit Model &amp; Options / FAssembly items"
+                                 GridSelector="#emo-items-grid .fx-grid" />
+    </div>
+
+    <div id="emo-toolbar" class="emo-toolbar-band">
+        <ToolbarControl CssClass="emo-toolbar">
+            <ToolbarButtonControl Label="New" CssClass="emo-nav-new" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/new-report.png" Vertical="true" OnClick="@(() => SetCommand("New"))" />
+            <ToolbarButtonControl Label="Open" CssClass="emo-nav-open" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/open-report.png" Vertical="true" OnClick="@(() => SetCommand("Open"))" />
+            <ToolbarButtonControl Label="Save" CssClass="emo-nav-save" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/save.png" Vertical="true" OnClick="@(() => SetCommand("Save"))" />
+            <ToolbarButtonControl Label="One Time" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/insert-summary.png" Vertical="true" Disabled="true" />
+            <ToolbarButtonControl Label="Item" CssClass="emo-nav-item" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/insert-text-object.png" Vertical="true" OnClick="@(() => SetCommand("Item"))" />
+            <ToolbarButtonControl Label="Assembly" CssClass="emo-nav-assembly" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/insert-subreport.png" Vertical="true" OnClick="@(() => SetCommand("Assembly"))" />
+            <ToolbarButtonControl Label="Custom" CssClass="emo-nav-custom" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/insert-cross-tab.png" Vertical="true" OnClick="@(() => SetCommand("Custom"))" />
+            <ToolbarButtonControl Label="Item Chart" CssClass="emo-nav-item-chart" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/insert-chart.png" Vertical="true" OnClick="@(() => SetCommand("Item Chart"))" />
+            <ToolbarButtonControl Label="Change" CssClass="emo-nav-change" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/refresh-report-data.png" Vertical="true" OnClick="@(() => SetCommand("Change"))" />
+            <ToolbarButtonControl Label="PriceList" CssClass="emo-nav-price-list" IconSrc="_content/FlexCore/reports/crystal-toolbar-icons/browse-data.png" Vertical="true" OnClick="@(() => SetCommand("PriceList"))" />
+            <ToolbarSeparatorControl />
+            <ToolbarButtonControl Label="Zoom −" Title="Zoom out (Ctrl+<)" Vertical="true" Disabled="@(!Zoom.CanZoomOut)" OnClick="@(() => Zoom.ZoomOut())" />
+            <ToolbarButtonControl Label="@($"{Zoom.ZoomPercent}%")" Title="Reset zoom to 100%" Vertical="true" OnClick="@(() => Zoom.Reset())" />
+            <ToolbarButtonControl Label="Zoom +" Title="Zoom in (Ctrl+>)" Vertical="true" Disabled="@(!Zoom.CanZoomIn)" OnClick="@(() => Zoom.ZoomIn())" />
+        </ToolbarControl>
+    </div>
+
+    <div id="emo-form" class="emo-form-band">
+        <div class="emo-form-column">
+            <label><span>Community</span><DropDownListControl TValue="string" TItem="string" DataSource="@Communities" Value="@_community" ValueChanged="value => _community = value ?? string.Empty" Width="100%" /></label>
+            <label><span>Model</span><TextBoxControl Value="@_model" ValueChanged="value => _model = value ?? string.Empty" /></label>
+            <label><span>Assembly</span><TextBoxControl Value="@_assembly" ValueChanged="value => _assembly = value ?? string.Empty" /></label>
+            <label><span>Description</span><TextBoxControl Value="@_description" ValueChanged="value => _description = value ?? string.Empty" /></label>
+            <label><span>Image</span><TextBoxControl Value="@_image" ValueChanged="value => _image = value ?? string.Empty" /></label>
+            <label class="emo-comments"><span>Comments</span><TextBoxControl Value="@_comments" ValueChanged="value => _comments = value ?? string.Empty" Multiline="true" Rows="2" /></label>
+        </div>
+
+        <div class="emo-form-column emo-form-column-middle">
+            <label><span>Series</span><DropDownListControl TValue="string" TItem="string" DataSource="@SeriesOptions" Value="@_series" ValueChanged="value => _series = value ?? string.Empty" Width="100%" /></label>
+            <label><span>Elevation</span><TextBoxControl Value="@_elevation" ValueChanged="value => _elevation = value ?? string.Empty" /></label>
+            <label><span>Style</span><TextBoxControl Value="@_style" ValueChanged="value => _style = value ?? string.Empty" /></label>
+            <label><span>Sched Tmpl</span><DropDownListControl TValue="string" TItem="string" DataSource="@ScheduleTemplates" Value="@_scheduleTemplate" ValueChanged="value => _scheduleTemplate = value ?? string.Empty" Width="100%" /></label>
+            <div class="emo-dimensions">
+                <label><span>Beds</span><NumericTextBoxControl TValue="decimal" Value="@_beds" ValueChanged="value => _beds = value" Width="100%" /></label>
+                <label><span>Baths</span><NumericTextBoxControl TValue="decimal" Value="@_baths" ValueChanged="value => _baths = value" Width="100%" /></label>
+                <label><span>SqFt</span><NumericTextBoxControl TValue="decimal" Value="@_squareFeet" ValueChanged="value => _squareFeet = value" Width="100%" /></label>
+            </div>
+            <label><span>Spec Doc</span><TextBoxControl Value="@_specDoc" ValueChanged="value => _specDoc = value ?? string.Empty" /></label>
+        </div>
+
+        <div class="emo-form-column emo-options-column">
+            <CheckBoxControl Label="Active" @bind-Checked="_active" />
+            <CheckBoxControl Label="Takeoff is required on every sale." @bind-Checked="_takeoffRequired" />
+            <CheckBoxControl Label="Use normal sales quantity factors." @bind-Checked="_normalSalesFactors" />
+            <CheckBoxControl Label="Base assembly. Not published to sales." @bind-Checked="_baseAssembly" />
+            <label class="emo-pricing"><span>Show pricing for</span><DropDownListControl TValue="string" TItem="string" DataSource="@Communities" Value="@_pricingCommunity" ValueChanged="value => _pricingCommunity = value ?? string.Empty" Width="100%" /></label>
+        </div>
+    </div>
+
+    <section id="emo-components-grid"
+             class="emo-grid-section emo-components-section"
+             tabindex="0"
+             @onfocus="FocusComponentsEntryAsync">
+        <h2>Components</h2>
+        <div class="emo-grid-host">
+            <GridControl TValue="ComponentRow"
+                         @ref="_componentsGrid"
+                         @key="@($"{_performanceMode}:{_scrollTrack}")"
+                         DataSource="@Components"
+                         PerformanceMode="@_performanceMode"
+                         ScrollTrack="@_scrollTrack"
+                         WidthMode="GridWidthMode.FitColumns"
+                         AllowSorting="true"
+                         AllowResizing="true"
+                         AllowSelection="true"
+                         Height="100%"
+                         RowHeight="18"
+                         MinRowHeight="18"
+                         EditSettingsRef="@_componentEditSettings"
+                         SelectionSettingsRef="@_componentSelectionSettings"
+                         EventsRef="@_componentEvents">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(ComponentRow.Community)" HeaderText="Community" Width="110px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ComponentRow.Assembly)" HeaderText="Assembly" Width="100px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ComponentRow.Model)" HeaderText="Model" Width="100px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ComponentRow.Option)" HeaderText="Option" Width="110px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ComponentRow.Description)" HeaderText="Description" Width="310px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ComponentRow.Qty)" HeaderText="Qty" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                    <GridColumn Field="@nameof(ComponentRow.Cost)" HeaderText="Cost" Width="95px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" Format="N2" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+    </section>
+
+    <section id="emo-items-grid"
+             class="emo-grid-section emo-items-section"
+             tabindex="0"
+             @onfocus="FocusItemsEntryAsync">
+        <div class="emo-grid-host">
+            @* Mirrors HomeFront FAssembly gItems so the bench reproduces the app:
+               same PerformanceMode + ClientBuffered typing, same 14px rows,
+               same grouped/filter/selection setup, group-blue header text, and
+               NO PAGING — AutoPageRowThreshold=0 keeps the auto-pager off past
+               10k rows, which is what silently disabled windowing here. *@
+            <GridControl TValue="ModelItemRow"
+                         @ref="_itemsGrid"
+                         @key="@ItemsGridRegistrationKey"
+                         DataSource="@Items"
+                         PerformanceMode="@_performanceMode"
+                         ScrollTrack="@_scrollTrack"
+                         WidthMode="GridWidthMode.FitColumns"
+                         WheelScrollScale="0.75"
+                         EnableScrollBoundaryGuard="@_boundaryGuard"
+                         EnableScrollBoundarySlowdown="@_boundaryGuard"
+                         EnableAdaptiveWheelScrollPacing="@_adaptiveWheelPacing"
+                         EnableScrollBoundaryTelemetry="true"
+                         DiagnosticWindowScrollDelayMs="@_diagnosticWindowDelayMs"
+                         DeferredScrollOverscanRows="@_deferredOverscan"
+                         TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered"
+                         AutoPageRowThreshold="0"
+                         AllowSorting="true"
+                         AllowResizing="true"
+                         AllowSelection="true"
+                         ShowSelectionInfoBar="false"
+                         AllowFiltering="true"
+                         AllowGrouping="true"
+                         GroupColumns="@_groupColumns"
+                         ShowGroupExpandCollapse="true"
+                         HideGroupedColumns="true"
+                         GroupItemTextColor="#1e6fd9"
+                         GroupTotalTextColor="#1e6fd9"
+                         ExtendVerticalScrollbarIntoHeader="true"
+                         AllowColumnReorder="true"
+                         HighlightSelectedRows="true"
+                         EnableTypeSearch="true"
+                         EnableHover="true"
+                         Height="100%"
+                         RowHeight="14"
+                         MinRowHeight="14"
+                         EnableGroupedRowWindowing="@_groupedWindowing"
+                         EditSettingsRef="@_editSettings"
+                         SelectionSettingsRef="@_selectionSettings"
+                         EventsRef="@_gridEvents"
+                         TypeAheadTargetField="@TypeAheadTargetField">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(ModelItemRow.Item)" HeaderText="Item" Width="80px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(ModelItemRow.Description)" HeaderText="Description" Width="300px" AllowEditing="true" AllowCellDragSelection="true" />
+                    <GridColumn Field="@nameof(ModelItemRow.Qty)" HeaderText="Qty" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" />
+                    <GridColumn Field="@nameof(ModelItemRow.Takeoff)" HeaderText="Takeoff" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" />
+                    <GridColumn Field="@nameof(ModelItemRow.UM)" HeaderText="UM" Width="70px" AllowEditing="true" AllowCellDragSelection="true" EditOptions="@UmOptions" />
+                    <GridColumn Field="@nameof(ModelItemRow.Total)" HeaderText="Total" Width="100px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" Format="N2" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+    </section>
+
+    <div class="emo-status" id="emo-state">
+        @(_lastCommand) | @_activeGrid cell @_activeRow,@_activeColumn | edits @_edits | fan-out @_fanOuts (@_lastFanOutRows rows)
+    </div>
+</PageControl>
+
+@code {
+    // Build marker (same scheme as EditItemsBench): color + stamp rotate per
+    // FlexCore build so a stale cached tab is self-evident.
+    private static readonly (string Name, string Hex)[] BuildColors =
+    {
+        ("Light Blue", "#b9d7ff"), ("Mint Green", "#b9f0d0"), ("Peach", "#ffd9b9"),
+        ("Lavender", "#d9c9ff"), ("Lemon", "#f3f0b0"), ("Pink", "#ffc9dd"),
+        ("Aqua", "#b9ecf0"), ("Sand", "#e8dcb9"),
+    };
+    private static readonly long GridBuildTicks = System.IO.File.GetLastWriteTimeUtc(
+        typeof(GridControl<ModelItemRow>).Assembly.Location).Ticks;
+    private static string BuildStamp => (GridBuildTicks / 10_000_000 % 100_000).ToString();
+    private static string BuildColorName => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Name;
+    private static string BuildColorHex => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Hex;
+
+    public class ComponentRow
+    {
+        public string Community { get; set; } = "";
+        public string Assembly { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Option { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Qty { get; set; }
+        public decimal Cost { get; set; }
+    }
+
+    public class ModelItemRow
+    {
+        public string Item { get; set; } = "";
+        public string Description { get; set; } = "";
+        public decimal Qty { get; set; }
+        public decimal Takeoff { get; set; }
+        public string UM { get; set; } = "EA";
+        public decimal Total { get; set; }
+        public decimal UnitCost { get; set; }
+    }
+
+    private static readonly PageNavigationGraph NavigationGraph = new(
+    [
+        new("New", "#emo-toolbar .emo-nav-new", 10,
+            Shortcuts:
+            [
+                new("n", PageShortcutModifiers.Control, PageShortcutAction.Activate, AllowInEditor: true),
+                new("n", PageShortcutModifiers.Meta, PageShortcutAction.Activate, AllowInEditor: true)
+            ]),
+        new("Open", "#emo-toolbar .emo-nav-open", 20,
+            Shortcuts:
+            [
+                new("o", PageShortcutModifiers.Control, PageShortcutAction.Activate, AllowInEditor: true),
+                new("o", PageShortcutModifiers.Meta, PageShortcutAction.Activate, AllowInEditor: true)
+            ]),
+        new("Save", "#emo-toolbar .emo-nav-save", 30, Previous: "Items",
+            Shortcuts:
+            [
+                new("s", PageShortcutModifiers.Control, PageShortcutAction.Activate, AllowInEditor: true),
+                new("s", PageShortcutModifiers.Meta, PageShortcutAction.Activate, AllowInEditor: true)
+            ]),
+        new("Item", "#emo-toolbar .emo-nav-item", 40),
+        new("Assembly", "#emo-toolbar .emo-nav-assembly", 50),
+        new("Custom", "#emo-toolbar .emo-nav-custom", 60),
+        new("ItemChart", "#emo-toolbar .emo-nav-item-chart", 70),
+        new("Change", "#emo-toolbar .emo-nav-change", 80),
+        new("PriceList", "#emo-toolbar .emo-nav-price-list", 90),
+        new("Fields",
+            "#emo-form > .emo-form-column:not(.emo-options-column), #emo-form > .emo-options-column > :not(.emo-pricing)",
+            100),
+        new("ShowPricing", "#emo-form .emo-pricing", 110, Next: "Components"),
+        new("Components", "#emo-components-grid", 200,
+            Next: "Items", Previous: "ShowPricing", Mode: PageNavigationNodeMode.Element),
+        new("Items", "#emo-items-grid", 300,
+            Next: "Save", Previous: "Components", Mode: PageNavigationNodeMode.Element)
+    ]);
+
+    private static readonly string[] Communities = ["Bamburgh 2022", "Downton II 2022", "Kelowna III 2022"];
+    private static readonly string[] SeriesOptions = ["STANDARD", "Select Series", "RSL"];
+    private static readonly string[] ScheduleTemplates = ["RSL", "Craftsman", "Prairie"];
+    // Domain comes from the exported tblPhaseItem.OrderUOM values.
+    private string[] UmOptions = [];
+
+    private string _community = Communities[0];
+    private string _model = "Bamburgh 2022";
+    private string _assembly = "010-9835";
+    private string _description = "Whirlpool Fridge";
+    private string _image = "";
+    private string _comments = "";
+    private string _series = SeriesOptions[0];
+    private string _elevation = "Craftsman";
+    private string _style = "RSL - 2 Storey";
+    private string _scheduleTemplate = ScheduleTemplates[0];
+    private decimal _beds = 3;
+    private decimal _baths = 2.5m;
+    private decimal _squareFeet = 2105;
+    private string _specDoc = "";
+    private bool _active = true;
+    private bool _takeoffRequired;
+    private bool _normalSalesFactors = true;
+    private bool _baseAssembly;
+    private string _pricingCommunity = Communities[0];
+    private GridPerformanceMode _performanceMode =
+        GridPerformanceMode.ClientPreviewAndServerOptimized;
+
+    private List<ComponentRow> Components = [];
+    private List<ModelItemRow> Items = [];
+    private string? _dataError;
+    private int _edits;
+    private int _fanOuts;
+    private int _lastFanOutRows;
+    private string? _activeEditColumn;
+    private string _lastCommand = "Ready";
+    private string _activeGrid = "none";
+    private int _activeRow = -1;
+    private int _activeColumn = -1;
+
+    private string TypeAheadTargetField => _activeEditColumn ?? "";
+
+    private void SetPerformanceMode(GridPerformanceMode value)
+    {
+        if (_performanceMode == value)
+            return;
+
+        _performanceMode = value;
+        _activeGrid = "none";
+        _activeRow = -1;
+        _activeColumn = -1;
+    }
+
+    private readonly EditSettings _componentEditSettings = new()
+    {
+        AllowAdding = false,
+        AllowEditing = true,
+        AllowDeleting = false,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+
+    private readonly SelectionSettings _componentSelectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single
+    };
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowAdding = false,
+        AllowEditing = true,
+        AllowDeleting = false,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+
+    // Grouped BY DEFAULT so the bench exercises the GROUPED render path (a
+    // separate cell-builder from the flat one) on load — that is where grouping
+    // + multi-selection get tested together.
+    private List<string> _groupColumns = [nameof(ModelItemRow.UM)];
+
+    // Both switches live on the page so one bench covers all four combinations:
+    // grouped/ungrouped x grouped-windowing on/off.
+    private bool _groupedWindowing = true;
+    private bool _scrollTrack;
+    private bool _boundaryGuard = true;
+    private bool _adaptiveWheelPacing = true;
+    private int _deferredOverscan = 20;
+    private int _diagnosticWindowDelayMs;
+    private static readonly int[] DiagnosticDelayChoices = [0, 100, 150, 500, 1_000];
+    private string ItemsGridRegistrationKey => string.Join(
+        ":",
+        _performanceMode,
+        _scrollTrack,
+        _boundaryGuard,
+        _adaptiveWheelPacing,
+        _diagnosticWindowDelayMs,
+        _groupedWindowing,
+        string.Join(",", _groupColumns),
+        _deferredOverscan,
+        Zoom.ZoomPercent);
+
+    private void ToggleGrouping()
+        => _groupColumns = _groupColumns.Count > 0 ? new List<string>() : [nameof(ModelItemRow.UM)];
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true,
+        MultiSelectBehavior = GridMultiSelectBehavior.VBMultiSelect
+    };
+
+    private readonly GridControlEvents<ComponentRow> _componentEvents = new();
+    private readonly GridControlEvents<ModelItemRow> _gridEvents = new();
+    private GridControl<ComponentRow>? _componentsGrid;
+    private GridControl<ModelItemRow>? _itemsGrid;
+    private bool _redirectingPageFocus;
+
+    private Task FocusComponentsEntryAsync(FocusEventArgs _) =>
+        FocusFirstGridCellAsync(_componentsGrid, "Components");
+
+    private Task FocusItemsEntryAsync(FocusEventArgs _) =>
+        FocusFirstGridCellAsync(_itemsGrid, "Items");
+
+    private async Task FocusFirstGridCellAsync<TValue>(GridControl<TValue>? grid, string gridName)
+    {
+        if (grid is null || _redirectingPageFocus)
+            return;
+
+        _redirectingPageFocus = true;
+        try
+        {
+            await grid.SelectCellAsync((0, 0));
+            SetActiveCell(gridName, 0, 0);
+            await grid.FocusGridAsync();
+        }
+        finally
+        {
+            _redirectingPageFocus = false;
+        }
+    }
+
+    private void SetCommand(string command) => _lastCommand = command;
+
+    private void Recompute(ModelItemRow row) => row.Total = Math.Round(row.Qty * row.UnitCost, 2);
+
+    protected override void OnInitialized()
+    {
+        Zoom.OnZoomChanged += HandleZoomChanged;
+        _componentEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<ComponentRow>>(
+            this, args => SetActiveCell("Components", args.RowIndex, args.CellIndex));
+        _gridEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<ModelItemRow>>(
+            this, args => SetActiveCell("Items", args.RowIndex, args.CellIndex));
+        _gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ModelItemRow>>(this, args =>
+        {
+            if (args.Data == null)
+                return;
+            Recompute(args.Data);
+            _edits++;
+        });
+        _gridEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<ModelItemRow>>(
+            this, args => _activeEditColumn = args.ColumnName);
+        _gridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<ModelItemRow>>(this, args =>
+        {
+            if (string.IsNullOrWhiteSpace(args.ColumnName))
+                return;
+
+            var count = 0;
+            foreach (var item in args.SelectedItems.Where(item => item != null).Distinct())
+            {
+                var property = typeof(ModelItemRow).GetProperty(
+                    args.ColumnName,
+                    System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.IgnoreCase);
+                if (property == null || !property.CanWrite)
+                    continue;
+
+                if (property.PropertyType == typeof(decimal))
+                {
+                    if (!decimal.TryParse(args.Value, out var number))
+                        continue;
+                    property.SetValue(item, number);
+                }
+                else
+                {
+                    property.SetValue(item, args.Value);
+                }
+
+                Recompute(item);
+                count++;
+            }
+
+            if (count == 0)
+                return;
+            _fanOuts++;
+            _lastFanOutRows = count;
+            StateHasChanged();
+        });
+
+        // tblDBAssemblyComponents/tblDBAssemblyMaster are not in the export,
+        // so these header rows and the form-band fields stay fixtures.
+        Components =
+        [
+            new() { Community = "Bamburgh", Assembly = "010-9835", Model = "Bamburgh 2022", Option = "010-9835", Description = "Whirlpool Fridge", Qty = 1, Cost = 943.95m },
+            new() { Community = "Bamburgh", Assembly = "010-9836", Model = "Bamburgh 2022", Option = "010-9836", Description = "Whirlpool Gold Fridge", Qty = 1, Cost = 0m },
+            new() { Community = "Bamburgh", Assembly = "010-9836", Model = "Bamburgh 2022", Option = "010-9836", Description = "Whirlpool Gold Fridge", Qty = 1, Cost = 0m }
+        ];
+
+        // Real tblDBAssemblyDetails rows exported from HomeFrontSQL. Parsed
+        // once per process by BenchDataStore; this only projects.
+        // Description and UM come from the item, exactly as VB6 FAssembly does:
+        // LEFT OUTER JOIN tblPhaseItem i ON (d.DivisionID=i.DivisionID AND
+        // d.Phase=i.Phase AND d.Item=i.Item).
+        var source = BenchData.AssemblyDetails;
+        _dataError = BenchData.AssemblyError ?? BenchData.EstimatingError;
+        if (_dataError != null) return;
+
+        var lookup = BenchData.ItemLookup;
+        Items = new List<ModelItemRow>(source.Count);
+        foreach (var d in source)
+        {
+            lookup.TryGetValue((d.DivisionID, d.Phase ?? "", d.Item ?? ""), out var item);
+            var row = new ModelItemRow
+            {
+                Item = d.Item ?? "",
+                Description = item?.ItemDesc ?? "",
+                Qty = d.OrderQty ?? 0m,
+                Takeoff = d.TakeoffQty ?? 0m,
+                UM = item?.OrderUOM ?? ""
+                // UnitCost has no exportable source: VB6 reads the rate from
+                // dbo.Purch_GetItemRate at query time, and the export's Rate and
+                // Cost columns are 0 in every row. Total therefore stays 0.
+            };
+            Recompute(row);
+            Items.Add(row);
+        }
+
+        UmOptions = Items.Where(i => i.UM != "")
+            .Select(i => i.UM).Distinct().OrderBy(u => u, StringComparer.Ordinal).ToArray();
+    }
+
+    private void SetActiveCell(string grid, int row, int column)
+    {
+        _activeGrid = grid;
+        _activeRow = row;
+        _activeColumn = column;
+    }
+
+    private void HandleZoomChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Zoom.OnZoomChanged -= HandleZoomChanged;
+}

@@ -1,0 +1,448 @@
+@page "/picklist-churn"
+@rendermode InteractiveServer
+@using System.Diagnostics
+@using System.Dynamic
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>FlexKit Tester - PickList Churn</PageTitle>
+
+<div class="pc-page">
+    <div class="pc-heading">
+        <div>
+            <h3>PickList opening churn</h3>
+            <p>
+                Compare the current staged opening path with an opt-in first-paint path.
+                The dynamic rows and keyed columns mirror FPickList.
+            </p>
+        </div>
+        <span class="pc-scope">FlexCore only</span>
+    </div>
+
+    <div class="pc-controls" aria-label="PickList benchmark settings">
+        <label>
+            Rows
+            <select @bind="_rowCount">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="50">50</option>
+                <option value="5000">5,000</option>
+            </select>
+        </label>
+        <label>
+            Initial value
+            <select @bind="_targetPlacement">
+                <option value="First">First row</option>
+                <option value="Visible">Visible row</option>
+                <option value="Far">Far row</option>
+            </select>
+        </label>
+        <label class="pc-check">
+            <input type="checkbox" @bind="_applyOpeningFilter" />
+            Apply opening filter
+        </label>
+        <label>
+            Baseline stage delay
+            <span class="pc-number"><input type="number" min="0" max="2000" step="50" @bind="_stageDelayMs" /> ms</span>
+        </label>
+        <button id="pc-open-baseline" @onclick="() => Open(BenchPath.Baseline)">Open staged baseline</button>
+        <button id="pc-open-optimized" @onclick="() => Open(BenchPath.Optimized)">Open optimized</button>
+        <button id="pc-switch-columns" @onclick="SwitchColumns" disabled="@(!_show)">Switch column set</button>
+        <button id="pc-close" @onclick="Close" disabled="@(!_show)">Close</button>
+        <button id="pc-reset" @onclick="ResetResults">Reset results</button>
+    </div>
+
+    <div class="pc-results">
+        <table aria-label="PickList opening comparison">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Staged baseline</th>
+                    <th>Optimized first paint</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Open to ready</td><td>@Metric(_baselineSample?.ReadyMs, " ms")</td><td>@Metric(_optimizedSample?.ReadyMs, " ms")</td></tr>
+                <tr><td>Grid renders to ready</td><td>@Metric(_baselineSample?.RenderCount)</td><td>@Metric(_optimizedSample?.RenderCount)</td></tr>
+                <tr><td>Average grid build</td><td>@Metric(_baselineSample?.AverageBuildMs, " ms")</td><td>@Metric(_optimizedSample?.AverageBuildMs, " ms")</td></tr>
+                <tr><td>Selection callbacks while opening</td><td>@Metric(_baselineSample?.SelectionCallbacks)</td><td>@Metric(_optimizedSample?.SelectionCallbacks)</td></tr>
+                <tr><td>Rows supplied to grid</td><td>@Metric(_baselineSample?.SourceRows)</td><td>@Metric(_optimizedSample?.SourceRows)</td></tr>
+                <tr><td>Rows after opening filter</td><td>@Metric(_baselineSample?.VisibleRows)</td><td>@Metric(_optimizedSample?.VisibleRows)</td></tr>
+                <tr><td>Short-list windowing</td><td>@TextMetric(_baselineSample?.Windowing)</td><td>@TextMetric(_optimizedSample?.Windowing)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    @if (_show)
+    {
+        <div class="pc-workbench">
+            <div class="pc-dialog-title">
+                <strong>@CurrentPathName</strong>
+                <span>@_status</span>
+            </div>
+            <div class="pc-dialog-body">
+                <div class="pc-instructions">
+                    <strong>Choose an item.</strong>
+                    <span>Target: @TargetValue · source: @_gridData.Count.ToString("N0") rows</span>
+                </div>
+                <div class="pc-grid-frame">
+                    @if (_path == BenchPath.Optimized && !_ready)
+                    {
+                        <div class="pc-preparing" role="status">Preparing filtered selection...</div>
+                    }
+                    <div class="pc-grid-visibility" style="@GridVisibilityStyle">
+                        <GridControl @ref="_grid"
+                                     @key="_mountGeneration"
+                                     TValue="ExpandoObject"
+                                     DataSource="@_gridData"
+                                     PerformanceMode="GridPerformanceMode.ClientPreviewAndServerOptimized"
+                                     AllowSorting="true"
+                                     AllowResizing="true"
+                                     AllowFiltering="true"
+                                     AllowSelection="true"
+                                     EnableHeaderContextMenu="false"
+                                     ShowSelectionInfoBar="false"
+                                     Height="100%"
+                                     Width="100%"
+                                     WindowOverscanRows="60"
+                                     MinimumRowsForWindowing="@MinimumRowsForWindowing"
+                                     InitialSelectedRowIndex="@InitialRowIndex"
+                                     FocusInitialSelection="@(_path == BenchPath.Optimized)"
+                                     NotifyInitialSelectionChanged="false"
+                                     InitialSelectionReady="OnInitialSelectionReady"
+                                     SelectionSettingsRef="@_selectionSettings"
+                                     EventsRef="@_gridEvents">
+                            <GridColumnsBase @key="_columnsVersion">
+                                @foreach (var column in CurrentColumns)
+                                {
+                                    var isLast = ReferenceEquals(column, CurrentColumns[^1]);
+                                    <GridColumn Field="@column.Field"
+                                                HeaderText="@column.Header"
+                                                Width="@(isLast ? null : $"{column.Width}px")"
+                                                MinWidth="@(isLast ? $"{column.Width}px" : null)"
+                                                AllowSorting="true"
+                                                AllowFiltering="true" />
+                                }
+                            </GridColumnsBase>
+                        </GridControl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="pc-timeline">
+        <strong>Opening stages</strong>
+        @if (_timeline.Count == 0)
+        {
+            <span>Run either path to see its render sequence.</span>
+        }
+        else
+        {
+            @foreach (var entry in _timeline)
+            {
+                <span>@entry</span>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private enum BenchPath
+    {
+        Baseline,
+        Optimized
+    }
+
+    private enum TargetPlacement
+    {
+        First,
+        Visible,
+        Far
+    }
+
+    private enum OpenStage
+    {
+        None,
+        BaselineMounted,
+        BaselineFiltered,
+        BaselineFinalize,
+        OptimizedWaiting,
+        OptimizedEmpty
+    }
+
+    private sealed record DynColumn(string Field, string Header, int Width);
+
+    private sealed record BenchSample(
+        double ReadyMs,
+        long RenderCount,
+        double TotalBuildMs,
+        long SelectionCallbacks,
+        int SourceRows,
+        int VisibleRows,
+        string Windowing)
+    {
+        public double AverageBuildMs => RenderCount == 0 ? 0 : TotalBuildMs / RenderCount;
+    }
+
+    private static readonly IReadOnlyList<DynColumn> PrimaryColumns =
+    [
+        new("Value", "Value", 120),
+        new("Description", "Description", 260)
+    ];
+
+    private static readonly IReadOnlyList<DynColumn> AlternateColumns =
+    [
+        new("Code", "Code", 90),
+        new("Name", "Name", 150),
+        new("Extra", "Extra", 180)
+    ];
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Single,
+        EnableToggle = true
+    };
+
+    private readonly GridControlEvents<ExpandoObject> _gridEvents = new();
+    private readonly List<string> _timeline = new();
+    private GridControl<ExpandoObject>? _grid;
+    private List<ExpandoObject> _gridData = new();
+    private ExpandoObject? _targetRow;
+    private BenchPath _path;
+    private TargetPlacement _targetPlacement = TargetPlacement.Far;
+    private OpenStage _stage;
+    private Stopwatch? _openClock;
+    private BenchSample? _baselineSample;
+    private BenchSample? _optimizedSample;
+    private int _rowCount = 5000;
+    private int _stageDelayMs = 250;
+    private int _targetIndex = -1;
+    private int _expectedVisibleRows;
+    private int _mountGeneration;
+    private int _columnsVersion;
+    private long _selectionCallbacks;
+    private bool _applyOpeningFilter = true;
+    private bool _alternateColumns;
+    private bool _pipelineBusy;
+    private bool _ready;
+    private bool _show;
+    private string _status = "Closed";
+
+    private IReadOnlyList<DynColumn> CurrentColumns => _alternateColumns ? AlternateColumns : PrimaryColumns;
+    private string CurrentPathName => _path == BenchPath.Baseline ? "Staged baseline" : "Optimized first paint";
+    private int MinimumRowsForWindowing => _path == BenchPath.Optimized ? 200 : 0;
+    private int? InitialRowIndex => _path == BenchPath.Optimized && _targetIndex >= 0 ? _targetIndex : null;
+    private string GridVisibilityStyle => _path == BenchPath.Optimized && !_ready ? "visibility:hidden" : "visibility:visible";
+    private string TargetValue => _targetRow == null
+        ? "none"
+        : TryGetValue(_targetRow, _alternateColumns ? "Code" : "Value") ?? "none";
+
+    protected override void OnInitialized()
+    {
+        _gridEvents.SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(
+            NonRenderingEventReceiver.Instance,
+            _ => _selectionCallbacks++);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_show || _pipelineBusy)
+            return;
+
+        switch (_stage)
+        {
+            case OpenStage.BaselineMounted:
+                if (_applyOpeningFilter)
+                {
+                    _pipelineBusy = true;
+                    AddTimeline("grid painted without filter or selection");
+                    await DelayBaselineStageAsync();
+                    _stage = OpenStage.BaselineFiltered;
+                    if (_grid != null)
+                        await _grid.FilterByColumnAsync("Description", "Eligible");
+                    AddTimeline("filter applied in a later render");
+                    _pipelineBusy = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    await RequestBaselineSelectionAsync();
+                }
+                break;
+
+            case OpenStage.BaselineFiltered:
+                await RequestBaselineSelectionAsync();
+                break;
+
+            case OpenStage.BaselineFinalize:
+                _stage = OpenStage.None;
+                _ready = true;
+                _status = "Ready";
+                AddTimeline("selection and viewport reveal completed");
+                CompleteSample();
+                await InvokeAsync(StateHasChanged);
+                break;
+
+            case OpenStage.OptimizedEmpty:
+                _stage = OpenStage.None;
+                _ready = true;
+                _status = "Ready - empty list";
+                AddTimeline("empty grid exposed after its first render");
+                CompleteSample();
+                await InvokeAsync(StateHasChanged);
+                break;
+        }
+    }
+
+    private void Open(BenchPath path)
+    {
+        var allRows = BuildRows(_rowCount);
+        var visibleRows = _applyOpeningFilter ? allRows.Where(IsEligible).ToList() : allRows;
+        _path = path;
+        _gridData = path == BenchPath.Optimized ? visibleRows : allRows;
+        _expectedVisibleRows = visibleRows.Count;
+        _targetIndex = ResolveTargetIndex(_expectedVisibleRows);
+        _targetRow = _targetIndex >= 0 ? visibleRows[_targetIndex] : null;
+        _selectionCallbacks = 0;
+        _timeline.Clear();
+        _ready = false;
+        _pipelineBusy = false;
+        _status = path == BenchPath.Baseline ? "Opening in stages" : "Preparing before display";
+        _mountGeneration++;
+        _columnsVersion++;
+        _show = true;
+
+        GridRenderDiagnostics.Reset();
+        GridServerOptimizationDiagnostics.Reset();
+        _openClock = Stopwatch.StartNew();
+
+        if (path == BenchPath.Baseline)
+        {
+            _stage = OpenStage.BaselineMounted;
+            AddTimeline("unfiltered grid mounted visibly");
+        }
+        else if (_gridData.Count == 0)
+        {
+            _stage = OpenStage.OptimizedEmpty;
+            AddTimeline("filter prepared before empty grid mount");
+        }
+        else
+        {
+            _stage = OpenStage.OptimizedWaiting;
+            AddTimeline("filter and selected row prepared before mount");
+        }
+    }
+
+    private async Task RequestBaselineSelectionAsync()
+    {
+        _pipelineBusy = true;
+        await DelayBaselineStageAsync();
+        _stage = OpenStage.BaselineFinalize;
+        if (_grid != null && _targetIndex >= 0)
+            await _grid.SelectAndRevealRowAsync(_targetIndex, clearExistingSelection: true);
+        AddTimeline("selection requested after the visible grid paint");
+        _pipelineBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task DelayBaselineStageAsync() =>
+        _stageDelayMs <= 0 ? Task.CompletedTask : Task.Delay(_stageDelayMs);
+
+    private Task OnInitialSelectionReady()
+    {
+        if (_path != BenchPath.Optimized || _stage != OpenStage.OptimizedWaiting)
+            return Task.CompletedTask;
+
+        _stage = OpenStage.None;
+        _ready = true;
+        _status = "Ready";
+        AddTimeline("filtered selection revealed before grid became visible");
+        CompleteSample();
+        return Task.CompletedTask;
+    }
+
+    private void CompleteSample()
+    {
+        _openClock?.Stop();
+        var sample = new BenchSample(
+            _openClock?.Elapsed.TotalMilliseconds ?? 0,
+            GridRenderDiagnostics.RenderCount,
+            GridRenderDiagnostics.TotalBuildMs,
+            _selectionCallbacks,
+            _gridData.Count,
+            _expectedVisibleRows,
+            MinimumRowsForWindowing == 0 ? "Always when bounded" : $"> {MinimumRowsForWindowing:N0} rows");
+
+        if (_path == BenchPath.Baseline)
+            _baselineSample = sample;
+        else
+            _optimizedSample = sample;
+    }
+
+    private void SwitchColumns()
+    {
+        _alternateColumns = !_alternateColumns;
+        _columnsVersion++;
+    }
+
+    private void Close()
+    {
+        _show = false;
+        _ready = false;
+        _stage = OpenStage.None;
+        _status = "Closed";
+    }
+
+    private void ResetResults()
+    {
+        _baselineSample = null;
+        _optimizedSample = null;
+        _timeline.Clear();
+        GridRenderDiagnostics.Reset();
+        GridServerOptimizationDiagnostics.Reset();
+    }
+
+    private void AddTimeline(string text)
+    {
+        var elapsed = _openClock?.Elapsed.TotalMilliseconds ?? 0;
+        _timeline.Add($"{elapsed,7:0} ms  {text}");
+    }
+
+    private int ResolveTargetIndex(int count) => count <= 0
+        ? -1
+        : _targetPlacement switch
+        {
+            TargetPlacement.First => 0,
+            TargetPlacement.Visible => Math.Min(8, count - 1),
+            _ => Math.Max(0, count - 5)
+        };
+
+    private static bool IsEligible(ExpandoObject row) =>
+        TryGetValue(row, "Description")?.StartsWith("Eligible", StringComparison.Ordinal) == true;
+
+    private static List<ExpandoObject> BuildRows(int count)
+    {
+        var rows = new List<ExpandoObject>(count);
+        for (var i = 1; i <= count; i++)
+        {
+            var row = new ExpandoObject();
+            var values = (IDictionary<string, object?>)row;
+            values["Value"] = $"V{i:00000}";
+            values["Description"] = $"{(i % 2 == 1 ? "Eligible" : "Other")} item {i:N0}";
+            values["Code"] = $"C{i:00000}";
+            values["Name"] = $"Name {i:N0}";
+            values["Extra"] = $"Additional value {i:N0}";
+            rows.Add(row);
+        }
+        return rows;
+    }
+
+    private static string? TryGetValue(ExpandoObject row, string field) =>
+        ((IDictionary<string, object?>)row).TryGetValue(field, out var value) ? value?.ToString() : null;
+
+    private static string Metric(long? value) => value?.ToString("N0") ?? "-";
+    private static string Metric(double? value, string suffix) => value.HasValue ? $"{value:0.00}{suffix}" : "-";
+    private static string TextMetric(string? value) => value ?? "-";
+}

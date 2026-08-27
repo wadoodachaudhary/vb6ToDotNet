@@ -1,0 +1,637 @@
+@page "/page-control"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@inject FlexKitTester.Services.BenchDataStore BenchData
+
+<PageTitle>PageControl Tester</PageTitle>
+
+<style>
+    .vt-data-error {
+        padding: 3px 8px;
+        border: 1px solid #a12a2a;
+        background: #ffe3e3;
+        color: #7a1010;
+        font-weight: 600;
+    }
+
+    /* Shell rules live here, not in the scoped .razor.css: CssClass lands on
+       PageControl's own root div, which never carries this page's scope
+       attribute, so a scoped .vt-page rule can never match it. */
+    .vt-page {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 4.5rem);
+        min-height: 0;
+        overflow: hidden;
+        background: #f0f0f0;
+        font-family: Tahoma, "MS Sans Serif", sans-serif;
+        font-size: 11px;
+    }
+
+    .vt-page .fx-grid {
+        --fx-grid-selected-row-bg: @BuildColorHex;
+        --fx-grid-cell-selected-row-bg: @BuildColorHex;
+        --fx-grid-selected-cell-bg: @BuildColorHex;
+    }
+</style>
+
+<PageControl NavigationGraph="@NavigationGraph" CssClass="vt-page">
+    <div class="vt-header">
+        <span>PageControl Tester — vendor @(_index + 1) of @BenchData.Vendors.Count — <b>@VendorId</b> · build <b>@BuildStamp</b> · selection: <b>@BuildColorName</b> (stale tab shows a different color)</span>
+        <div class="vt-load-report">@BenchData.LoadReport</div>
+        @if (_dataError != null)
+        {
+            <span class="vt-data-error">DATA NOT LOADED — @_dataError</span>
+        }
+    </div>
+
+    <div class="vt-layout">
+        <div id="vt-form" class="vt-left">
+            <div class="form-row">
+                <label>Vendor</label>
+                <TextBoxControl Value="@VendorId" Enabled="false" />
+            </div>
+            <div class="form-row">
+                <label>Company Name</label>
+                <TextBoxControl Value="@Description" ValueChanged="v => Description = v ?? string.Empty" MaxLength="60" />
+            </div>
+            <div class="form-row">
+                <label></label>
+                <CheckBoxControl @bind-Checked="IsTBD" Label="TBD - budget planning only" />
+            </div>
+            <div class="form-row">
+                <label></label>
+                <CheckBoxControl @bind-Checked="IsBuildPro" Label="BuildPro Vendor" />
+            </div>
+            <div class="form-row">
+                <label>Address</label>
+                <TextBoxControl Value="@Address" ValueChanged="v => Address = v ?? string.Empty" />
+            </div>
+            <div class="form-row">
+                <label></label>
+                <TextBoxControl Value="@Address2" ValueChanged="v => Address2 = v ?? string.Empty" />
+            </div>
+            <div class="form-row">
+                <label>City</label>
+                <TextBoxControl Value="@City" ValueChanged="v => City = v ?? string.Empty" MaxLength="50" />
+            </div>
+            <div class="form-row">
+                <label>State/Province</label>
+                <TextBoxControl Value="@Province" ValueChanged="v => Province = v ?? string.Empty" MaxLength="20" />
+            </div>
+            <div class="form-row">
+                <label>Postal</label>
+                <TextBoxControl Value="@Postal" ValueChanged="v => Postal = v ?? string.Empty" MaxLength="10" />
+            </div>
+            <div class="form-row">
+                <label>Phone</label>
+                <TextBoxControl Value="@Phone" ValueChanged="v => Phone = v ?? string.Empty" MaxLength="25" />
+            </div>
+            <div class="form-row">
+                <label>Fax</label>
+                <TextBoxControl Value="@Fax" ValueChanged="v => Fax = v ?? string.Empty" MaxLength="25" />
+            </div>
+            <div class="form-row">
+                <label>Status</label>
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="@StatusItems"
+                                     Value="@Status"
+                                     ValueChanged="v => Status = v ?? StatusItems[0]"
+                                     Width="120px" />
+            </div>
+            <div class="form-row">
+                <label>Retainage %</label>
+                <NumericTextBoxControl TValue="int"
+                                       Value="@HoldbackPercent"
+                                       ValueChanged="v => HoldbackPercent = v"
+                                       Min="0" Max="100" Step="1"
+                                       Width="70px" />
+            </div>
+            @if (!string.IsNullOrEmpty(WalletPayeeID))
+            {
+                <div class="form-row">
+                    <label>Payee ID</label>
+                    <TextBoxControl Value="@WalletPayeeID" Enabled="false" />
+                </div>
+            }
+            <div class="form-row">
+                <label>Tax ID</label>
+                <TextBoxControl Value="@TaxID" Enabled="false" />
+            </div>
+            <div class="form-row">
+                <label>Trade Type</label>
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="@TradeTypes"
+                                     Value="@TradeType"
+                                     ValueChanged="v => TradeType = v ?? string.Empty"
+                                     AllowFiltering="true"
+                                     Width="100%" />
+            </div>
+            <div class="form-row">
+                <label>PO Format</label>
+                <DropDownListControl TValue="string" TItem="string"
+                                     DataSource="@POFormats"
+                                     Value="@POFormat"
+                                     ValueChanged="v => POFormat = v ?? string.Empty"
+                                     Width="100%" />
+            </div>
+
+            <h4 class="section-title">Web Portal</h4>
+            <div class="form-row">
+                <label>Login ID</label>
+                <TextBoxControl Value="@WebUID" ValueChanged="v => WebUID = v ?? string.Empty" MaxLength="40" />
+            </div>
+            <div class="form-row">
+                <label>Password</label>
+                <TextBoxControl Value="@WebPWD" ValueChanged="v => WebPWD = v ?? string.Empty" MaxLength="20" />
+            </div>
+        </div>
+
+        <div class="vt-right">
+            <h4 class="section-title">Contacts</h4>
+            <section id="vt-grid-contacts" class="vt-grid-section" tabindex="0">
+                <GridControl @ref="gContacts" TValue="VendorContact" DataSource="@Contacts"
+                             AllowSorting="true" AllowResizing="true" EnableHover="true" Height="220px" RowHeight="20"
+                             SelectionSettingsRef="@_contactsSelection"
+                             EditSettingsRef="@_contactsEdit"
+                             NewItemFactory="CreateContactRow"
+                             EnsureTrailingNewRow="true"
+                             IsTrailingNewRow="IsContactEmpty"
+                             AddNewRowOnLastCellExit="true"
+                             CanAddNewRowOnLastCellExit="CanAppendContactRowAfter"
+                             EventsRef="@_contactsEvents"
+                             TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered">
+                    <GridColumnsBase>
+                        <GridColumn Field="@nameof(VendorContact.Role)" HeaderText="Role" Width="100px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.Name)" HeaderText="Name" Width="140px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.Phone)" HeaderText="Phone" Width="120px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.Cell)" HeaderText="Mobile" Width="120px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.Email)" HeaderText="Email" Width="180px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.PONotice)" HeaderText="Purchasing" Width="90px" Type="ColumnType.CheckBox" />
+                        <GridColumn Field="@nameof(VendorContact.FPONotice)" HeaderText="Field PO" Width="90px" Type="ColumnType.CheckBox" />
+                        <GridColumn Field="@nameof(VendorContact.SchedNotice)" HeaderText="Scheduling" Width="100px" Type="ColumnType.CheckBox" />
+                        <GridColumn Field="@nameof(VendorContact.ServiceNotice)" HeaderText="Service" Width="100px" Type="ColumnType.CheckBox" />
+                        <GridColumn Field="@nameof(VendorContact.SendViaText)" HeaderText="Send Via" Width="80px"
+                                    AllowEditing="true" EditOptions="@SendViaOptions" />
+                        <GridColumn Field="@nameof(VendorContact.Fax)" HeaderText="Fax" Width="120px" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorContact.SmsAddress)" HeaderText="SMS Provider" Width="140px"
+                                    AllowEditing="true" EditOptions="@SmsCarrierOptions" />
+                    </GridColumnsBase>
+                </GridControl>
+            </section>
+
+            <h4 class="section-title">Contract Payment Points</h4>
+            <section id="vt-grid-paypoints" class="vt-grid-section" tabindex="0">
+                <GridControl @ref="gPayPoints" TValue="VendorPayPoint" DataSource="@PayPoints"
+                             AllowSorting="true" AllowResizing="true" EnableHover="true" Height="90px" RowHeight="20"
+                             SelectionSettingsRef="@_payPointsSelection"
+                             EditSettingsRef="@_payPointsEdit"
+                             NewItemFactory="CreatePayPointRow"
+                             EnsureTrailingNewRow="true"
+                             IsTrailingNewRow="IsPayPointEmpty"
+                             AddNewRowOnLastCellExit="true"
+                             CanAddNewRowOnLastCellExit="CanAppendPayPointRowAfter"
+                             EventsRef="@_payPointsEvents"
+                             TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered">
+                    <GridColumnsBase>
+                        <GridColumn Field="@nameof(VendorPayPoint.POIndex)" HeaderText="POIndex" Width="180px"
+                                    AllowEditing="false"
+                                    ShowEditButton="true" AlwaysShowEditButton="true"
+                                    ClipMode="ClipMode.Ellipsis" />
+                        <GridColumn Field="@nameof(VendorPayPoint.PayPoint1Percent)" HeaderText="Pmt 1" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorPayPoint.PayPoint2Percent)" HeaderText="Pmt 2" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorPayPoint.PayPoint3Percent)" HeaderText="Pmt 3" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorPayPoint.PayPoint4Percent)" HeaderText="Pmt 4" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                        <GridColumn Field="@nameof(VendorPayPoint.PayPoint5Percent)" HeaderText="Pmt 5" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                    </GridColumnsBase>
+                </GridControl>
+            </section>
+
+            <h4 class="section-title">Tax Groups</h4>
+            <section id="vt-grid-taxgroups" class="vt-grid-section" tabindex="0">
+                <GridControl @ref="gTaxGroups" TValue="TaxGroupRow" DataSource="@TaxGroupsData"
+                             AllowSorting="false" AllowResizing="true" EnableHover="true" Height="95px" RowHeight="20"
+                             SelectionSettingsRef="@_taxGroupsSelection"
+                             EditSettingsRef="@_taxGroupsEdit"
+                             EventsRef="@_taxGroupsEvents">
+                    <GridColumnsBase>
+                        <GridColumn Field="Community" HeaderText="Community" Width="110px" AllowEditing="false" />
+                        <GridColumn Field="CommunityDescription" HeaderText="Description" Width="220px"
+                                    AllowEditing="false"
+                                    ShowEditButton="true" AlwaysShowEditButton="true"
+                                    ShowEditButtonPredicate="@(o => !((TaxGroupRow)o).IsDefaultsRow)"
+                                    ClipMode="ClipMode.Ellipsis" />
+                        @foreach (var fld in TaxGroupCostFields)
+                        {
+                            var f = fld;
+                            <GridColumn Field="@f" HeaderText="@f" Width="110px"
+                                        AllowEditing="false"
+                                        ShowEditButton="true" AlwaysShowEditButton="true"
+                                        ShowEditButtonPredicate="@(o => !((TaxGroupRow)o).IsNewRow)"
+                                        ClipMode="ClipMode.Ellipsis" />
+                        }
+                    </GridColumnsBase>
+                </GridControl>
+            </section>
+
+            <h4 class="section-title">Insurance</h4>
+            <section id="vt-grid-insurance" class="vt-grid-section" tabindex="0">
+                <GridControl @ref="gInsurance" TValue="InsuranceRequirement" DataSource="@InsuranceData"
+                             AllowSorting="false" AllowResizing="true" EnableHover="true" Height="115px" RowHeight="20"
+                             SelectionSettingsRef="@_insuranceSelection"
+                             EditSettingsRef="@_insuranceEdit"
+                             EventsRef="@_insuranceEvents"
+                             TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered">
+                    <GridColumnsBase>
+                        <GridColumn Field="Name" HeaderText="Name" Width="140px" AllowEditing="false" />
+                        <GridColumn Field="Req" HeaderText="Req" Width="60px" Type="ColumnType.CheckBox" AllowEditing="true" />
+                        <GridColumn Field="ExpiryDate" HeaderText="Expiry Date" Type="ColumnType.Date" Format="MM/dd/yyyy" Width="120px"
+                                    OpenDateCalendarOnDoubleClick="true" AllowEditing="true" />
+                        <GridColumn Field="Company" HeaderText="Company" Width="160px" AllowEditing="true" />
+                        <GridColumn Field="PolicyNumber" HeaderText="Policy Number" Width="160px" AllowEditing="true" />
+                    </GridColumnsBase>
+                </GridControl>
+            </section>
+
+            <div id="vt-nav" class="nav-buttons">
+                <ButtonControl BareStyle="true" OnClick="PreviousClick">&lt;&lt; Previous</ButtonControl>
+                <span class="vt-position">vendor @(_index + 1) of @BenchData.Vendors.Count — @VendorId</span>
+                <ButtonControl BareStyle="true" OnClick="NextClick">Next &gt;&gt;</ButtonControl>
+            </div>
+            <div class="vt-status">@_lastAction | cell edits @_edits</div>
+        </div>
+    </div>
+</PageControl>
+
+@code {
+    // Build marker (same scheme as EditItemsBench): color + stamp rotate per
+    // FlexCore build so a stale cached tab is self-evident.
+    private static readonly (string Name, string Hex)[] BuildColors =
+    {
+        ("Light Blue", "#b9d7ff"), ("Mint Green", "#b9f0d0"), ("Peach", "#ffd9b9"),
+        ("Lavender", "#d9c9ff"), ("Lemon", "#f3f0b0"), ("Pink", "#ffc9dd"),
+        ("Aqua", "#b9ecf0"), ("Sand", "#e8dcb9"),
+    };
+    private static readonly long GridBuildTicks = System.IO.File.GetLastWriteTimeUtc(
+        typeof(GridControl<VendorContact>).Assembly.Location).Ticks;
+    private static string BuildStamp => (GridBuildTicks / 10_000_000 % 100_000).ToString();
+    private static string BuildColorName => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Name;
+    private static string BuildColorHex => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Hex;
+
+    // ── Row models (FVendor parity) ─────────────────────────────────────
+    public class InsuranceRequirement
+    {
+        public string Name { get; set; } = "";
+        public bool Req { get; set; }
+        public DateTime? ExpiryDate { get; set; }
+        public string? Company { get; set; }
+        public string? PolicyNumber { get; set; }
+    }
+
+    public class TaxGroupRow
+    {
+        public string? Community { get; set; }
+        public string? CommunityDescription { get; set; }
+        public string? Labour { get; set; }
+        public string? Material { get; set; }
+        public string? SubContract { get; set; }
+        public string? Equipment { get; set; }
+        public string? Overhead { get; set; }
+        public string? Other { get; set; }
+        // Row 1 = "-- vendor defaults --"; last row = blank "new" placeholder.
+        public bool IsDefaultsRow { get; set; }
+        public bool IsNewRow { get; set; }
+    }
+
+    public class VendorPayPoint
+    {
+        public string? POIndex { get; set; }
+        public double PayPoint1Percent { get; set; }
+        public double PayPoint2Percent { get; set; }
+        public double PayPoint3Percent { get; set; }
+        public double PayPoint4Percent { get; set; }
+        public double PayPoint5Percent { get; set; }
+    }
+
+    public class VendorContact
+    {
+        public string? ContactID { get; set; }
+        public string? Role { get; set; }
+        public string? Name { get; set; }
+        public string? Phone { get; set; }
+        public string? Cell { get; set; }
+        public string? Fax { get; set; }
+        public string? Email { get; set; }
+        public int SendVia { get; set; }
+        // The grid binds the Send-Via NAME; the CommModeID code stays in
+        // SendVia (1=Print / 3=Email / 4=Fax).
+        public string SendViaText
+        {
+            get => SendVia switch { 1 => "Print", 3 => "Email", 4 => "Fax", _ => "" };
+            set => SendVia = (value ?? "").Trim().ToLowerInvariant() switch
+            {
+                "print" => 1,
+                "email" => 3,
+                "fax" => 4,
+                "" => 0,
+                _ => int.TryParse(value, out var sv) ? sv : SendVia
+            };
+        }
+        public string? SmsAddress { get; set; }
+        public bool PONotice { get; set; }
+        public bool FPONotice { get; set; }
+        public bool SchedNotice { get; set; }
+        public bool ServiceNotice { get; set; }
+        public bool Dirty { get; set; }
+    }
+
+    // ── PageControl navigation graph ────────────────────────────────────
+    private static readonly PageNavigationGraph NavigationGraph = new(
+    [
+        new("Form",      "#vt-form",           10, Mode: PageNavigationNodeMode.Descendants),
+        new("Contacts",  "#vt-grid-contacts",  20, Mode: PageNavigationNodeMode.Element),
+        new("PayPoints", "#vt-grid-paypoints", 30, Mode: PageNavigationNodeMode.Element),
+        new("TaxGroups", "#vt-grid-taxgroups", 40, Mode: PageNavigationNodeMode.Element),
+        new("Insurance", "#vt-grid-insurance", 50, Mode: PageNavigationNodeMode.Element),
+        new("Nav",       "#vt-nav",            60, Mode: PageNavigationNodeMode.Descendants)
+    ]);
+
+    private static readonly string[] TaxGroupCostFields =
+        { "Labour", "Material", "SubContract", "Equipment", "Overhead", "Other" };
+
+    // VB6 ColComboList "#1;Print|#3;Email|#4;Fax".
+    private static readonly string[] SendViaOptions = { "Print", "Email", "Fax" };
+
+    // ── Grid edit/selection/event wiring (FVendor, read-only gates dropped) ──
+    private SelectionSettings _contactsSelection = new() { Mode = SelectionMode.Cell, Type = SelectionType.Single };
+    private EditSettings _contactsEdit = new() { AllowAdding = true, AllowEditing = true, ShowConfirmDialog = false, Mode = EditMode.Batch };
+    private GridControlEvents<VendorContact> _contactsEvents = new();
+
+    private SelectionSettings _payPointsSelection = new() { Mode = SelectionMode.Cell, Type = SelectionType.Single };
+    private EditSettings _payPointsEdit = new() { AllowAdding = true, AllowEditing = true, ShowConfirmDialog = false, Mode = EditMode.Batch };
+    private GridControlEvents<VendorPayPoint> _payPointsEvents = new();
+
+    private SelectionSettings _taxGroupsSelection = new() { Mode = SelectionMode.Cell, Type = SelectionType.Single };
+    private EditSettings _taxGroupsEdit = new() { AllowEditing = false, ShowConfirmDialog = false, Mode = EditMode.Inline };
+    private GridControlEvents<TaxGroupRow> _taxGroupsEvents = new();
+
+    private SelectionSettings _insuranceSelection = new() { Mode = SelectionMode.Cell, Type = SelectionType.Single };
+    private EditSettings _insuranceEdit = new() { AllowEditing = true, ShowConfirmDialog = false, Mode = EditMode.Batch };
+    private GridControlEvents<InsuranceRequirement> _insuranceEvents = new();
+
+    private GridControl<VendorContact>? gContacts;
+    private GridControl<VendorPayPoint>? gPayPoints;
+    private GridControl<TaxGroupRow>? gTaxGroups;
+    private GridControl<InsuranceRequirement>? gInsurance;
+
+    // ── Per-vendor page state ───────────────────────────────────────────
+    private int _index;
+    private string VendorId = "";
+    private string Description = "";
+    private string Address = "";
+    private string Address2 = "";
+    private string City = "";
+    private string Province = "";
+    private string Postal = "";
+    private string Phone = "";
+    private string Fax = "";
+    private bool IsTBD;
+    private bool IsBuildPro;
+    private string WebUID = "";
+    private string WebPWD = "";
+    private string WalletPayeeID = "";
+    private string TaxID = "";
+    private string Status = "Active";
+    private readonly List<string> StatusItems = new() { "Active", "Inactive" };
+    private string TradeType = "";
+    private string POFormat = "";
+    private int HoldbackPercent;
+
+    // Combo sources come from the exports (the app derives them from the DB).
+    private List<string> TradeTypes = new();
+    private List<string> POFormats = new();
+    private List<string> SmsCarrierOptions = new();
+
+    private List<VendorContact> Contacts = new();
+    private List<VendorPayPoint> PayPoints = new();
+    private List<InsuranceRequirement> InsuranceData = new();
+    private List<TaxGroupRow> TaxGroupsData = new();
+
+    private string? _dataError;
+    private int _edits;
+    private string _lastAction = "Ready";
+
+    // ── Trailing-new-row machinery (FVendor parity) ─────────────────────
+    private VendorContact CreateContactRow() => new();
+
+    private static bool CanAppendContactRowAfter(VendorContact row) =>
+        row != null && !IsContactEmpty(row);
+
+    private VendorPayPoint CreatePayPointRow() => new();
+
+    private static bool IsPayPointEmpty(VendorPayPoint row) =>
+        row == null || string.IsNullOrWhiteSpace(row.POIndex);
+
+    private static bool CanAppendPayPointRowAfter(VendorPayPoint row) =>
+        row != null && !IsPayPointEmpty(row);
+
+    private static bool IsContactEmpty(VendorContact c)
+    {
+        if (c == null) return true;
+        return string.IsNullOrWhiteSpace(c.ContactID)
+            && string.IsNullOrWhiteSpace(c.Role)
+            && string.IsNullOrWhiteSpace(c.Name)
+            && string.IsNullOrWhiteSpace(c.Phone)
+            && string.IsNullOrWhiteSpace(c.Cell)
+            && string.IsNullOrWhiteSpace(c.Fax)
+            && string.IsNullOrWhiteSpace(c.Email)
+            && string.IsNullOrWhiteSpace(c.SmsAddress)
+            && c.SendVia == 0
+            && !c.PONotice && !c.FPONotice && !c.SchedNotice && !c.ServiceNotice;
+    }
+
+    protected override void OnInitialized()
+    {
+        TradeTypes = BenchData.Vendors
+            .Select(v => (v.VendorGroupID ?? "").Trim())
+            .Where(t => t != "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        POFormats = BenchData.Vendors
+            .Select(v => (v.POFormat ?? "").Trim())
+            .Where(t => t != "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SmsCarrierOptions = BenchData.VendorContacts
+            .Select(c => (c.SMSAddress ?? "").Trim())
+            .Where(s => s != "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .Prepend("")
+            .ToList();
+
+        // Non-rendering receiver + lambdas (FVendor pattern): a cell commit
+        // must not re-render the page and all four grids.
+        _contactsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<VendorContact>>(
+            NonRenderingEventReceiver.Instance, _ => _edits++);
+        _payPointsEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<VendorPayPoint>>(
+            NonRenderingEventReceiver.Instance, _ => _edits++);
+        _insuranceEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<InsuranceRequirement>>(
+            NonRenderingEventReceiver.Instance, _ => _edits++);
+
+        _payPointsEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<VendorPayPoint>>(
+            this, args => _lastAction = $"edit button: {args.ColumnName} (FPickList is a HomeFront form — stubbed in bench)");
+        _taxGroupsEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<TaxGroupRow>>(
+            this, args => _lastAction = $"edit button: {args.ColumnName} (FPickList is a HomeFront form — stubbed in bench)");
+
+        _dataError = BenchData.VendorsError
+            ?? BenchData.VendorContactsError
+            ?? BenchData.VendorPayPointsError
+            ?? BenchData.VendorTaxGroupsError;
+        if (BenchData.Vendors.Count > 0)
+            LoadVendor(0);
+        else
+            _dataError ??= $"{FlexKitTester.Services.BenchDataStore.VendorsFileName} has 0 rows";
+    }
+
+    private void LoadVendor(int i)
+    {
+        _index = i;
+        var v = BenchData.Vendors[i];
+        VendorId = (v.Vendor_ID ?? "").Trim();
+        Description = v.Vendor_Name ?? "";
+        Address = v.Addr1 ?? "";
+        Address2 = v.Addr2 ?? "";
+        City = v.City ?? "";
+        Province = v.State ?? "";
+        Postal = v.Zip ?? "";
+        Phone = v.Phone ?? "";
+        Fax = v.Fax ?? "";
+        IsTBD = v.IsTBD == true;
+        IsBuildPro = v.BuildProEnabled == true;
+        WebUID = v.WebUID ?? "";
+        WebPWD = v.Password ?? "";
+        WalletPayeeID = v.WalletPayeeID ?? "";
+        TaxID = v.TaxID ?? "";
+        Status = v.InActive == true ? "Inactive" : "Active";
+        TradeType = v.VendorGroupID ?? "";
+        POFormat = v.POFormat ?? "";
+        HoldbackPercent = (int)Math.Round(v.HoldBackPercentage ?? 0);
+
+        Contacts = BenchData.VendorContacts
+            .Where(c => c.DivisionID == v.DivisionID
+                && string.Equals((c.VendorCode ?? "").Trim(), VendorId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(c => c.FirstName ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(c => new VendorContact
+            {
+                ContactID = c.ContactID?.ToString() ?? "",
+                Role = c.Role ?? "",
+                Name = c.FirstName ?? "",
+                Phone = c.WorkPhone ?? "",
+                Cell = c.CellPhone ?? "",
+                Fax = c.Fax ?? "",
+                Email = c.Email ?? "",
+                SendVia = c.CommModeID ?? 0,
+                SmsAddress = c.SMSAddress ?? "",
+                PONotice = c.PONotice == true,
+                FPONotice = c.FPONotice == true,
+                SchedNotice = c.SchedNotice == true,
+                ServiceNotice = c.ServiceNotice == true
+            })
+            .ToList();
+
+        PayPoints = BenchData.VendorPayPoints
+            .Where(p => p.DivisionID == v.DivisionID
+                && string.Equals((p.Vendor ?? "").Trim(), VendorId, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(p => p.POIndex ?? "", StringComparer.OrdinalIgnoreCase)
+            .Select(p => new VendorPayPoint
+            {
+                POIndex = p.POIndex ?? "",
+                PayPoint1Percent = p.PayPoint1Percent ?? 0,
+                PayPoint2Percent = p.PayPoint2Percent ?? 0,
+                PayPoint3Percent = p.PayPoint3Percent ?? 0,
+                PayPoint4Percent = p.PayPoint4Percent ?? 0,
+                PayPoint5Percent = p.PayPoint5Percent ?? 0
+            })
+            .ToList();
+
+        // Insurance: 4 fixed rows from the vendor row's own columns.
+        InsuranceData = new List<InsuranceRequirement>
+        {
+            new() { Name = "General Liability", Req = v.GLInsRequired == true,
+                ExpiryDate = v.GLInsExpDate, Company = v.GLInsCompany, PolicyNumber = v.GLInsPolicyNumber },
+            new() { Name = "Workers Comp", Req = v.WCInsRequired == true,
+                ExpiryDate = v.WCInsExpDate, Company = v.WCInsCompany, PolicyNumber = v.WCInsPolicyNumber },
+            new() { Name = "Umbrella", Req = v.UmbInsRequired == true,
+                ExpiryDate = v.UmbInsExpDate, Company = v.UmbInsCompany, PolicyNumber = v.UmbInsPolicyNumber },
+            new() { Name = "Automobile", Req = v.AutoInsRequired == true,
+                ExpiryDate = v.AutoInsExpDate, Company = v.AutoInsCompany, PolicyNumber = v.AutoInsPolicyNumber }
+        };
+
+        // Tax Groups: row 1 = "-- vendor defaults --" (from the vendor row's
+        // columns), then per-community rows, then a trailing blank "new" row.
+        TaxGroupsData = new List<TaxGroupRow>
+        {
+            new()
+            {
+                IsDefaultsRow = true,
+                Community = "",
+                CommunityDescription = " -- vendor defaults --",
+                Labour = v.LabourTaxGroup,
+                Material = v.MaterialTaxGroup,
+                SubContract = v.SubContractTaxGroup,
+                Equipment = v.EquipmentTaxGroup,
+                Overhead = v.OverheadTaxGroup,
+                Other = v.OtherTaxGroup
+            }
+        };
+        foreach (var t in BenchData.VendorTaxGroups.Where(t => t.DivisionID == v.DivisionID
+            && string.Equals((t.Vendor ?? "").Trim(), VendorId, StringComparison.OrdinalIgnoreCase)))
+        {
+            TaxGroupsData.Add(new TaxGroupRow
+            {
+                Community = t.Community,
+                // The tbllocality description join has no export.
+                CommunityDescription = t.Community,
+                Labour = t.LabourTaxGroup,
+                Material = t.MaterialTaxGroup,
+                SubContract = t.SubContractTaxGroup,
+                Equipment = t.EquipmentTaxGroup,
+                Overhead = t.OverheadTaxGroup,
+                Other = t.OtherTaxGroup
+            });
+        }
+        TaxGroupsData.Add(new TaxGroupRow { IsNewRow = true });
+
+        _lastAction = $"loaded {VendorId}";
+    }
+
+    // Wraparound index paging (FVendor stops at the ends). Edits are flushed
+    // through EndEditAsync, then discarded — no save path in the bench.
+    private async Task NextClick()
+    {
+        var count = BenchData.Vendors.Count;
+        if (count == 0) return;
+        await FlushGridsAsync();
+        LoadVendor((_index + 1) % count);
+    }
+
+    private async Task PreviousClick()
+    {
+        var count = BenchData.Vendors.Count;
+        if (count == 0) return;
+        await FlushGridsAsync();
+        LoadVendor((_index - 1 + count) % count);
+    }
+
+    private async Task FlushGridsAsync()
+    {
+        if (gContacts != null) await gContacts.EndEditAsync();
+        if (gPayPoints != null) await gPayPoints.EndEditAsync();
+        if (gTaxGroups != null) await gTaxGroups.EndEditAsync();
+        if (gInsurance != null) await gInsurance.EndEditAsync();
+    }
+}

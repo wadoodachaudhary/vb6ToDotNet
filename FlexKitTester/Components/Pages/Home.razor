@@ -1,0 +1,82 @@
+@page "/"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>FlexKit Tester — GridControl</PageTitle>
+
+<h3 style="font-family:Arial">GridControl batch-edit test bench</h3>
+<p style="font-family:Arial;font-size:13px">
+    Spec under test (owner 2026-07-24): single-click + type = replace all ·
+    first dbl-click = caret at click · second dbl-click = select all.
+</p>
+
+<div style="max-width:900px">
+    <GridControl @ref="_grid"
+                 TValue="Row"
+                 DataSource="@Rows"
+                 AllowSelection="true"
+                 AllowSorting="true"
+                 BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                 AllowSingleCellColumnMassEdit="true"
+                 Height="360px"
+                 PageSize="1000"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(Row.Code)" HeaderText="Code" Width="110px" AllowEditing="true" />
+            <GridColumn Field="@nameof(Row.Description)" HeaderText="Description" Width="260px" AllowEditing="true" />
+            <GridColumn Field="@nameof(Row.Qty)" HeaderText="Qty" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+            <GridColumn Field="@nameof(Row.Price)" HeaderText="Price" Width="110px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+<h4 style="font-family:Arial;margin-top:16px">Model state (updates on commit)</h4>
+<pre id="model-dump" style="font:12px monospace;background:#f6f6f6;border:1px solid #ddd;padding:8px">
+@foreach (var r in Rows)
+{
+    @($"{r.Code,-10} | {r.Description,-30} | Qty={r.Qty,-8} | Price={r.Price}\n")
+}
+</pre>
+
+@code {
+    public class Row
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+        public double Qty { get; set; }
+        public double Price { get; set; }
+    }
+
+    private GridControl<Row>? _grid;
+
+    [SupplyParameterFromQuery] public int? N { get; set; }
+
+    private List<Row> Rows { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        var count = N ?? 6;
+        for (int i = 0; i < count; i++)
+            Rows.Add(new Row { Code = $"{1200 + i}", Description = $"Line item number {i}", Qty = i + 1, Price = (i + 1) * 1.25 });
+    }
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true,
+        Mode = EditMode.Batch,
+        AllowEditOnDblClick = true,
+        // FUserPermissions-style VB6 flexEDKbdMouse entry: Enter opens the
+        // editor on the active cell; a second click on the already-active
+        // cell opens it too.
+        EditOnEnterKey = true,
+        EditOnActiveCellClick = true,
+    };
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Cell,
+        Type = SelectionType.Single,
+    };
+}

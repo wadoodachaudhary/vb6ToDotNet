@@ -1,0 +1,85 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<details class="scrolltrack-latency-panel">
+    <summary>ScrollTrack release timing — @Context</summary>
+    <div class="scrolltrack-latency-body" @ref="_host">
+        <p>
+            Drag and release the proxy thumb several times. Collection is entirely
+            browser-local until after paint, so the diagnostic itself adds no
+            SignalR trip to the measured release.
+        </p>
+        <div class="scrolltrack-latency-actions">
+            <button type="button" data-fx-action="clear">Clear samples</button>
+            <span data-fx-role="status">Waiting for a ScrollTrack release…</span>
+        </div>
+        <div class="scrolltrack-latency-summary" data-fx-role="summary"></div>
+        <div class="scrolltrack-latency-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Total release→paint</th>
+                        <th>Input handler</th>
+                        <th>Queue</th>
+                        <th>.NET invocation</th>
+                        <th>Token DOM</th>
+                        <th>DOM→paint</th>
+                        <th>Window math</th>
+                        <th>Razor build</th>
+                        <th>Grouped build</th>
+                        <th>Rows</th>
+                        <th>Long task</th>
+                    </tr>
+                </thead>
+                <tbody data-fx-role="samples"></tbody>
+            </table>
+        </div>
+        <p class="scrolltrack-latency-note">
+            Queue is time waiting behind another grid invocation. The .NET column
+            includes circuit transport, server scheduling, render-batch delivery,
+            and invocation completion. SQL is not part of this callback; compare
+            the separate latency panel only to detect unrelated infrastructure or
+            circuit contention.
+        </p>
+    </div>
+</details>
+
+@code {
+    [Parameter] public string Context { get; set; } = "grid";
+    [Parameter, EditorRequired] public string GridSelector { get; set; } = string.Empty;
+
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrWhiteSpace(GridSelector))
+            return;
+
+        _module = await JS.InvokeAsync<IJSObjectReference>(
+            "import",
+            "./scrolltrack-latency.js");
+        await _module.InvokeVoidAsync("attachScrollTrackLatencyPanel", _host, GridSelector);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("detachScrollTrackLatencyPanel", _host);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Normal circuit teardown.
+        }
+        catch (TaskCanceledException)
+        {
+            // Navigation can cancel queued JS interop.
+        }
+    }
+}

@@ -1,0 +1,187 @@
+@page "/pm-entry"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using FlexKitTester.Services
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>FlexKit Tester — PM Entry Bench</PageTitle>
+
+<h3 style="font-family:Arial">UI-entry bench — Project Managers replica</h3>
+<p style="font-family:Arial;font-size:13px;max-width:960px">
+    A copy of the HomeFront <em>Project Managers</em> grid (same column shapes: ID,
+    masked Password, Full Name, role checkboxes, phones, Email, PO Limit) over
+    in-memory rows — nothing saves anywhere. Switch the editor transport, dial in
+    simulated uplink latency, type, and read the numbers. <strong>Server keystrokes</strong>
+    is the discriminator: ServerBacked dispatches one message per key (each one delayed
+    by the simulated latency); ClientBuffered should hold it at ~0 while typing, paying
+    the link only on commit.
+</p>
+
+<div style="display:flex;gap:18px;margin-bottom:8px;font-family:Arial;font-size:13px;align-items:center;flex-wrap:wrap">
+    <span><strong>Editor transport:</strong></span>
+    <label><input type="radio" name="mode" checked="@_clientBuffered" @onchange="@(() => SetMode(true))" /> ClientBuffered</label>
+    <label><input type="radio" name="mode" checked="@(!_clientBuffered)" @onchange="@(() => SetMode(false))" /> ServerBacked</label>
+
+    <span style="margin-left:14px"><strong>Simulated uplink latency:</strong></span>
+    @foreach (var ms in LatencyChoices)
+    {
+        var v = ms;
+        <button style="@(v == _latencyMs ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")"
+                @onclick="() => SetLatency(v)">@(v == 0 ? "off" : $"{v} ms")</button>
+    }
+    <span style="color:#666">(delays every inbound circuit message, all tabs of this tester)</span>
+</div>
+
+<div id="pm-metrics" style="display:flex;gap:22px;margin-bottom:10px;font-family:Arial;font-size:13px;align-items:center;flex-wrap:wrap;border:1px solid #c8c8c8;background:#f6f6f6;padding:6px 10px">
+    <span>RTT: <strong><span data-m="rtt">—</span> ms</strong></span>
+    <span>Keystrokes: <strong data-m="keys">0</strong></span>
+    <span>Server keystrokes: <strong data-m="srv">0</strong></span>
+    <span>Key echo p95: <strong><span data-m="echo">—</span> ms</strong></span>
+    <span>Last commit: <strong><span data-m="commit">—</span> ms</strong></span>
+    <span>Avg commit: <strong><span data-m="commitAvg">—</span> ms</strong></span>
+    <button @onclick="ResetMetrics">Reset metrics</button>
+</div>
+
+<div id="pm-bench-grid" style="height:420px">
+    <GridControl @key="@_mountGen"
+                 TValue="PmRow"
+                 DataSource="@Rows"
+                 UseClientBufferedTextEditing="@_clientBuffered"
+                 PerformanceMode="GridPerformanceMode.ClientPreviewAndServerOptimized"
+                 AllowSelection="true"
+                 AllowSorting="false"
+                 AllowFiltering="false"
+                 AllowResizing="true"
+                 EnableHover="true"
+                 Height="400px"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings"
+                 EventsRef="@_gridEvents">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(PmRow.PM)" HeaderText="ID" Width="90px" AllowEditing="true" MaxLength="10" />
+            <GridColumn Field="@nameof(PmRow.Password)" HeaderText="Password" Width="120px" Type="ColumnType.Password"
+                        AllowEditing="true" MaxLength="10" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(PmRow.PMName)" HeaderText="Full Name" Width="220px" AllowEditing="true" MaxLength="50" />
+            <GridColumn Field="@nameof(PmRow.PrjMgr)" HeaderText="Prj Mgr" Width="60px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            <GridColumn Field="@nameof(PmRow.Estimator)" HeaderText="Estimator" Width="70px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            <GridColumn Field="@nameof(PmRow.Purchaser)" HeaderText="Purchaser" Width="70px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            <GridColumn Field="@nameof(PmRow.Active)" HeaderText="Active" Width="60px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            <GridColumn Field="@nameof(PmRow.Mobile)" HeaderText="Mobile" Width="110px" AllowEditing="true" MaxLength="25" />
+            <GridColumn Field="@nameof(PmRow.Phone)" HeaderText="Phone" Width="110px" AllowEditing="true" MaxLength="25" />
+            <GridColumn Field="@nameof(PmRow.Fax)" HeaderText="Fax" Width="110px" AllowEditing="true" MaxLength="25" />
+            <GridColumn Field="@nameof(PmRow.Email)" HeaderText="Email" Width="180px" AllowEditing="true" MaxLength="150" />
+            <GridColumn Field="@nameof(PmRow.POLimit)" HeaderText="PO Limit" Width="100px" Type="ColumnType.Number"
+                        Format="#,###.00" TextAlign="TextAlign.Right" AllowEditing="true" />
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+<p style="font-family:Arial;font-size:12px;color:#555;max-width:960px">
+    Suggested drill: pick a latency, type a burst into <em>Full Name</em>, backspace
+    mid-word, retype, commit with Enter, then repeat under the other transport and
+    compare <strong>Server keystrokes</strong> and <strong>commit</strong> times.
+    For a real-wire test instead of simulation, run
+    <code>python3 tools/latency-proxy.py --listen 5298 --target 5299 --rtt 150</code>
+    and browse this page through port 5298 with the simulated latency off.
+</p>
+
+@code {
+    public sealed class PmRow
+    {
+        public string PM { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string PMName { get; set; } = "";
+        public bool PrjMgr { get; set; }
+        public bool Estimator { get; set; }
+        public bool Purchaser { get; set; }
+        public bool Active { get; set; } = true;
+        public string Mobile { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Fax { get; set; } = "";
+        public string Email { get; set; } = "";
+        public double POLimit { get; set; }
+    }
+
+    private static readonly int[] LatencyChoices = { 0, 50, 150, 300 };
+
+    private readonly EditSettings _editSettings = new() { AllowEditing = true, Mode = EditMode.Batch };
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true,
+        MultiSelectBehavior = GridMultiSelectBehavior.VBMultiSelect,
+    };
+    private GridControlEvents<PmRow> _gridEvents = new();
+
+    private List<PmRow> Rows { get; } = Seed();
+    private bool _clientBuffered = true;
+    private int _latencyMs;
+    private int _mountGen;
+
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<PmEntryBench>? _selfRef;
+
+    private static List<PmRow> Seed() => new()
+    {
+        new() { PM = "BILLY",  Password = "12345",  PMName = "BILLY JOEL",     PrjMgr = true,  Email = "billy@example.com", POLimit = 5000 },
+        new() { PM = "BOB",    Password = "hunter2", PMName = "Bob Frank",     PrjMgr = true,  Email = "bob@example.com" },
+        new() { PM = "SSMITH", Password = "pw",      PMName = "Sam Smith",     Estimator = true, Phone = "780-555-0101" },
+        new() { PM = "JDOE",   Password = "pw",      PMName = "John Doe",      PrjMgr = true,  Mobile = "780-555-0102" },
+        new() { PM = "MRAY",   Password = "pw",      PMName = "Mel Rayment",   Purchaser = true, Email = "mel@example.com" },
+        new() { PM = "TEST1",  Password = "pw",      PMName = "Test One",      PrjMgr = true },
+        new() { PM = "TEST2",  Password = "pw",      PMName = "Test Two",      Estimator = true },
+        new() { PM = "TEST3",  Password = "pw",      PMName = "Test Three",    Phone = "780-555-0103", POLimit = 150 },
+        new() { PM = "TEST4",  Password = "pw",      PMName = "Test Four",     Purchaser = true },
+        new() { PM = "TEST5",  Password = "pw",      PMName = "Test Five",     Fax = "780-555-0104" },
+        new() { PM = "TEST6",  Password = "pw",      PMName = "Test Six",      PrjMgr = true, POLimit = 10000 },
+        new() { PM = "TEST7",  Password = "pw",      PMName = "Test Seven",    Active = false },
+    };
+
+    private void SetMode(bool clientBuffered)
+    {
+        if (_clientBuffered == clientBuffered) return;
+        _clientBuffered = clientBuffered;
+        _mountGen++;   // remount so open editors re-wire on the new transport
+    }
+
+    private void SetLatency(int ms)
+    {
+        _latencyMs = ms;
+        BenchLatency.UplinkMs = ms;
+    }
+
+    private async Task ResetMetrics()
+    {
+        if (_module != null)
+            await _module.InvokeVoidAsync("reset");
+    }
+
+    [JSInvokable]
+    public Task Ping() => Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./pm-entry-bench.js");
+        _selfRef = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("start", "#pm-bench-grid", "#pm-metrics", _selfRef);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        BenchLatency.UplinkMs = 0;   // never leave simulated lag behind for other benches
+        try
+        {
+            if (_module != null)
+            {
+                await _module.InvokeVoidAsync("stop");
+                await _module.DisposeAsync();
+            }
+        }
+        catch { /* circuit teardown */ }
+        _selfRef?.Dispose();
+    }
+}

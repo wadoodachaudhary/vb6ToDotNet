@@ -1,0 +1,1121 @@
+@page "/edit-items"
+@rendermode InteractiveServer
+@using System.Diagnostics
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Fx.ControlKit.Dialogs
+@inject FlexKitTester.Services.BenchDataStore BenchData
+@inject ZoomService Zoom
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>Edit Items DB Bench</PageTitle>
+
+<PageControl CssClass="ei-page">
+<h4 style="margin:8px 12px;">Edit Items DB harness <span style="color:#1e6fd9;font-size:calc(13px * var(--fx-zoom, 1));">— rev 35 (@Items.Count rows · typing + adaptive wheel bench · build @BuildStamp · selection: <b>@BuildColorName</b>)</span></h4>
+<div style="margin:0 12px 6px;font-size:calc(11px * var(--fx-zoom, 1));color:#555;">@BenchData.LoadReport</div>
+@if (_dataError != null)
+{
+    <div class="ei-data-error">DATA NOT LOADED — @_dataError</div>
+}
+<style>
+    /* Build marker: the selection color ROTATES with every FlexCore build
+       (name shown in the header) — a stale cached tab shows the wrong color. */
+    .ei-grid-host .fx-grid.fx-grid-editable-selection {
+        --fx-grid-selected-row-bg: @BuildColorHex;
+        --fx-grid-cell-selected-row-bg: @BuildColorHex;
+        --fx-grid-selected-cell-bg: @BuildColorHex;
+    }
+
+    .ei-data-error {
+        margin: 0 12px 8px;
+        padding: 6px 9px;
+        border: 1px solid #a12a2a;
+        background: #ffe3e3;
+        color: #7a1010;
+        font-size: calc(13px * var(--fx-zoom, 1));
+        font-weight: 600;
+    }
+
+    .ei-typing-bench {
+        margin: 0 12px 8px;
+        padding: 6px 0 8px;
+        border-top: 1px solid #c7c7c7;
+        border-bottom: 1px solid #c7c7c7;
+        font-size: calc(12px * var(--fx-zoom, 1));
+    }
+
+    .ei-typing-controls {
+        display: flex;
+        align-items: end;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+    }
+
+    .ei-typing-controls label {
+        display: grid;
+        gap: 2px;
+    }
+
+    .ei-typing-status {
+        color: #555;
+        align-self: center;
+    }
+
+    .ei-typing-results {
+        width: 100%;
+        margin-top: 7px;
+        border-collapse: collapse;
+    }
+
+    .ei-typing-results th,
+    .ei-typing-results td {
+        padding: 3px 7px;
+        border: 1px solid #c8cdd3;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .ei-typing-results th:first-child,
+    .ei-typing-results td:first-child {
+        text-align: left;
+    }
+
+    .ei-typing-note {
+        margin-top: 4px;
+        color: #666;
+    }
+</style>
+<p style="margin:0 12px 8px; font-size:calc(13px * var(--fx-zoom, 1));">
+    Mimics FItems gItems: cell selection + batch edit, PO Index with picker button.
+    Watch for any foreign light-blue paint on plain cell clicks (there must be none);
+    drag across rows in one column paints the preview, released promptly on mouse-up.
+</p>
+
+<div style="display:flex; align-items:center; gap:6px; margin:0 12px 6px; font-size:calc(12px * var(--fx-zoom, 1));">
+    <span>window overscan:</span>
+    <button id="ei-ov260" @onclick="() => SetOverscan(260)" disabled="@(_overscan == 260)">260 (old default)</button>
+    <button id="ei-ov60" @onclick="() => SetOverscan(60)" disabled="@(_overscan == 60)">60 (default)</button>
+    <span style="color:#999;">rendered window ≈ viewport + 2×overscan</span>
+    <span style="margin-left:12px;">release buffer:</span>
+    <button @onclick="() => _deferredOverscan = 20" disabled="@(_deferredOverscan == 20)">20 (optimized)</button>
+    <button @onclick="() => _deferredOverscan = 60" disabled="@(_deferredOverscan == 60)">60 (baseline)</button>
+    <button id="ei-boundary-guard-toggle" @onclick="() => _boundaryGuard = !_boundaryGuard">
+        blank guard: <b>@(_boundaryGuard ? "ON" : "OFF (baseline)")</b>
+    </button>
+    <button id="ei-adaptive-wheel-toggle" @onclick="() => _adaptiveWheelPacing = !_adaptiveWheelPacing">
+        adaptive wheel pacing: <b>@(_adaptiveWheelPacing ? "ON" : "OFF")</b>
+    </button>
+    <span style="margin-left:12px;">controlled server wait:</span>
+    @foreach (var delay in DiagnosticDelayChoices)
+    {
+        <button @onclick="() => _diagnosticWindowDelayMs = delay"
+                disabled="@(_diagnosticWindowDelayMs == delay)">@delay ms</button>
+    }
+    <span style="margin-left:12px;">performance:</span>
+    <DropDownListControl TValue="GridPerformanceMode"
+                         TItem="GridPerformanceModeChoice"
+                         DataSource="@GridPerformanceModeCatalog.All"
+                         TextFieldName="@nameof(GridPerformanceModeChoice.Label)"
+                         ValueFieldName="@nameof(GridPerformanceModeChoice.Value)"
+                         Value="@_performanceMode"
+                         ValueChanged="SetPerformanceMode"
+                         Width="300px" />
+    <CheckBoxControl Label="Client-buffered typing"
+                     Checked="@_clientBufferedTextEditing"
+                     CheckedChanged="SetClientBufferedTextEditing" />
+    <span style="margin-left:12px;">zoom:</span>
+    <ButtonControl Title="Zoom out (Ctrl+<)" Disabled="@(!Zoom.CanZoomOut)" OnClick="@(_ => Zoom.ZoomOut())">Zoom −</ButtonControl>
+    <ButtonControl Title="Reset zoom to 100%" OnClick="@(_ => Zoom.Reset())">@($"{Zoom.ZoomPercent}%")</ButtonControl>
+    <ButtonControl Title="Zoom in (Ctrl+>)" Disabled="@(!Zoom.CanZoomIn)" OnClick="@(_ => Zoom.ZoomIn())">Zoom +</ButtonControl>
+</div>
+
+<section class="ei-typing-bench" aria-labelledby="ei-typing-title">
+    <div class="ei-typing-controls">
+        <strong id="ei-typing-title">Typing transport benchmark</strong>
+        <label>
+            <span>Characters</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_typingBenchmarkCharacterCount"
+                                   ValueChanged="SetTypingBenchmarkCharacterCount"
+                                   Min="8"
+                                   Max="500"
+                                   Width="76px" />
+        </label>
+        <label>
+            <span>Key interval (ms)</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_typingBenchmarkKeyDelayMs"
+                                   ValueChanged="SetTypingBenchmarkKeyDelay"
+                                   Min="0"
+                                   Max="50"
+                                   Width="76px" />
+        </label>
+        <label>
+            <span>RTT model (ms)</span>
+            <NumericTextBoxControl TValue="int"
+                                   Value="@_typingBenchmarkRttMs"
+                                   ValueChanged="SetTypingBenchmarkRtt"
+                                   Min="0"
+                                   Max="500"
+                                   Width="76px" />
+        </label>
+        <ButtonControl Disabled="@_typingBenchmarkRunning" OnClick="RunTypingComparisonAsync">Run both</ButtonControl>
+        <ButtonControl Disabled="@_typingBenchmarkRunning" OnClick="ClearTypingBenchmark">Clear</ButtonControl>
+        <span class="ei-typing-status">@_typingBenchmarkStatus</span>
+    </div>
+
+    @if (_serverTypingSample != null || _clientTypingSample != null)
+    {
+        <table class="ei-typing-results">
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>Characters</th>
+                    <th>Browser events</th>
+                    <th>Browser dispatch</th>
+                    <th>Model commit</th>
+                    <th>Paint settled</th>
+                    <th>.NET callbacks</th>
+                    <th>Input callbacks</th>
+                    <th>Key callbacks</th>
+                    <th>Grid renders</th>
+                    <th>RTT exposure (@_typingBenchmarkRttMs ms)</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var result in TypingSampleRows)
+                {
+                    <tr>
+                        <td>@result.Label</td>
+                        <td>@TypingMetric(result.Sample?.CharacterCount)</td>
+                        <td>@TypingMetric(result.Sample?.BrowserEvents)</td>
+                        <td>@TypingMilliseconds(result.Sample?.BrowserDispatchMs)</td>
+                        <td>@TypingMilliseconds(result.Sample?.ModelCommitMs)</td>
+                        <td>@TypingMilliseconds(result.Sample?.PaintSettledMs)</td>
+                        <td>@TypingMetric(result.Sample?.TransportCallbacks)</td>
+                        <td>@TypingMetric(result.Sample?.Diagnostics.ServerInputCallbacks)</td>
+                        <td>@TypingMetric(result.Sample?.Diagnostics.ServerKeyDownCallbacks)</td>
+                        <td>@TypingMetric(result.Sample?.GridRenders)</td>
+                        <td>@TypingMilliseconds(ProjectedTypingTransportMs(result.Sample))</td>
+                        <td>@(result.Sample == null ? "-" : result.Sample.ValueCorrect ? "Correct" : "Mismatch")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="ei-typing-note">
+            Actual times use this local connection. RTT exposure is callback count × the selected RTT and is a transport comparison, not another stopwatch result.
+        </div>
+    }
+</section>
+
+<LatencyProbePanel Context="Edit Items / FItems" />
+<ScrollTrackLatencyPanel Context="Edit Items / FItems"
+                         GridSelector=".ei-grid-host > .fx-grid" />
+<WheelWindowMetricsPanel Context="Edit Items / FItems"
+                         GridSelector=".ei-grid-host > .fx-grid" />
+
+<div class="ei-grid-host">
+    <GridControl @ref="_itemsGrid"
+                 AutoPageRowThreshold="0"
+                 @key="@ItemsGridRegistrationKey"
+                 WindowOverscanRows="@_overscan"
+                 DeferredScrollOverscanRows="@_deferredOverscan"
+                 TValue="ItemRow"
+                 DataSource="@Items"
+                 ScrollTrack="false"
+                 WheelScrollScale="0.75"
+                 EnableScrollBoundaryGuard="@_boundaryGuard"
+                 EnableScrollBoundarySlowdown="@_boundaryGuard"
+                 EnableAdaptiveWheelScrollPacing="@_adaptiveWheelPacing"
+                 EnableScrollBoundaryTelemetry="true"
+                 DiagnosticWindowScrollDelayMs="@_diagnosticWindowDelayMs"
+                 PerformanceMode="@_performanceMode"
+                 UseClientBufferedTextEditing="@_clientBufferedTextEditing"
+                 AllowSorting="false"
+                 AllowSelection="true"
+                 AllowResizing="true"
+                 AllowColumnReorder="true"
+                 EnableHover="true"
+                 Height="100%"
+                 RowHeight="22"
+                 MinRowHeight="22"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings"
+                 EventsRef="@_gridEvents"
+                 BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                 AllowSingleCellColumnMassEdit="true"
+                 TypeAheadTargetField="@TypeAheadTargetField"
+                 CssClass="@("fx-grid-compact " + GridControl<ItemRow>.EditableSelectionThemeCssClass)">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(ItemRow.Phase)" HeaderText="Phase" Width="60px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.CostType)" HeaderText="Cost Type" Width="60px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.Item)" HeaderText="Item" Width="65px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.PhaseDesc)" HeaderText="Phase Description" Width="130px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.Description)" HeaderText="Item Description" Width="250px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.Notes)" HeaderText="Notes" Width="110px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.POIndex)" HeaderText="PO Index" Width="75px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.POIndexDesc)" HeaderText="PO Index Description" Width="150px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.CostCode)" HeaderText="Cost Code" Width="80px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.CostCodeDesc)" HeaderText="Cost Code Desc" Width="140px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.TaxGroup)" HeaderText="Tax Group" Width="75px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.WastePercent)" HeaderText="Waste %" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(ItemRow.RoundDir)" HeaderText="Rounding" Width="105px" AllowEditing="true" EditOptions="@RoundingOptions" />
+            <GridColumn Field="@nameof(ItemRow.RoundTo)" HeaderText="Round To" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(ItemRow.Price)" HeaderText="Price" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(ItemRow.IsQuote)" HeaderText="Quote" Width="50px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            <GridColumn Field="@nameof(ItemRow.Category)" HeaderText="Category" Width="60px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.CategoryDesc)" HeaderText="Category Description" Width="150px" AllowEditing="false" />
+            <GridColumn Field="@nameof(ItemRow.OrderUOM)" HeaderText="Order UOM" Width="70px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.ConversionFactor)" HeaderText="Conversion Factor" Width="110px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(ItemRow.PartNumber)" HeaderText="Part Number" Width="90px" AllowEditing="true" AllowCellDragSelection="true" />
+            <GridColumn Field="@nameof(ItemRow.Formula)" HeaderText="Formula" Width="100px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.InverseItemDesc)" HeaderText="Inverse Item" Width="110px" AllowEditing="false" ShowEditButton="true" />
+            <GridColumn Field="@nameof(ItemRow.CostPrice)" HeaderText="Cost Price" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+            <GridColumn Field="@nameof(ItemRow.BidItem)" HeaderText="Bid Item" Width="60px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            @* Host-rendered popup declared with aria-haspopup and NO
+               stopPropagation: Enter must open the picker and the synthetic
+               click must not bounce focus back to this grid. *@
+            <GridColumn Field="@nameof(ItemRow.Vendor)" HeaderText="Vendor" Width="120px" AllowEditing="false">
+                <Template Context="ctx">
+                    @{ var _vRow = (ItemRow)ctx; }
+                    <div class="ei-tpl-cell">
+                        <span class="ei-tpl-text">@_vRow.Vendor</span>
+                        <button class="ei-tpl-pick" aria-haspopup="dialog" @onclick="() => OpenVendorPicker(_vRow)">…</button>
+                    </div>
+                </Template>
+            </GridColumn>
+            @* Marked opener next to a destructive button: the marker is
+               authoritative, so Enter must open the picker and never clear. *@
+            <GridColumn Field="@nameof(ItemRow.Tag)" HeaderText="Tag" Width="120px" AllowEditing="false">
+                <Template Context="ctx">
+                    @{ var _tRow = (ItemRow)ctx; }
+                    <div class="ei-tpl-cell">
+                        <span class="ei-tpl-text">@_tRow.Tag</span>
+                        <button class="ei-tpl-pick" data-fx-cell-popup @onclick="() => OpenTagPicker(_tRow)" @onclick:stopPropagation="true">…</button>
+                        <button class="ei-tpl-clear" @onclick="() => ClearTag(_tRow)" @onclick:stopPropagation="true">×</button>
+                    </div>
+                </Template>
+            </GridColumn>
+            @* Library popup cell: the swatch must not cover the td's active-cell
+               cue, Enter must open the palette, and AllowEditing="false" is what
+               keeps the in-cell text editor off the column while EditOnEnterKey
+               stays on. Seeded from palette colours so the cursor lands on the
+               current colour. *@
+            <GridColumn Field="@nameof(ItemRow.Color)" HeaderText="Color" Width="64px" AllowEditing="false">
+                <Template Context="ctx">
+                    @{ var _cRow = (ItemRow)ctx; }
+                    <ColorPickerControl Value="@_cRow.Color" ValueChanged="v => ApplyColor(_cRow, v)" />
+                </Template>
+            </GridColumn>
+            @* Vulnerability patterns (port-risk harness): templates the client
+               paint systems must not corrupt. Fill = cell-filling inline-bg div
+               that visually owns the td; custom-tpl-btn is NOT in the adornment
+               allowlist so it must survive nav transitions untouched, and its
+               field-bearing cell must do nothing on Enter. *@
+            <GridColumn Field="@nameof(ItemRow.Status)" HeaderText="Status" Width="90px" AllowEditing="false">
+                <Template Context="ctx">
+                    @{ var _sRow = (ItemRow)ctx; }
+                    <div class="ei-fill" style="background:@FillColor(_sRow)">
+                        <span>@(_sRow.IsQuote ? "Quote" : "Std")</span>
+                        <button class="custom-tpl-btn" tabindex="-1" @onclick="() => MarkCustomTemplateButtonFired(_sRow)">i</button>
+                    </div>
+                </Template>
+            </GridColumn>
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+@* Cost Code picker: popup picklist + the cell stays typeable (VB6 lookup
+   cells accept BOTH direct typing and the ... picker). *@
+<DialogControl @bind-Visible="_pickerOpen" Header="@_pickerHeader" Width="380px" CloseOnEscape="true">
+    <GridControl @ref="_pickerGrid"
+                 TValue="CostCodeRow"
+                 DataSource="@_pickerSource"
+                 AllowSorting="false"
+                 AllowSelection="true"
+                 CommitSelectedRowOnEnter="true"
+                 HighlightSelectedRows="true"
+                 EnableHover="true"
+                 Height="264px"
+                 RowHeight="22"
+                 MinRowHeight="22"
+                 EventsRef="@_pickerEvents"
+                 CssClass="fx-grid-compact">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(CostCodeRow.Code)" HeaderText="Code" Width="100px" AllowEditing="false" />
+            <GridColumn Field="@nameof(CostCodeRow.Description)" HeaderText="Description" Width="230px" AllowEditing="false" />
+        </GridColumnsBase>
+    </GridControl>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+        <button id="cc-ok" @onclick="ApplyPickedCostCode" disabled="@(_picked == null)">OK</button>
+        <button id="cc-cancel" @onclick="() => _pickerOpen = false">Cancel</button>
+    </div>
+</DialogControl>
+
+@* Item Description editor: FItems text-dialog replica — multi-line editor in a
+   modal popup; closing (✕) commits, like FItems' OnTextDialogOk. *@
+<DialogControl Visible="@_descOpen" Header="Item Description" Width="520px" IsModal="true"
+               ShowCloseIcon="true" OnClose="CommitDescription" OnEscape="CancelDescription"
+               CloseOnCtrlEnter="true" CssClass="ei-desc-dialog">
+    <ChildContent>
+        <TextAreaControl Value="@_descText" ValueChanged="_descValueChanged" UpdateOnInput="true" Rows="10" TabSpaces="5" CssClass="ei-desc-textarea" />
+    </ChildContent>
+</DialogControl>
+
+<div style="margin:0 12px; font-size:calc(12px * var(--fx-zoom, 1)); color:#999;" id="ei-renders">page renders: @_renderCount ·
+    grid renders: <span id="ei-grenders">@_gridRenders</span> ·
+    last build <span id="ei-glastms">@_gridLastMs</span> ms ·
+    total <span id="ei-gtotalms">@_gridTotalMs</span> ms
+    <button id="ei-refresh-stats" @onclick="RefreshGridStats">refresh</button>
+    <button id="ei-reset-stats" @onclick="ResetGridStats">reset</button></div>
+<div style="margin:8px 12px; font-size:calc(12px * var(--fx-zoom, 1)); color:#555;" id="ei-state">
+    edits committed: @_edits · last: @_lastEdit · fan-out commits: @_fanOuts (rows: @_lastFanOutRows)
+</div>
+
+<div style="margin:0 12px; font-size:calc(12px * var(--fx-zoom, 1)); color:#777;" id="ei-model">
+    @foreach (var r in Items.Take(12))
+    {
+        <div>@r.Item | @r.Description | @r.POIndex | @r.CostCode | @r.Color</div>
+    }
+</div>
+</PageControl>
+
+@code {
+    public class CostCodeRow
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+    }
+
+    public class ItemRow
+    {
+        public string Phase { get; set; } = "";
+        public string CostType { get; set; } = "";
+        public string Item { get; set; } = "";
+        public string PhaseDesc { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public string POIndex { get; set; } = "";
+        public string POIndexDesc { get; set; } = "";
+        public string CostCode { get; set; } = "";
+        public string CostCodeDesc { get; set; } = "";
+        public string TaxGroup { get; set; } = "";
+        public int WastePercent { get; set; }
+        public string RoundDir { get; set; } = "#0";
+        public decimal RoundTo { get; set; }
+        public decimal Price { get; set; }
+        public bool IsQuote { get; set; }
+        public string Category { get; set; } = "";
+        public string CategoryDesc { get; set; } = "";
+        public string OrderUOM { get; set; } = "";
+        public decimal ConversionFactor { get; set; }
+        public string PartNumber { get; set; } = "";
+        public string Formula { get; set; } = "";
+        public string InverseItemDesc { get; set; } = "";
+        public decimal CostPrice { get; set; }
+        public bool BidItem { get; set; }
+        public string Vendor { get; set; } = "";
+        public string Tag { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string Color { get; set; } = "";
+    }
+
+    private sealed class TypingDispatchResult
+    {
+        public double BrowserDispatchMs { get; set; }
+        public int KeyDownEvents { get; set; }
+        public int InputEvents { get; set; }
+        public bool ClientBufferActive { get; set; }
+    }
+
+    private sealed record TypingCommitObservation(string Value, long Timestamp);
+
+    private sealed record TypingBenchmarkSample(
+        int CharacterCount,
+        int BrowserEvents,
+        double BrowserDispatchMs,
+        double ModelCommitMs,
+        double PaintSettledMs,
+        GridTextEditingDiagnosticsSnapshot Diagnostics,
+        long GridRenders,
+        bool ValueCorrect,
+        bool ClientBufferActive)
+    {
+        public long TransportCallbacks =>
+            Diagnostics.TotalServerCallbacks + Diagnostics.ClientBufferedCommitCallbacks;
+    }
+
+    private List<ItemRow> Items = new();
+    private int _edits;
+    private string _lastEdit = "-";
+    private int _fanOuts;
+    private int _lastFanOutRows;
+    private int _overscan = 60;
+    private int _deferredOverscan = 20;
+    private int _gridGeneration;
+    private bool _boundaryGuard = true;
+    private bool _adaptiveWheelPacing = true;
+    private int _diagnosticWindowDelayMs;
+    private static readonly int[] DiagnosticDelayChoices = [0, 100, 150, 500, 1_000];
+    private GridPerformanceMode _performanceMode =
+        GridPerformanceMode.ClientPreviewAndServerOptimized;
+    private bool _clientBufferedTextEditing = true;
+    private int _typingBenchmarkCharacterCount = 120;
+    private int _typingBenchmarkKeyDelayMs;
+    private int _typingBenchmarkRttMs = 75;
+    private bool _typingBenchmarkRunning;
+    private string _typingBenchmarkStatus = "Ready";
+    private TypingBenchmarkSample? _serverTypingSample;
+    private TypingBenchmarkSample? _clientTypingSample;
+    private IJSObjectReference? _typingBenchmarkModule;
+    private TaskCompletionSource<bool>? _typingBenchmarkRenderReady;
+    private TaskCompletionSource<TypingCommitObservation>? _typingBenchmarkCommitReady;
+    private TaskCompletionSource<long>? _typingBenchmarkPaintReady;
+    private bool _typingBenchmarkSampleActive;
+    private bool _typingBenchmarkPaintPending;
+
+    private string ItemsGridRegistrationKey => string.Join(
+        ":",
+        _gridGeneration,
+        _performanceMode,
+        _clientBufferedTextEditing,
+        _overscan,
+        _deferredOverscan,
+        _boundaryGuard,
+        _adaptiveWheelPacing,
+        _diagnosticWindowDelayMs,
+        Zoom.ZoomPercent);
+
+    private void SetOverscan(int v)
+    {
+        if (_overscan == v)
+            return;
+
+        _overscan = v;
+        _gridGeneration++;
+        GridRenderDiagnostics.Reset();
+    }
+
+    private void SetPerformanceMode(GridPerformanceMode value)
+    {
+        if (_performanceMode == value)
+            return;
+
+        _performanceMode = value;
+        _gridGeneration++;
+        GridRenderDiagnostics.Reset();
+        GridServerOptimizationDiagnostics.Reset();
+    }
+
+    private void SetClientBufferedTextEditing(bool value)
+    {
+        if (_clientBufferedTextEditing == value)
+            return;
+
+        _clientBufferedTextEditing = value;
+        _gridGeneration++;
+        GridRenderDiagnostics.Reset();
+    }
+
+    private void SetTypingBenchmarkCharacterCount(int value) =>
+        _typingBenchmarkCharacterCount = Math.Clamp(value, 8, 500);
+
+    private void SetTypingBenchmarkKeyDelay(int value) =>
+        _typingBenchmarkKeyDelayMs = Math.Clamp(value, 0, 50);
+
+    private void SetTypingBenchmarkRtt(int value) =>
+        _typingBenchmarkRttMs = Math.Clamp(value, 0, 500);
+
+    private IEnumerable<(string Label, TypingBenchmarkSample? Sample)> TypingSampleRows
+    {
+        get
+        {
+            yield return ("Server-backed", _serverTypingSample);
+            yield return ("Client-buffered", _clientTypingSample);
+        }
+    }
+
+    private static string TypingMetric(long? value) => value?.ToString("N0") ?? "-";
+    private static string TypingMetric(int? value) => value?.ToString("N0") ?? "-";
+    private static string TypingMilliseconds(double? value) =>
+        value.HasValue ? $"{value.Value:0.00} ms" : "-";
+
+    private double? ProjectedTypingTransportMs(TypingBenchmarkSample? sample) =>
+        sample == null ? null : sample.TransportCallbacks * (double)_typingBenchmarkRttMs;
+
+    private void ClearTypingBenchmark()
+    {
+        _serverTypingSample = null;
+        _clientTypingSample = null;
+        _typingBenchmarkStatus = "Ready";
+    }
+
+    private async Task RunTypingComparisonAsync()
+    {
+        if (_typingBenchmarkRunning || Items.Count == 0)
+            return;
+
+        _typingBenchmarkRunning = true;
+        _serverTypingSample = null;
+        _clientTypingSample = null;
+        _typingBenchmarkStatus = "Preparing benchmark...";
+
+        var originalValue = Items[0].Description;
+        var originalMode = _clientBufferedTextEditing;
+        var benchmarkText = BuildTypingBenchmarkText(_typingBenchmarkCharacterCount);
+
+        try
+        {
+            _typingBenchmarkModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>(
+                "import", "./typing-benchmark.js");
+
+            _typingBenchmarkStatus = "Running server-backed editor...";
+            await InvokeAsync(StateHasChanged);
+            _serverTypingSample = await RunTypingSampleAsync(false, benchmarkText);
+
+            _typingBenchmarkStatus = "Running client-buffered editor...";
+            await InvokeAsync(StateHasChanged);
+            _clientTypingSample = await RunTypingSampleAsync(true, benchmarkText);
+
+            _typingBenchmarkStatus = "Comparison complete";
+        }
+        catch (Exception ex)
+        {
+            _typingBenchmarkStatus = $"Benchmark failed: {ex.Message}";
+        }
+        finally
+        {
+            _typingBenchmarkSampleActive = false;
+            _typingBenchmarkCommitReady = null;
+            _typingBenchmarkPaintReady = null;
+            _typingBenchmarkPaintPending = false;
+            Items[0].Description = originalValue;
+
+            try
+            {
+                await RenderTypingBenchmarkModeAsync(originalMode);
+            }
+            catch (Exception ex)
+            {
+                _typingBenchmarkStatus = $"{_typingBenchmarkStatus}; restore failed: {ex.Message}";
+            }
+
+            _typingBenchmarkRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<TypingBenchmarkSample> RunTypingSampleAsync(
+        bool clientBuffered,
+        string benchmarkText)
+    {
+        const string editorSelector = ".ei-grid-host .fx-batch-input";
+        var row = Items[0];
+        row.Description = "benchmark seed";
+        await RenderTypingBenchmarkModeAsync(clientBuffered);
+
+        var grid = _itemsGrid
+            ?? throw new InvalidOperationException("Edit Items grid is not available.");
+        await grid.BeginEditCellAsync(row, nameof(ItemRow.Description));
+
+        grid.ResetTextEditingDiagnostics();
+        GridRenderDiagnostics.Reset();
+
+        _typingBenchmarkCommitReady = NewCompletionSource<TypingCommitObservation>();
+        _typingBenchmarkPaintReady = NewCompletionSource<long>();
+        _typingBenchmarkPaintPending = false;
+        _typingBenchmarkSampleActive = true;
+
+        var started = Stopwatch.GetTimestamp();
+        var dispatch = await _typingBenchmarkModule!.InvokeAsync<TypingDispatchResult>(
+            "runGridTypingBenchmark",
+            editorSelector,
+            benchmarkText,
+            clientBuffered,
+            _typingBenchmarkKeyDelayMs);
+
+        var commit = await _typingBenchmarkCommitReady.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var paintTimestamp = await _typingBenchmarkPaintReady.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        var diagnostics = grid.GetTextEditingDiagnosticsSnapshot();
+
+        _typingBenchmarkSampleActive = false;
+        _typingBenchmarkCommitReady = null;
+        _typingBenchmarkPaintReady = null;
+
+        return new TypingBenchmarkSample(
+            benchmarkText.Length,
+            dispatch.KeyDownEvents + dispatch.InputEvents,
+            dispatch.BrowserDispatchMs,
+            ElapsedMilliseconds(started, commit.Timestamp),
+            ElapsedMilliseconds(started, paintTimestamp),
+            diagnostics,
+            GridRenderDiagnostics.RenderCount,
+            string.Equals(commit.Value, benchmarkText, StringComparison.Ordinal)
+                && string.Equals(row.Description, benchmarkText, StringComparison.Ordinal),
+            dispatch.ClientBufferActive);
+    }
+
+    private async Task RenderTypingBenchmarkModeAsync(bool clientBuffered)
+    {
+        _clientBufferedTextEditing = clientBuffered;
+        _gridGeneration++;
+        var renderReady = NewCompletionSource<bool>();
+        _typingBenchmarkRenderReady = renderReady;
+        await InvokeAsync(StateHasChanged);
+        await renderReady.Task.WaitAsync(TimeSpan.FromSeconds(8));
+    }
+
+    private static TaskCompletionSource<T> NewCompletionSource<T>() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static double ElapsedMilliseconds(long started, long completed) =>
+        (completed - started) * 1000.0 / Stopwatch.Frequency;
+
+    private static string BuildTypingBenchmarkText(int characterCount)
+    {
+        const string pattern = "the quick brown fox jumps over 0123456789; ";
+        var repeats = (characterCount + pattern.Length - 1) / pattern.Length;
+        return string.Concat(Enumerable.Repeat(pattern, repeats))[..characterCount];
+    }
+
+    private long _gridRenders;
+    private double _gridLastMs;
+    private double _gridTotalMs;
+
+    private void RefreshGridStats()
+    {
+        _gridRenders = GridRenderDiagnostics.RenderCount;
+        _gridLastMs = Math.Round(GridRenderDiagnostics.LastBuildMs, 1);
+        _gridTotalMs = Math.Round(GridRenderDiagnostics.TotalBuildMs, 1);
+    }
+
+    private void ResetGridStats()
+    {
+        GridRenderDiagnostics.Reset();
+        RefreshGridStats();
+    }
+    private string? _activeEditColumn;
+
+    private string TypeAheadTargetField => _activeEditColumn ?? "";
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true, AllowAdding = false, AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false, Mode = EditMode.Batch
+    };
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Cell,
+        EnableToggle = true
+    };
+    private readonly GridControlEvents<ItemRow> _gridEvents = new();
+    private readonly GridControlEvents<CostCodeRow> _pickerEvents = new();
+    private bool _pickerOpen;
+    private string _pickerHeader = "Select";
+    private string _pickerField = "";
+    private List<CostCodeRow> _pickerSource = new();
+    private GridControl<ItemRow>? _itemsGrid;
+    private List<ItemRow> _pickerTargets = new();
+    private ItemRow? _pickerRow;
+    private CostCodeRow? _picked;
+
+    // FItems gItems RoundDir dropdown — exact option list (value;label).
+    private static readonly IReadOnlyList<string> RoundingOptions =
+    [
+        "#3;To closest",
+        "#1;Up to nearest",
+        "#2;Down to nearest",
+        "#0;None"
+    ];
+
+    private List<CostCodeRow> POIndexes = Enumerable.Range(0, 40)
+        .Select(i => new CostCodeRow { Code = $"{5500 + i * 5}", Description = $"PO Index {5500 + i * 5}" }).ToList();
+    private List<CostCodeRow> TaxGroups = new()
+    {
+        new() { Code = "GST", Description = "GST only" },
+        new() { Code = "PST", Description = "PST only" },
+        new() { Code = "GST+PST", Description = "Both taxes" },
+        new() { Code = "EXEMPT", Description = "Tax exempt" },
+    };
+    private List<CostCodeRow> OrderUoms = new()
+    {
+        new() { Code = "EA", Description = "Each" },
+        new() { Code = "LSUM", Description = "Lump Sum" },
+        new() { Code = "SF", Description = "Square Feet" },
+        new() { Code = "LF", Description = "Linear Feet" },
+        new() { Code = "CY", Description = "Cubic Yards" },
+        new() { Code = "SY", Description = "Square Yards" },
+        new() { Code = "HR", Description = "Hours" },
+        new() { Code = "TON", Description = "Tons" },
+    };
+    private List<CostCodeRow> Vendors = new()
+    {
+        new() { Code = "ACME", Description = "Acme Supply Co." },
+        new() { Code = "BOREAL", Description = "Boreal Building Products" },
+        new() { Code = "CASCADE", Description = "Cascade Millwork" },
+        new() { Code = "DELTA", Description = "Delta Concrete" },
+        new() { Code = "ELMWOOD", Description = "Elmwood Lumber" },
+        new() { Code = "FRONTIER", Description = "Frontier Hardware" },
+    };
+    private List<CostCodeRow> Tags = new()
+    {
+        new() { Code = "HOLD", Description = "On hold" },
+        new() { Code = "RUSH", Description = "Rush order" },
+        new() { Code = "REVIEW", Description = "Needs review" },
+        new() { Code = "OK", Description = "Approved" },
+    };
+    private GridControl<CostCodeRow>? _pickerGrid;
+    private bool _pendingPickerReveal;
+    private bool _descOpen;
+    private ItemRow? _descRow;
+    private string _descField = nameof(ItemRow.Description);
+    private string? _descText;
+    private int _renderCount;
+    private string? _dataError;
+
+    // FItems patterns under test: page-level handlers that fire per keystroke
+    // must not re-render the page — NonRenderingEventReceiver + explicit
+    // renders only where the handler actually acts.
+    private EventCallback<string?> _descValueChanged;
+
+    protected override void OnAfterRender(bool firstRender) => _renderCount++;
+
+    private async Task OnWrapperKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && (e.Key == "Delete" || e.Key == "Del"))
+        {
+            _lastEdit = "Ctrl+Delete";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CancelDescription() => _descOpen = false;
+
+    // 50 unique codes so the picker actually scrolls (50 × 22px rows in a
+    // 264px viewport) — the reveal must bring a deep row into view.
+    private static readonly string[] CcDescs = { "Winter Handling", "Driveway/Sidewalk Labour & Conc",
+        "Sidewalk Blocks", "Concrete Sealing", "Site Cleanup", "Excavation", "Backfill",
+        "Grading", "Rebar Supply", "Formwork" };
+    private List<CostCodeRow> CostCodes = Enumerable.Range(0, 50).Select(i => new CostCodeRow
+    {
+        Code = $"01-7{i * 5:000}",
+        Description = $"{CcDescs[i % 10]} {i / 10 + 1}"
+    }).ToList();
+
+    private void CommitDescription()
+    {
+        if (_descRow != null)
+        {
+            if (_descField == nameof(ItemRow.Notes)) _descRow.Notes = _descText ?? "";
+            else _descRow.Description = _descText ?? "";
+            _edits++;
+            _lastEdit = $"{_descField} (popup)";
+        }
+        _descOpen = false;
+    }
+
+    private string GetPickerValue(ItemRow r) => _pickerField switch
+    {
+        nameof(ItemRow.POIndex) => r.POIndex,
+        nameof(ItemRow.CostCode) => r.CostCode,
+        nameof(ItemRow.TaxGroup) => r.TaxGroup,
+        nameof(ItemRow.OrderUOM) => r.OrderUOM,
+        nameof(ItemRow.Vendor) => r.Vendor,
+        nameof(ItemRow.Tag) => r.Tag,
+        _ => ""
+    };
+
+    private void ApplyPickedCostCode()
+    {
+        // FItems targets pattern: the pick applies to EVERY row selected in
+        // the picked column, not just the row whose ... was clicked. Desc
+        // columns follow their code (FItems sets them from the pick row).
+        if (_picked != null && _pickerTargets.Count > 0)
+        {
+            foreach (var t in _pickerTargets)
+            {
+                switch (_pickerField)
+                {
+                    case nameof(ItemRow.POIndex): t.POIndex = _picked.Code; t.POIndexDesc = _picked.Description; break;
+                    case nameof(ItemRow.CostCode): t.CostCode = _picked.Code; t.CostCodeDesc = _picked.Description; break;
+                    case nameof(ItemRow.TaxGroup): t.TaxGroup = _picked.Code; break;
+                    case nameof(ItemRow.OrderUOM): t.OrderUOM = _picked.Code; break;
+                    case nameof(ItemRow.Vendor): t.Vendor = _picked.Code; break;
+                    case nameof(ItemRow.Tag): t.Tag = _picked.Code; break;
+                }
+            }
+            _edits += _pickerTargets.Count;
+            _lastEdit = $"{_pickerField}={_picked.Code} (picker x{_pickerTargets.Count})";
+        }
+        _pickerOpen = false;
+    }
+
+    private void OpenVendorPicker(ItemRow row) => OpenTemplatePicker(row, nameof(ItemRow.Vendor), Vendors, "Select Vendor");
+
+    private void OpenTagPicker(ItemRow row) => OpenTemplatePicker(row, nameof(ItemRow.Tag), Tags, "Select Tag");
+
+    private void OpenTemplatePicker(ItemRow row, string field, List<CostCodeRow> source, string header)
+    {
+        _pickerSource = source;
+        _pickerHeader = header;
+        _pickerField = field;
+        _pickerRow = row;
+        _pickerTargets = new List<ItemRow> { row };
+        _picked = source.FirstOrDefault(c => c.Code == GetPickerValue(row));
+        _pendingPickerReveal = _picked != null;
+        _pickerOpen = true;
+    }
+
+    private void ClearTag(ItemRow row)
+    {
+        row.Tag = "";
+        _edits++;
+        _lastEdit = "Tag CLEARED";
+    }
+
+    private void ApplyColor(ItemRow row, string color)
+    {
+        row.Color = color;
+        _edits++;
+        _lastEdit = $"Color={color} on {row.Item}";
+    }
+
+    private void MarkCustomTemplateButtonFired(ItemRow row)
+    {
+        _edits++;
+        _lastEdit = $"Status button FIRED on {row.Item}";
+    }
+
+    private async Task OnItemsEditButtonClickAsync(CellEditButtonArgs<ItemRow> args)
+    {
+        if (args.Data == null) return;
+        if (args.ColumnName is nameof(ItemRow.Description) or nameof(ItemRow.Notes))
+        {
+            _descRow = args.Data;
+            _descField = args.ColumnName;
+            _descText = args.ColumnName == nameof(ItemRow.Notes) ? args.Data.Notes : args.Data.Description;
+            _descOpen = true;
+            return;
+        }
+        (_pickerSource, _pickerHeader) = args.ColumnName switch
+        {
+            nameof(ItemRow.POIndex) => (POIndexes, "Select PO Index"),
+            nameof(ItemRow.CostCode) => (CostCodes, "Select Cost Code"),
+            nameof(ItemRow.TaxGroup) => (TaxGroups, "Select Tax Group"),
+            nameof(ItemRow.OrderUOM) => (OrderUoms, "Select Order UOM"),
+            _ => (new List<CostCodeRow>(), "")
+        };
+        if (_pickerSource.Count == 0) return;
+        _pickerField = args.ColumnName!;
+        _pickerRow = args.Data;
+        var sel = _itemsGrid != null
+            ? await _itemsGrid.GetSelectedRecordsForColumnAsync(_pickerField)
+            : new List<ItemRow>();
+        _pickerTargets = sel.Count > 1 && sel.Contains(args.Data) ? sel : new List<ItemRow> { args.Data };
+        // Open with the CURRENT value selected and scrolled into view
+        // (VB6 picklist behavior) — resolved after the dialog renders.
+        var current = GetPickerValue(args.Data);
+        _picked = _pickerSource.FirstOrDefault(c => c.Code == current);
+        _pendingPickerReveal = _picked != null;
+        _pickerOpen = true;
+    }
+
+    // Selection color rotates per FlexCore BUILD (owner: stale-tab detector).
+    private static readonly (string Name, string Hex)[] BuildColors =
+    {
+        ("Light Blue", "#b9d7ff"), ("Mint Green", "#b9f0d0"), ("Peach", "#ffd9b9"),
+        ("Lavender", "#d9c9ff"), ("Lemon", "#f3f0b0"), ("Pink", "#ffc9dd"),
+        ("Aqua", "#b9ecf0"), ("Sand", "#e8dcb9"),
+    };
+    private static readonly long GridBuildTicks = System.IO.File.GetLastWriteTimeUtc(
+        typeof(GridControl<ItemRow>).Assembly.Location).Ticks;
+    // Windows Basic Colors, so the picker opens with its cursor and its
+    // selected outline on the row's current colour.
+    private static readonly string[] ChipPalette = { "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#808080" };
+    private static string ChipColor(ItemRow r) => ChipPalette[(r.Item.GetHashCode() & 0x7FFFFFFF) % ChipPalette.Length];
+    private static string FillColor(ItemRow r) => r.IsQuote ? "#fde3a7" : "#d5f5e3";
+
+    private static string BuildStamp => (GridBuildTicks / 10_000_000 % 100_000).ToString();
+    private static string BuildColorName => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Name;
+    private static string BuildColorHex => BuildColors[(int)(GridBuildTicks / 10_000_000 % BuildColors.Length)].Hex;
+
+    protected override void OnInitialized()
+    {
+        Zoom.OnZoomChanged += HandleZoomChanged;
+        // Lambda, not method group: with a non-IHandleEvent receiver the
+        // callback's receiver is null and dispatch falls back to
+        // Delegate.Target — a method group targets the PAGE (IHandleEvent),
+        // re-rendering it per keystroke anyway.
+        _gridEvents.OnHostKeyDown = EventCallback.Factory.Create<KeyboardEventArgs>(NonRenderingEventReceiver.Instance,
+            (Func<KeyboardEventArgs, Task>)(e => OnWrapperKeyDown(e)));
+        _descValueChanged = EventCallback.Factory.Create<string?>(NonRenderingEventReceiver.Instance, v => _descText = v);
+
+        _gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ItemRow>>(this, args =>
+        {
+            if (args.Data == null) return;
+            _edits++;
+            _lastEdit = $"{args.ColumnName}={args.Value}";
+
+            if (_typingBenchmarkSampleActive
+                && string.Equals(args.ColumnName, nameof(ItemRow.Description), StringComparison.Ordinal))
+            {
+                var value = args.Value?.ToString() ?? string.Empty;
+                _typingBenchmarkCommitReady?.TrySetResult(
+                    new TypingCommitObservation(value, Stopwatch.GetTimestamp()));
+                _typingBenchmarkPaintPending = true;
+            }
+        });
+        _gridEvents.OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<ItemRow>>(this,
+            OnItemsEditButtonClickAsync);
+        _pickerEvents.OnRecordClick = EventCallback.Factory.Create<CellClickEventArgs<CostCodeRow>>(this,
+            args => _picked = args.Data);
+        _pickerEvents.OnRecordDoubleClick = EventCallback.Factory.Create<CellClickEventArgs<CostCodeRow>>(this, args =>
+        {
+            _picked = args.Data;
+            ApplyPickedCostCode();
+        });
+        _gridEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<ItemRow>>(this,
+            args => _activeEditColumn = args.ColumnName);
+
+        // FItems.OnItemsTypeAheadCommit pattern: multi-row type-over WRITE is
+        // host-delegated (VB6 ValidateEdit) — apply the typed value to every
+        // selected row's target field.
+        _gridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<ItemRow>>(this, args =>
+        {
+            if (string.IsNullOrWhiteSpace(args.ColumnName)) return;
+            var n = 0;
+            foreach (var item in args.SelectedItems.Where(i => i != null).Distinct())
+            {
+                var prop = typeof(ItemRow).GetProperty(args.ColumnName,
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.IgnoreCase);
+                if (prop == null || !prop.CanWrite) continue;
+                try
+                {
+                    object converted = prop.PropertyType == typeof(string) ? args.Value
+                        : prop.PropertyType == typeof(int) ? int.Parse(args.Value)
+                        : prop.PropertyType == typeof(decimal) ? decimal.Parse(args.Value)
+                        : prop.PropertyType == typeof(bool) ? (args.Value is "1" or "true" or "True")
+                        : Convert.ChangeType(args.Value, prop.PropertyType);
+                    prop.SetValue(item, converted);
+                }
+                catch { continue; }
+                n++;
+            }
+            if (n == 0) return;
+            _fanOuts++;
+            _lastFanOutRows = n;
+            StateHasChanged();
+        });
+
+        // handled in OnAfterRenderAsync: reveal runs once the picker grid exists
+
+        // Real EstimatingItems rows (all divisions) exported from HomeFrontSQL
+        // — the same view FItems selects from. Parsed once per process by
+        // BenchDataStore; this only projects.
+        var source = BenchData.EstimatingItems;
+        _dataError = BenchData.EstimatingError;
+        if (_dataError != null) return;
+
+        Items = new List<ItemRow>(source.Count);
+        foreach (var r in source)
+        {
+            Items.Add(new ItemRow
+            {
+                Phase = r.Phase ?? "",
+                CostType = r.CostCategory ?? "",
+                Item = r.Item ?? "",
+                PhaseDesc = r.PhaseDesc ?? "",
+                Description = r.ItemDesc ?? "",
+                Notes = r.Notes ?? "",
+                POIndex = r.POIndex ?? "",
+                POIndexDesc = r.POIndexDescription ?? "",
+                CostCode = r.JCCostCode ?? "",
+                CostCodeDesc = r.JCCostCodeDesc ?? "",
+                TaxGroup = r.TaxGroup ?? "",
+                WastePercent = r.WastePercent ?? 0,
+                // The view stores RoundDir as an int; the column's option
+                // domain is "#0".."#3".
+                RoundDir = "#" + (r.RoundDir ?? 0),
+                RoundTo = r.RoundTo ?? 0m,
+                Price = r.Price ?? 0m,
+                IsQuote = r.IsQuote ?? false,
+                Category = r.JCCategory ?? "",
+                CategoryDesc = r.JCCategoryDesc ?? "",
+                OrderUOM = r.OrderUOM ?? "",
+                ConversionFactor = r.ConversionFactor ?? 0m,
+                PartNumber = r.PartNumber ?? "",
+                Formula = r.Formula ?? ""
+                // InverseItemDesc, CostPrice, BidItem and Status have no column
+                // in the export and stay at their defaults.
+            });
+        }
+
+        // Pickers offer the values actually present in the data.
+        POIndexes = Items.Where(i => i.POIndex != "")
+            .GroupBy(i => i.POIndex).OrderBy(g => g.Key)
+            .Select(g => new CostCodeRow { Code = g.Key, Description = g.First().POIndexDesc }).ToList();
+        CostCodes = Items.Where(i => i.CostCode != "")
+            .GroupBy(i => i.CostCode).OrderBy(g => g.Key)
+            .Select(g => new CostCodeRow { Code = g.Key, Description = g.First().CostCodeDesc }).ToList();
+        TaxGroups = Items.Where(i => i.TaxGroup != "")
+            .GroupBy(i => i.TaxGroup).OrderBy(g => g.Key)
+            .Select(g => new CostCodeRow { Code = g.Key, Description = g.Key }).ToList();
+        OrderUoms = Items.Where(i => i.OrderUOM != "")
+            .GroupBy(i => i.OrderUOM).OrderBy(g => g.Key)
+            .Select(g => new CostCodeRow { Code = g.Key, Description = g.Key }).ToList();
+
+        // The export carries no Vendor/Tag/Color, so the template-popup columns
+        // would only ever be exercised with an empty current value.
+        for (var i = 0; i < Items.Count; i++)
+        {
+            Items[i].Vendor = Vendors[i % Vendors.Count].Code;
+            Items[i].Tag = i % 4 == 3 ? "" : Tags[i % Tags.Count].Code;
+            Items[i].Color = ChipColor(Items[i]);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingPickerReveal && _pickerGrid != null && _picked != null)
+        {
+            _pendingPickerReveal = false;
+            await _pickerGrid.SelectAndRevealRowAsync(_picked);
+        }
+
+        if (_typingBenchmarkRenderReady != null)
+        {
+            var renderReady = _typingBenchmarkRenderReady;
+            _typingBenchmarkRenderReady = null;
+            renderReady.TrySetResult(true);
+        }
+
+        if (_typingBenchmarkPaintPending && _typingBenchmarkPaintReady != null)
+        {
+            _typingBenchmarkPaintPending = false;
+            _typingBenchmarkPaintReady.TrySetResult(Stopwatch.GetTimestamp());
+        }
+    }
+
+    private void HandleZoomChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public async ValueTask DisposeAsync()
+    {
+        Zoom.OnZoomChanged -= HandleZoomChanged;
+        if (_typingBenchmarkModule != null)
+        {
+            try
+            {
+                await _typingBenchmarkModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Browser already left the harness.
+            }
+        }
+    }
+}

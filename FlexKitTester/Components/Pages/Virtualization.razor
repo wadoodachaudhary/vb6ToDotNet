@@ -1,0 +1,252 @@
+@page "/virtualization"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>FlexKit Tester — Row Virtualization</PageTitle>
+
+<h3 style="font-family:Arial">Row-virtualization test bench (1000 rows, editable)</h3>
+<p style="font-family:Arial;font-size:13px">
+    All editor column types present: numeric + text (TextBoxControl), a lookup popup,
+    a dropdown, and a checkbox. Goal — navigating / resizing / editing should touch only
+    the visible rows, not all 1000. <strong>Multi-edit batching</strong> is enabled on
+    every editable column: Ctrl/Shift-select rows, then edit ONE cell — type text/number,
+    pick a dropdown option, or toggle a checkbox — and it fans out to every selected row.
+    The <strong>dropdown is two-click</strong>: first click shows the closed control (arrow),
+    the next click opens the list.
+    <br/>
+    Full-featured for pre-FlexKit sign-off: <strong>Search bar</strong> (magnifier icon, filters rows) ·
+    <strong>type-to-search</strong> (focus the grid on a non-editable column like Code and just type to jump) ·
+    <strong>drag-and-drop grouping</strong> (drag a column header into the group bar above) ·
+    header <strong>filter menus</strong>, <strong>column reorder</strong>, sort &amp; resize.
+</p>
+
+<div style="max-width:1100px;margin-bottom:8px;display:flex;gap:6px;align-items:center;font-family:Arial;font-size:13px">
+    <strong>Mode:</strong>
+    <button style="@ModeBtnStyle(GridMode.Virtualized)" @onclick="() => SetMode(GridMode.Virtualized)">Virtualized</button>
+    <button style="@ModeBtnStyle(GridMode.Paging)" @onclick="() => SetMode(GridMode.Paging)">Paging (50/page)</button>
+    <button style="@ModeBtnStyle(GridMode.Pivot)" @onclick="() => SetMode(GridMode.Pivot)">Pivot</button>
+    <span style="color:#666;margin-left:8px">@ModeHint</span>
+</div>
+
+<div style="max-width:1100px">
+    <div style="margin:4px 0;font-size:12px;color:#666" id="vz-diag">
+    grid renders: <b id="vz-renders">@_vzRenders</b>
+    · last build <span id="vz-lastms">@_vzLastMs</span> ms
+    <button id="vz-refresh" @onclick="VzRefresh">refresh</button>
+    <button id="vz-reset" @onclick="VzReset">reset</button>
+</div>
+
+<GridControl @ref="_grid"
+                 TValue="VRow"
+                 DataSource="@Rows"
+                 AllowSelection="true"
+                 AllowSorting="true"
+                 AllowResizing="true"
+                 AllowColumnReorder="true"
+                 AllowFiltering="true"
+                 AllowGrouping="true"
+                 ShowGroupCount="true"
+                 ShowSearchBar="true"
+                 Height="480px"
+                 AllowPaging="@(_mode == GridMode.Paging)"
+                 PageSize="@(_mode == GridMode.Paging ? 50 : 1000)"
+                 AllowPivoting="@(_mode == GridMode.Pivot)"
+                 ShowPivotPanelButton="@(_mode == GridMode.Pivot)"
+                 ShowGridOptionsRail="@(_mode == GridMode.Pivot)"
+                 EnableTypeSearch="true"
+                 ShowRowSelectionEditColumnCue="true"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings"
+                 EventsRef="@_gridEvents">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(VRow.Code)" HeaderText="Code" Width="90px" AllowEditing="false" />
+            <GridColumn Field="@nameof(VRow.Qty)" HeaderText="Qty (num)" Width="100px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+            <GridColumn Field="@nameof(VRow.Price)" HeaderText="Price (num)" Width="110px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+            <GridColumn Field="@nameof(VRow.Description)" HeaderText="Description (text)" Width="240px" AllowEditing="true" />
+            <GridColumn Field="@nameof(VRow.Vendor)" HeaderText="Vendor (lookup ⋯)" Width="180px" AllowEditing="true"
+                        ShowEditButton="true" AlwaysShowEditButton="true" EditButtonText="..." OpenEditButtonOnDoubleClick="false" />
+            <GridColumn Field="@nameof(VRow.Category)" HeaderText="Category (dropdown)" Width="160px" AllowEditing="true" EditOptions="@Categories" OpenEditOptionsOnEdit="false" />
+            <GridColumn Field="@nameof(VRow.Active)" HeaderText="Active (chk)" Width="90px" Type="ColumnType.CheckBox" AllowEditing="true" />
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+<p style="font-family:Arial;font-size:12px;color:#555;margin-top:8px">
+    Rows: @Rows.Count · edited cells: @_editCount · last edit: @_lastEdit
+</p>
+
+@* Lookup popup (FlexCore DialogControl — the tester has no FPickList). *@
+<DialogControl Visible="@_showLookup" Header="Select Vendor" Width="360px" Height="320px" IsModal="true" OnClose="CloseLookup">
+    <ChildContent>
+        <div style="display:flex;flex-direction:column;gap:4px;padding:8px;font-family:Arial;font-size:13px">
+            @foreach (var v in Vendors)
+            {
+                <ButtonControl OnClick="@(() => PickVendor(v))">@v</ButtonControl>
+            }
+        </div>
+    </ChildContent>
+</DialogControl>
+
+@code {
+    private long _vzRenders; private double _vzLastMs;
+    private void VzRefresh() { _vzRenders = Fx.ControlKit.Grid.GridRenderDiagnostics.RenderCount; _vzLastMs = System.Math.Round(Fx.ControlKit.Grid.GridRenderDiagnostics.LastBuildMs, 1); }
+    private void VzReset() { Fx.ControlKit.Grid.GridRenderDiagnostics.Reset(); VzRefresh(); }
+
+    // ── Mode toggle: exercise the three mutually-exclusive body paths ──
+    //   Virtualized — row windowing (default). Paging/pivot both turn it off.
+    //   Paging       — AllowPaging + 50/page (pager at the bottom).
+    //   Pivot        — AllowPivoting + pivot rail button (▦); open it, tick
+    //                  "Pivot Mode", drag fields into row/column/value areas.
+    public enum GridMode { Virtualized, Paging, Pivot }
+    private GridMode _mode = GridMode.Virtualized;
+
+    private void SetMode(GridMode m) => _mode = m;
+
+    private string ModeBtnStyle(GridMode m) => _mode == m
+        ? "padding:4px 12px;border:1px solid #365f91;background:#dce6f2;font-weight:bold;cursor:pointer;border-radius:3px"
+        : "padding:4px 12px;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;border-radius:3px";
+
+    private string ModeHint => _mode switch
+    {
+        GridMode.Virtualized => "Row virtualization active (~50 DOM rows regardless of total).",
+        GridMode.Paging => "Paging active — 50 rows/page, pager at the bottom. Virtualization off.",
+        GridMode.Pivot => "Pivot enabled — click ▦ in the grid's right-side rail, tick Pivot Mode, drag fields. Virtualization off.",
+        _ => ""
+    };
+
+    public class VRow
+    {
+        public string Code { get; set; } = "";
+        public double Qty { get; set; }
+        public double Price { get; set; }
+        public string Description { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string Category { get; set; } = "";
+        public bool Active { get; set; }
+    }
+
+    private GridControl<VRow>? _grid;
+    private List<VRow> Rows { get; set; } = new();
+    private int _editCount;
+    private string _lastEdit = "";
+
+    private static readonly string[] Categories = { "Labour", "Material", "Equipment", "Subcontract", "Overhead" };
+    private static readonly string[] Vendors = { "Acme Supply", "BuildRite", "Cascade Concrete", "Delta Electric", "Evergreen Lumber", "Foothills Excavating" };
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true,
+        Mode = EditMode.Batch,
+        AllowEditOnDblClick = true,
+    };
+
+    // Multi-edit batching: Row selection + Multiple + EnableToggle. Uses
+    // FullMultiSelect (not VBMultiSelect) so a plain click on an editable cell
+    // INSIDE a multi-row selection PRESERVES the selection instead of collapsing
+    // it — that lets EVERY editable column fan out: type into text/number, pick
+    // a dropdown option, or toggle the checkbox on one selected row and it
+    // applies to all of them (EditMode.Batch commits the fan-out). Type-ahead
+    // (select rows, then type) still works too.
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true,
+        MultiSelectBehavior = GridMultiSelectBehavior.FullMultiSelect,
+    };
+
+    private GridControlEvents<VRow> _gridEvents = new();
+
+    protected override void OnInitialized()
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            Rows.Add(new VRow
+            {
+                Code = $"{1000 + i}",
+                Qty = (i % 40) + 1,
+                Price = Math.Round((i % 100) * 1.25 + 0.5, 2),
+                Description = $"Line item number {i}",
+                Vendor = Vendors[i % Vendors.Length],
+                Category = Categories[i % Categories.Length],
+                Active = i % 3 == 0,
+            });
+        }
+
+        _gridEvents = new GridControlEvents<VRow>
+        {
+            OnCellSave = EventCallback.Factory.Create<CellSaveArgs<VRow>>(this, args =>
+            {
+                _editCount++;
+                _lastEdit = $"{args.Data.Code}.{args.ColumnName} = {args.Value}";
+            }),
+            // Multi-edit batching fan-out (FAssembly OnTypeAheadCommit parity):
+            // GridControl raises this when the user has multiple rows selected,
+            // types a value and presses Enter. The grid hands us the selection +
+            // target column + typed value; WE write it into every selected row.
+            OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<VRow>>(this, args =>
+            {
+                if (string.IsNullOrWhiteSpace(args.ColumnName)) return;
+                var applied = 0;
+                foreach (var row in args.SelectedItems)
+                {
+                    if (SetVRowField(row, args.ColumnName, args.Value)) applied++;
+                }
+                if (applied == 0) return;
+                _editCount += applied;
+                _lastEdit = $"bulk {args.ColumnName} = {args.Value} → {applied} rows";
+            }),
+            OnEditButtonClick = EventCallback.Factory.Create<CellEditButtonArgs<VRow>>(this, OpenLookup),
+        };
+    }
+
+    // Mirrors FAssembly's TrySetAssemblyItemField: writes a string value into the
+    // named VRow property, converting for numeric / bool columns.
+    private static bool SetVRowField(VRow row, string field, string value)
+    {
+        switch (field)
+        {
+            case nameof(VRow.Qty):
+                if (double.TryParse(value, out var q)) { row.Qty = q; return true; }
+                return false;
+            case nameof(VRow.Price):
+                if (double.TryParse(value, out var p)) { row.Price = p; return true; }
+                return false;
+            case nameof(VRow.Description): row.Description = value; return true;
+            case nameof(VRow.Vendor): row.Vendor = value; return true;
+            case nameof(VRow.Category): row.Category = value; return true;
+            case nameof(VRow.Active):
+                row.Active = value.Equals("true", StringComparison.OrdinalIgnoreCase) || value == "1";
+                return true;
+            default: return false;
+        }
+    }
+
+    // ── Lookup popup wiring ──
+    private bool _showLookup;
+    private VRow? _lookupRow;
+
+    private void OpenLookup(CellEditButtonArgs<VRow> args)
+    {
+        _lookupRow = args.Data;
+        _showLookup = true;
+    }
+
+    private void PickVendor(string vendor)
+    {
+        if (_lookupRow != null)
+        {
+            _lookupRow.Vendor = vendor;
+            _editCount++;
+            _lastEdit = $"{_lookupRow.Code}.Vendor = {vendor} (lookup)";
+        }
+        CloseLookup();
+    }
+
+    private void CloseLookup()
+    {
+        _showLookup = false;
+        _lookupRow = null;
+    }
+}

@@ -1,0 +1,184 @@
+@page "/userperms-lists"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>UserPerms Lists Repro</PageTitle>
+
+<div class="repro-toolbar">
+    <button id="btn-create" @onclick="CreateGroup">Create + rename</button>
+    <label><input id="chk-dirty" type="checkbox" @bind="_simulateDirty" /> simulate dirty (veto next move)</label>
+    <span id="lbl-selected">selected: @(SelectedGroup?.Description ?? "-")</span>
+    <span id="lbl-vetoes">vetoes: @_vetoCount</span>
+</div>
+
+<div class="perm-repro-container">
+    <div class="repro-left">
+        <div class="groups-panel" style="height:300px;">
+            <GridControl @ref="_groupsGrid"
+                         TValue="SecurityGroup"
+                         DataSource="@Groups"
+                         AllowSorting="false"
+                         AllowSelection="true"
+                         HighlightSelectedRows="true"
+                         EnableHover="true"
+                         Height="100%"
+                         RowHeight="22"
+                         MinRowHeight="22"
+                         EditSettingsRef="@_groupEditSettings"
+                         SelectionSettingsRef="@_groupSelectionSettings"
+                         EventsRef="@_groupGridEvents"
+                         CssClass="fx-grid-compact groups-grid">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(SecurityGroup.Description)" HeaderText="Description" AllowEditing="true" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+        <div class="h-splitter"></div>
+        <div class="users-panel">
+            <GridControl TValue="UserListItem"
+                         DataSource="@Users"
+                         AllowSorting="false"
+                         AllowSelection="true"
+                         HighlightSelectedRows="true"
+                         EnableHover="true"
+                         Height="100%"
+                         RowHeight="22"
+                         MinRowHeight="22"
+                         SelectionSettingsRef="@_userSelectionSettings"
+                         CssClass="fx-grid-compact users-grid">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(UserListItem.UserID)" HeaderText="LoginID" Width="90px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(UserListItem.UserName)" HeaderText="Name" AllowEditing="false" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+    </div>
+    <div class="repro-right">FUserPermissions Groups/Members harness — mirrors the real page's wiring.</div>
+</div>
+
+@code {
+    public class SecurityGroup { public long SecGroupID { get; set; } public string Description { get; set; } = ""; }
+    public class UserListItem { public string UserID { get; set; } = ""; public string UserName { get; set; } = ""; }
+
+    private List<SecurityGroup> Groups = new();
+    private List<UserListItem> Users = new();
+    private SecurityGroup? SelectedGroup;
+    private bool ShowUserPage;
+    private bool _simulateDirty;
+    private int _vetoCount;
+    private long _nextId = 100;
+
+    private GridControl<SecurityGroup>? _groupsGrid;
+    private readonly GridControlEvents<SecurityGroup> _groupGridEvents = new();
+    private readonly EditSettings _groupEditSettings = new()
+    {
+        EditOnEnterKey = true, EditOnActiveCellClick = true,
+        AllowEditing = true, AllowAdding = false, AllowDeleting = false,
+        ShowConfirmDialog = false, Mode = EditMode.Batch
+    };
+    private readonly SelectionSettings _groupSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+    private readonly SelectionSettings _userSelectionSettings = new() { Type = SelectionType.Single, Mode = SelectionMode.Row };
+
+    private SecurityGroup? _pendingRenameGroup;
+    private bool _pendingGroupsGridSync;
+
+    // Stand-in for the real CheckDirty prompt: one-shot veto when armed.
+    private Task<bool> CheckDirty()
+    {
+        if (_simulateDirty) { _simulateDirty = false; _vetoCount++; return Task.FromResult(true); }
+        return Task.FromResult(false);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Non-rendering receiver (rec-1 pattern): a page-receiver callback
+        // triggers an automatic re-render BEFORE the grid mutates its
+        // selection, resurrecting the OLD row's blue next to the new row's
+        // press paint — the split-second two-row flicker. Handlers that need a
+        // render request one explicitly.
+        _groupGridEvents.RowSelecting = EventCallback.Factory.Create<RowSelectEventArgs<SecurityGroup>>(
+            NonRenderingEventReceiver.Instance, async args => { if (await CheckDirty()) args.Cancel = true; });
+        _groupGridEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<SecurityGroup>>(
+            NonRenderingEventReceiver.Instance, async args =>
+            {
+                if (args.Data == null) return;
+                if (SelectedGroup?.SecGroupID == args.Data.SecGroupID && !ShowUserPage) return;
+                await OnGroupSelected(args.Data);
+                await InvokeAsync(StateHasChanged);
+            });
+        _groupGridEvents.OnRecordDoubleClick = EventCallback.Factory.Create<CellClickEventArgs<SecurityGroup>>(
+            this, async args => { if (args.Data != null) await BeginRenameGroupAsync(args.Data); });
+        _groupGridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<SecurityGroup>>(
+            this, args =>
+            {
+                if (args.Data == null) return;
+                args.Data.Description = args.Value?.ToString() ?? args.Data.Description;
+                Groups = Groups.OrderBy(g => g.Description, StringComparer.OrdinalIgnoreCase).ToList();
+                SyncGroupsGridSelection();
+            });
+
+        await Task.Delay(150);
+        Groups = Enumerable.Range(1, 27)
+            .Select(i => new SecurityGroup { SecGroupID = i, Description = $"Group {i:00}" }).ToList();
+        if (Groups.Any())
+            await OnGroupSelected(Groups.First());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingGroupsGridSync)
+        {
+            _pendingGroupsGridSync = false;
+            var idx = SelectedGroup == null ? -1 : Groups.FindIndex(g => g.SecGroupID == SelectedGroup.SecGroupID);
+            if (idx >= 0) _groupsGrid?.SelectRow(idx);
+        }
+
+        if (_pendingRenameGroup != null && _groupsGrid != null)
+        {
+            var group = _pendingRenameGroup;
+            _pendingRenameGroup = null;
+            await _groupsGrid.BeginEditCellAsync(group, nameof(SecurityGroup.Description));
+        }
+    }
+
+    private async Task OnGroupSelected(SecurityGroup group)
+    {
+        if (await CheckDirty()) return;
+        SelectedGroup = group;
+        ShowUserPage = false;
+        await Task.Delay(20);
+        Users = new();
+        SyncGroupsGridSelection();
+    }
+
+    private void SyncGroupsGridSelection()
+    {
+        _pendingGroupsGridSync = true;
+        StateHasChanged();
+    }
+
+    private async Task BeginRenameGroupAsync(SecurityGroup group)
+    {
+        if (SelectedGroup?.SecGroupID != group.SecGroupID)
+            await OnGroupSelected(group);
+
+        if (SelectedGroup?.SecGroupID == group.SecGroupID)
+        {
+            _pendingRenameGroup = group;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreateGroup()
+    {
+        var id = _nextId++;
+        // like LoadGroups: rebuild with ALL-NEW instances
+        Groups = Groups.Select(g => new SecurityGroup { SecGroupID = g.SecGroupID, Description = g.Description })
+            .Append(new SecurityGroup { SecGroupID = id, Description = "(untitled)" })
+            .OrderBy(g => g.Description, StringComparer.OrdinalIgnoreCase).ToList();
+        var newGroup = Groups.First(g => g.SecGroupID == id);
+        await OnGroupSelected(newGroup);
+        await BeginRenameGroupAsync(newGroup);
+    }
+}

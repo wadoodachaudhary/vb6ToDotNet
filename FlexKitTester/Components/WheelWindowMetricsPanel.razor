@@ -1,0 +1,117 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<details class="wheel-window-metrics-panel">
+    <summary>Wheel/trackpad before-and-after — @Context</summary>
+    <div class="wheel-window-metrics-body" @ref="_host">
+        <p>
+            First reproduce blank exposure with <b>blank guard OFF</b>. For the
+            pacing comparison, keep guard ON and run the same wheel/trackpad
+            gesture with <b>adaptive pacing OFF</b>, then <b>ON</b>. Keep mode,
+            wait, zoom, viewport, and raw gesture distance/cadence comparable.
+            Sampling is browser-local and adds no SignalR call.
+        </p>
+        <div class="wheel-window-metrics-actions">
+            <button type="button" data-fx-action="clear">Clear samples</button>
+            <button type="button" data-fx-action="replay-mouse">Replay mouse trace</button>
+            <button type="button" data-fx-action="replay-trackpad">Replay trackpad trace</button>
+            <span data-fx-role="status">Waiting for a wheel or trackpad burst…</span>
+        </div>
+        <div class="wheel-window-metrics-comparison" data-fx-role="comparison"></div>
+        <div class="wheel-window-metrics-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Guard</th>
+                        <th>Mode / performance / wait</th>
+                        <th>Wheel raw → 75% → paced → slowed → viewport</th>
+                        <th>Adaptive rate current → learned → pending / limits / removed / p95 latency / p10 supply</th>
+                        <th>Slow events / min gain / max lag / catch-up total:max / pending max</th>
+                        <th>Edge clamps / zero stops / stale reversals limited</th>
+                        <th>Wheel events</th>
+                        <th>Max spacer</th>
+                        <th>Blank frames / time</th>
+                        <th>Holds</th>
+                        <th>Longest hold</th>
+                        <th>Requests</th>
+                        <th>No-render</th>
+                        <th>Retries</th>
+                        <th>Ack timeout / recovery</th>
+                        <th>Max active</th>
+                        <th>Boundary / normal</th>
+                        <th>Coalesced</th>
+                        <th>Final error</th>
+                        <th>Dropped intent</th>
+                    </tr>
+                </thead>
+                <tbody data-fx-role="samples"></tbody>
+            </table>
+        </div>
+        <p class="wheel-window-metrics-note">
+            Max spacer is the actual visible intersection of the top/bottom
+            virtual spacer with the populated body viewport. Guard ON passes
+            when that stays at 0–1 px. A hold is expected under latency: populated
+            rows may pause only at the final safety edge. Wheel
+            raw/75%/slowed/viewport separates the general scale from deliberate
+            progressive edge resistance and any final safety hold. Slowdown
+            reduces each command directly—there is no cumulative hidden momentum
+            backlog; at most one bounded latest command can await its rows. It
+            begins with a viewport-derived provisional limit. Each successful
+            boundary response then measures both safe-edge pixels supplied and
+            active-request-to-matching-DOM-token latency. A conservative
+            p10-supply/p95-latency rate becomes the per-grid cap. A lower measured
+            rate limits refill immediately without deleting existing credit and
+            persists on the next gesture; increases wait. Verified no-progress
+            congestion may halve only the current gesture. A 1–2-row capacity-credit
+            bucket keeps isolated mouse notches visible while sustained trackpad
+            input remains bounded by the learned rate. Discarded excess never
+            becomes delayed catch-up. It excludes
+            horizontal, scrollbar-arrow, keyboard, page, and thumb travel.
+            The replay buttons send equal normalized distance with mouse-like
+            and trackpad-like event cadence; run each only after the grid is idle.
+        </p>
+    </div>
+</details>
+
+@code {
+    [Parameter] public string Context { get; set; } = "grid";
+    [Parameter, EditorRequired] public string GridSelector { get; set; } = string.Empty;
+
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrWhiteSpace(GridSelector))
+            return;
+
+        _module = await JS.InvokeAsync<IJSObjectReference>(
+            "import",
+            "./wheel-window-metrics.js");
+        await _module.InvokeVoidAsync(
+            "attachWheelWindowMetricsPanel",
+            _host,
+            GridSelector);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("detachWheelWindowMetricsPanel", _host);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Normal circuit teardown.
+        }
+        catch (TaskCanceledException)
+        {
+            // Navigation can cancel queued JS interop.
+        }
+    }
+}

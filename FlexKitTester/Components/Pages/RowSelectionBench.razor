@@ -1,0 +1,275 @@
+@page "/row-selection"
+@rendermode InteractiveServer
+@using Fx.ControlKit.Grid
+
+<PageTitle>FlexKit Tester — Row Selection 50k</PageTitle>
+
+<h3 style="font-family:Arial">Row-selection / multi-edit bench — FAssembly gItems style, 50 columns x 50,000 rows</h3>
+<p style="font-family:Arial;font-size:13px;max-width:900px">
+    Mirrors FAssembly gItems: Row selection, Multiple + VBMultiSelect, Batch edit with
+    MultiRow fan-out, bounded height (row windowing active). Columns 1-6 are editable
+    (numeric, text, dropdown, checkbox); C07-C50 are read-only fillers so every render
+    carries the full 50-column cost. Diagnostics below are process-wide GridControl
+    counters — click <em>Refresh</em> (adds exactly one render itself) and read the spans.
+</p>
+
+<div style="display:flex;gap:10px;margin-bottom:8px;font-family:Arial;font-size:13px;align-items:center;flex-wrap:wrap">
+    <span>Rows:</span>
+    @foreach (var n in RowCountChoices)
+    {
+        var count = n;
+        <button id="@($"btn-rows-{count}")"
+                style="@(count == _rowCount ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")"
+                @onclick="() => SetRowCount(count)">@count.ToString("N0")</button>
+    }
+    <span>· Buffer:</span>
+    <button id="btn-buf-260" style="@(_overscan == 260 ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")" @onclick="() => SetOverscan(260)">260</button>
+    <button id="btn-buf-60" style="@(_overscan == 60 ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")" @onclick="() => SetOverscan(60)">60</button>
+    <span>· Group:</span>
+    <button id="btn-group-toggle" style="@(_groupColumns.Count > 0 ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")"
+            @onclick="ToggleGrouping">@(_groupColumns.Count > 0 ? "grouped by Category" : "ungrouped")</button>
+    <button id="btn-groupwin-toggle" style="@(_groupedWindowing ? "font-weight:bold;border:1px solid #365f91;background:#dce6f2" : "")"
+            @onclick="() => _groupedWindowing = !_groupedWindowing">grouped windowing @(_groupedWindowing ? "ON" : "OFF")</button>
+    <button id="btn-stats" @onclick="RefreshStats">Refresh</button>
+    <button id="btn-reset" @onclick="ResetStats">Reset counters</button>
+    renders: <b id="stat-renders">@_renders</b>
+    · last build: <b id="stat-last">@_lastMs.ToString("0.0")</b> ms
+    · total build: <b id="stat-total">@_totalMs.ToString("0.0")</b> ms
+    · selected: <b id="stat-selected">@_selectedCount</b>
+    · host SelectionChanged calls: <b id="stat-selcalls">@_selectionCallbacks</b>
+    · edits: <b id="stat-edits">@_editCount</b>
+</div>
+
+<div style="max-width:1200px">
+    <GridControl @ref="_grid"
+                 @key="@($"{_rowCount}-{_overscan}-{_mountGen}-{(_groupColumns.Count > 0 ? "g" : "f")}-{_groupedWindowing}")"
+                 WindowOverscanRows="@_overscan"
+                 TValue="SRow"
+                 DataSource="@Rows"
+                 AllowSelection="true"
+                 AllowSorting="true"
+                 AllowResizing="true"
+                 AllowColumnReorder="true"
+                 AllowFiltering="true"
+                 AllowGrouping="true"
+                 GroupColumns="@_groupColumns"
+                 ShowGroupExpandCollapse="true"
+                 EnableGroupedRowWindowing="@_groupedWindowing"
+                 EnableTypeSearch="true"
+                 ShowRowSelectionEditColumnCue="true"
+                 AutoPageRowThreshold="0"
+                 Height="480px"
+                 EditSettingsRef="@_editSettings"
+                 SelectionSettingsRef="@_selectionSettings"
+                 EventsRef="@_gridEvents">
+        <GridColumnsBase>
+            <GridColumn Field="@nameof(SRow.Code)" HeaderText="Code" Width="90px" AllowEditing="false" />
+            <GridColumn Field="@nameof(SRow.Qty)" HeaderText="Qty" Width="90px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+            <GridColumn Field="@nameof(SRow.Price)" HeaderText="Price" Width="100px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+            <GridColumn Field="@nameof(SRow.Description)" HeaderText="Description" Width="200px" AllowEditing="true" />
+            <GridColumn Field="@nameof(SRow.Category)" HeaderText="Category" Width="140px" AllowEditing="true" EditOptions="@Categories" OpenEditOptionsOnEdit="false" />
+            <GridColumn Field="@nameof(SRow.Active)" HeaderText="Active" Width="80px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            @foreach (var f in TailFields)
+            {
+                <GridColumn Field="@f" HeaderText="@f" Width="90px" AllowEditing="false" />
+            }
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+@code {
+    public sealed class SRow
+    {
+        public string Code { get; set; } = "";
+        public double Qty { get; set; }
+        public double Price { get; set; }
+        public string Description { get; set; } = "";
+        public string Category { get; set; } = "";
+        public bool Active { get; set; }
+        public string[] Tail { get; set; } = System.Array.Empty<string>();
+        public string C07 => Tail[0];
+        public string C08 => Tail[1];
+        public string C09 => Tail[2];
+        public string C10 => Tail[3];
+        public string C11 => Tail[4];
+        public string C12 => Tail[5];
+        public string C13 => Tail[6];
+        public string C14 => Tail[7];
+        public string C15 => Tail[8];
+        public string C16 => Tail[9];
+        public string C17 => Tail[10];
+        public string C18 => Tail[11];
+        public string C19 => Tail[12];
+        public string C20 => Tail[13];
+        public string C21 => Tail[14];
+        public string C22 => Tail[15];
+        public string C23 => Tail[16];
+        public string C24 => Tail[17];
+        public string C25 => Tail[18];
+        public string C26 => Tail[19];
+        public string C27 => Tail[20];
+        public string C28 => Tail[21];
+        public string C29 => Tail[22];
+        public string C30 => Tail[23];
+        public string C31 => Tail[24];
+        public string C32 => Tail[25];
+        public string C33 => Tail[26];
+        public string C34 => Tail[27];
+        public string C35 => Tail[28];
+        public string C36 => Tail[29];
+        public string C37 => Tail[30];
+        public string C38 => Tail[31];
+        public string C39 => Tail[32];
+        public string C40 => Tail[33];
+        public string C41 => Tail[34];
+        public string C42 => Tail[35];
+        public string C43 => Tail[36];
+        public string C44 => Tail[37];
+        public string C45 => Tail[38];
+        public string C46 => Tail[39];
+        public string C47 => Tail[40];
+        public string C48 => Tail[41];
+        public string C49 => Tail[42];
+        public string C50 => Tail[43];
+    }
+
+    private static readonly string[] TailFields =
+        Enumerable.Range(7, 44).Select(i => $"C{i:00}").ToArray();
+
+    private static readonly string[] Categories = { "Framing", "Electrical", "Plumbing", "Roofing", "Concrete", "Drywall" };
+
+    private GridControl<SRow>? _grid;
+    private List<SRow> Rows = new();
+
+    private long _renders;
+    private double _lastMs, _totalMs;
+    private int _selectedCount;
+    private int _selectionCallbacks;
+    private int _editCount;
+
+    // Non-IHandleEvent receiver: selection callbacks must not page-render
+    // (mirrors FAssembly) — the bench counts them without adding render noise.
+    private static readonly object _nonRenderingReceiver = new();
+
+    private readonly EditSettings _editSettings = new() { AllowEditing = true, Mode = EditMode.Batch };
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Mode = SelectionMode.Row,
+        Type = SelectionType.Multiple,
+        EnableToggle = true,
+        MultiSelectBehavior = GridMultiSelectBehavior.VBMultiSelect,
+    };
+
+    // 50k rows is the stress case for BOTH paths: leave it ungrouped for the flat
+    // window, or group by Category (5 groups) to exercise the grouped window.
+    private List<string> _groupColumns = new();
+    private bool _groupedWindowing = true;
+
+    private void ToggleGrouping()
+        => _groupColumns = _groupColumns.Count > 0 ? new List<string>() : [nameof(SRow.Category)];
+
+    private GridControlEvents<SRow> _gridEvents = new();
+
+    private static readonly int[] RowCountChoices = { 100, 1_000, 2_000, 5_000, 10_000, 50_000 };
+    private int _rowCount = 50_000;
+
+    private void SetRowCount(int count)
+    {
+        _rowCount = count;
+        BuildRows();
+    }
+
+    private int _overscan = 260;
+    private int _mountGen;
+
+    private void SetOverscan(int overscan)
+    {
+        _overscan = overscan;
+        _mountGen++;
+    }
+
+    protected override void OnInitialized()
+    {
+        BuildRows();
+
+        _gridEvents.SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(_nonRenderingReceiver, args =>
+        {
+            _selectionCallbacks++;
+            _selectedCount = args.Count;
+        });
+        _gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<SRow>>(_nonRenderingReceiver, _ => { _editCount++; });
+        // The multi-row type-over fan-out delegates the WRITE to the host
+        // (VB6 ValidateEdit semantics — FAssembly/FItems do the same); a page
+        // that doesn't wire OnTypeAheadCommit gets a preview that "clears on
+        // Enter" because nobody stored the value.
+        _gridEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<SRow>>(_nonRenderingReceiver, args =>
+        {
+            foreach (var row in args.SelectedItems)
+                ApplyBenchValue(row, args.ColumnName, args.Value);
+            _editCount += args.SelectedItems.Count;
+        });
+    }
+
+    private static void ApplyBenchValue(SRow row, string column, string value)
+    {
+        switch (column)
+        {
+            case nameof(SRow.Qty):
+                if (double.TryParse(value, out var q)) row.Qty = q;
+                break;
+            case nameof(SRow.Price):
+                if (double.TryParse(value, out var p)) row.Price = p;
+                break;
+            case nameof(SRow.Description):
+                row.Description = value;
+                break;
+            case nameof(SRow.Category):
+                row.Category = value;
+                break;
+            case nameof(SRow.Active):
+                row.Active = value is "1" or "true" or "True" or "y" or "Y";
+                break;
+        }
+    }
+
+    private void BuildRows()
+    {
+        // Pooled tail values: the filler cells share a small string set.
+        var pool = new string[97];
+        for (var p = 0; p < pool.Length; p++) pool[p] = $"v{p:00}";
+
+        Rows = new List<SRow>(_rowCount);
+        for (var i = 0; i < _rowCount; i++)
+        {
+            var tail = new string[44];
+            for (var t = 0; t < 44; t++) tail[t] = pool[(i + t * 7) % pool.Length];
+            Rows.Add(new SRow
+            {
+                Code = $"{10000 + i}",
+                Qty = (i % 40) + 1,
+                Price = Math.Round((i % 100) * 1.25 + 0.5, 2),
+                Description = $"Line item {i}",
+                Category = Categories[i % Categories.Length],
+                Active = i % 3 != 0,
+                Tail = tail,
+            });
+        }
+    }
+
+    private void RefreshStats()
+    {
+        _renders = GridRenderDiagnostics.RenderCount;
+        _lastMs = GridRenderDiagnostics.LastBuildMs;
+        _totalMs = GridRenderDiagnostics.TotalBuildMs;
+        _selectedCount = _grid?.GetSelectedRecords().Count() ?? _selectedCount;
+    }
+
+    private void ResetStats()
+    {
+        GridRenderDiagnostics.Reset();
+        _selectionCallbacks = 0;
+        _editCount = 0;
+        RefreshStats();
+    }
+}

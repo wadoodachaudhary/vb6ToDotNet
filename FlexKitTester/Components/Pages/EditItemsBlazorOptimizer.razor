@@ -1,0 +1,282 @@
+@page "/edit-items-blazor-optimizer"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+
+<PageTitle>Edit Item DB - Blazor Optimizer</PageTitle>
+
+<div class="ebo-page">
+    <div class="ebo-titlebar">
+        <h4>Edit Item DB - Blazor Optimizer</h4>
+        <span>@Items.Count.ToString("N0") rows</span>
+    </div>
+
+    <div class="ebo-toolbar" role="group" aria-label="Grid rendering mode">
+        <button id="ebo-baseline"
+                class="@ModeButtonClass(GridPerformanceMode.ServerBaseline)"
+                @onclick="() => SetMode(GridPerformanceMode.ServerBaseline)">Server Baseline</button>
+        <button id="ebo-optimized"
+                class="@ModeButtonClass(GridPerformanceMode.ServerOptimized)"
+                @onclick="() => SetMode(GridPerformanceMode.ServerOptimized)">Server Optimized</button>
+        <button id="ebo-preview"
+                class="@ModeButtonClass(GridPerformanceMode.ClientPreview)"
+                @onclick="() => SetMode(GridPerformanceMode.ClientPreview)">Client Preview</button>
+        <button id="ebo-combined"
+                class="@ModeButtonClass(GridPerformanceMode.ClientPreviewAndServerOptimized)"
+                @onclick="() => SetMode(GridPerformanceMode.ClientPreviewAndServerOptimized)">Client Preview + Server Optimized (Default)</button>
+        <button id="ebo-refresh" @onclick="CaptureCurrentSample">Capture metrics</button>
+        <button id="ebo-reset" @onclick="ResetCurrentMetrics">Reset</button>
+        <span class="ebo-mode">Current: <strong>@CurrentModeName</strong></span>
+    </div>
+
+    <div class="ebo-metrics" aria-label="Performance comparison">
+        <table>
+            <thead>
+                <tr><th>Metric</th><th>Server Baseline</th><th>Server Optimized</th><th>Client Preview</th><th>Client Preview + Server Optimized</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Grid renders</td><td>@Metric(_oldSample?.RenderCount)</td><td>@Metric(_optimizerSample?.RenderCount)</td><td>@Metric(_previewSample?.RenderCount)</td><td>@Metric(_combinedSample?.RenderCount)</td></tr>
+                <tr><td>Last build (ms)</td><td>@Metric(_oldSample?.LastBuildMs)</td><td>@Metric(_optimizerSample?.LastBuildMs)</td><td>@Metric(_previewSample?.LastBuildMs)</td><td>@Metric(_combinedSample?.LastBuildMs)</td></tr>
+                <tr><td>Average build (ms)</td><td>@Metric(_oldSample?.AverageBuildMs)</td><td>@Metric(_optimizerSample?.AverageBuildMs)</td><td>@Metric(_previewSample?.AverageBuildMs)</td><td>@Metric(_combinedSample?.AverageBuildMs)</td></tr>
+                <tr><td>Full row lookup builds</td><td>@Metric(_oldSample?.Server.BaselineRenderLookupBuilds)</td><td>@Metric(_optimizerSample?.Server.PersistentRowIndexBuilds)</td><td>@Metric(_previewSample?.Server.BaselineRenderLookupBuilds)</td><td>@Metric(_combinedSample?.Server.PersistentRowIndexBuilds)</td></tr>
+                <tr><td>Rows indexed</td><td>@Metric(_oldSample?.Server.BaselineRenderLookupRows)</td><td>@Metric(_optimizerSample?.Server.PersistentRowIndexBuilds * Items.Count)</td><td>@Metric(_previewSample?.Server.BaselineRenderLookupRows)</td><td>@Metric(_combinedSample?.Server.PersistentRowIndexBuilds * Items.Count)</td></tr>
+                <tr><td>Linear IndexOf calls</td><td>@Metric(_oldSample?.Server.BaselineIndexOfCalls)</td><td>@Metric(_optimizerSample?.Server.BaselineIndexOfCalls)</td><td>@Metric(_previewSample?.Server.BaselineIndexOfCalls)</td><td>@Metric(_combinedSample?.Server.BaselineIndexOfCalls)</td></tr>
+                <tr><td>Direct row-index hits</td><td>@Metric(_oldSample?.Server.DirectRowIndexHits)</td><td>@Metric(_optimizerSample?.Server.DirectRowIndexHits)</td><td>@Metric(_previewSample?.Server.DirectRowIndexHits)</td><td>@Metric(_combinedSample?.Server.DirectRowIndexHits)</td></tr>
+                <tr><td>Navigation list builds</td><td>@Metric(_oldSample?.Server.BaselineNavigationRowBuilds)</td><td>@Metric(_optimizerSample?.Server.NavigationRowBuilds)</td><td>@Metric(_previewSample?.Server.BaselineNavigationRowBuilds)</td><td>@Metric(_combinedSample?.Server.NavigationRowBuilds)</td></tr>
+                <tr><td>Navigation rows copied</td><td>@Metric(_oldSample?.Server.BaselineNavigationRowsMaterialized)</td><td>@Metric(_optimizerSample?.Server.NavigationRowBuilds * Items.Count)</td><td>@Metric(_previewSample?.Server.BaselineNavigationRowsMaterialized)</td><td>@Metric(_combinedSample?.Server.NavigationRowBuilds * Items.Count)</td></tr>
+                <tr><td>Navigation list reuses</td><td>@Metric(_oldSample?.Server.NavigationRowReuses)</td><td>@Metric(_optimizerSample?.Server.NavigationRowReuses)</td><td>@Metric(_previewSample?.Server.NavigationRowReuses)</td><td>@Metric(_combinedSample?.Server.NavigationRowReuses)</td></tr>
+                <tr><td>Display values built</td><td>@Metric(_oldSample?.Server.BaselineDisplayValueBuilds)</td><td>@Metric(_optimizerSample?.Server.DisplayValueCacheMisses)</td><td>@Metric(_previewSample?.Server.BaselineDisplayValueBuilds)</td><td>@Metric(_combinedSample?.Server.DisplayValueCacheMisses)</td></tr>
+                <tr><td>Display cache hits</td><td>@Metric(_oldSample?.Server.DisplayValueCacheHits)</td><td>@Metric(_optimizerSample?.Server.DisplayValueCacheHits)</td><td>@Metric(_previewSample?.Server.DisplayValueCacheHits)</td><td>@Metric(_combinedSample?.Server.DisplayValueCacheHits)</td></tr>
+                <tr><td>Cell styles built</td><td>@Metric(_oldSample?.Server.BaselineColumnStyleBuilds)</td><td>@Metric(_optimizerSample?.Server.ColumnStyleCacheMisses)</td><td>@Metric(_previewSample?.Server.BaselineColumnStyleBuilds)</td><td>@Metric(_combinedSample?.Server.ColumnStyleCacheMisses)</td></tr>
+                <tr><td>Cell-style cache hits</td><td>@Metric(_oldSample?.Server.ColumnStyleCacheHits)</td><td>@Metric(_optimizerSample?.Server.ColumnStyleCacheHits)</td><td>@Metric(_previewSample?.Server.ColumnStyleCacheHits)</td><td>@Metric(_combinedSample?.Server.ColumnStyleCacheHits)</td></tr>
+                <tr><td>Editable cues built</td><td>@Metric(_oldSample?.Server.BaselineEditableCueBuilds)</td><td>@Metric(_optimizerSample?.Server.EditableCueCacheMisses)</td><td>@Metric(_previewSample?.Server.BaselineEditableCueBuilds)</td><td>@Metric(_combinedSample?.Server.EditableCueCacheMisses)</td></tr>
+                <tr><td>Editable-cue cache hits</td><td>@Metric(_oldSample?.Server.EditableCueCacheHits)</td><td>@Metric(_optimizerSample?.Server.EditableCueCacheHits)</td><td>@Metric(_previewSample?.Server.EditableCueCacheHits)</td><td>@Metric(_combinedSample?.Server.EditableCueCacheHits)</td></tr>
+                <tr><td>Preview silent syncs</td><td>@Metric(_oldSample?.Server.ClientNavigationSilentSyncs)</td><td>@Metric(_optimizerSample?.Server.ClientNavigationSilentSyncs)</td><td>@Metric(_previewSample?.Server.ClientNavigationSilentSyncs)</td><td>@Metric(_combinedSample?.Server.ClientNavigationSilentSyncs)</td></tr>
+                <tr><td>Preview final syncs</td><td>@Metric(_oldSample?.Server.ClientNavigationFinalSyncs)</td><td>@Metric(_optimizerSample?.Server.ClientNavigationFinalSyncs)</td><td>@Metric(_previewSample?.Server.ClientNavigationFinalSyncs)</td><td>@Metric(_combinedSample?.Server.ClientNavigationFinalSyncs)</td></tr>
+                <tr><td>Drag commits</td><td>@Metric(_oldSample?.Server.DragSelectionCommits)</td><td>@Metric(_optimizerSample?.Server.DragSelectionCommits)</td><td>@Metric(_previewSample?.Server.DragSelectionCommits)</td><td>@Metric(_combinedSample?.Server.DragSelectionCommits)</td></tr>
+                <tr><td>Selection callbacks</td><td>@Metric(_oldSample?.SelectionCallbacks)</td><td>@Metric(_optimizerSample?.SelectionCallbacks)</td><td>@Metric(_previewSample?.SelectionCallbacks)</td><td>@Metric(_combinedSample?.SelectionCallbacks)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="ebo-grid-host">
+        <GridControl @key="_mountGeneration"
+                     AutoPageRowThreshold="0"
+                     TValue="EditItemsBench.ItemRow"
+                     DataSource="@Items"
+                     PerformanceMode="@_mode"
+                     WindowOverscanRows="60"
+                     AllowSorting="false"
+                     AllowSelection="true"
+                     EnableHover="true"
+                     Height="100%"
+                     RowHeight="22"
+                     MinRowHeight="22"
+                     EditSettingsRef="@_editSettings"
+                     SelectionSettingsRef="@_selectionSettings"
+                     EventsRef="@_gridEvents"
+                     BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                     AllowSingleCellColumnMassEdit="true"
+                     CssClass="@("fx-grid-compact " + GridControl<EditItemsBench.ItemRow>.EditableSelectionThemeCssClass)">
+            <GridColumnsBase>
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Phase)" HeaderText="Phase" Width="60px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.CostType)" HeaderText="Cost Type" Width="60px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Item)" HeaderText="Item" Width="65px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.PhaseDesc)" HeaderText="Phase Description" Width="130px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Description)" HeaderText="Item Description" Width="250px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Notes)" HeaderText="Notes" Width="110px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.POIndex)" HeaderText="PO Index" Width="75px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.POIndexDesc)" HeaderText="PO Index Description" Width="150px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.CostCode)" HeaderText="Cost Code" Width="80px" AllowEditing="true" AllowCellDragSelection="true" ShowEditButton="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.CostCodeDesc)" HeaderText="Cost Code Desc" Width="140px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.TaxGroup)" HeaderText="Tax Group" Width="75px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.WastePercent)" HeaderText="Waste %" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.RoundDir)" HeaderText="Rounding" Width="105px" AllowEditing="true" EditOptions="@RoundingOptions" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.RoundTo)" HeaderText="Round To" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Price)" HeaderText="Price" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.IsQuote)" HeaderText="Quote" Width="50px" Type="ColumnType.CheckBox" AllowEditing="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Category)" HeaderText="Category" Width="60px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.CategoryDesc)" HeaderText="Category Description" Width="150px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.OrderUOM)" HeaderText="Order UOM" Width="70px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.ConversionFactor)" HeaderText="Conversion Factor" Width="110px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.PartNumber)" HeaderText="Part Number" Width="90px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.Formula)" HeaderText="Formula" Width="100px" AllowEditing="true" AllowCellDragSelection="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.InverseItemDesc)" HeaderText="Inverse Item" Width="110px" AllowEditing="false" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.CostPrice)" HeaderText="Cost Price" Width="80px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
+                <GridColumn Field="@nameof(EditItemsBench.ItemRow.BidItem)" HeaderText="Bid Item" Width="60px" Type="ColumnType.CheckBox" AllowEditing="true" />
+            </GridColumnsBase>
+        </GridControl>
+    </div>
+</div>
+
+@code {
+    private sealed record BenchSample(
+        long RenderCount,
+        double LastBuildMs,
+        double TotalBuildMs,
+        long SelectionCallbacks,
+        GridServerOptimizationSnapshot Server)
+    {
+        public double AverageBuildMs => RenderCount == 0 ? 0 : TotalBuildMs / RenderCount;
+    }
+
+    private static readonly IReadOnlyList<string> RoundingOptions =
+    [
+        "#3;To closest",
+        "#1;Up to nearest",
+        "#2;Down to nearest",
+        "#0;None"
+    ];
+
+    private readonly EditSettings _editSettings = new()
+    {
+        AllowEditing = true,
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditOnDblClick = true,
+        ShowConfirmDialog = false,
+        Mode = EditMode.Batch
+    };
+
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Cell,
+        EnableToggle = true
+    };
+
+    private readonly GridControlEvents<EditItemsBench.ItemRow> _gridEvents = new();
+    private List<EditItemsBench.ItemRow> Items = new();
+    private GridPerformanceMode _mode = GridPerformanceMode.ClientPreviewAndServerOptimized;
+    private int _mountGeneration;
+    private long _selectionCallbacks;
+    private BenchSample? _oldSample;
+    private BenchSample? _optimizerSample;
+    private BenchSample? _previewSample;
+    private BenchSample? _combinedSample;
+
+    private string CurrentModeName => _mode switch
+    {
+        GridPerformanceMode.ServerBaseline => "Server Baseline",
+        GridPerformanceMode.ServerOptimized => "Server Optimized",
+        GridPerformanceMode.ClientPreview => "Client Preview",
+        _ => "Client Preview + Server Optimized (GridControl default)"
+    };
+
+    protected override void OnInitialized()
+    {
+        var dataFile = Path.Combine(Env.ContentRootPath, "Data", "interior-finishing-items.json");
+        if (File.Exists(dataFile))
+        {
+            Items = System.Text.Json.JsonSerializer.Deserialize<List<EditItemsBench.ItemRow>>(
+                File.ReadAllText(dataFile),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        }
+
+        if (Items.Count == 0)
+            Items = BuildFallbackRows();
+
+        _gridEvents.SelectionChangedDetailed = EventCallback.Factory.Create<GridSelectionChangedArgs>(
+            NonRenderingEventReceiver.Instance,
+            _ => _selectionCallbacks++);
+
+        GridRenderDiagnostics.Reset();
+        GridServerOptimizationDiagnostics.Reset();
+    }
+
+    private void SetMode(GridPerformanceMode mode)
+    {
+        if (_mode == mode)
+            return;
+
+        CaptureCurrentSample();
+        _mode = mode;
+        _mountGeneration++;
+        ResetCounters();
+    }
+
+    private string ModeButtonClass(GridPerformanceMode mode) =>
+        _mode == mode ? "ebo-mode-button active" : "ebo-mode-button";
+
+    private void CaptureCurrentSample()
+    {
+        var sample = ReadCurrentSample();
+        switch (_mode)
+        {
+            case GridPerformanceMode.ServerBaseline:
+                _oldSample = sample;
+                break;
+            case GridPerformanceMode.ServerOptimized:
+                _optimizerSample = sample;
+                break;
+            case GridPerformanceMode.ClientPreview:
+                _previewSample = sample;
+                break;
+            case GridPerformanceMode.ClientPreviewAndServerOptimized:
+                _combinedSample = sample;
+                break;
+        }
+    }
+
+    private BenchSample ReadCurrentSample() => new(
+        GridRenderDiagnostics.RenderCount,
+        GridRenderDiagnostics.LastBuildMs,
+        GridRenderDiagnostics.TotalBuildMs,
+        _selectionCallbacks,
+        GridServerOptimizationDiagnostics.Snapshot());
+
+    private void ResetCurrentMetrics()
+    {
+        switch (_mode)
+        {
+            case GridPerformanceMode.ServerBaseline:
+                _oldSample = null;
+                break;
+            case GridPerformanceMode.ServerOptimized:
+                _optimizerSample = null;
+                break;
+            case GridPerformanceMode.ClientPreview:
+                _previewSample = null;
+                break;
+            case GridPerformanceMode.ClientPreviewAndServerOptimized:
+                _combinedSample = null;
+                break;
+        }
+
+        ResetCounters();
+    }
+
+    private void ResetCounters()
+    {
+        GridRenderDiagnostics.Reset();
+        GridServerOptimizationDiagnostics.Reset();
+        _selectionCallbacks = 0;
+    }
+
+    private static string Metric(long? value) => value?.ToString("N0") ?? "-";
+    private static string Metric(double? value) => value?.ToString("0.00") ?? "-";
+
+    private static List<EditItemsBench.ItemRow> BuildFallbackRows() =>
+        Enumerable.Range(0, 3342).Select(i => new EditItemsBench.ItemRow
+        {
+            Phase = $"{6000 + (i / 40) * 10:00000}",
+            CostType = "M",
+            Item = $"{(i % 80) * 5:0000}M",
+            PhaseDesc = "Interior Finishing",
+            Description = $"Interior finishing item {i + 1}",
+            Notes = i % 11 == 0 ? "Standard note" : "",
+            POIndex = $"{2000 + (i % 80) * 20}",
+            POIndexDesc = "Purchase order description",
+            CostCode = $"01-{3000 + i % 500:0000}",
+            CostCodeDesc = "Cost code description",
+            TaxGroup = i % 7 == 0 ? "EXEMPT" : "GST",
+            Category = "ML",
+            CategoryDesc = "Material and Labour",
+            OrderUOM = i % 5 == 0 ? "LSUM" : "EA",
+            ConversionFactor = i % 13 == 0 ? 25m : 1m,
+            RoundDir = i % 3 == 0 ? "#3" : "#0",
+            Price = i % 19,
+            BidItem = i % 17 == 0
+        }).ToList();
+}

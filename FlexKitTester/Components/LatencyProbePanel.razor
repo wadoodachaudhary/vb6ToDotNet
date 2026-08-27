@@ -1,0 +1,258 @@
+@using FlexKitTester.Services
+@using Microsoft.AspNetCore.Components.Rendering
+@inject LatencyProbeService ProbeService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<details class="latency-panel">
+    <summary>Latency diagnostics — @Context</summary>
+    <div class="latency-panel-body">
+        <p class="latency-intro">
+            Run these separately from the scroll test. Browser tests measure this
+            tab's real route to the bench; SQL and TCP tests originate on the bench host.
+            No configured address, server, database, login, or connection string is shown.
+        </p>
+
+        <div class="latency-availability">
+            <span>Samples: <b>@ProbeService.SampleCount</b></span>
+            <span>SQL: <b>@AvailabilityText(_availability.DatabaseConfigured)</b></span>
+            <span>LAN: <b>@AvailabilityText(_availability.LanConfigured)</b></span>
+            <span>VPN: <b>@AvailabilityText(_availability.VpnConfigured)</b></span>
+        </div>
+
+        @if (BenchLatency.UplinkMs > 0)
+        {
+            <div class="latency-warning">
+                Browser/circuit measurement is disabled while the PM Entry bench's
+                process-wide @BenchLatency.UplinkMs ms uplink simulation is active.
+            </div>
+        }
+
+        <div class="latency-actions">
+            <button type="button"
+                    disabled="@(_running || BenchLatency.UplinkMs > 0)"
+                    @onclick="RunBrowserProbesAsync">
+                Measure browser + circuit
+            </button>
+            <button type="button"
+                    disabled="@(_running || !_availability.AnyInfrastructureConfigured)"
+                    @onclick="RunInfrastructureProbesAsync">
+                Measure configured SQL/LAN/VPN
+            </button>
+            <button type="button" disabled="@_running" @onclick="ClearResults">Clear</button>
+            <span role="status">@_status</span>
+        </div>
+
+        @if (!_availability.AnyInfrastructureConfigured)
+        {
+            <p class="latency-not-configured">
+                External probes are disabled. Configure BenchDatabase and/or fixed
+                LAN/VPN targets through user-secrets or environment variables to enable them.
+            </p>
+        }
+
+        @if (_browserReport is not null)
+        {
+            <h4>Browser-origin measurements</h4>
+            <table class="latency-results">
+                <thead>
+                    <tr>
+                        <th>Probe</th>
+                        <th>Samples</th>
+                        <th>Failed</th>
+                        <th>p50</th>
+                        <th>p95</th>
+                        <th>Max</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @BrowserResultRow(_browserReport.Circuit)
+                    @BrowserResultRow(_browserReport.Http)
+                </tbody>
+            </table>
+        }
+
+        @if (_infrastructureReport is not null)
+        {
+            <h4>Bench-host measurements</h4>
+            <table class="latency-results">
+                <thead>
+                    <tr>
+                        <th>Probe</th>
+                        <th>Samples</th>
+                        <th>Failed</th>
+                        <th>p50</th>
+                        <th>p95</th>
+                        <th>Max</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var result in _infrastructureReport.Results)
+                    {
+                        <tr>
+                            <td>@result.Probe</td>
+                            <td>@result.SuccessCount</td>
+                            <td>@result.FailureCount</td>
+                            <td>@Milliseconds(result.P50Milliseconds)</td>
+                            <td>@Milliseconds(result.P95Milliseconds)</td>
+                            <td>@Milliseconds(result.MaximumMilliseconds)</td>
+                            <td>@result.Status</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <p class="latency-footnote">
+            Circuit RTT includes SignalR scheduling. HTTP RTT uses a same-origin 204 response.
+            SQL open disables pooling and includes transport/TLS/login; SELECT 1 uses one open
+            connection and isolates a minimal database round trip. LAN/VPN use TCP handshakes
+            to preconfigured targets and do not infer the active route automatically.
+        </p>
+    </div>
+</details>
+
+@code {
+    [Parameter] public string Context { get; set; } = "grid bench";
+
+    private readonly CancellationTokenSource _disposeSource = new();
+    private LatencyProbeAvailability _availability;
+    private BrowserLatencyReport? _browserReport;
+    private LatencyProbeReport? _infrastructureReport;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<LatencyProbePanel>? _selfReference;
+    private bool _running;
+    private string _status = "Ready";
+
+    protected override void OnInitialized() =>
+        _availability = ProbeService.GetAvailability();
+
+    private async Task RunBrowserProbesAsync()
+    {
+        if (_running)
+            return;
+        if (BenchLatency.UplinkMs > 0)
+        {
+            _status = "Turn off the PM Entry uplink simulation before measuring the real route";
+            return;
+        }
+
+        _running = true;
+        _status = "Measuring browser HTTP and Blazor circuit RTT...";
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>(
+                "import",
+                "./latency-probe.js");
+            _selfReference ??= DotNetObjectReference.Create(this);
+            _browserReport = await _module.InvokeAsync<BrowserLatencyReport>(
+                "measureBrowserLatency",
+                _disposeSource.Token,
+                _selfReference,
+                "/bench-latency/ping",
+                ProbeService.SampleCount);
+            _status = "Browser measurements complete";
+        }
+        catch (OperationCanceledException) when (_disposeSource.IsCancellationRequested)
+        {
+            // Component disposal; no UI remains to update.
+        }
+        catch (JSDisconnectedException)
+        {
+            _status = "Browser disconnected";
+        }
+        catch
+        {
+            _status = "Browser measurement failed";
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private async Task RunInfrastructureProbesAsync()
+    {
+        if (_running || !_availability.AnyInfrastructureConfigured)
+            return;
+
+        _running = true;
+        _status = "Measuring configured infrastructure...";
+        try
+        {
+            _infrastructureReport = await ProbeService.RunConfiguredProbesAsync(
+                _disposeSource.Token);
+            _status = "Infrastructure measurements complete";
+        }
+        catch (OperationCanceledException) when (_disposeSource.IsCancellationRequested)
+        {
+            // Component disposal; no UI remains to update.
+        }
+        catch
+        {
+            _status = "Infrastructure measurement failed";
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    [JSInvokable]
+    public Task PingCircuitAsync() => Task.CompletedTask;
+
+    private void ClearResults()
+    {
+        _browserReport = null;
+        _infrastructureReport = null;
+        _availability = ProbeService.GetAvailability();
+        _status = "Ready";
+    }
+
+    private RenderFragment BrowserResultRow(BrowserLatencyResult result) => builder =>
+    {
+        var sequence = 0;
+        builder.OpenElement(sequence++, "tr");
+        Cell(builder, ref sequence, result.Probe);
+        Cell(builder, ref sequence, result.SuccessCount.ToString());
+        Cell(builder, ref sequence, result.FailureCount.ToString());
+        Cell(builder, ref sequence, Milliseconds(result.P50Milliseconds));
+        Cell(builder, ref sequence, Milliseconds(result.P95Milliseconds));
+        Cell(builder, ref sequence, Milliseconds(result.MaximumMilliseconds));
+        Cell(builder, ref sequence, result.Status);
+        builder.CloseElement();
+    };
+
+    private static void Cell(RenderTreeBuilder builder, ref int sequence, string value)
+    {
+        builder.OpenElement(sequence++, "td");
+        builder.AddContent(sequence++, value);
+        builder.CloseElement();
+    }
+
+    private static string Milliseconds(double? value) =>
+        value.HasValue ? $"{value.Value:0.0} ms" : "—";
+
+    private static string AvailabilityText(bool configured) =>
+        configured ? "configured" : "off";
+
+    public async ValueTask DisposeAsync()
+    {
+        await _disposeSource.CancelAsync();
+        _selfReference?.Dispose();
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Normal circuit teardown.
+            }
+        }
+        _disposeSource.Dispose();
+    }
+}

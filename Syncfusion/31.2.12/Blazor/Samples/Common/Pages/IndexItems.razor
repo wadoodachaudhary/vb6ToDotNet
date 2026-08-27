@@ -1,0 +1,1560 @@
+@page "/items"
+
+@namespace BlazorDemos.Pages
+
+@using Syncfusion.Blazor.TreeGrid
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Spinner
+@using Syncfusion.Blazor.DropDowns
+@using System;
+@using Syncfusion.Blazor.DropDowns
+@using Syncfusion.Blazor.Buttons
+@using Syncfusion.Blazor.Navigations
+@using System.IO
+@using System.Collections.Generic
+@using System.Data
+@using System.Dynamic
+@using BlazorDemos.Pages.Grid
+@using Microsoft.AspNetCore.Components.Forms
+@inject NavigationManager UriHelper
+@using hyphen_data
+@using Microsoft.Data.SqlClient
+@using Syncfusion.Blazor.Inputs
+@using Syncfusion.Blazor.Data;
+@using Syncfusion.Blazor.SplitButtons
+@using ChangeEventArgs = Syncfusion.Blazor.Navigations.ChangeEventArgs
+
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+@*Hidden:Lines*@
+@inherits SampleBaseComponent;
+@*End:Hidden*@
+
+<style>
+    .tabs-container {
+        margin: 20px auto;
+        font-family: sans-serif;
+    }
+
+
+    .task-icon-vb6 {
+        width: 2000px;
+        height: auto;
+        display: block;
+
+    }
+
+    .tab-buttons {
+        display: flex;
+        border-bottom: 2px solid #ddd;
+    }
+
+    .tab-buttons button {
+        padding: 12px 24px;
+        border: none;
+        background: #f0f0f0;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background 0.2s;
+    }
+
+    .tab-buttons button:hover {
+        background: #e0e0e0;
+    }
+
+    .tab-buttons button.active {
+        background: #fff;
+        border-bottom: 2px solid #007bff;
+        margin-bottom: -2px;
+        color: #007bff;
+        font-weight: bold;
+    }
+
+    .tab-content {
+        padding: 20px;
+        border: 1px solid #ddd;
+        border-top: none;
+        background: #fff;
+    }
+
+    .panel {
+        text-align: center;
+    }
+
+    .panel img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+    }
+
+    .tbar-icon {
+        width: 24px;
+        height: 24px;
+        margin-bottom: 4px;
+    }
+
+    .loading {
+        position: absolute;
+        height: 92%;
+        width: 100%;
+        background-color: rgba(1, 1, 1, 0.2);
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        padding-left: 44%;
+    }
+
+    /* Toolbar styling */
+    .toolbar-cntr {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        border-top: 1px solid #c9c9c9;
+        border-bottom: 1px solid #c9c9c9;
+        margin-bottom: 10px;
+    }
+
+    .tool-label {
+        width: 100%;
+        display: block;
+    }
+
+    .e-btn {
+        margin-right: 5px;
+    }
+
+    /* Split panel layout */
+    .split-container {
+        display: flex;
+        height: calc(100vh - 200px);
+        min-height: 500px;
+    }
+
+    .phases-panel {
+        width: 380px;
+        min-width: 200px;
+        max-width: 600px;
+        border-right: 3px solid #c9c9c9;
+        overflow: auto;
+        resize: horizontal;
+    }
+
+    .items-panel {
+        flex: 1;
+        overflow: auto;
+        padding-left: 10px;
+    }
+
+    /* Tree grid styling */
+    .e-treegrid .e-rowcell.e-active {
+        background-color: #e3f2fd !important;
+    }
+
+    /* Filter row styling */
+    .e-grid .e-filterbarcell input {
+        background-color: #FFFFCC !important;
+        font-weight: bold;
+    }
+
+    /* Selected row styling */
+    .e-grid .e-row.e-selected .e-rowcell {
+        background-color: #e3f2fd !important;
+    }
+
+    /* Dirty row indicator */
+    .dirty-row {
+        background-color: #fff3cd !important;
+    }
+
+    /* Delete row indicator */
+    .delete-row {
+        background-color: #f8d7da !important;
+        text-decoration: line-through;
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #333;
+    }
+
+    /* Phase tree node selected */
+    .phase-selected {
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-weight: bold;
+    }
+
+    .phase-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+
+    .phase-item:hover {
+        background-color: #f5f5f5;
+    }
+
+    .phase-group {
+        font-weight: bold;
+        background-color: #f0f0f0;
+    }
+
+    .expand-icon {
+        cursor: pointer;
+        margin-right: 8px;
+    }
+
+
+    /* Custom expand/collapse icons */
+    .e-treegrid .e-treegridexpand::before {
+        content: '\e823'; /* Syncfusion folder-open icon */
+        font-family: 'e-icons';
+        color: #1976d2;
+    }
+
+    .e-treegrid .e-treegridcollapse::before {
+        content: '\e7da'; /* Syncfusion folder icon */
+        font-family: 'e-icons';
+        color: #ff9800;
+    }
+
+    /* Alternative: Use plus/minus icons */
+    .e-treegrid.plus-minus .e-treegridexpand::before {
+        content: '\e738'; /* minus icon */
+        font-family: 'e-icons';
+    }
+
+    .e-treegrid.plus-minus .e-treegridcollapse::before {
+        content: '\e759'; /* plus icon */
+        font-family: 'e-icons';
+    }
+
+    /* Alternative: Use chevron icons */
+    .e-treegrid.chevron .e-treegridexpand::before {
+        content: '\e729'; /* chevron-down */
+        font-family: 'e-icons';
+    }
+
+    .e-treegrid.chevron .e-treegridcollapse::before {
+        content: '\e728'; /* chevron-right */
+        font-family: 'e-icons';
+    }
+
+    /* Row icon based on level */
+    .e-treegrid .e-rowcell .e-icons.e-treegridexpand,
+    .e-treegrid .e-rowcell .e-icons.e-treegridcollapse {
+        font-size: 16px;
+        margin-right: 5px;
+    }
+
+    /* Add node type icons */
+    .phase-group-icon::before {
+        content: '\e702'; /* folder icon */
+        font-family: 'e-icons';
+        color: #ff9800;
+        margin-right: 8px;
+    }
+
+    .phase-item-icon::before {
+        content: '\e7c2'; /* document icon */
+        font-family: 'e-icons';
+        color: #4caf50;
+        margin-right: 8px;
+    }
+    /* Phase tree node selected */
+    .e-columnheader, .e-headercell, .e-grid th.e-headercell, .e-grid .e-headertext {
+        background-color:#d5dadc; /* Normal state */
+        color: #333; /* Text color */
+        font-size: 16px;
+    }
+</style>
+
+
+
+
+@if (IsLoading){
+    <div class="loading">
+        <SfSpinner @ref="SpinnerObj" Type="SpinnerType.Bootstrap4" Label="Loading Items..."></SfSpinner>
+    </div>
+}
+<div class="tabs-container">
+    <div class="tab-buttons">
+        <button class="@(activeTab == 1 ? "active" : "")" @onclick="() => activeTab = 1">
+            .NET
+        </button>
+        <button class="@(activeTab == 2 ? "active" : "")" @onclick="() => activeTab = 2">
+            VB6
+        </button>
+    </div>
+
+    <div class="tab-content">
+        @if (activeTab == 1){
+            <div class="toolbar-cntr">
+                <SfToolbar>
+                    <ToolbarItems>
+                        <!-- Save -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn"
+                                        disabled="@(!mDirty)"
+                                        @onclick="OnSaveClick">
+                                    <span class="e-icons e-save"></span>
+                                    <span class="tool-label">Save</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <!-- View Dropdown -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <SfDropDownButton Content="View">
+                                    <DropDownButtonEvents ItemSelected="OnViewSelected"></DropDownButtonEvents>
+                                    <DropDownButtonItems>
+                                        <DropDownButtonItem Text="Group and Phase"></DropDownButtonItem>
+                                        <DropDownButtonItem Text="Purchase Order"></DropDownButtonItem>
+                                        <DropDownButtonItem Text="Cost Code"></DropDownButtonItem>
+                                    </DropDownButtonItems>
+                                </SfDropDownButton>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <ToolbarItem Separator="true"/>
+
+                        <!-- New Item -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="OnNewItemClick">
+                                    <span class="e-icons e-plus"></span>
+                                    <span class="tool-label">New Item</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <!-- Duplicate -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn"
+                                        disabled="@(SelectedItem == null)"
+                                        @onclick="OnDuplicateClick">
+                                    <span class="e-icons e-copy"></span>
+                                    <span class="tool-label">Duplicate</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <!-- Delete -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn e-danger"
+                                        disabled="@(SelectedItem == null)"
+                                        @onclick="OnDeleteClick">
+                                    <span class="e-icons e-delete"></span>
+                                    <span class="tool-label">Delete</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <ToolbarItem Separator="true"/>
+
+                        <!-- Excel Export -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="OnExcelExport">
+                                    <span class="e-icons e-export-excel"></span>
+                                    <span class="tool-label">Export</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <!-- Excel Import -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="OnExcelImport">
+                                    <span class="e-icons e-import"></span>
+                                    <span class="tool-label">Import</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+
+                        <!-- Refresh -->
+                        <ToolbarItem>
+                            <ToolbarItemTemplate>
+                                <button class="e-btn e-tbar-btn" @onclick="OnRefreshClick">
+                                    <span class="e-icons e-refresh"></span>
+                                    <span class="tool-label">Refresh</span>
+                                </button>
+                            </ToolbarItemTemplate>
+                        </ToolbarItem>
+                    </ToolbarItems>
+                </SfToolbar>
+            </div>
+            <h3 class="page-title">Item Database - @CurrentViewName</h3>
+            <div class="split-container">
+                <!-- Left Panel: Phases Tree -->
+                <div class="phases-panel">
+                    <div
+                        style="padding: 10px; background-color: #f5f5f5; border-bottom: 1px solid #ddd; font-weight: bold;">
+                        @CurrentViewName
+                        <SfButton CssClass="e-small e-flat" IconCss="e-icons e-expand"
+                                  OnClick="OnExpandAll" title="Expand All"></SfButton>
+                    </div>
+
+                    <SfTreeGrid @ref="PhasesTreeGrid" DataSource="@TreePhaseData"
+                                IdMapping="NodeID"
+                                EnableCollapseAll="true"
+                                ParentIdMapping="ParentID" TreeColumnIndex="1"
+                                TValue="PhaseTreeData"
+                                AllowSelection="true"
+                                Height="100%">
+                        <TreeGridSelectionSettings
+                            Mode="Syncfusion.Blazor.Grids.SelectionMode.Row"></TreeGridSelectionSettings>
+                        <TreeGridEvents TValue="PhaseTreeData" RowSelected="OnPhaseSelected"
+                                        Collapsed="OnNodeCollapsed"
+                                        Expanded="OnNodeExpanded">
+
+                        </TreeGridEvents>
+                        <TreeGridColumns>
+                            <TreeGridColumn Field="NodeID" HeaderText="" Width="20" Visible="false"></TreeGridColumn>
+                            <TreeGridColumn Field="Node" HeaderText="Task Name" Width="300"></TreeGridColumn>
+
+                        </TreeGridColumns>
+                    </SfTreeGrid>
+                </div>
+
+                <!-- Right Panel: Items Grid -->
+                <div class="items-panel">
+                    <SfGrid @ref="ItemsGrid"
+                            DataSource="@ItemsData"
+                            TValue="ItemRow"
+                            AllowPaging="true"
+                            AllowSorting="true"
+                            AllowFiltering="true"
+                            AllowResizing="true"
+                            AllowExcelExport="true"
+                            AllowSelection="true"
+                            AllowMultiSorting="true"
+                            EnableHover="true"
+                            Height="100%"
+                            FrozenRows="1">
+
+                        <GridEditSettings AllowAdding="true"
+                                          AllowEditing="true"
+                                          AllowDeleting="true"
+                                          Mode="Syncfusion.Blazor.Grids.EditMode.Batch"
+                                          ShowConfirmDialog="true">
+                        </GridEditSettings>
+
+                        <GridFilterSettings Type="Syncfusion.Blazor.Grids.FilterType.FilterBar"
+                                            Mode="FilterBarMode.Immediate">
+                        </GridFilterSettings>
+
+                        <GridPageSettings PageSize="50" PageSizes="true"></GridPageSettings>
+
+                        <GridSelectionSettings Type="Syncfusion.Blazor.Grids.SelectionType.Multiple"
+                                               Mode="Syncfusion.Blazor.Grids.SelectionMode.Row">
+                        </GridSelectionSettings>
+
+                        <GridEvents TValue="ItemRow"
+                                    OnBatchSave="OnBatchSave"
+                                    RowSelected="OnItemSelected"
+                                    RowDeselected="OnItemDeselected"
+                                    OnCellSave="OnCellSaved"
+                                    OnActionBegin="OnActionBegin"
+                                    QueryCellInfo="OnQueryCellInfo">
+                        </GridEvents>
+
+                        <GridColumns>
+                            <GridColumn Field="@nameof(ItemRow.Phase)" HeaderText="Phase" Width="100"
+                                        AllowEditing="false"
+                                        IsPrimaryKey="true"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.Item)" HeaderText="Item" Width="100"
+                                        AllowEditing="false"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.CostCategory)" HeaderText="Type" Width="60"
+                                        AllowEditing="false"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.ItemDesc)" HeaderText="Description" Width="250">
+                                <EditTemplate>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <div style="display: flex; align-items: center;">
+                                            <SfTextBox @bind-Value="data.ItemDesc"
+                                                       Placeholder="Description"></SfTextBox>
+                                            <SfButton CssClass="e-small e-flat" IconCss="e-icons e-edit"
+                                                      OnClick="@(() => OnEditDescription(data))"></SfButton>
+                                        </div>
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.POIndex)" HeaderText="PO Index" Width="100">
+                                <EditTemplate>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <SfDropDownList TValue="string" TItem="POIndexItem"
+                                                        @bind-Value="data.POIndex"
+                                                        DataSource="@POIndexList"
+                                                        AllowFiltering="true"
+                                                        Placeholder="Select PO Index">
+                                            <DropDownListFieldSettings Text="Description"
+                                                                       Value="POIndex"></DropDownListFieldSettings>
+                                            <DropDownListEvents TValue="string" TItem="POIndexItem"
+                                                                ValueChange="@((e) => OnPOIndexChanged(e, data))"></DropDownListEvents>
+                                        </SfDropDownList>
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.POIndexDescription)" HeaderText="PO Description"
+                                        Width="150"
+                                        AllowEditing="false"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.JCCostCode)" HeaderText="Cost Code" Width="100">
+                                <EditTemplate>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <SfDropDownList TValue="string" TItem="CostCodeItem"
+                                                        @bind-Value="data.JCCostCode"
+                                                        DataSource="@CostCodeList"
+                                                        AllowFiltering="true"
+                                                        Placeholder="Select Code">
+                                            <DropDownListFieldSettings Text="Description"
+                                                                       Value="CostCode"></DropDownListFieldSettings>
+                                            <DropDownListEvents TValue="string" TItem="CostCodeItem"
+                                                                ValueChange="@((e) => OnCostCodeChanged(e, data))"></DropDownListEvents>
+                                        </SfDropDownList>
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.JCCostCodeDesc)" HeaderText="Cost Code Desc" Width="150"
+                                        AllowEditing="false"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.JCCategory)" HeaderText="Category" Width="100">
+                                <EditTemplate>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <SfDropDownList TValue="string" TItem="CategoryItem"
+                                                        @bind-Value="data.JCCategory"
+                                                        DataSource="@CategoryList"
+                                                        AllowFiltering="true"
+                                                        Placeholder="Select Category">
+                                            <DropDownListFieldSettings Text="Description"
+                                                                       Value="Category"></DropDownListFieldSettings>
+                                            <DropDownListEvents TValue="string" TItem="CategoryItem"
+                                                                ValueChange="@((e) => OnCategoryChanged(e, data))"></DropDownListEvents>
+                                        </SfDropDownList>
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.JCCategoryDesc)" HeaderText="Category Desc" Width="150"
+                                        AllowEditing="false"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.TaxGroup)" HeaderText="Tax Group" Width="100">
+                                <EditTemplate>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <SfDropDownList TValue="string" TItem="TaxGroupItem"
+                                                        @bind-Value="data.TaxGroup"
+                                                        DataSource="@TaxGroupList"
+                                                        AllowFiltering="true"
+                                                        Placeholder="Select Tax Group">
+                                            <DropDownListFieldSettings Text="Description"
+                                                                       Value="TaxGroup"></DropDownListFieldSettings>
+                                        </SfDropDownList>
+                                    }
+                                </EditTemplate>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.TakeoffUOM)" HeaderText="Takeoff UOM"
+                                        Width="100"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.OrderUOM)" HeaderText="Order UOM"
+                                        Width="100"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.ConversionFactor)" HeaderText="Conversion" Width="100"
+                                        Format="N4" TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.Price)" HeaderText="Price" Width="100"
+                                        Format="C2" TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.WastePercent)" HeaderText="Waste %" Width="80"
+                                        Format="N0" TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.RoundDir)" HeaderText="Round Dir" Width="80"
+                                        TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.RoundTo)" HeaderText="Round To" Width="80"
+                                        Format="N2" TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.PartNumber)" HeaderText="Part Number"
+                                        Width="120"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.Formula)" HeaderText="Formula" Width="150">
+                                <Template>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <span title="@data?.Formula">@TruncateText(data?.Formula, 20)</span>
+                                        <SfButton CssClass="e-small e-flat" IconCss="e-icons e-edit"
+                                                  OnClick="@(() => OnEditFormula(data))"></SfButton>
+                                    }
+                                </Template>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.Notes)" HeaderText="Notes" Width="150">
+                                <Template>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <span title="@data?.Notes">@TruncateText(data?.Notes, 20)</span>
+                                        <SfButton CssClass="e-small e-flat" IconCss="e-icons e-edit"
+                                                  OnClick="@(() => OnEditNotes(data))"></SfButton>
+                                    }
+                                </Template>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.OptionID)" HeaderText="Option ID"
+                                        Width="100"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.OptionCategory)" HeaderText="Option Category"
+                                        Width="120"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.Color)" HeaderText="Color" Width="100"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.Location)" HeaderText="Location"
+                                        Width="100"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.RetailPretax)" HeaderText="Retail Pretax" Width="100"
+                                        Format="C2" TextAlign="TextAlign.Right"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.IsQuote)" HeaderText="Quote" Width="70"
+                                        DisplayAsCheckBox="true" EditType="EditType.BooleanEdit"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.UseInFieldPO)" HeaderText="Field PO" Width="80"
+                                        DisplayAsCheckBox="true" EditType="EditType.BooleanEdit"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.AltJCCostCode)" HeaderText="Alt Cost Code" Width="100"
+                                        Visible="false"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.AltJCCostCodeDesc)" HeaderText="Alt Cost Code Desc"
+                                        Width="150"
+                                        Visible="false"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.AltJCCategory)" HeaderText="Alt Category" Width="100"
+                                        Visible="false"></GridColumn>
+                            <GridColumn Field="@nameof(ItemRow.AltJCCategoryDesc)" HeaderText="Alt Category Desc"
+                                        Width="150"
+                                        Visible="false"></GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.InverseItemDesc)" HeaderText="Inverse Item" Width="150"
+                                        AllowEditing="false">
+                                <Template>
+                                    @{
+                                        var data = context as ItemRow;
+                                        <span>@data?.InverseItemDesc</span>
+                                        <SfButton CssClass="e-small e-flat" IconCss="e-icons e-search"
+                                                  OnClick="@(() => OnSelectInverseItem(data))"></SfButton>
+                                    }
+                                </Template>
+                            </GridColumn>
+
+                            <GridColumn Field="@nameof(ItemRow.PriceLink)" HeaderText="Price Link" Width="100"
+                                        Visible="false"></GridColumn>
+
+                            <!-- Hidden RowState column -->
+                            <GridColumn Field="@nameof(ItemRow.RowState)" HeaderText="" Width="1"
+                                        Visible="false"></GridColumn>
+                        </GridColumns>
+                    </SfGrid>
+                </div>
+            </div>
+        }
+        else if (activeTab == 2){
+            <div class="panel">
+                <img src="images/VB6/Screen_IndexItems.png" class="task-icon-vb6"/>
+            </div>
+        }
+    </div>
+</div>
+<!-- Notes/Description Dialog -->
+<SfDialog bind-Visible="@IsTextDialogVisible"
+          Width="600px"
+          Header="@TextDialogTitle"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <SfTextBox bind-Value="@EditingText"
+                       Multiline="true"
+                       Placeholder="Enter text..."
+                       CssClass="e-multi-line-input"
+                       HtmlAttributes="@(new Dictionary<string, object> { { "rows", "10" } })">
+            </SfTextBox>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="OK" IsPrimary="true" OnClick="OnTextDialogOk"></DialogButton>
+        <DialogButton Content="Cancel" OnClick="OnTextDialogCancel"></DialogButton>
+    </DialogButtons>
+</SfDialog>
+
+<!-- Formula Editor Dialog -->
+<SfDialog bind-Visible="@IsFormulaDialogVisible"
+          Width="700px"
+          Header="Formula Editor"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="mb-3">
+                <label>Formula:</label>
+                <SfTextBox @bind-Value="@EditingFormula"
+                           Multiline="true"
+                           Placeholder="Enter formula..."
+                           HtmlAttributes="@(new Dictionary<string, object> { { "rows", "5" } })">
+                </SfTextBox>
+            </div>
+            <div class="text-muted">
+                <small>Available functions: AREA, LENGTH, WIDTH, QTY, PITCH, etc.</small>
+            </div>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="OK" IsPrimary="true" OnClick="OnFormulaDialogOk"></DialogButton>
+        <DialogButton Content="Cancel" OnClick="OnFormulaDialogCancel"></DialogButton>
+    </DialogButtons>
+</SfDialog>
+
+<!-- New Item Dialog -->
+<SfDialog bind-Visible="@IsNewItemDialogVisible"
+          Width="500px"
+          Header="New Item"
+          IsModal="true"
+          ShowCloseIcon="true">
+    <DialogTemplates>
+        <Content>
+            <div class="mb-3">
+                <label>Phase:</label>
+                <SfDropDownList TValue="string" TItem="PhaseDropdownItem"
+                                @bind-Value="NewItemPhase"
+                                DataSource="@PhaseDropdownList"
+                                AllowFiltering="true"
+                                Placeholder="Select Phase">
+                    <DropDownListFieldSettings Text="DisplayText" Value="Phase"></DropDownListFieldSettings>
+                </SfDropDownList>
+            </div>
+            <div class="mb-3">
+                <label>Item Code:</label>
+                <SfTextBox @bind-Value="@NewItemCode" Placeholder="Enter item code"></SfTextBox>
+            </div>
+            <div class="mb-3">
+                <label>Description:</label>
+                <SfTextBox @bind-Value="@NewItemDescription" Placeholder="Enter description"></SfTextBox>
+            </div>
+            <div class="mb-3">
+                <label>Cost Type:</label>
+                <SfDropDownList TValue="string" TItem="string"
+                                @bind-Value="NewItemCostCategory"
+                                DataSource="@CostCategoryTypes"
+                                Placeholder="Select Type">
+                </SfDropDownList>
+            </div>
+        </Content>
+    </DialogTemplates>
+    <DialogButtons>
+        <DialogButton Content="Create" IsPrimary="true" OnClick="OnCreateNewItem"></DialogButton>
+        <DialogButton Content="Cancel" OnClick="@(() => IsNewItemDialogVisible = false)"></DialogButton>
+    </DialogButtons>
+</SfDialog>
+
+
+
+@code {
+    // === Database Connection ===
+    private DbWrapperSqlServer db = new DbWrapperSqlServer();
+    private int activeTab = 1;
+    // === UI State ===
+    private bool IsLoading = false;
+    private bool mDirty = false;
+    private SfSpinner? SpinnerObj;
+    private SfGrid<ItemRow>? ItemsGrid;
+
+    // === View Management ===
+    private int CurrentViewIndex = 0;
+    private string CurrentViewName => ViewDefinitions[CurrentViewIndex].Name;
+    private List<ViewDefinition> ViewDefinitions = new();
+
+    // === Data Sources ===
+    private List<PhaseNode> PhasesData = new();
+    private List<ItemRow> ItemsData = new();
+    private List<POIndexItem> POIndexList = new();
+    private List<CostCodeItem> CostCodeList = new();
+    private List<CategoryItem> CategoryList = new();
+    private List<TaxGroupItem> TaxGroupList = new();
+    private List<PhaseDropdownItem> PhaseDropdownList = new();
+    private List<string> CostCategoryTypes = new() { "M", "L", "S", "E", "O" };
+
+    // === Selected Items ===
+    private ItemRow? SelectedItem;
+    private PhaseTreeData? SelectedPhase;
+
+    // === Dialog State ===
+    private bool IsTextDialogVisible = false;
+    private string TextDialogTitle = "";
+    private string EditingText = "";
+    private ItemRow? EditingTextRow;
+    private string EditingTextColumn = "";
+    private bool IsFormulaDialogVisible = false;
+    private string EditingFormula = "";
+    private ItemRow? EditingFormulaRow;
+    private bool IsNewItemDialogVisible = false;
+    private string NewItemPhase = "";
+    private string NewItemCode = "";
+    private string NewItemDescription = "";
+    private string NewItemCostCategory = "M";
+
+    // === App State ===
+    private int DivisionID = 1;
+    public List<PhaseTreeData> TreePhaseData{ get; set; } = new List<PhaseTreeData>();
+    private SfTreeGrid<PhaseTreeData>? PhasesTreeGrid;
+
+    protected void OnInitializedTree(){
+        TreePhaseData = PhaseTreeData.GetTree().ToList();
+    }
+
+    // === Lifecycle ===
+    protected override async Task OnInitializedAsync(){
+        InitializeViewDefinitions();
+        await LoadLookupData();
+        await LoadPhasesAsync();
+        OnInitializedTree();
+    }
+
+    private void InitializeViewDefinitions(){
+        ViewDefinitions = new List<ViewDefinition> {
+            new ViewDefinition {
+                Name = "Group and Phase",
+                KeyFields = "GrpPhase, Phase",
+                DisplayFields = "GrpPhase + ' - ' + GrpDesc, Phase + ' - ' + PhaseDesc",
+                SortFields = "GrpSortOrder, PhaseSortOrder, ItemSortOrder"
+            },
+            new ViewDefinition {
+                Name = "Purchase Order",
+                KeyFields = "POIndex",
+                DisplayFields = "POIndex + ' ' + POIndexDescription",
+                SortFields = "POIndex"
+            },
+            new ViewDefinition {
+                Name = "Cost Code",
+                KeyFields = "JCCostCode",
+                DisplayFields = "LTRIM(JCCostCode) + ' - ' + JCCostCodeDesc",
+                SortFields = "LTRIM(JCCostCode)"
+            }
+        };
+    }
+
+    // === Load Lookup Data ===
+    private async Task LoadLookupData(){
+        try{
+            // Load PO Index
+            var poIndexes = await db.QueryAsync(
+                $"SELECT POIndex, Description FROM tblPOIndex WHERE DivisionID = {DivisionID} ORDER BY POIndex");
+            POIndexList = poIndexes.Select(r => new POIndexItem {
+                POIndex = r["POIndex"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load Cost Codes
+            var costCodes = await db.QueryAsync(
+                $"SELECT CostCode, Description FROM StandardCostCodes WHERE DivisionID = {DivisionID} ORDER BY CostCode");
+            CostCodeList = costCodes.Select(r => new CostCodeItem {
+                CostCode = r["CostCode"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load Categories
+            var categories = await db.QueryAsync(
+                $"SELECT Category, Description FROM StandardCategories WHERE DivisionID = {DivisionID} ORDER BY Category");
+            CategoryList = categories.Select(r => new CategoryItem {
+                Category = r["Category"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load Tax Groups
+            var taxGroups = await db.QueryAsync(
+                $"SELECT TaxGroup, Description FROM TaxGroups WHERE DivisionID = {DivisionID} ORDER BY TaxGroup");
+            TaxGroupList = taxGroups.Select(r => new TaxGroupItem {
+                TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+                Description = r["Description"]?.ToString() ?? ""
+            }).ToList();
+
+            // Load Phases for dropdown
+            var phases = await db.QueryAsync(
+                $"SELECT Phase, Description FROM tblEstPhases WHERE DivisionID = {DivisionID} AND GroupPhase = 0 ORDER BY Phase");
+            PhaseDropdownList = phases.Select(r => new PhaseDropdownItem {
+                Phase = r["Phase"]?.ToString() ?? "",
+                DisplayText = $"{r["Phase"]} - {r["Description"]}"
+            }).ToList();
+        }
+        catch (Exception ex){
+            Console.WriteLine($"LoadLookupData error: {ex.Message}");
+        }
+    }
+
+    // === Load Phases Tree ===
+    private async Task LoadPhasesAsync(){
+        IsLoading = true;
+        StateHasChanged();
+        try{
+            PhasesData.Clear();
+            int nodeId = 1;
+            if (CurrentViewIndex == 0) // Group and Phase view
+            {
+                // Load groups
+                var groups = await db.QueryAsync($@"
+                    SELECT DISTINCT 
+                        p.GroupPhaseValue AS GrpPhase,
+                        g.Description AS GrpDesc,
+                        g.SortOrder AS GrpSortOrder
+                    FROM tblEstPhases p
+                    LEFT JOIN tblEstPhases g ON p.GroupPhaseValue = g.Phase AND g.DivisionID = p.DivisionID
+                    WHERE p.DivisionID = {DivisionID} AND p.GroupPhase = 0 AND p.GroupPhaseValue <> p.Phase
+                    ORDER BY g.SortOrder, p.GroupPhaseValue");
+                foreach (var group in groups){
+                    var grpPhase = group["GrpPhase"]?.ToString() ?? "";
+                    var grpDesc = group["GrpDesc"]?.ToString() ?? "";
+                    var groupNode = new PhaseNode {
+                        Id = nodeId++,
+                        ParentId = null,
+                        DisplayText = $"{grpPhase} - {grpDesc}",
+                        KeyValue = grpPhase,
+                        WhereClause = $"GrpPhase = '{grpPhase}'"
+                    };
+                    PhasesData.Add(groupNode);
+
+                    // Load phases under this group
+                    var phases = await db.QueryAsync($@"
+                        SELECT Phase, Description, SortOrder
+                        FROM tblEstPhases 
+                        WHERE DivisionID = {DivisionID} 
+                          AND GroupPhase = 0 
+                          AND GroupPhaseValue = '{grpPhase}'
+                        ORDER BY SortOrder, Phase");
+                    foreach (var phase in phases){
+                        var phaseCode = phase["Phase"]?.ToString() ?? "";
+                        var phaseDesc = phase["Description"]?.ToString() ?? "";
+                        PhasesData.Add(new PhaseNode {
+                            Id = nodeId++,
+                            ParentId = groupNode.Id,
+                            DisplayText = $"{phaseCode} - {phaseDesc}",
+                            KeyValue = phaseCode,
+                            WhereClause = $"Phase = '{phaseCode}'"
+                        });
+                    }
+                }
+            }
+            else if (CurrentViewIndex == 1) // PO Index view
+            {
+                var poIndexes = await db.QueryAsync($@"
+                    SELECT DISTINCT POIndex, 
+                           (SELECT TOP 1 Description FROM tblPOIndex WHERE POIndex = i.POIndex AND DivisionID = {DivisionID}) AS Description
+                    FROM tblPhaseItem i
+                    WHERE DivisionID = {DivisionID} AND POIndex IS NOT NULL AND POIndex <> ''
+                    ORDER BY POIndex");
+                foreach (var poi in poIndexes){
+                    var poIndex = poi["POIndex"]?.ToString() ?? "";
+                    var desc = poi["Description"]?.ToString() ?? "";
+                    PhasesData.Add(new PhaseNode {
+                        Id = nodeId++,
+                        ParentId = null,
+                        DisplayText = $"{poIndex} - {desc}",
+                        KeyValue = poIndex,
+                        WhereClause = $"POIndex = '{poIndex}'"
+                    });
+                }
+            }
+            else if (CurrentViewIndex == 2) // Cost Code view
+            {
+                var costCodes = await db.QueryAsync($@"
+                    SELECT DISTINCT i.JCCostCode,
+                           (SELECT TOP 1 Description FROM StandardCostCodes WHERE CostCode = i.JCCostCode AND DivisionID = {DivisionID}) AS Description
+                    FROM tblPhaseItem i
+                    WHERE i.DivisionID = {DivisionID} AND i.JCCostCode IS NOT NULL AND i.JCCostCode <> ''
+                    ORDER BY i.JCCostCode");
+                foreach (var cc in costCodes){
+                    var costCode = cc["JCCostCode"]?.ToString() ?? "";
+                    var desc = cc["Description"]?.ToString() ?? "";
+                    PhasesData.Add(new PhaseNode {
+                        Id = nodeId++,
+                        ParentId = null,
+                        DisplayText = $"{costCode} - {desc}",
+                        KeyValue = costCode,
+                        WhereClause = $"JCCostCode = '{costCode}'"
+                    });
+                }
+            }
+        }
+        catch (Exception ex){
+            Console.WriteLine($"LoadPhasesAsync error: {ex.Message}");
+        }
+        finally{
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Expand/Collapse Handlers ===
+    private async Task OnExpandAll(){
+        if (PhasesTreeGrid != null){
+            await PhasesTreeGrid.ExpandAllAsync();
+        }
+    }
+
+    private async Task OnCollapseAll(){
+        if (PhasesTreeGrid != null){
+            await PhasesTreeGrid.CollapseAllAsync();
+        }
+    }
+
+    private void OnNodeExpanded(RowExpandedEventArgs<PhaseTreeData> args){
+        Console.WriteLine($"Expanded: {args.Data?.Expanded}");
+    }
+
+    private void OnNodeCollapsed(RowCollapsedEventArgs<PhaseTreeData> args){
+        Console.WriteLine($"Collapsed: {args.Data?.Phase}");
+    }
+
+// Expand/collapse specific row by index
+    private async Task ExpandRow(int index){
+        if (PhasesTreeGrid != null){
+            //await PhasesTreeGrid.ExpandRowAsync(index);
+        }
+    }
+
+    private async Task CollapseRow(int index){
+        if (PhasesTreeGrid != null){
+            //await PhasesTreeGrid.CollapseRowAsync(index);
+        }
+    }
+
+// Expand to specific level (0 = root only, 1 = first level, etc.)
+    private async Task ExpandToLevel(int level){
+        if (PhasesTreeGrid != null){
+            await PhasesTreeGrid.ExpandAtLevelAsync(level);
+        }
+    }
+
+    private async Task CollapseAtLevel(int level){
+        if (PhasesTreeGrid != null){
+            await PhasesTreeGrid.CollapseAtLevelAsync(level);
+        }
+    }
+
+    // === Load Items for Selected Phase ===
+    private async Task LoadItemsAsync(){
+        if (SelectedPhase == null) return;
+        IsLoading = true;
+        StateHasChanged();
+        try{
+            var whereClause = $"i.Phase = '{SelectedPhase.Phase}'";
+            var sql = $@"
+                SELECT 
+                    i.Phase, i.Item, i.CostCategory,
+                    i.Description AS ItemDesc, i.Notes, i.Formula,
+                    i.POIndex, p.Description AS POIndexDescription,
+                    i.JCCostCode, cc.Description AS JCCostCodeDesc,
+                    i.JCCategory, cat.Description AS JCCategoryDesc,
+                    i.AltJCCostCode, acc.Description AS AltJCCostCodeDesc,
+                    i.AltJCCategory, acat.Description AS AltJCCategoryDesc,
+                    i.TaxGroup, i.TakeoffUOM, i.OrderUOM,
+                    i.ConversionFactor, i.Price, i.WastePercent,
+                    i.RoundDir, i.RoundTo, i.PartNumber,
+                    i.OptionID, i.OptionCategory, i.Color, i.Location,
+                    i.RetailPretax, i.IsQuote, i.UseInFieldPO,
+                    i.PriceLink,
+                    ISNULL(inv.Phase, '') + CASE WHEN inv.Phase IS NOT NULL THEN '/' + inv.Item + ' - ' + ISNULL(inv.Description, '') ELSE '' END AS InverseItemDesc
+                FROM tblPhaseItem i
+                LEFT JOIN tblPOIndex p ON i.POIndex = p.POIndex AND i.DivisionID = p.DivisionID
+                LEFT JOIN StandardCostCodes cc ON i.JCCostCode = cc.CostCode AND i.DivisionID = cc.DivisionID
+                LEFT JOIN StandardCategories cat ON i.JCCategory = cat.Category AND i.DivisionID = cat.DivisionID
+                LEFT JOIN StandardCostCodes acc ON i.AltJCCostCode = acc.CostCode AND i.DivisionID = acc.DivisionID
+                LEFT JOIN StandardCategories acat ON i.AltJCCategory = acat.Category AND i.DivisionID = acat.DivisionID
+                LEFT JOIN tblPhaseItem inv ON i.InversePhase = inv.Phase AND i.InverseItem = inv.Item AND i.DivisionID = inv.DivisionID
+                WHERE i.DivisionID = {DivisionID} AND {whereClause}
+                ORDER BY i.Phase, i.Item";
+            var rows = await db.QueryAsync(sql);
+            ItemsData = rows.Select(r => new ItemRow {
+                Phase = r["Phase"]?.ToString() ?? "",
+                Item = r["Item"]?.ToString() ?? "",
+                CostCategory = r["CostCategory"]?.ToString() ?? "",
+                ItemDesc = r["ItemDesc"]?.ToString() ?? "",
+                Notes = r["Notes"]?.ToString() ?? "",
+                Formula = r["Formula"]?.ToString() ?? "",
+                POIndex = r["POIndex"]?.ToString() ?? "",
+                POIndexDescription = r["POIndexDescription"]?.ToString() ?? "",
+                JCCostCode = r["JCCostCode"]?.ToString() ?? "",
+                JCCostCodeDesc = r["JCCostCodeDesc"]?.ToString() ?? "",
+                JCCategory = r["JCCategory"]?.ToString() ?? "",
+                JCCategoryDesc = r["JCCategoryDesc"]?.ToString() ?? "",
+                AltJCCostCode = r["AltJCCostCode"]?.ToString() ?? "",
+                AltJCCostCodeDesc = r["AltJCCostCodeDesc"]?.ToString() ?? "",
+                AltJCCategory = r["AltJCCategory"]?.ToString() ?? "",
+                AltJCCategoryDesc = r["AltJCCategoryDesc"]?.ToString() ?? "",
+                TaxGroup = r["TaxGroup"]?.ToString() ?? "",
+                TakeoffUOM = r["TakeoffUOM"]?.ToString() ?? "",
+                OrderUOM = r["OrderUOM"]?.ToString() ?? "",
+                ConversionFactor = r["ConversionFactor"] != null && r["ConversionFactor"] != DBNull.Value
+                    ? Convert.ToDecimal(r["ConversionFactor"])
+                    : 1,
+                Price = r["Price"] != null && r["Price"] != DBNull.Value
+                    ? Convert.ToDecimal(r["Price"])
+                    : 0,
+                WastePercent = r["WastePercent"] != null && r["WastePercent"] != DBNull.Value
+                    ? Convert.ToInt32(r["WastePercent"])
+                    : 0,
+                RoundDir = r["RoundDir"] != null && r["RoundDir"] != DBNull.Value
+                    ? Convert.ToInt32(r["RoundDir"])
+                    : 0,
+                RoundTo = r["RoundTo"] != null && r["RoundTo"] != DBNull.Value
+                    ? Convert.ToDecimal(r["RoundTo"])
+                    : 0,
+                PartNumber = r["PartNumber"]?.ToString() ?? "",
+                OptionID = r["OptionID"]?.ToString() ?? "",
+                OptionCategory = r["OptionCategory"]?.ToString() ?? "",
+                Color = r["Color"]?.ToString() ?? "",
+                Location = r["Location"]?.ToString() ?? "",
+                RetailPretax = r["RetailPretax"] != null && r["RetailPretax"] != DBNull.Value
+                    ? Convert.ToDecimal(r["RetailPretax"])
+                    : 0,
+                IsQuote = r["IsQuote"]?.ToString() == "True" || r["IsQuote"]?.ToString() == "1",
+                UseInFieldPO = r["UseInFieldPO"]?.ToString() == "True" || r["UseInFieldPO"]?.ToString() == "1",
+                PriceLink = r["PriceLink"] != null && r["PriceLink"] != DBNull.Value
+                    ? Convert.ToInt32(r["PriceLink"])
+                    : 0,
+                InverseItemDesc = r["InverseItemDesc"]?.ToString() ?? "",
+                RowState = "CLEAN"
+            }).ToList();
+            mDirty = false;
+        }
+        catch (Exception ex){
+            Console.WriteLine($"LoadItemsAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading items: {ex.Message}");
+        }
+        finally{
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Save Data ===
+    private async Task<bool> SaveDataAsync(bool prompt = false){
+        if (!mDirty) return true;
+        if (prompt){
+            var result = await JSRuntime.InvokeAsync<bool>("confirm",
+                "Item Database has changed. Do you want to save these changes?");
+            if (!result) return true;
+        }
+        IsLoading = true;
+        StateHasChanged();
+        try{
+            foreach (var item in ItemsData.Where(i => i.RowState == "Deleted")){
+                await db.ExecuteAsync($@"
+                    DELETE FROM tblPhaseItem WHERE DivisionID = {DivisionID} 
+                    AND Phase = @Phase AND Item = @Item",
+                    new { item.Phase, item.Item });
+                await db.ExecuteAsync($@"
+                    DELETE FROM tblDBAssemblyDetails WHERE DivisionID = {DivisionID} 
+                    AND Phase = @Phase AND Item = @Item",
+                    new { item.Phase, item.Item });
+            }
+            foreach (var item in ItemsData.Where(i => i.RowState == "DIRTY" || i.RowState == "DDIRTY")){
+                var sql = $@"
+                    UPDATE tblPhaseItem SET
+                        Description = @ItemDesc,
+                        Formula = @Formula,
+                        Notes = @Notes,
+                        PartNumber = @PartNumber,
+                        POIndex = @POIndex,
+                        JCCostCode = @JCCostCode,
+                        JCCategory = @JCCategory,
+                        AltJCCostCode = @AltJCCostCode,
+                        AltJCCategory = @AltJCCategory,
+                        OrderUOM = @OrderUOM,
+                        TakeoffUOM = @TakeoffUOM,
+                        OptionID = @OptionID,
+                        OptionCategory = @OptionCategory,
+                        Color = @Color,
+                        Location = @Location,
+                        RetailPretax = @RetailPretax,
+                        ConversionFactor = @ConversionFactor,
+                        WastePercent = @WastePercent,
+                        RoundDir = @RoundDir,
+                        RoundTo = @RoundTo,
+                        Price = @Price,
+                        TaxGroup = @TaxGroup,
+                        IsQuote = @IsQuote,
+                        UseInFieldPO = @UseInFieldPO,
+                        TStmp = GETDATE()
+                    WHERE DivisionID = {DivisionID} AND Phase = @Phase AND Item = @Item";
+                await db.ExecuteAsync(sql, new {
+                    item.Phase,
+                    item.Item,
+                    item.ItemDesc,
+                    item.Formula,
+                    item.Notes,
+                    item.PartNumber,
+                    item.POIndex,
+                    item.JCCostCode,
+                    item.JCCategory,
+                    item.AltJCCostCode,
+                    item.AltJCCategory,
+                    item.OrderUOM,
+                    item.TakeoffUOM,
+                    item.OptionID,
+                    item.OptionCategory,
+                    item.Color,
+                    item.Location,
+                    item.RetailPretax,
+                    item.ConversionFactor,
+                    item.WastePercent,
+                    item.RoundDir,
+                    item.RoundTo,
+                    item.Price,
+                    item.TaxGroup,
+                    item.IsQuote,
+                    item.UseInFieldPO
+                });
+                item.RowState = "CLEAN";
+            }
+
+            // Remove deleted items from list
+            ItemsData.RemoveAll(i => i.RowState == "Deleted");
+            mDirty = false;
+            await JSRuntime.InvokeVoidAsync("alert", "Data saved successfully.");
+            return true;
+        }
+        catch (Exception ex){
+            Console.WriteLine($"SaveDataAsync error: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving data: {ex.Message}");
+            return false;
+        }
+        finally{
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    // === Event Handlers ===
+    private async Task OnSaveClick(){
+        await SaveDataAsync();
+    }
+
+    private async Task OnViewSelected(MenuEventArgs args){
+        if (!await SaveDataAsync(true)) return;
+        CurrentViewIndex = args.Item.Text switch {
+            "Group and Phase" => 0,
+            "Purchase Order" => 1,
+            "Cost Code" => 2,
+            _ => 0
+        };
+        ItemsData.Clear();
+        mDirty = false;
+        await LoadPhasesAsync();
+    }
+
+    private void OnNewItemClick(){
+        NewItemPhase = SelectedPhase?.Phase ?? "";
+        NewItemCode = "";
+        NewItemDescription = "";
+        NewItemCostCategory = "M";
+        IsNewItemDialogVisible = true;
+    }
+
+    private async Task OnCreateNewItem(){
+        if (string.IsNullOrWhiteSpace(NewItemPhase) || string.IsNullOrWhiteSpace(NewItemCode)){
+            await JSRuntime.InvokeVoidAsync("alert", "Phase and Item Code are required.");
+            return;
+        }
+        try{
+            // Check if item exists
+            var exists = await db.ExecuteScalarAsync<int>($@"
+                SELECT COUNT(*) FROM tblPhaseItem 
+                WHERE DivisionID = {DivisionID} AND Phase = @Phase AND Item = @Item",
+                new { Phase = NewItemPhase, Item = NewItemCode });
+            if (exists > 0){
+                await JSRuntime.InvokeVoidAsync("alert", "This item already exists.");
+                return;
+            }
+
+            // Insert new item
+            await db.ExecuteAsync($@"
+                INSERT INTO tblPhaseItem (DivisionID, Phase, Item, CostCategory, Description, ConversionFactor)
+                VALUES ({DivisionID}, @Phase, @Item, @CostCategory, @Description, 1)",
+                new {
+                    Phase = NewItemPhase,
+                    Item = NewItemCode,
+                    CostCategory = NewItemCostCategory,
+                    Description = NewItemDescription
+                });
+            IsNewItemDialogVisible = false;
+            await LoadItemsAsync();
+        }
+        catch (Exception ex){
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating item: {ex.Message}");
+        }
+    }
+
+    private async Task OnDuplicateClick(){
+        if (SelectedItem == null) return;
+        await JSRuntime.InvokeVoidAsync("alert", "Duplicate functionality - would open duplicate dialog");
+    }
+
+    private async Task OnDeleteClick(){
+        if (SelectedItem == null) return;
+        var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Are you sure you want to delete item {SelectedItem.Phase}/{SelectedItem.Item}?");
+        if (confirm){
+            SelectedItem.RowState = "Deleted";
+            mDirty = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnExcelExport(){
+        if (ItemsGrid != null){
+            await ItemsGrid.ExportToExcelAsync();
+        }
+    }
+
+    private async Task OnExcelImport(){
+        await JSRuntime.InvokeVoidAsync("alert", "Import from Excel - not yet implemented");
+    }
+
+    private async Task OnRefreshClick(){
+        if (mDirty){
+            var confirm = await JSRuntime.InvokeAsync<bool>("confirm",
+                "You have unsaved changes. Discard and refresh?");
+            if (!confirm) return;
+        }
+        await LoadItemsAsync();
+    }
+
+    private async Task OnPhaseSelected(RowSelectEventArgs<PhaseTreeData> args){
+        if (mDirty){
+            if (!await SaveDataAsync(true)) return;
+        }
+        SelectedPhase = args.Data;
+        Console.WriteLine($"Phase: {SelectedPhase.Node}");
+        await LoadItemsAsync();
+    }
+
+    private void OnItemSelected(RowSelectEventArgs<ItemRow> args){
+        SelectedItem = args.Data;
+    }
+
+    private void OnItemDeselected(RowDeselectEventArgs<ItemRow> args){
+        SelectedItem = null;
+    }
+
+    private void OnCellSaved(CellSaveArgs<ItemRow> args){
+        if (args.Data != null){
+            args.Data.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    private void OnActionBegin(ActionEventArgs<ItemRow> args){
+        // Handle any pre-action validation
+    }
+
+    private async Task OnBatchSave(BeforeBatchSaveArgs<ItemRow> args){
+        foreach (var record in args.BatchChanges.ChangedRecords){
+            record.RowState = "DIRTY";
+        }
+        mDirty = true;
+    }
+
+    private void OnQueryCellInfo(QueryCellInfoEventArgs<ItemRow> args){
+        if (args.Data?.RowState == "Deleted"){
+            args.Cell.AddClass(new[] { "delete-row" });
+        }
+        else if (args.Data?.RowState == "DIRTY" || args.Data?.RowState == "DDIRTY"){
+            args.Cell.AddClass(new[] { "dirty-row" });
+        }
+    }
+
+    // === Dropdown Change Handlers ===
+    private void OnPOIndexChanged(ChangeEventArgs<string, POIndexItem> args, ItemRow item){
+        if (args.ItemData != null){
+            item.POIndexDescription = args.ItemData.Description;
+            item.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    private void OnCostCodeChanged(ChangeEventArgs<string, CostCodeItem> args, ItemRow item){
+        if (args.ItemData != null){
+            item.JCCostCodeDesc = args.ItemData.Description;
+            item.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    private void OnCategoryChanged(ChangeEventArgs<string, CategoryItem> args, ItemRow item){
+        if (args.ItemData != null){
+            item.JCCategoryDesc = args.ItemData.Description;
+            item.RowState = "DIRTY";
+            mDirty = true;
+        }
+    }
+
+    // === Dialog Handlers ===
+    private void OnEditDescription(ItemRow? item){
+        if (item == null) return;
+        EditingTextRow = item;
+        EditingTextColumn = "ItemDesc";
+        EditingText = item.ItemDesc;
+        TextDialogTitle = "Edit Description";
+        IsTextDialogVisible = true;
+    }
+
+    private void OnEditNotes(ItemRow? item){
+        if (item == null) return;
+        EditingTextRow = item;
+        EditingTextColumn = "Notes";
+        EditingText = item.Notes;
+        TextDialogTitle = "Edit Notes";
+        IsTextDialogVisible = true;
+    }
+
+    private void OnTextDialogOk(){
+        if (EditingTextRow != null){
+            if (EditingTextColumn == "ItemDesc")
+                EditingTextRow.ItemDesc = EditingText;
+            else if (EditingTextColumn == "Notes")
+                EditingTextRow.Notes = EditingText;
+            EditingTextRow.RowState = "DIRTY";
+            mDirty = true;
+        }
+        IsTextDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnTextDialogCancel(){
+        IsTextDialogVisible = false;
+    }
+
+    private void OnEditFormula(ItemRow? item){
+        if (item == null) return;
+        EditingFormulaRow = item;
+        EditingFormula = item.Formula;
+        IsFormulaDialogVisible = true;
+    }
+
+    private void OnFormulaDialogOk(){
+        if (EditingFormulaRow != null){
+            EditingFormulaRow.Formula = EditingFormula;
+            EditingFormulaRow.RowState = "DIRTY";
+            mDirty = true;
+        }
+        IsFormulaDialogVisible = false;
+        StateHasChanged();
+    }
+
+    private void OnFormulaDialogCancel(){
+        IsFormulaDialogVisible = false;
+    }
+
+    private async Task OnSelectInverseItem(ItemRow? item){
+        if (item == null) return;
+        await JSRuntime.InvokeVoidAsync("alert", "Select Inverse Item - would open pick list dialog");
+    }
+
+    // === Helper Methods ===
+    private string TruncateText(string? text, int maxLength){
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
+    }
+
+    // === Model Classes ===
+    public class ViewDefinition {
+        public string Name{ get; set; } = "";
+        public string KeyFields{ get; set; } = "";
+        public string DisplayFields{ get; set; } = "";
+        public string SortFields{ get; set; } = "";
+    }
+    public class PhaseNode {
+        public int Id{ get; set; }
+        public int? ParentId{ get; set; }
+        public string DisplayText{ get; set; } = "";
+        public string KeyValue{ get; set; } = "";
+        public string WhereClause{ get; set; } = "";
+    }
+    public class ItemRow {
+        public string Phase{ get; set; } = "";
+        public string Item{ get; set; } = "";
+        public string CostCategory{ get; set; } = "";
+        public string ItemDesc{ get; set; } = "";
+        public string Notes{ get; set; } = "";
+        public string Formula{ get; set; } = "";
+        public string POIndex{ get; set; } = "";
+        public string POIndexDescription{ get; set; } = "";
+        public string JCCostCode{ get; set; } = "";
+        public string JCCostCodeDesc{ get; set; } = "";
+        public string JCCategory{ get; set; } = "";
+        public string JCCategoryDesc{ get; set; } = "";
+        public string AltJCCostCode{ get; set; } = "";
+        public string AltJCCostCodeDesc{ get; set; } = "";
+        public string AltJCCategory{ get; set; } = "";
+        public string AltJCCategoryDesc{ get; set; } = "";
+        public string TaxGroup{ get; set; } = "";
+        public string TakeoffUOM{ get; set; } = "";
+        public string OrderUOM{ get; set; } = "";
+        public decimal ConversionFactor{ get; set; } = 1;
+        public decimal Price{ get; set; }
+        public int WastePercent{ get; set; }
+        public int RoundDir{ get; set; }
+        public decimal RoundTo{ get; set; }
+        public string PartNumber{ get; set; } = "";
+        public string OptionID{ get; set; } = "";
+        public string OptionCategory{ get; set; } = "";
+        public string Color{ get; set; } = "";
+        public string Location{ get; set; } = "";
+        public decimal RetailPretax{ get; set; }
+        public bool IsQuote{ get; set; }
+        public bool UseInFieldPO{ get; set; }
+        public int PriceLink{ get; set; }
+        public string InverseItemDesc{ get; set; } = "";
+        public string RowState{ get; set; } = "CLEAN";
+    }
+    public class POIndexItem {
+        public string POIndex{ get; set; } = "";
+        public string Description{ get; set; } = "";
+    }
+    public class CostCodeItem {
+        public string CostCode{ get; set; } = "";
+        public string Description{ get; set; } = "";
+    }
+    public class CategoryItem {
+        public string Category{ get; set; } = "";
+        public string Description{ get; set; } = "";
+    }
+    public class TaxGroupItem {
+        public string TaxGroup{ get; set; } = "";
+        public string Description{ get; set; } = "";
+    }
+    public class PhaseDropdownItem {
+        public string Phase{ get; set; } = "";
+        public string DisplayText{ get; set; } = "";
+    }
+}

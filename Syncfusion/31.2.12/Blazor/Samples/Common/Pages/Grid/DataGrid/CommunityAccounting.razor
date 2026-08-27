@@ -1,0 +1,696 @@
+@namespace BlazorDemos.Pages
+
+@using Syncfusion.Blazor.Popups
+@using Syncfusion.Blazor.Buttons
+@using Syncfusion.Blazor.Inputs
+@using Syncfusion.Blazor.DropDowns
+@using System.Data
+@using System.Dynamic
+@using System.Collections.Generic
+@using BlazorDemos.Pages.Grid
+@inject IJSRuntime JSRuntime
+
+<style>
+    .accounting-dialog .e-dlg-content {
+        padding: 20px;
+    }
+    .form-section {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    .form-section-title {
+        font-weight: bold;
+        color: #0066cc;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .field-label {
+        width: 160px;
+        text-align: right;
+        padding-right: 10px;
+        font-weight: 500;
+    }
+    .field-input {
+        flex: 1;
+        max-width: 300px;
+    }
+    .field-browse {
+        margin-left: 5px;
+    }
+    .tax-group-row {
+        display: flex;
+        gap: 20px;
+    }
+    .tax-group-col {
+        flex: 1;
+    }
+    .tax-field-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .tax-field-label {
+        width: 100px;
+        text-align: right;
+        padding-right: 10px;
+    }
+    .tax-field-input {
+        width: 100px;
+    }
+</style>
+
+@if (IsVisible)
+{
+    <SfDialog @bind-Visible="IsVisible" 
+              Width="650px" 
+              IsModal="true" 
+              ShowCloseIcon="true"
+              Header="Accounting"
+              CssClass="accounting-dialog"
+              CloseOnEscape="true">
+        <DialogEvents Closed="OnDialogClosed" />
+        <DialogTemplates>
+            <Content>
+                <!-- GL Accounts / Organization Section (switches based on accounting system) -->
+                @if (!IsIntacctSystem)
+                {
+                    <!-- Standard Accounting System -->
+                    <div class="form-section">
+                        <div class="form-section-title">GL Accounts</div>
+                        
+                        <div class="field-row">
+                            <label class="field-label">Income Stmt Prefix</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="IncomePrefix" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="() => BrowsePrefix(1)" />
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Balance Sheet Prefix</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="BalanceSheetPrefix" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="() => BrowsePrefix(2)" />
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Lot Inventory Debit</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="LotInventoryDebit" MaxLength="50" />
+                            </div>
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Lot Inventory Credit</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="LotInventoryCredit" MaxLength="50" />
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <!-- Intacct Accounting System -->
+                    <div class="form-section">
+                        <div class="form-section-title">Organization</div>
+                        
+                        <div class="field-row">
+                            <label class="field-label">Entity</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="IntacctEntity" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="BrowseIntacctEntity" />
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Location</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="IntacctLocation" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="BrowseIntacctLocation" />
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Parent Job</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="IntacctParentJob" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="BrowseIntacctParentJob" />
+                        </div>
+
+                        <div class="field-row">
+                            <label class="field-label">Department</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="IntacctDepartment" MaxLength="50" />
+                            </div>
+                            <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                      OnClick="BrowseIntacctDepartment" />
+                        </div>
+                    </div>
+                }
+
+                <!-- Tax Groups Section -->
+                <div class="form-section">
+                    <div class="form-section-title">Tax Groups</div>
+                    
+                    <div class="tax-group-row">
+                        <div class="tax-group-col">
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Labour</label>
+                                <SfTextBox @bind-Value="LabourTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(5)" />
+                            </div>
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Material</label>
+                                <SfTextBox @bind-Value="MaterialTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(6)" />
+                            </div>
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Sub Contracts</label>
+                                <SfTextBox @bind-Value="SubContractTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(7)" />
+                            </div>
+                        </div>
+                        <div class="tax-group-col">
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Equipment</label>
+                                <SfTextBox @bind-Value="EquipmentTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(8)" />
+                            </div>
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Overhead</label>
+                                <SfTextBox @bind-Value="OverheadTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(9)" />
+                            </div>
+                            <div class="tax-field-row">
+                                <label class="tax-field-label">Other</label>
+                                <SfTextBox @bind-Value="OtherTaxGroup" CssClass="tax-field-input" MaxLength="50" />
+                                <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                          OnClick="() => BrowseTaxGroup(10)" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loan / Bank Section -->
+                <div class="form-section">
+                    <div class="field-row">
+                        <label class="field-label">Loan Draw Liability Acct</label>
+                        <div class="field-input">
+                            <SfTextBox @bind-Value="MortgageCredit" MaxLength="50" />
+                        </div>
+                        <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                  OnClick="BrowseGLAccount" />
+                    </div>
+
+                    <div class="field-row">
+                        <label class="field-label">Bank Account</label>
+                        <div class="field-input">
+                            <SfTextBox @bind-Value="BankAccount" MaxLength="50" />
+                        </div>
+                        <SfButton CssClass="e-small field-browse" IconCss="e-icons e-search" 
+                                  OnClick="BrowseBankAccount" />
+                    </div>
+                </div>
+
+                <!-- Warranty Section -->
+                <div class="form-section">
+                    <div class="form-section-title">Warranty</div>
+                    
+                    <div class="field-row">
+                        <label class="field-label">Warranty Job</label>
+                        <div class="field-input">
+                            <SfTextBox @bind-Value="WarrantyJob" MaxLength="50" />
+                        </div>
+                    </div>
+
+                    @if (ShowTarionFields)
+                    {
+                        <div class="field-row">
+                            <label class="field-label">Tarion Builder No</label>
+                            <div class="field-input">
+                                <SfTextBox @bind-Value="TarionBuilderNumber" MaxLength="50" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            </Content>
+        </DialogTemplates>
+        <DialogButtons>
+            <DialogButton Content="OK" IsPrimary="true" OnClick="OnOkClick" />
+            <DialogButton Content="Cancel" OnClick="OnCancelClick" />
+        </DialogButtons>
+    </SfDialog>
+}
+
+<!-- Picklist Dialog -->
+@if (ShowPicklist)
+{
+    <SfDialog @bind-Visible="ShowPicklist" 
+              Width="500px" 
+              IsModal="true" 
+              ShowCloseIcon="true"
+              Header="@PicklistTitle">
+        <DialogTemplates>
+            <Content>
+                <SfGrid DataSource="@PicklistData" 
+                        AllowSelection="true" 
+                        Height="300">
+                    <GridSelectionSettings Type="Syncfusion.Blazor.Grids.SelectionType.Single" />
+                    <GridEvents TValue="Dictionary<string, object>}" RowSelected="OnPicklistRowSelected" />
+                    <GridColumns>
+                        @foreach (var col in PicklistColumns)
+                        {
+                            <GridColumn Field="@col" HeaderText="@col" Width="150" />
+                        }
+                    </GridColumns>
+                </SfGrid>
+            </Content>
+        </DialogTemplates>
+        <DialogButtons>
+            <DialogButton Content="Select" IsPrimary="true" OnClick="OnPicklistSelect" />
+            <DialogButton Content="Cancel" OnClick="() => ShowPicklist = false" />
+        </DialogButtons>
+    </SfDialog>
+}
+
+@code {
+    // === DATABASE ===
+    private DbWrapperSqlServer db = new DbWrapperSqlServer();
+
+    // === PARAMETERS ===
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public EventCallback<CommunityAccountingData> OnSave { get; set; }
+    [Parameter] public CommunityAccountingData? InitialData { get; set; }
+    [Parameter] public int DivisionID { get; set; } = 1;
+    [Parameter] public bool IsIntacctSystem { get; set; } = false;
+    [Parameter] public bool ShowTarionFields { get; set; } = false;
+    [Parameter] public string IntacctCompanyID { get; set; } = "";
+    [Parameter] public string IntacctUID { get; set; } = "";
+    [Parameter] public string IntacctPWD { get; set; } = "";
+    [Parameter] public string DefaultIntacctEntity { get; set; } = "";
+
+    // === FIELD VALUES ===
+    // Standard Accounting
+    private string IncomePrefix = "";
+    private string BalanceSheetPrefix = "";
+    private string LotInventoryDebit = "";
+    private string LotInventoryCredit = "";
+
+    // Intacct Accounting
+    private string IntacctEntity = "";
+    private string IntacctLocation = "";
+    private string IntacctParentJob = "";
+    private string IntacctDepartment = "";
+
+    // Tax Groups
+    private string LabourTaxGroup = "";
+    private string MaterialTaxGroup = "";
+    private string SubContractTaxGroup = "";
+    private string EquipmentTaxGroup = "";
+    private string OverheadTaxGroup = "";
+    private string OtherTaxGroup = "";
+
+    // Other Fields
+    private string MortgageCredit = "";
+    private string BankAccount = "";
+    private string WarrantyJob = "";
+    private string TarionBuilderNumber = "";
+
+    // === PICKLIST STATE ===
+    private bool ShowPicklist = false;
+    private string PicklistTitle = "";
+    private List<Dictionary<string, object>> PicklistData = new();
+    private List<string> PicklistColumns = new();
+    private Dictionary<string, object>? SelectedPicklistItem = null;
+    private int CurrentPicklistFieldIndex = 0;
+    private string PicklistValueColumn = "";
+
+    // === CACHED SQL ===
+    private string? _intacctEntitySQL = null;
+    private string? _intacctJobsSQL = null;
+
+    // === LIFECYCLE ===
+    protected override void OnParametersSet() {
+        if (IsVisible && InitialData != null) {
+            LoadFromData(InitialData);
+        }
+    }
+
+    private void LoadFromData(CommunityAccountingData data) {
+        WarrantyJob = data.WarrantyJob ?? "";
+        IncomePrefix = data.IncomePrefix ?? "";
+        BalanceSheetPrefix = data.BalanceSheet ?? "";
+        LotInventoryDebit = data.LotInventoryDebit ?? "";
+        LotInventoryCredit = data.LotInventoryCredit ?? "";
+        LabourTaxGroup = data.LabourTaxGroup ?? "";
+        MaterialTaxGroup = data.MaterialTaxGroup ?? "";
+        SubContractTaxGroup = data.SubContractTaxGroup ?? "";
+        EquipmentTaxGroup = data.EquipmentTaxGroup ?? "";
+        OverheadTaxGroup = data.OverheadTaxGroup ?? "";
+        OtherTaxGroup = data.OtherTaxGroup ?? "";
+        IntacctEntity = data.IntacctEntity ?? "";
+        IntacctLocation = data.IntacctLocation ?? "";
+        IntacctParentJob = data.IntacctParentJob ?? "";
+        IntacctDepartment = data.IntacctDepartment ?? "";
+        MortgageCredit = data.MortgageCredit ?? "";
+        BankAccount = data.BankAccount ?? "";
+        TarionBuilderNumber = data.TarionBuilderNumber ?? "";
+
+        // Default Intacct Entity if empty
+        if (string.IsNullOrEmpty(IntacctEntity)) {
+            IntacctEntity = DefaultIntacctEntity;
+        }
+    }
+
+    private CommunityAccountingData GetCurrentData() {
+        var data = new CommunityAccountingData {
+            WarrantyJob = WarrantyJob,
+            LotInventoryDebit = LotInventoryDebit,
+            LotInventoryCredit = LotInventoryCredit,
+            LabourTaxGroup = LabourTaxGroup,
+            MaterialTaxGroup = MaterialTaxGroup,
+            SubContractTaxGroup = SubContractTaxGroup,
+            EquipmentTaxGroup = EquipmentTaxGroup,
+            OverheadTaxGroup = OverheadTaxGroup,
+            OtherTaxGroup = OtherTaxGroup,
+            MortgageCredit = MortgageCredit,
+            BankAccount = BankAccount,
+            TarionBuilderNumber = TarionBuilderNumber
+        };
+
+        if (IsIntacctSystem) {
+            data.IntacctEntity = IntacctEntity;
+            data.IntacctLocation = IntacctLocation;
+            data.IncomePrefix = IntacctLocation; // Location is both prefixes for Intacct
+            data.BalanceSheet = IntacctLocation;
+            data.IntacctParentJob = IntacctParentJob;
+            data.IntacctDepartment = IntacctDepartment;
+        } else {
+            data.IncomePrefix = IncomePrefix;
+            data.BalanceSheet = BalanceSheetPrefix;
+        }
+
+        return data;
+    }
+
+    // === DIALOG EVENTS ===
+    private async Task OnOkClick() {
+        // Validate tax groups before closing
+        if (!await ValidateTaxGroups()) return;
+
+        var data = GetCurrentData();
+        await OnSave.InvokeAsync(data);
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task OnCancelClick() {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private void OnDialogClosed() {
+        // Reset cached SQL on close
+        _intacctEntitySQL = null;
+        _intacctJobsSQL = null;
+    }
+
+    // === VALIDATION ===
+    private async Task<bool> ValidateTaxGroups() {
+        var taxGroups = new[] {
+            (LabourTaxGroup, "Labour"),
+            (MaterialTaxGroup, "Material"),
+            (SubContractTaxGroup, "Sub Contract"),
+            (EquipmentTaxGroup, "Equipment"),
+            (OverheadTaxGroup, "Overhead"),
+            (OtherTaxGroup, "Other")
+        };
+
+        foreach (var (value, name) in taxGroups) {
+            if (!string.IsNullOrWhiteSpace(value)) {
+                var isValid = await ValidateTaxGroup(value);
+                if (!isValid) {
+                    await JSRuntime.InvokeVoidAsync("alert", $"Invalid Tax Group for {name}: {value}");
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private async Task<bool> ValidateTaxGroup(string taxGroup) {
+        var sql = "SELECT TaxGroup FROM TaxGroups WHERE DivisionID = @DivisionID AND TaxGroup = @TaxGroup";
+        var result = await db.QueryAsync(sql, new { DivisionID, TaxGroup = taxGroup });
+        return result.Any();
+    }
+
+    // === BROWSE FUNCTIONS ===
+    private async Task BrowsePrefix(int fieldIndex) {
+        // For Timberline, query prefix tables; for Intacct, query gl_prefix
+        if (IsIntacctSystem) {
+            var sql = @"SELECT Description, GL_Prefix AS Location, '' AS Extra 
+                        FROM GL_Prefix 
+                        WHERE DivisionID = @DivisionID 
+                        ORDER BY Description";
+            await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", fieldIndex);
+        } else {
+            // Timberline prefix lookup would require accounting database connection
+            // Simplified version using HomeFront GL Prefix if available
+            var sql = @"SELECT Description, GL_Prefix AS Prefix 
+                        FROM GL_Prefix 
+                        WHERE DivisionID = @DivisionID 
+                        ORDER BY Description";
+            await ShowPicklistDialog("Prefix List", sql, new { DivisionID }, "Prefix", fieldIndex);
+        }
+    }
+
+    private async Task BrowseTaxGroup(int fieldIndex) {
+        var sql = @"SELECT TaxGroup, Description 
+                    FROM TaxGroups 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY TaxGroup";
+        await ShowPicklistDialog("Tax Group", sql, new { DivisionID }, "TaxGroup", fieldIndex);
+    }
+
+    private async Task BrowseGLAccount() {
+        var sql = @"SELECT Account, Description, AccountType 
+                    FROM GLAccounts 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY Account";
+        await ShowPicklistDialog("GL Account", sql, new { DivisionID }, "Account", 15);
+    }
+
+    private async Task BrowseBankAccount() {
+        var sql = @"SELECT BankAccount, Description 
+                    FROM BankAccounts 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY BankAccount";
+        await ShowPicklistDialog("Bank Account", sql, new { DivisionID }, "BankAccount", 16);
+    }
+
+    private async Task BrowseIntacctEntity() {
+        // Intacct entity list - would normally call Intacct API
+        // Using cached SQL or stored procedure
+        if (string.IsNullOrEmpty(_intacctEntitySQL)) {
+            _intacctEntitySQL = @"SELECT EntityID, Name AS Description 
+                                  FROM IntacctEntities 
+                                  WHERE DivisionID = @DivisionID 
+                                  ORDER BY Name";
+        }
+        await ShowPicklistDialog("Entity", _intacctEntitySQL, new { DivisionID }, "EntityID", 11);
+    }
+
+    private async Task BrowseIntacctLocation() {
+        var sql = @"SELECT Description, GL_Prefix AS Location 
+                    FROM GL_Prefix 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY Description";
+        await ShowPicklistDialog("Locations", sql, new { DivisionID }, "Location", 12);
+    }
+
+    private async Task BrowseIntacctParentJob() {
+        // Intacct jobs - would normally call Intacct API
+        if (string.IsNullOrEmpty(_intacctJobsSQL)) {
+            _intacctJobsSQL = @"SELECT JobID AS Job, Name AS Description 
+                                FROM IntacctJobs 
+                                WHERE DivisionID = @DivisionID 
+                                ORDER BY Name";
+        }
+        await ShowPicklistDialog("Parent Job", _intacctJobsSQL, new { DivisionID }, "Job", 13);
+    }
+
+    private async Task BrowseIntacctDepartment() {
+        var sql = @"SELECT ID, Name 
+                    FROM IntacctDepartments 
+                    WHERE DivisionID = @DivisionID 
+                    ORDER BY ID";
+        await ShowPicklistDialog("Department", sql, new { DivisionID }, "ID", 14);
+    }
+
+    // === PICKLIST DIALOG ===
+    private async Task ShowPicklistDialog(string title, string sql, object parameters, string valueColumn, int fieldIndex) {
+        try {
+            var data = await db.QueryAsync(sql, parameters);
+            if (!data.Any()) {
+                await JSRuntime.InvokeVoidAsync("alert", "No items found.");
+                return;
+            }
+
+            PicklistTitle = title;
+            PicklistData = data.ToList();
+            PicklistColumns = data.First().Keys.ToList();
+            PicklistValueColumn = valueColumn;
+            CurrentPicklistFieldIndex = fieldIndex;
+            SelectedPicklistItem = null;
+            ShowPicklist = true;
+            StateHasChanged();
+        } catch (Exception ex) {
+            Console.WriteLine($"Error loading picklist: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading list: {ex.Message}");
+        }
+    }
+
+    private void OnPicklistRowSelected(Syncfusion.Blazor.Grids.RowSelectEventArgs<Dictionary<string, object>> args) {
+        SelectedPicklistItem = args.Data;
+    }
+
+    private void OnPicklistSelect() {
+        if (SelectedPicklistItem == null) return;
+
+        var value = SelectedPicklistItem.ContainsKey(PicklistValueColumn) 
+            ? SelectedPicklistItem[PicklistValueColumn]?.ToString() ?? "" 
+            : "";
+
+        SetFieldValue(CurrentPicklistFieldIndex, value);
+        ShowPicklist = false;
+        StateHasChanged();
+    }
+
+    private void SetFieldValue(int index, string value) {
+        switch (index) {
+            case 1: IncomePrefix = value; break;
+            case 2: BalanceSheetPrefix = value; break;
+            case 5: LabourTaxGroup = value; break;
+            case 6: MaterialTaxGroup = value; break;
+            case 7: SubContractTaxGroup = value; break;
+            case 8: EquipmentTaxGroup = value; break;
+            case 9: OverheadTaxGroup = value; break;
+            case 10: OtherTaxGroup = value; break;
+            case 11: IntacctEntity = value; break;
+            case 12: IntacctLocation = value; break;
+            case 13: IntacctParentJob = value; break;
+            case 14: IntacctDepartment = value; break;
+            case 15: MortgageCredit = value; break;
+            case 16: BankAccount = value; break;
+        }
+    }
+
+    // === PUBLIC METHODS ===
+    /// <summary>
+    /// Shows the dialog and populates fields from grid row data
+    /// Equivalent to VB6 ShowForm(Grid As VSFlexGrid)
+    /// </summary>
+    public void ShowForm(CommunityAccountingData data) {
+        InitialData = data;
+        LoadFromData(data);
+        IsVisible = true;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Data model for community accounting settings
+    /// </summary>
+    public class CommunityAccountingData {
+        public string WarrantyJob { get; set; } = "";
+        public string IncomePrefix { get; set; } = "";
+        public string BalanceSheet { get; set; } = "";
+        public string LotInventoryDebit { get; set; } = "";
+        public string LotInventoryCredit { get; set; } = "";
+        public string LabourTaxGroup { get; set; } = "";
+        public string MaterialTaxGroup { get; set; } = "";
+        public string SubContractTaxGroup { get; set; } = "";
+        public string EquipmentTaxGroup { get; set; } = "";
+        public string OverheadTaxGroup { get; set; } = "";
+        public string OtherTaxGroup { get; set; } = "";
+        public string IntacctEntity { get; set; } = "";
+        public string IntacctLocation { get; set; } = "";
+        public string IntacctParentJob { get; set; } = "";
+        public string IntacctDepartment { get; set; } = "";
+        public string MortgageCredit { get; set; } = "";
+        public string BankAccount { get; set; } = "";
+        public string TarionBuilderNumber { get; set; } = "";
+
+        /// <summary>
+        /// Creates data from a dictionary (e.g., from grid row)
+        /// </summary>
+        public static CommunityAccountingData FromDictionary(Dictionary<string, object> row) {
+            return new CommunityAccountingData {
+                WarrantyJob = row.GetValueOrDefault("WarrantyJob")?.ToString() ?? "",
+                IncomePrefix = row.GetValueOrDefault("IncomePrefix")?.ToString() ?? "",
+                BalanceSheet = row.GetValueOrDefault("BalanceSheet")?.ToString() ?? "",
+                LotInventoryDebit = row.GetValueOrDefault("LotInventoryDebit")?.ToString() ?? "",
+                LotInventoryCredit = row.GetValueOrDefault("LotInventoryCredit")?.ToString() ?? "",
+                LabourTaxGroup = row.GetValueOrDefault("LabourTaxGroup")?.ToString() ?? "",
+                MaterialTaxGroup = row.GetValueOrDefault("MaterialTaxGroup")?.ToString() ?? "",
+                SubContractTaxGroup = row.GetValueOrDefault("SubContractTaxGroup")?.ToString() ?? "",
+                EquipmentTaxGroup = row.GetValueOrDefault("EquipmentTaxGroup")?.ToString() ?? "",
+                OverheadTaxGroup = row.GetValueOrDefault("OverheadTaxGroup")?.ToString() ?? "",
+                OtherTaxGroup = row.GetValueOrDefault("OtherTaxGroup")?.ToString() ?? "",
+                IntacctEntity = row.GetValueOrDefault("IntacctEntity")?.ToString() ?? "",
+                IntacctLocation = row.GetValueOrDefault("IntacctLocation")?.ToString() ?? "",
+                IntacctParentJob = row.GetValueOrDefault("IntacctParentJob")?.ToString() ?? "",
+                IntacctDepartment = row.GetValueOrDefault("IntacctDepartment")?.ToString() ?? "",
+                MortgageCredit = row.GetValueOrDefault("Mortgage_Credit")?.ToString() ?? "",
+                BankAccount = row.GetValueOrDefault("BankAccount")?.ToString() ?? "",
+                TarionBuilderNumber = row.GetValueOrDefault("TarionBuilderNumber")?.ToString() ?? ""
+            };
+        }
+
+        /// <summary>
+        /// Converts data back to dictionary for grid update
+        /// </summary>
+        public Dictionary<string, object> ToDictionary() {
+            return new Dictionary<string, object> {
+                ["WarrantyJob"] = WarrantyJob,
+                ["IncomePrefix"] = IncomePrefix,
+                ["BalanceSheet"] = BalanceSheet,
+                ["LotInventoryDebit"] = LotInventoryDebit,
+                ["LotInventoryCredit"] = LotInventoryCredit,
+                ["LabourTaxGroup"] = LabourTaxGroup,
+                ["MaterialTaxGroup"] = MaterialTaxGroup,
+                ["SubContractTaxGroup"] = SubContractTaxGroup,
+                ["EquipmentTaxGroup"] = EquipmentTaxGroup,
+                ["OverheadTaxGroup"] = OverheadTaxGroup,
+                ["OtherTaxGroup"] = OtherTaxGroup,
+                ["IntacctEntity"] = IntacctEntity,
+                ["IntacctLocation"] = IntacctLocation,
+                ["IntacctParentJob"] = IntacctParentJob,
+                ["IntacctDepartment"] = IntacctDepartment,
+                ["Mortgage_Credit"] = MortgageCredit,
+                ["BankAccount"] = BankAccount,
+                ["TarionBuilderNumber"] = TarionBuilderNumber
+            };
+        }
+    }
+}
