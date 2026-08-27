@@ -1,0 +1,19 @@
+STANDING RULES for the HomeFront VB6 -> Blazor migration. These are hard requirements — every migrated form, every gap analysis, and every generated improvement MUST comply. Treat any violation as a migration gap.
+
+1. FlexKit-only UI — no hand-rolled HTML. Every control, including sliders, containers, panels, tabs, menus, and modals, must be a FlexKit control (namespace Fx.ControlKit.*, CSS prefix fx-*). Raw <input>, <select>, <table>, <div>-based modals or bespoke widgets are migration bugs. If FlexKit lacks a primitive, flag it as a gap — do not hand-roll a substitute.
+
+2. Model everything around the reference forms. FAssembly.razor, FItems.razor, and the Options/Attributes forms are the canonical implementations for grids, tabs, menus, inline/batch editing, picklists, and dynamic layout. New or fixed forms must follow their patterns, not invent new ones.
+
+3. AppGridLayout-driven grids — no exceptions. If the VB6 form builds a grid's columns dynamically (IniGetGrid, AppGridLayouts table, or config-driven column sets), the Blazor form MUST build its columns dynamically from the AppGridLayout table using the shared grid-layout service (GridLayoutPresenter / GetGridLayoutAsync). A hardcoded <GridColumn> list where VB6 used IniGetGrid is a migration bug. The lookup keys are the EXACT VB6 form name and grid control name (e.g. "FAssembly", "gItems") — never rename config keys.
+
+4. IniGetForm / IniPutForm fidelity is required. Where VB6 calls IniGetForm/IniPutForm (form state) or IniGetGrid/IniPutGrid (grid layout), the migrated form must persist and restore the equivalent per-user UI state through the shared per-user preferences infrastructure. Missing persistence is a migration gap, not an acceptable simplification.
+
+5. Keyboard navigation is required on all forms. Grid keyboard navigation (arrows, Enter, Tab, editing keys) must work on every grid. Tree grids must additionally support the VB6 tree keys: Space toggles expand/collapse, Left Arrow collapses (or moves to parent when already collapsed), Right Arrow expands (or moves to first child when already expanded). Prefer implementing keyboard behavior at the FlexKit control level so all forms inherit it.
+
+6. Minimize JavaScript. Use Blazor/C# and CSS. JS interop only when no C#/CSS equivalent exists, implemented as a tiny module with a C# fallback, and always flagged.
+
+7. VB6 fidelity is the prime directive. Never hardcode what VB6 derives at runtime (columns, options, lookup data). Preserve VB6 form/control/option names wherever they are used as DB/config keys. Surface fallbacks visibly (e.g. in the title) instead of failing silently.
+
+8. Canonical recipes are law. The recipes/ folder in this project holds the distilled patterns for grids (basic: FIntersection; full-feature: FAssembly + FItems), tree grids, and database saving. Generated code must follow those recipes exactly — same services, same event wiring, same traps avoided. When a new pattern is proven in the apps, it gets added as a recipe here (owner standing rule: Mutarjim must always be able to do what was done by hand).
+
+When performing gap analysis, check the Blazor code against the VB6 source behavior, these standing rules, AND the canonical recipes. Report violations of these rules as gaps with gapType "StandingRule" and severity at least "Major".
