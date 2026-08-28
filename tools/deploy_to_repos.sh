@@ -493,13 +493,19 @@ deploy_r1uat() {
     fi
     ok "Lockdown intact ($toggles/5 toggles)"
 
-    if [ -n "$(git -C "$git_dir" status --porcelain)" ]; then
-        git -C "$git_dir" add -A
+    # Stage FIRST, then compare the INDEX to HEAD. `status --porcelain` reports the
+    # xml_orig/*.xml files as modified on every run (they are CRLF in the source tree
+    # and git normalizes them to LF on add), but the staged tree is identical to HEAD —
+    # so `git commit` exited non-zero with "nothing to commit" and `set -e` killed the
+    # script BEFORE the push. R1-UAT silently stopped deploying. Fixed 2026-08-28;
+    # this now matches the main loop's guard.
+    git -C "$git_dir" add -A
+    if git -C "$git_dir" diff --cached --quiet 2>/dev/null; then
+        ok "R1-UAT: no changes to push"
+    else
         git -C "$git_dir" commit -q -m "Deploy R1-UAT from HomeFrontPB — $(date '+%Y-%m-%d %H:%M')"
         git -C "$git_dir" push origin R1-UAT
         ok "Pushed R1-UAT"
-    else
-        ok "R1-UAT: no changes to push"
     fi
     git -C "$git_dir" checkout main --quiet
 }
