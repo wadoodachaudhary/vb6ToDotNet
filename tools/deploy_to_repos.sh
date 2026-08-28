@@ -57,10 +57,28 @@ NON_WINDOWS_EXCLUDE=(
     --exclude='*.mobileconfig'
 )
 
+# Deployment plumbing that lives in the REPO, not in the HomeFront source tree.
+# HomeFront has none of these, so without the exclusion rsync --delete would strip
+# CI/CD and the FlexKit package feed on the first push. Owner directive 2026-08-27.
+REPO_OWNED_EXCLUDE=(
+    --exclude='azure-pipelines*.yml'
+    --exclude='NuGet.Config'
+    --exclude='local-packages/'
+    --exclude='certs/'
+)
+
+# R1-UAT carries a deliberate UAT lockdown that HomeFrontPB source does not:
+# five hard-disabled security toggles in FLogin plus its own open.ico. Excluding
+# them means the rsync leaves the branch's copies alone. Owner directive 2026-08-27.
+R1UAT_PRESERVE_EXCLUDE=(
+    --exclude='Components/Pages/FLogin.razor'
+)
+
 RSYNC_EXCLUDE=(
     "${ENV_CONFIG_EXCLUDE[@]}"
     "${RUNTIME_DATA_EXCLUDE[@]}"
     "${NON_WINDOWS_EXCLUDE[@]}"
+    "${REPO_OWNED_EXCLUDE[@]}"
     --exclude='.git'
     --exclude='.claude'
     --exclude='.codex-backups'
@@ -152,8 +170,9 @@ pack_flexkit() {
 swap_to_package_ref() {
     local deploy_dir="$1"
     local ver="$2"
-    local csproj="$deploy_dir/HomeFrontPB.csproj"
-    local sln="$deploy_dir/HomeFrontPB.sln"
+    local proj="${4:-HomeFront}"
+    local csproj="$deploy_dir/$proj.csproj"
+    local sln="$deploy_dir/$proj.sln"
 
     python3 - "$csproj" "$ver" <<'PYEOF'
 import re, sys
@@ -168,10 +187,19 @@ open(csproj_path, 'w', encoding='utf-8').write(text)
 PYEOF
     ok "Swapped ProjectReference → PackageReference FlexKit $ver"
 
+    # Only drop an overlapping asset when the app does NOT ship its own copy.
+    # Pages reference these app-relatively ("images/32/open.ico"), NOT via
+    # _content/, so deleting a copy the app owns silently blanks the icon —
+    # every onerror handler just hides it. Fixed 2026-08-27.
+    local src_assets="${3:-}"
+    local kept=0 dropped=0
     for f in $(ls "$FLEXKIT_SRC/wwwroot/images/32/" 2>/dev/null); do
-        rm -f "$deploy_dir/wwwroot/images/32/$f"
+        if [ -n "$src_assets" ] && [ -f "$src_assets/wwwroot/images/32/$f" ]; then
+            kept=$((kept+1)); continue
+        fi
+        rm -f "$deploy_dir/wwwroot/images/32/$f"; dropped=$((dropped+1))
     done
-    ok "Removed overlapping static assets"
+    ok "Overlapping static assets: $dropped dropped, $kept kept (app ships its own)"
 
     if [ -f "$sln" ]; then
         python3 - "$sln" <<'PYEOF'
@@ -188,8 +216,9 @@ PYEOF
 # ── Build verification ──────────────────────────────────────────────
 verify_build() {
     local deploy_dir="$1"
+    local proj="${2:-HomeFront}"
     log "  Build verification"
-    (cd "$deploy_dir" && rm -rf bin obj && dotnet build HomeFrontPB.sln --no-incremental -v q 2>&1) | tail -3
+    (cd "$deploy_dir" && rm -rf bin obj && dotnet build "$proj.sln" --no-incremental -v q 2>&1) | tail -3
     if [ "${PIPESTATUS[0]}" -eq 0 ]; then
         ok "Build succeeded"
         return 0
@@ -204,7 +233,9 @@ mkdir -p "$DEPLOY"
 # ── Project definitions ─────────────────────────────────────────────
 # FORMAT: name|source_dir|deploy_git_dir|remote_url
 PROJECTS=(
-    "hyphen-pb|$HF_ROOT/HomeFrontPB|$DEPLOY/hyphen-pb|git@gitlab.innovatixinc.com:application-modernization/hyphen-pb.git"
+    # hyphen-pb main is fed from HomeFront (owner directive 2026-08-27) — HomeFrontPB
+    # is untouched on this machine and now feeds the R1-UAT branch instead.
+    "hyphen-pb|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/hyphen-pb|git@gitlab.innovatixinc.com:application-modernization/hyphen-pb.git"
     "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@gitlab.innovatixinc.com:application-modernization/homefront.git"
     "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@gitlab.innovatixinc.com:application-modernization/flexkit.git"
     "flexcore|$ROOT/FlexCore|$DEPLOY/flexcore|https://github.com/wadoodachaudhary/FlexCore.git"
@@ -333,6 +364,15 @@ for entry in "${PROJECTS[@]}"; do
 
     # ── Fetch remote first to avoid non-fast-forward ─────────────────
     git -C "$git_dir" fetch origin 2>/dev/null || true
+    # Park on main first. deploy_r1uat leaves the clone on R1-UAT if it exits
+    # early, and a reset --hard here would then rewrite that branch instead —
+    # the main content ends up committed onto R1-UAT. Fixed 2026-08-28.
+    if git -C "$git_dir" rev-parse --verify main >/dev/null 2>&1; then
+        git -C "$git_dir" checkout main --quiet
+    elif git -C "$git_dir" rev-parse --verify origin/main >/dev/null 2>&1; then
+        git -C "$git_dir" checkout -b main origin/main --quiet
+    fi
+
     if git -C "$git_dir" rev-parse origin/main >/dev/null 2>&1; then
         LOCAL_HEAD=$(git -C "$git_dir" rev-parse HEAD 2>/dev/null || echo "none")
         REMOTE_HEAD=$(git -C "$git_dir" rev-parse origin/main 2>/dev/null || echo "none")
@@ -349,7 +389,7 @@ for entry in "${PROJECTS[@]}"; do
     # ── hyphen-pb: pack FlexKit, swap ref, verify build ─────────────
     if [ "$name" = "hyphen-pb" ]; then
         FLEXKIT_VER=$(pack_flexkit "$git_dir")
-        swap_to_package_ref "$git_dir" "$FLEXKIT_VER"
+        swap_to_package_ref "$git_dir" "$FLEXKIT_VER" "$src_dir" "HomeFront"
         if ! verify_build "$git_dir"; then
             err "Skipping $name due to build failure"
             continue
@@ -382,3 +422,64 @@ for entry in "${PROJECTS[@]}"; do
 done
 
 log "Done."
+
+# ════════════════════════════════════════════════════════════════════
+#  R1-UAT — fed from HomeFrontPB (main is fed from HomeFront)
+# ════════════════════════════════════════════════════════════════════
+deploy_r1uat() {
+    local git_dir="$DEPLOY/hyphen-pb"
+    local src_dir="$HF_ROOT/HomeFrontPB"
+
+    # Always hand the clone back on main, on every exit path.
+    trap 'git -C "'"$DEPLOY"'/hyphen-pb" checkout main --quiet 2>/dev/null || true' RETURN
+
+    log "R1-UAT: $src_dir → hyphen-pb R1-UAT"
+    git -C "$git_dir" fetch origin --quiet
+    git -C "$git_dir" checkout R1-UAT --quiet
+    git -C "$git_dir" reset --hard origin/R1-UAT --quiet
+    ok "Reset to origin/R1-UAT"
+
+    rsync -a --delete "${RSYNC_EXCLUDE[@]}" "${R1UAT_PRESERVE_EXCLUDE[@]}" "$src_dir/" "$git_dir/"
+    ok "Synced HomeFrontPB source"
+
+    local ver
+    ver=$(pack_flexkit "$git_dir")
+    swap_to_package_ref "$git_dir" "$ver" "$src_dir" "HomeFrontPB"
+
+    # Restore branch-only files AFTER the swap. Excluding them from the rsync is
+    # not enough: swap_to_package_ref deletes app-side copies of FlexKit-shipped
+    # icons, and the pages reference them app-relatively ("images/32/open.ico"),
+    # not via _content/ — so the removal would blank the toolbar icon.
+    git -C "$git_dir" checkout -- Components/Pages/FLogin.razor 2>/dev/null || true
+    ok "Restored branch-only FLogin lockdown"
+
+    if ! verify_build "$git_dir" "HomeFrontPB"; then
+        err "R1-UAT build failed — not pushing"
+        git -C "$git_dir" checkout main --quiet
+        return 1
+    fi
+
+    # The lockdown must survive every run; refuse to push if it did not.
+    local toggles
+    toggles=$(grep -c 'Disabled="true"' "$git_dir/Components/Pages/FLogin.razor" || echo 0)
+    if [ "$toggles" -ne 5 ]; then
+        err "R1-UAT security lockdown lost ($toggles/5 toggles) — not pushing"
+        git -C "$git_dir" checkout main --quiet
+        return 1
+    fi
+    ok "Lockdown intact ($toggles/5 toggles)"
+
+    if [ -n "$(git -C "$git_dir" status --porcelain)" ]; then
+        git -C "$git_dir" add -A
+        git -C "$git_dir" commit -q -m "Deploy R1-UAT from HomeFrontPB — $(date '+%Y-%m-%d %H:%M')"
+        git -C "$git_dir" push origin R1-UAT
+        ok "Pushed R1-UAT"
+    else
+        ok "R1-UAT: no changes to push"
+    fi
+    git -C "$git_dir" checkout main --quiet
+}
+
+if [ "$MODE" = "push" ]; then
+    deploy_r1uat
+fi

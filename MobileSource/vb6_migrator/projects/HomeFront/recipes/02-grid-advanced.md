@@ -37,3 +37,57 @@ Views change the tree/grid queries AND the grid layout: per-view AppGridLayout i
 - VB6 form/grid/option/colkey NAMES are config keys — never rename them in lookups.
 - Save starts disabled, enabled only when dirty; dirty-gate navigation and destructive flows.
 - No JavaScript except DOM-only capabilities (scrollIntoView, caret geometry) — tiny, flagged, with C# fallback.
+
+## Cell edit-button ("…") convention (owner directive 2026-08-27)
+
+VB6's ComboButton appears on the ACTIVE cell only — mirror that: use plain
+`ShowEditButton="true"` (+ `ShowEditButtonPredicate` for per-row gating) and
+wire `EventsRef.OnEditButtonClick`; the button then renders only when the cell
+is clicked or reached by arrow/Tab. Do NOT default to `AlwaysShowEditButton`
+(reserve it for deliberate exceptions). The button's subtle chip styling lives
+in each app's `wwwroot/css/fx-shared.css` under
+`.fx-grid .fx-cell .fx-cell-action-btn` (with !important — a bundled stylesheet
+otherwise strips the border/background). The chip sits FLUSH RIGHT: the cell's
+`padding: 0 4px` would leave a 4px gap, so the chip carries
+`margin-right: -3px` → ~1px of daylight to the cell border (owner directive).
+Vertically it is `height: 15px; padding: 0 3px 3px` — 16px spills the ~17px
+row, and the bottom padding lifts the baseline-hugging "…" glyph to center.
+
+## Runtime column-parameter changes need a @key bump
+
+Changing a `GridColumn` parameter at runtime (`Format` for VB6
+SetDecimalPlaces-style More/Less buttons, captions, etc.) does NOT repaint
+already-rendered cells — the grid's render caching keeps the old markup. Put a
+version value in `<GridColumnsBase @key="...">` and bump it (e.g.
+`GridLayoutPresenter.BumpVersion()`) whenever such a parameter changes; the
+columns re-create and cells re-render. Dirty state and edited values survive
+the re-key. Display-only changes (decimals) must NOT touch the form's dirty
+flag — VB6's SetDecimalPlaces never sets mDirty.
+
+## VB6 apply-and-clear numeric header fields
+
+VB6 forms often have numeric textboxes that APPLY on Enter or focus-out
+(KeyDown vbKeyReturn → Validate) and then clear themselves (Price Change /
+RoundTo on FPricingWorksheet). Port them as
+`NumericTextBoxControl TValue="decimal?"` + `ValueChange` handler that applies
+to all rows and sets the bound value back to null. The control commits on
+Enter/NumpadEnter, Tab, and blur (it buffers input and commits Enter itself —
+browsers do not fire `change` on Enter for number inputs), and it parses
+nullable TValue via the underlying type (blank ⇒ null). Guard handlers with
+`!x.HasValue` and never mark dirty unless rows actually changed.
+
+## Editable grid hosted in a DialogControl (list-entry dialogs)
+
+Pattern (FPricingWorksheetLayouts): a VB6 multiline-textbox list becomes a
+single-column FlexKit grid — hidden PK column + one editable column, header
+hidden (`::deep thead.fx-grid-header { display: none }`), Batch mode with
+EditOnEnterKey + EditOnActiveCellClick, RowHeight/MinRowHeight ~18, a trailing
+blank ENTRY row (OnCellSave on it appends the next blank and re-opens the
+editor there when the active cell stayed put), Delete removes the selected row.
+Two traps when the editor must open the moment the dialog opens:
+1. Set `AutoFocus="false"` on DialogControl — its default focus pass lands
+   AFTER your BeginEditCellAsync and the focusout tears the batch editor down.
+2. BeginEditCellAsync silently no-ops during the dialog's first renders (grid
+   columns/view not built). Retry on REAL time (bounded ~10×40ms loop in
+   OnAfterRenderAsync) until a wired OnCellEdit confirms the editor opened;
+   StateHasChanged-chained retries share one synchronous cascade and all fail.
