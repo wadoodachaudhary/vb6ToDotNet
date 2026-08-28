@@ -123,6 +123,30 @@ log() { printf "\n\033[1;36m▸ %s\033[0m\n" "$1"; }
 ok()  { printf "  \033[32m✓ %s\033[0m\n" "$1"; }
 err() { printf "  \033[31m✗ %s\033[0m\n" "$1"; }
 
+# ── Always hand the hyphen-pb clone back on main ────────────────────
+# That clone serves TWO branches (main ← HomeFront, R1-UAT ← HomeFrontPB).
+# If it is left parked on R1-UAT, the next run's `reset --hard origin/main`
+# rewrites the UAT branch instead — which is exactly how the 2026-08-28
+# non-fast-forward incident happened. An EXIT trap covers every termination
+# path, including a `set -e` abort mid-stage (the RETURN trap inside
+# deploy_r1uat does not).
+park_hyphenpb_on_main() {
+    local rc=$?
+    [ -d "$DEPLOY/hyphen-pb/.git" ] || return $rc
+    local b
+    b=$(git -C "$DEPLOY/hyphen-pb" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [ -n "$b" ] && [ "$b" != "main" ]; then
+        if git -C "$DEPLOY/hyphen-pb" checkout main --quiet 2>/dev/null; then
+            ok "Parked hyphen-pb clone back on main (was $b)"
+        else
+            err "COULD NOT park hyphen-pb clone on main — it is on '$b'."
+            err "Fix before the next deploy, or the main push will rewrite that branch."
+        fi
+    fi
+    return $rc
+}
+trap park_hyphenpb_on_main EXIT
+
 # ── Pack FlexKit ────────────────────────────────────────────────────
 pack_flexkit() {
     local target_dir="$1"
