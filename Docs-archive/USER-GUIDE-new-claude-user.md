@@ -9,7 +9,7 @@ Companion files, all in
 | File | What it is |
 |---|---|
 | `START-HERE-new-agent.md` | The prompts you will paste (Parts A, B, C) |
-| `AGENT-CONTEXT-vb6ToDotNet.md` | Portable project context |
+| `AGENT-CONTEXT-vb6ToDotNet.md` | Portable project context — memory, repo topology, the deploy sequence, standing rules. Refreshed 2026-08-29 for the `main` ← HomeFront / `R1-UAT` ← HomeFrontPB split. Where it and `tools/deploy_to_repos.sh` ever disagree, the script wins. |
 | `vb6ToDotNet-Workstreams-20260823.html` | The four workstreams and the approval gate |
 | `HomeFront-Handoff-20260823.html` | Repos, GitLab, deploy sequence, open items |
 
@@ -28,12 +28,12 @@ Set the folder to:
 /Users/wadood/projects/VBToCSharp/HomeFront/MobileSource
 ```
 
-Verified 2026-08-23:
+Verified 2026-08-29:
 
 | Folder | What loads |
 |---|---|
 | `…/VBToCSharp` | nothing — blank project |
-| `…/VBToCSharp/HomeFront/MobileSource` | the live **102-file** memory store ✅ |
+| `…/VBToCSharp/HomeFront/MobileSource` | the live memory store — **126 files** as of 2026-08-29 ✅ |
 
 ---
 
@@ -45,7 +45,7 @@ ls ~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/*.md | 
 
 | Result | Meaning |
 |---|---|
-| **102** | Correct. Continue. |
+| **100 or more** (126 as of 2026-08-29) | Correct. Continue. The store grows as memories are added, so this is a floor, not an exact match — any number in the hundreds is right. |
 | **6** | The stale May 2026 store — missing every rule added since. Stop. |
 | **0 or an error** | Folder is still wrong. Return to step 1. |
 
@@ -55,8 +55,25 @@ Then confirm GitLab, or nothing can be deployed:
 ssh -T git@gitlab.innovatixinc.com
 ```
 
-Expect `Welcome to GitLab, @wchaudhary!`. If this fails, that session can read
-the code but cannot publish anything.
+Then confirm the publishing credentials. There are **three**, not one — the
+four deploy targets do not share a single key.
+
+```bash
+ssh -T git@gitlab.innovatixinc.com                                  # 3 of 4 repos
+gh auth status                                                      # FlexCore -> GitHub
+security find-generic-password -s flexcore-nuget-key >/dev/null &&
+  echo "nuget key present"                                          # FlexCore -> nuget.org
+```
+
+Expect `Welcome to GitLab, @wchaudhary!` from the first. That key covers
+**hyphen-pb, homefront, and flexkit only**. FlexCore is pushed over HTTPS to
+`https://github.com/wadoodachaudhary/FlexCore.git` (authenticated by the
+`osxkeychain` credential helper) and is then published to nuget.org
+(currently **0.2.23**) using the `flexcore-nuget-key` keychain item.
+
+So a session that fails the SSH check can still publish FlexCore, and a session
+that passes it can still be unable to publish FlexCore. Check all three before
+assuming a session can deploy.
 
 ---
 
@@ -65,7 +82,7 @@ the code but cannot publish anything.
 Open a session and paste **Part A** from `START-HERE-new-agent.md`.
 
 Part A makes Claude report back which memory store it loaded and how many files
-it contains. **If it does not say roughly 102, stop and fix the folder.**
+it contains. **If it does not say at least ~120, stop and fix the folder.** (126 as of 2026-08-29; the store grows over time, so a higher number is fine — a much lower one is not.)
 Everything downstream assumes those rules are loaded — a session that skipped
 this will look fine and quietly ignore every standing rule.
 
@@ -121,7 +138,7 @@ new user only needs to find the heading matching their workstream.)*
 ## Step 6 — read the answers back
 
 Every Part C block ends by asking the session to state specific facts back: the
-conditional deploy steps, the file exempt from wholesale copying, the silent SSR
+conditional deploy steps, which files are exempt from wholesale copying, the silent SSR
 failure, why `ZoomService` is scoped rather than singleton.
 
 This is the checkpoint, not a formality. **If those answers are vague, the
@@ -134,8 +151,8 @@ on this project.
 ## The short version
 
 1. Folder → `…/HomeFront/MobileSource` — **not** `VBToCSharp`
-2. Verify memory returns **102**
-3. Paste Part A; check it reports ~102
+2. Verify memory returns a three-digit count (**126** as of 2026-08-29) — **6** or **0** means the wrong folder
+3. Paste Part A; check the count matches step 2 (126 as of 2026-08-29 — the store grows, so treat anything comfortably above 100 as correct)
 4. Create four sessions, one per workstream
 5. Paste C1 / C2 / C3 / C4 into the matching one
 6. Read the answers back — vague means re-read, not proceed

@@ -9,7 +9,7 @@ context that normally loads automatically. Prepared 2026-08-23.
 
 | What | Path |
 |---|---|
-| **Live memory store** (101 files) | `~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/` |
+| **Live memory store** (126 files) | `~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/` |
 | Memory index (loaded each session) | `MEMORY.md` in that directory |
 | Global instructions | `~/.claude/CLAUDE.md` |
 | Living rule file | `~/projects/VBToCSharp/AGENTS.md` |
@@ -17,7 +17,7 @@ context that normally loads automatically. Prepared 2026-08-23.
 
 > **Verify the memory store at session start.** A second, stale store exists at
 > `…-VBToCSharp-HomeFront-MobileSource/memory/` with only 6 files, last touched
-> 7 May 2026. The live one has ~101 files and a ~101-line `MEMORY.md`. If you
+> 7 May 2026. The live one has 120+ files and a `MEMORY.md` with one line per file. If you
 > see 6 files you are on the wrong store and every rule below is missing.
 
 Start with `project_overview.md`, then `operating_rules.md`, then
@@ -37,7 +37,7 @@ Two lanes, separated by a hard approval gate.
 | Session | Lane | Owns |
 |---|---|---|
 | Update repositories for HomeFront/FlexKit | live | The deploy pipeline |
-| HomeFrontPB/HomeFront App | live | Migrated `F*` forms in both apps |
+| HomeFrontPB/HomeFront App | live | Migrated `F*` forms — new work lands in **HomeFront** only; PB is frozen for UAT testing (sync is one-way, PB→HF) |
 | FlexKit Tester | bench | Benches, repros, perf work |
 | Application-wide zoom facility | bench | Text zoom — FlexCore/tester only |
 
@@ -75,7 +75,7 @@ Their `origin` remotes are stale or nonexistent — HomeFrontPB's points at
 
 | Clone | Fed from | Pushes to |
 |---|---|---|
-| `hyphen-pb` **(primary)** | HomeFrontPB | gitlab · application-modernization/hyphen-pb.git |
+| `hyphen-pb` **(primary)** | `main` ← MobileSource/HomeFront; `R1-UAT` ← HomeFrontPB | gitlab · application-modernization/hyphen-pb.git |
 | `homefront` | MobileSource/HomeFront | gitlab · application-modernization/homefront.git |
 | `flexkit` | FlexKit | gitlab · application-modernization/flexkit.git |
 | `flexcore` | FlexCore | github.com/wadoodachaudhary/FlexCore.git |
@@ -86,8 +86,10 @@ repo with an `R1-UAT` branch.
 **FlexKit is consumed two ways.** Working tree = live `ProjectReference`. The
 deploy script temporarily swaps to a `PackageReference` against a packed nupkg
 in `local-packages/`, builds to verify, pushes that form — and never modifies
-your working-tree csproj. Consequence: if an MR changes `HomeFrontPB.csproj`,
-**hand-merge it**; copying the file wholesale replaces your ProjectReference.
+your working-tree csproj. Consequence: if an MR changes the app csproj —
+`HomeFront.csproj` on `main`, `HomeFrontPB.csproj` on `R1-UAT` (pipelines and
+csproj are branch-owned) — **hand-merge it**; copying the file wholesale
+replaces your ProjectReference.
 
 ---
 
@@ -116,10 +118,25 @@ Already configured and verified on this machine.
 
 Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
 
-0. **Pull `hyphen-pb` `origin/main` FIRST.** The deploy is an rsync — anything
-   upstream not also local gets reverted. Mirror page changes to the other app;
-   hand-merge the csproj.
-1. Verify sync-pair parity, then commit all four repos.
+0. **Pull BOTH remotes FIRST — `hyphen-pb` and `homefront`** (owner directive
+   2026-08-29). The deploy rsyncs the **working tree**, so anything upstream not
+   also local gets reverted. Compare `origin/main` against the SHA this machine
+   last pushed — **never** against the clone's `HEAD`: the `hyphen-pb` clone
+   serves two branches (`main` ← HomeFront, `R1-UAT` ← HomeFrontPB) and may be
+   parked on `R1-UAT`. Mirror incoming page changes **PB → HF only** (owner
+   directive 2026-08-28); there is no HF → PB flow of any kind. Hand-merge the
+   csproj.
+1. Commit what is dirty in each source tree — HomeFront, HomeFrontPB, FlexKit,
+   FlexCore. This is housekeeping, **not a gate**: the deploy rsyncs the WORKING
+   TREE, not HEAD, so uncommitted edits ship either way and last-minute changes
+   are expected (owner directive 2026-08-28). Never block a deploy on a clean tree.
+   **Do not chase HomeFront ↔ HomeFrontPB parity.** Sync is one-way **PB→HF only**
+   (owner directive 2026-08-28) and ~19-24 of ~127 shared page files differ *by
+   design* — FFeedback(.css), Workflow / WorkflowEstimating(.css),
+   FInboxCustomQuote, FSendingWizard, FMain. Any comparison must strip the shared
+   `@namespace HomeFront.Components.Pages` line (**both** apps carry it — 51 of 67
+   shared `.razor` files) and trailing-newline noise, or the diff count inflates
+   with false positives.
 2. Bump FlexKit + repack + refresh `local-packages/` nupkg — **only if FlexKit
    source changed.**
 3. Build `HomeFront.sln` and `HomeFrontPB.sln` (+ `FlexCore.Showcase.sln` if
@@ -127,10 +144,46 @@ Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
 4. `bash tools/deploy_to_repos.sh`
 5. Verify on `origin/main`: Azure token placeholders present,
    `appsettings.Development.json` still 97 lines, csproj publish-exclusion intact.
-6. Merge main into **R1-UAT**, confirm the five disabled security toggles and env
-   config, build-verify, push.
+6. **R1-UAT is built directly from HomeFrontPB — there is no merge from main.**
+   `deploy_r1uat` runs automatically at the end of step 4: it resets the
+   `hyphen-pb` clone to `origin/R1-UAT`, rsyncs the HomeFrontPB tree with
+   `Components/Pages/FLogin.razor` excluded (and re-checked-out after the
+   package swap) so the five disabled security toggles survive, build-verifies,
+   and refuses to push if the toggle count is not exactly 5. Nothing to do by
+   hand — just confirm it reported `Pushed R1-UAT`.
 7. Publish FlexCore to NuGet — **only if FlexCore changed.** Check the latest
    published version first and bump above it.
+
+**Current shipped versions (2026-08-29):** FlexKit **0.1.74**, FlexCore **0.2.23**
+(published to nuget.org). Both are bumped only when their own source changes; the
+two version lines are independent and are allowed to diverge.
+
+### Three traps in the deploy script — all fixed, all silent when they bite
+
+Worth knowing because each one reported success while doing the wrong thing.
+
+1. **R1-UAT silently stopped pushing** (found 2026-08-28, after two deploys had
+   quietly skipped it). `wwwroot/resources/Estimating/Reports/xml_orig/*.xml` are
+   CRLF, so `git status --porcelain` reports them modified on every run — but
+   `git add -A` normalizes them to LF and the staged tree comes out **identical to
+   HEAD**. `git commit` then exits non-zero with "nothing to commit", and
+   `set -euo pipefail` kills the script *before* `push origin R1-UAT`. The fix is
+   to stage first and test `git diff --cached --quiet`, which is what the main loop
+   always did. **Tell:** a run that prints `Lockdown intact` but never
+   `Pushed R1-UAT` / `no changes to push`, and exits non-zero.
+2. **The `hyphen-pb` clone serves two branches.** Left parked on `R1-UAT`, the next
+   run's `reset --hard origin/main` rewrites the UAT branch — that is exactly how
+   the 2026-08-28 non-fast-forward incident happened. A function-level `RETURN`
+   trap is not enough (it does not fire when `set -e` aborts mid-function), so
+   there is now a script-level `trap … EXIT` that parks the clone on `main` on
+   every exit path and shouts if it cannot.
+3. **The deploy ships uncommitted working-tree edits — by design.** It rsyncs the
+   working tree, not `HEAD`. The owner and other sessions edit these trees directly
+   and a late edit is *expected* to ship (owner directive 2026-08-28). Never gate a
+   deploy on a clean tree. The real safety net is the staged build verification,
+   which runs before each push. The one judgement call: if a file's mtime is still
+   moving, wait for it to settle before shipping — `wwwroot` JS gets no compile
+   check, so a half-written file would ship silently.
 
 ---
 
@@ -143,10 +196,20 @@ InternalTools allow-list and Cognito settings. This machine has `localhost,1433`
 / `sa` and a stripped stub. Pushing local over it breaks QA, UAT and UAT-Hyphen
 at once. Enforced by `ENV_CONFIG_EXCLUDE` in the deploy script — do not remove it.
 
-**Sync pairs.** HomeFront ↔ HomeFrontPB: same migrated form in both
-(`Components/Pages/Migrated/F*.razor` vs flat `Components/Pages/F*.razor`); a fix
-in one belongs in the other. Only expected difference is HomeFront's extra
-`@namespace` line. `FMain.razor` carries ~1,700 lines of drift — hand-apply there.
+**Sync pairs.** HomeFront ↔ HomeFrontPB: the same migrated form lives in both
+(`Components/Pages/Migrated/F*.razor` vs flat `Components/Pages/F*.razor`), but
+sync is **ONE-WAY — PB → HF only** (owner directive 2026-08-28). There is **no
+HF → PB flow of any kind**, not even a fix to a form PB already has: HomeFrontPB
+is going away yet is still under test, so its tree must not be disturbed.
+`FMain.razor` follows its own divergence rule (~1,600 lines of drift — hand-apply
+there). Some divergences are permanent and must NOT be reconciled: `FFeedback`
+(HF has label-scoped Jira sync via `JiraSettings.SyncLabel`; PB has a sort-by
+dropdown + priority badges), `Workflow` / `WorkflowEstimating` (PB marks nodes
+`enabled:false` and connectors `isBroken:true` for forms it lacks), and
+`FInboxCustomQuote` / `FSendingWizard` (HF-only — they cannot compile in PB).
+Baseline 2026-08-28: 19 of 127 shared page files differ. Comparisons MUST strip
+the shared `@namespace HomeFront.Components.Pages` line (BOTH apps carry it) and
+trailing-newline noise, or the count inflates to 65-73 false positives.
 
 **Hands off.** FAssembly `gItems` (finished; a past change caused a major
 regression). HomeFrontPOC (archived). Crystal report XMLs (read-only).
@@ -157,7 +220,16 @@ never hardcoded. All UI primitives from FlexKit — a raw `<input>` or `<div>`
 modal is a red flag. Minimise JavaScript (DOM-only need + tiny lazy import +
 graceful fallback). Never interpolate user values into SQL.
 
-**The owner runs the apps.** Do not auto-start `dotnet run`.
+**Run and test the apps — then shut them down.** The owner *wants* runtime
+testing: start the app and exercise the change (especially DB-writing flows)
+before reporting done; compile-only verification is not "done" for a behaviour
+change when a runtime test is feasible. Start it through the Browser pane's
+preview / `launch.json` entries, never a raw Bash `dotnet run`. **Always kill
+every server you started when testing finishes** — the owner tests on the same
+ports and a stray process blocks them. The owner's own HomeFront instance runs
+on **:5065**; for an environment-specific bug, attach to *their* server
+(`preview_start` with `{url: 'http://localhost:5065/'}`) rather than your own
+preview port.
 
 ---
 
@@ -170,7 +242,9 @@ graceful fallback). Never interpolate user values into SQL.
   there is no error anywhere.
 - FlexKitTester references **FlexCore**, not FlexKit. A FlexKit-only behaviour
   difference must be reproduced by applying the change under test to FlexCore too,
-  or tested through the real apps (which the owner runs).
+  or tested through the real apps — run and test them yourself via the
+  `.claude/launch.json` entries (never a raw Bash `dotnet run`), then ALWAYS shut
+  down every server you started, since the owner tests on the same ports.
 - Existing pages include `/row-selection`, `/virtualization`, `/pm-entry`,
   `/edit-items`, `/userperms-lists`.
 
@@ -200,7 +274,11 @@ nothing reloads. Symptom: the owner reports "no difference" for hours. Verify th
   every width; VB6 `FPOFormats.frm` uses `ColWidth(0)=240` + `AutoSize(1,.Cols-1)`
   and never reads AppGridLayout. `GridColumn.AllowAutoFit` exists as groundwork.
 - **R1-UAT carries branch-only changes** — five hard-disabled security toggles in
-  `FLogin.razor` plus `Sec.EncryptDbConnection = false`. Keep both sides on
-  conflict; set the toggle *before* any early return.
+  `FLogin.razor` plus `Sec.EncryptDbConnection = false` (same file). Nothing is
+  merged: `deploy_r1uat` rsyncs HomeFrontPB straight onto the branch with
+  `R1UAT_PRESERVE_EXCLUDE` (`--exclude='Components/Pages/FLogin.razor'`), then
+  re-runs `git checkout -- Components/Pages/FLogin.razor` after the package swap,
+  and refuses to push unless all five toggles are still present. Set the toggle
+  *before* any early return.
 - **Docs live outside the repos**, in `HomeFront/Docs-archive/`. Both repos
   gitignore `Docs/`. Put new documentation in the archive, not a repo.

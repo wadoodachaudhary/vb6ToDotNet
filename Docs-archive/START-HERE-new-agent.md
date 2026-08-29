@@ -13,7 +13,9 @@ human operator needs to hand over correctly.
 > Check whether a persistent memory store is loaded for this project. The live
 > one is at
 > `~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/`
-> and contains ~101 files with a ~101-line `MEMORY.md` index.
+> and contains 126 files with a 125-line `MEMORY.md` index (counts as of
+> 2026-08-29 — the store grows continuously, so treat this as a floor, not an
+> exact match; the check that matters is 6 vs. many, below).
 >
 > - If you have it, read `MEMORY.md` first, then
 >   `vb6todotnet_workstream_map.md`, `project_overview.md` and
@@ -47,10 +49,21 @@ human operator needs to hand over correctly.
 >   `tools/deploy_to_repos.sh`.
 > - Never push local `appsettings*.json`. The remote owns environment config;
 >   pushing local values breaks QA, UAT and UAT-Hyphen at once.
-> - Pull `hyphen-pb` `origin/main` before any deploy, or teammates' merged MRs
->   get reverted by the rsync.
-> - HomeFront and HomeFrontPB are a sync pair — a fix in one belongs in the
->   other. `FMain.razor` is the exception; hand-apply there.
+> - Pull `origin/main` from **both** `hyphen-pb` and `homefront` before any
+>   deploy, or teammates' merged MRs get reverted by the rsync. Compare
+>   `origin/main` against the sha we last pushed, **not** the clone's `HEAD` —
+>   the `hyphen-pb` clone serves two branches and may be parked on `R1-UAT`.
+> - Sync is **one-way: HomeFrontPB → HomeFront only** (owner directive
+>   2026-08-28). HomeFrontPB is going away but is still being tested and now
+>   feeds `hyphen-pb` `R1-UAT` directly, so never write into its tree — no
+>   HF → PB flow of any kind, not even a fix to a form PB already has.
+>   `FMain.razor` follows its own divergence rule, and it is far from the only
+>   divergence: ~23 of the 127 shared page files differ, several permanently
+>   (`FFeedback`, `Workflow`, `WorkflowEstimating`, `FInboxCustomQuote`,
+>   `FSendingWizard`). Do not "reconcile" those. When comparing the two trees,
+>   strip the shared `@namespace HomeFront.Components.Pages` line and
+>   trailing-newline noise first, or the count inflates to 65–73 false
+>   positives.
 > - FlexKit and FlexCore are allowed to diverge and are **not** auto-mirrored.
 >   Sync only when explicitly told.
 > - Anything built in FlexKitTester → FlexCore stays there until the owner has
@@ -61,7 +74,12 @@ human operator needs to hand over correctly.
 > - Grid columns come from AppGridLayout, never hardcoded. All UI primitives
 >   come from FlexKit. Minimise JavaScript. Never interpolate user values into
 >   SQL.
-> - Do not auto-start `dotnet run` — I run the apps.
+> - Run and runtime-test the apps yourself — start them through the Browser pane
+>   preview / `launch.json` entries, never a raw Bash `dotnet run` — then ALWAYS
+>   shut down every server you started. I test on the same ports (HomeFront on
+>   5065, benches on 5299/5266) and a leftover server blocks me. Compile-only
+>   verification is not "done" for a behaviour change when a runtime test is
+>   feasible.
 > - Do not change FAssembly `gItems`. Do not touch HomeFrontPOC. Crystal report
 >   XMLs are read-only.
 >
@@ -75,7 +93,7 @@ human operator needs to hand over correctly.
 
 Memory loads automatically. Launch Claude from
 `/Users/wadood/projects/VBToCSharp/HomeFront/MobileSource` — the same directory
-this work was done from — and the ~101-file store resolves.
+this work was done from — and the 126-file store (count as of 2026-08-29; it grows steadily, so treat it as a floor) resolves.
 
 Have them confirm the file count before trusting it. A second, **stale** store
 exists under the `…-VBToCSharp-HomeFront-MobileSource` slug with 6 files last
@@ -88,7 +106,7 @@ and so do the credentials. Specifically they will be missing:
 
 | What | Where it lives | Consequence |
 |---|---|---|
-| Memory store (~101 files) | `~/.claude/projects/…-HomeFront/memory/` | No standing rules, no incident history |
+| Memory store (~126 files) | `~/.claude/projects/…-HomeFront/memory/` | No standing rules, no incident history |
 | Global instructions | `~/.claude/CLAUDE.md` | No project map |
 | GitLab SSH key | `~/.ssh/id_ed25519` | Cannot fetch or push |
 | NuGet key | Keychain `flexcore-nuget-key` | Cannot publish FlexCore |
@@ -105,7 +123,7 @@ which are already overdue for rotation.
 ```
 ssh -T git@gitlab.innovatixinc.com     # → Welcome to GitLab, @wchaudhary!
 gh auth status                          # → wadoodachaudhary
-ls ~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/*.md | wc -l   # → ~101
+ls ~/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/*.md | wc -l   # → 120+ and growing
 ```
 
 If the first two fail, that session cannot deploy. If the third returns 6, it is
@@ -127,7 +145,7 @@ Verified 2026-08-23:
 | Folder you launch from | What loads |
 |---|---|
 | `/Users/wadood/projects/VBToCSharp` | **Nothing.** No project store exists for it — blank project, zero memory, zero rules. |
-| `/Users/wadood/projects/VBToCSharp/HomeFront/MobileSource` | The live **102-file** store. **Use this one.** |
+| `/Users/wadood/projects/VBToCSharp/HomeFront/MobileSource` | The live memory store — 126 files as of 2026-08-29, and growing. **Use this one.** |
 
 **Launch every session from the same directory:**
 
@@ -164,12 +182,16 @@ Every prompt assumes **Part A has already been run in that session.**
 > `/Users/wadood/.claude/projects/-Users-wadood-projects-VBToCSharp-HomeFront/memory/`:
 > `vb6todotnet_workstream_map.md`, `operating_rules.md`, `deploy_pipeline.md`,
 > `deploy_pull_main_first.md`, `deploy_never_push_env_config.md`,
-> `deploy_update_r1uat.md`, `feedback_bump_flexkit_before_deploy.md`,
-> `flexcore_nuget_publish.md`
+> `deploy_update_r1uat.md`, `deploy_staging_clone_traps.md`,
+> `feedback_bump_flexkit_before_deploy.md`, `flexcore_nuget_publish.md`
+>
+> Treat `tools/deploy_to_repos.sh` as the final authority wherever a memory file
+> and the script disagree.
 >
 > Confirm back to me: the eight steps of the deploy sequence in order, which two
-> steps are conditional and on what, and what `ENV_CONFIG_EXCLUDE` protects.
-> Then wait — do not deploy until I ask.
+> steps are conditional and on what, what `ENV_CONFIG_EXCLUDE` protects, which
+> source tree feeds `main` and which feeds `R1-UAT`, and why you must never merge
+> main into R1-UAT. Then wait — do not deploy until I ask.
 
 ---
 
@@ -191,9 +213,10 @@ Every prompt assumes **Part A has already been run in that session.**
 > `HFSystem/Source/`). Read the matching `.frm` or `.bas` before changing any
 > migrated page.
 >
-> Confirm back to me: which directory each app keeps its migrated forms in, what
-> the only expected difference between the pair is, which single file is exempt
-> from wholesale copying and why, and which grid you must never touch.
+> Confirm back to me: which directory each app keeps its migrated forms in, why
+> the two trees are no longer expected to match line-for-line, which files are
+> permanently divergent and must never be reconciled, which direction a fix is
+> allowed to travel between the pair, and which grid you must never touch.
 
 ---
 

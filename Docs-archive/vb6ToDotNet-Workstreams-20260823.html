@@ -109,11 +109,11 @@ td b{color:var(--ink);font-weight:600;}
   <h1>vb6ToDotNet Workstreams</h1>
   <p class="lede">Four sessions run in parallel on this machine, and they are not independent — they sit in two lanes separated by a hard approval gate. Knowing which lane a change belongs to is what stops an untested library edit reaching every host app.</p>
   <div class="meta">
-    <span><b>Prepared</b> 2026-08-27 · rev 2</span>
+    <span><b>Prepared</b> 2026-08-29 · rev 3</span>
     <span><b>Sessions</b> 4</span>
     <span><b>Memory</b> vb6todotnet_workstream_map.md</span>
-    <span><b>FlexKit</b> 0.1.69</span>
-    <span><b>FlexCore</b> 0.2.20</span>
+    <span><b>FlexKit</b> 0.1.74</span>
+    <span><b>FlexCore</b> 0.2.23</span>
   </div>
 </header>
 
@@ -152,7 +152,7 @@ td b{color:var(--ink);font-weight:600;}
 <div class="hz">
   <p class="hz-t">Divergence is often correct</p>
   <p>FlexKit and FlexCore are <strong>allowed to diverge</strong> and are not auto-mirrored (owner directive 2026-07-25). A feature in one and absent from the other is frequently the intended state. Before concluding something is missing, ask which lane built it and whether the gate has been passed.</p>
-  <p><strong>Ports completed:</strong> row virtualization (2026-07-26), the callback cache, the <code>GridPerformanceMode</code> enum, grouped-grid windowing, and app-wide text zoom (FlexKit 2026-08-22, apps 2026-08-23). <strong>Still bench-only:</strong> row-selection recommendation 1.</p>
+  <p><strong>Ports completed:</strong> row virtualization (2026-07-26), the callback cache, the <code>GridPerformanceMode</code> enum, grouped-grid windowing, and app-wide text zoom (FlexKit 2026-08-22, apps 2026-08-23). <strong>Also ported:</strong> the <code>grid-control.js</code> drag-band outline, FlexKit → FlexCore on 2026-08-29 (FlexCore 0.2.23) — a surgical three-site port; the two files still diverge by ~140 lines. <strong>Still bench-only:</strong> row-selection recommendation 1.</p>
   <p><strong>Removed from both libraries 2026-08-24:</strong> the <code>Llm/</code> subsystem (31 files each) with <code>TorchSharp-cpu</code> and <code>libtorch-cpu-osx-arm64</code>. Nothing outside <code>Llm/</code> referenced it, and libtorch is macOS-ARM native code a Windows restore would have tried to download. <code>Editor/LlmResultCard</code> is presentational and stays.</p>
 </div>
 </section>
@@ -166,12 +166,12 @@ td b{color:var(--ink);font-weight:600;}
 <tr>
   <td><b>Update repositories for<br>HomeFront/FlexKit</b></td>
   <td><span class="tag live">live</span></td>
-  <td>The deploy pipeline — pull main, sync-pair parity, FlexKit bump, build, <code>deploy_to_repos.sh</code>, R1-UAT merge, FlexCore NuGet publish.</td>
+  <td>The deploy pipeline — pull <b>both</b> remotes, commit what is dirty, FlexKit bump, build, <code>deploy_to_repos.sh</code> (which builds R1-UAT from HomeFrontPB itself — no merge), FlexCore NuGet publish.</td>
 </tr>
 <tr>
   <td><b>HomeFrontPB /<br>HomeFront App</b></td>
   <td><span class="tag live">live</span></td>
-  <td>Migrated <code>F*</code> forms in both apps. VB6 fidelity, AppGridLayout-driven columns, FlexKit-only UI primitives.</td>
+  <td>Migrated <code>F*</code> forms. New work lands in <b>HomeFront</b> only — sync is one-way PB → HF and HomeFrontPB is frozen for UAT testing. VB6 fidelity, AppGridLayout-driven columns, FlexKit-only UI primitives.</td>
 </tr>
 <tr>
   <td><b>FlexKit Tester</b></td>
@@ -197,7 +197,7 @@ td b{color:var(--ink);font-weight:600;}
   <p>Without it the page renders static SSR: rows appear normally, every click and keydown is dead, and <strong>there is no error anywhere</strong> to tell you why.</p>
 </div>
 
-<p>FlexKitTester references <strong>FlexCore</strong>. A FlexKit-only behaviour difference therefore cannot be reproduced there directly — either apply the change under test to FlexCore as well, or test through the real apps, which the owner runs.</p>
+<p>FlexKitTester references <strong>FlexCore</strong>. A FlexKit-only behaviour difference therefore cannot be reproduced there directly — either apply the change under test to FlexCore as well, or test through the real apps — which you run and test yourself (corrected 2026-08-26), shutting every server down afterwards.</p>
 
 <h3>Existing bench pages</h3>
 <div class="tw"><table>
@@ -240,7 +240,7 @@ td b{color:var(--ink);font-weight:600;}
 <tr><td class="p">5298</td><td>Optional latency proxy in front of 5299</td></tr>
 </tbody>
 </table></div>
-<p>The owner runs the applications. Do not auto-start <code>dotnet run</code>; stop any session you were explicitly asked to start.</p>
+<p><strong>Run and test the apps yourself, then shut them down.</strong> The owner <em>wants</em> runtime testing (corrected 2026-08-26). Start them through the Browser pane / <code>launch.json</code>, never a raw Bash <code>dotnet run</code>, and <strong>always stop every server you started</strong> — the owner tests on these same ports.</p>
 </section>
 
 <section>
@@ -279,7 +279,7 @@ td b{color:var(--ink);font-weight:600;}
 <section>
 <h2>HomeFrontPB / HomeFront App</h2>
 
-<p>The two applications are a <strong>sync pair</strong>: the same migrated VB6 form exists in both, under <code>Components/Pages/Migrated/F*.razor</code> in HomeFront and flat in <code>Components/Pages/F*.razor</code> in HomeFrontPB. A fix in one belongs in the other, and the only expected difference is HomeFront's extra <code>@namespace</code> line.</p>
+<p>The two applications share migrated VB6 forms — <code>Components/Pages/Migrated/F*.razor</code> in HomeFront, flat <code>Components/Pages/F*.razor</code> in HomeFrontPB — but since 2026-08-28 the sync is <strong>ONE-WAY: PB → HF only</strong>. There is <strong>no HF → PB flow of any kind</strong>: HomeFrontPB is going away yet still under test, so its tree must not be disturbed, and new work lands in HomeFront. Both apps carry the same <code>@namespace</code> line, so strip it (and trailing-newline noise) before comparing or the diff inflates with false positives. <strong>19 of 127</strong> shared page files differ, much of it deliberate — <code>FFeedback</code>, <code>Workflow</code>/<code>WorkflowEstimating</code>, <code>FInboxCustomQuote</code>, <code>FSendingWizard</code>. Do not reconcile those.</p>
 
 <p><code>FMain.razor</code> is the exception — roughly 1,700 lines of long-standing drift. Hand-apply changes there; never copy wholesale.</p>
 
@@ -320,7 +320,7 @@ td b{color:var(--ink);font-weight:600;}
 </section>
 
 <footer class="foot">
-  Prepared 2026-08-27 (rev 2) · verified against the working tree and the live memory store on this machine.
+  Prepared 2026-08-29 (rev 3) · verified against the working tree and the live memory store on this machine.
 </footer>
 
 </div>
