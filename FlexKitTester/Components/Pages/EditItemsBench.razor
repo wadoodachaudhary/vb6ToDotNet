@@ -12,7 +12,7 @@
 <PageTitle>Edit Items DB Bench</PageTitle>
 
 <PageControl CssClass="ei-page">
-<h4 style="margin:8px 12px;">Edit Items DB harness <span style="color:#1e6fd9;font-size:calc(13px * var(--fx-zoom, 1));">— rev 35 (@Items.Count rows · typing + adaptive wheel bench · build @BuildStamp · selection: <b>@BuildColorName</b>)</span></h4>
+<h4 style="margin:8px 12px;">Edit Items DB harness <span style="color:#1e6fd9;font-size:calc(13px * var(--fx-zoom, 1));">— rev 36 (@Items.Count rows · typing + scroll buffer bench · build @BuildStamp · selection: <b>@BuildColorName</b>)</span></h4>
 <div style="margin:0 12px 6px;font-size:calc(11px * var(--fx-zoom, 1));color:#555;">@BenchData.LoadReport</div>
 @if (_dataError != null)
 {
@@ -92,14 +92,41 @@
     drag across rows in one column paints the preview, released promptly on mouse-up.
 </p>
 
-<div style="display:flex; align-items:center; gap:6px; margin:0 12px 6px; font-size:calc(12px * var(--fx-zoom, 1));">
-    <span>window overscan:</span>
-    <button id="ei-ov260" @onclick="() => SetOverscan(260)" disabled="@(_overscan == 260)">260 (old default)</button>
+<div style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 12px 6px; font-size:calc(12px * var(--fx-zoom, 1));">
+    <span>thumb scroll:</span>
+    <button id="ei-scroll-live"
+            title="Track the native scrollbar thumb live. The release buffer is not used."
+            @onclick="() => SetScrollTrack(true)"
+            disabled="@_scrollTrack">LIVE</button>
+    <button id="ei-scroll-release"
+            title="Keep the grid viewport fixed while the proxy thumb moves, then paint once on release."
+            @onclick="() => SetScrollTrack(false)"
+            disabled="@(!_scrollTrack)">FIXED / RELEASE ONLY</button>
+    <span style="margin-left:12px;">window overscan rows:</span>
+    <NumericTextBoxControl TValue="int"
+                           Value="@_overscan"
+                           ValueChanged="SetOverscan"
+                           Min="0"
+                           Max="500"
+                           Width="76px" />
     <button id="ei-ov60" @onclick="() => SetOverscan(60)" disabled="@(_overscan == 60)">60 (default)</button>
+    <button id="ei-ov200" @onclick="() => SetOverscan(200)" disabled="@(_overscan == 200)">200</button>
+    <button id="ei-ov260" @onclick="() => SetOverscan(260)" disabled="@(_overscan == 260)">260 (old default)</button>
     <span style="color:#999;">rendered window ≈ viewport + 2×overscan</span>
     <span style="margin-left:12px;">release buffer:</span>
-    <button @onclick="() => _deferredOverscan = 20" disabled="@(_deferredOverscan == 20)">20 (optimized)</button>
-    <button @onclick="() => _deferredOverscan = 60" disabled="@(_deferredOverscan == 60)">60 (baseline)</button>
+    <button id="ei-release-auto"
+            title="Use the smaller deferred buffer, adjusted to at least one-third of the live overscan."
+            @onclick="() => SetAutoDeferredReleaseBuffer(true)"
+            disabled="@(_scrollTrack || _useAutoDeferredReleaseBuffer)">deferred / auto (@AutoDeferredReleaseRows)</button>
+    <button id="ei-release-full"
+            title="Use the normal live-window overscan on both sides of the released thumb destination."
+            @onclick="() => SetAutoDeferredReleaseBuffer(false)"
+            disabled="@(_scrollTrack || !_useAutoDeferredReleaseBuffer)">default / full (@_overscan)</button>
+    <span style="color:#666;">
+        @(_scrollTrack
+            ? "release buffer unused in LIVE mode"
+            : $"effective release buffer: {EffectiveDeferredReleaseRows} rows/side")
+    </span>
     <button id="ei-boundary-guard-toggle" @onclick="() => _boundaryGuard = !_boundaryGuard">
         blank guard: <b>@(_boundaryGuard ? "ON" : "OFF (baseline)")</b>
     </button>
@@ -222,10 +249,10 @@
                  AutoPageRowThreshold="0"
                  @key="@ItemsGridRegistrationKey"
                  WindowOverscanRows="@_overscan"
-                 DeferredScrollOverscanRows="@_deferredOverscan"
+                 DeferredScrollOverscanRows="@EffectiveDeferredReleaseRows"
                  TValue="ItemRow"
                  DataSource="@Items"
-                 ScrollTrack="false"
+                 ScrollTrack="@_scrollTrack"
                  WheelScrollScale="0.75"
                  EnableScrollBoundaryGuard="@_boundaryGuard"
                  EnableScrollBoundarySlowdown="@_boundaryGuard"
@@ -233,7 +260,7 @@
                  EnableScrollBoundaryTelemetry="true"
                  DiagnosticWindowScrollDelayMs="@_diagnosticWindowDelayMs"
                  PerformanceMode="@_performanceMode"
-                 UseClientBufferedTextEditing="@_clientBufferedTextEditing"
+                 TextEditorTypingBehavior="@(_clientBufferedTextEditing ? TextBoxTypingBehavior.ClientBuffered : TextBoxTypingBehavior.ServerBacked)"
                  AllowSorting="false"
                  AllowSelection="true"
                  AllowResizing="true"
@@ -245,6 +272,11 @@
                  EditSettingsRef="@_editSettings"
                  SelectionSettingsRef="@_selectionSettings"
                  EventsRef="@_gridEvents"
+                 HostTabIndex="0"
+                 SeedActiveCellOnHostFocus="true"
+                 TabNavigationMode="GridTabNavigationMode.WrapRows"
+                 ShowGridOptionsRail="true"
+                 ShowColumnOptionsButton="true"
                  BatchEditBehavior="GridBatchEditBehavior.SingleCell"
                  AllowSingleCellColumnMassEdit="true"
                  TypeAheadTargetField="@TypeAheadTargetField"
@@ -369,7 +401,8 @@
 <div style="margin:0 12px; font-size:calc(12px * var(--fx-zoom, 1)); color:#999;" id="ei-renders">page renders: @_renderCount ·
     grid renders: <span id="ei-grenders">@_gridRenders</span> ·
     last build <span id="ei-glastms">@_gridLastMs</span> ms ·
-    total <span id="ei-gtotalms">@_gridTotalMs</span> ms
+    total <span id="ei-gtotalms">@_gridTotalMs</span> ms ·
+    display-cache rows <span id="ei-dvrows">@_dvCacheRows</span>
     <button id="ei-refresh-stats" @onclick="RefreshGridStats">refresh</button>
     <button id="ei-reset-stats" @onclick="ResetGridStats">reset</button></div>
 <div style="margin:8px 12px; font-size:calc(12px * var(--fx-zoom, 1)); color:#555;" id="ei-state">
@@ -455,7 +488,9 @@
     private int _fanOuts;
     private int _lastFanOutRows;
     private int _overscan = 60;
-    private int _deferredOverscan = 20;
+    private bool _scrollTrack;
+    private bool _useAutoDeferredReleaseBuffer = true;
+    private const int DefaultDeferredReleaseRows = 20;
     private int _gridGeneration;
     private bool _boundaryGuard = true;
     private bool _adaptiveWheelPacing = true;
@@ -483,8 +518,10 @@
         _gridGeneration,
         _performanceMode,
         _clientBufferedTextEditing,
+        _scrollTrack,
+        _useAutoDeferredReleaseBuffer,
         _overscan,
-        _deferredOverscan,
+        EffectiveDeferredReleaseRows,
         _boundaryGuard,
         _adaptiveWheelPacing,
         _diagnosticWindowDelayMs,
@@ -492,10 +529,43 @@
 
     private void SetOverscan(int v)
     {
+        v = Math.Clamp(v, 0, 500);
         if (_overscan == v)
             return;
 
         _overscan = v;
+        _gridGeneration++;
+        GridRenderDiagnostics.Reset();
+    }
+
+    private int AutoDeferredReleaseRows
+    {
+        get
+        {
+            var overscan = Math.Max(0, _overscan);
+            return Math.Min(overscan, Math.Max(DefaultDeferredReleaseRows, overscan / 3));
+        }
+    }
+
+    private int EffectiveDeferredReleaseRows =>
+        _useAutoDeferredReleaseBuffer ? AutoDeferredReleaseRows : Math.Max(0, _overscan);
+
+    private void SetScrollTrack(bool value)
+    {
+        if (_scrollTrack == value)
+            return;
+
+        _scrollTrack = value;
+        _gridGeneration++;
+        GridRenderDiagnostics.Reset();
+    }
+
+    private void SetAutoDeferredReleaseBuffer(bool value)
+    {
+        if (_useAutoDeferredReleaseBuffer == value)
+            return;
+
+        _useAutoDeferredReleaseBuffer = value;
         _gridGeneration++;
         GridRenderDiagnostics.Reset();
     }
@@ -691,7 +761,10 @@
         _gridRenders = GridRenderDiagnostics.RenderCount;
         _gridLastMs = Math.Round(GridRenderDiagnostics.LastBuildMs, 1);
         _gridTotalMs = Math.Round(GridRenderDiagnostics.TotalBuildMs, 1);
+        _dvCacheRows = GridServerOptimizationDiagnostics.DisplayValueCacheRows;
     }
+
+    private long _dvCacheRows;
 
     private void ResetGridStats()
     {

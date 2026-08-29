@@ -40,6 +40,7 @@ ENV_CONFIG_EXCLUDE=(
 # does not delete the server's copies. Owner directive 2026-08-24.
 RUNTIME_DATA_EXCLUDE=(
     --exclude='wwwroot/tickets/'
+    --exclude='wwwroot/feedback/'
     --exclude='Logs/'
     --exclude='*.log'
 )

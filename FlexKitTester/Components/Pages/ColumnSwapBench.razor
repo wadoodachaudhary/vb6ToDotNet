@@ -1,0 +1,190 @@
+@page "/column-swap"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>Column Swap Bench</PageTitle>
+
+<h4 style="margin:8px 12px;">Column-swap bench <span style="color:#1e6fd9;font-size:13px;">— rev 1 · build @BuildStamp</span></h4>
+<div style="margin:0 12px 8px;font-size:12px;color:#555;">
+    Lane A = today's <code>@@key</code> teardown (full grid remount per layout swap).
+    Lane B = in-place mutation inside <code>BeginUpdate()</code> / <code>EndUpdateAsync(order)</code> — no teardown.
+    Layouts differ in column SET (add + remove), ORDER, WIDTH and a HIDDEN flag.
+</div>
+
+<div style="display:flex;gap:8px;align-items:center;margin:0 12px 8px;flex-wrap:wrap;">
+    <span>A:</span>
+    <button id="btn-a-l1" @onclick='() => ApplyA("L1")'>Default</button>
+    <button id="btn-a-l2" @onclick='() => ApplyA("L2")'>Purchasing</button>
+    <button id="btn-a-l3" @onclick='() => ApplyA("L3")'>Minimal</button>
+    <span style="margin-left:14px;">B:</span>
+    <button id="btn-b-l1" @onclick='() => ApplyB("L1")'>Default</button>
+    <button id="btn-b-l2" @onclick='() => ApplyB("L2")'>Purchasing</button>
+    <button id="btn-b-l3" @onclick='() => ApplyB("L3")'>Minimal</button>
+    <button id="btn-b-reapply" @onclick="ReapplyB">re-apply SAME (no-op proof)</button>
+    <button id="btn-reset" style="margin-left:14px;" @onclick="ResetStats">Reset counters</button>
+</div>
+
+<div id="cs-stats" style="margin:0 12px 8px;font-size:12px;font-family:monospace;">
+    A: layout <b id="cs-a-layout">@_layoutA.Name</b> · last swap Δrenders <b id="cs-a-renders">@_aDelta</b>
+       · visible <b id="cs-a-colcount">@VisibleCount(_colsA)</b> · order <span id="cs-a-headers">@HeaderSig(_colsA)</span><br />
+    B: layout <b id="cs-b-layout">@_layoutB.Name</b> · last swap Δrenders <b id="cs-b-renders">@_bDelta</b>
+       · visible <b id="cs-b-colcount">@VisibleCount(_colsB)</b> · gen <b id="cs-b-gen">@(_colsB?.ColumnsGeneration ?? 0)</b>
+       · order <span id="cs-b-headers">@HeaderSig(_colsB)</span><br />
+    data checksum <b id="cs-checksum">@Checksum()</b> · B selected cells <b id="cs-b-selected">@_bSelectedReport</b>
+</div>
+
+<div style="display:flex;gap:16px;margin:0 12px;">
+    <div id="lane-a" style="flex:1;min-width:0;">
+        <GridControl @key="@($"A-{_aMountGen}")" TValue="CRow" DataSource="@Rows"
+                     Height="320px" AutoPageRowThreshold="0"
+                     AllowSelection="true" AllowResizing="true">
+            <GridColumnsBase @ref="_colsA" DebugTag="cs-laneA">
+                @foreach (var c in _layoutA.Columns)
+                {
+                    <GridColumn Field="@c.Field" HeaderText="@c.Header" Width="@c.Width"
+                                Visible="@c.Visible" AllowEditing="@c.Editable" />
+                }
+            </GridColumnsBase>
+        </GridControl>
+    </div>
+    <div id="lane-b" style="flex:1;min-width:0;">
+        <GridControl @ref="_gridB" TValue="CRow" DataSource="@Rows"
+                     Height="320px" AutoPageRowThreshold="0"
+                     AllowSelection="true" AllowResizing="true"
+                     SelectionSettingsRef="@_selB" EditSettingsRef="@_editB"
+                     BatchEditBehavior="GridBatchEditBehavior.SingleCell"
+                     AllowSingleCellColumnMassEdit="true"
+                     EventsRef="@_eventsB">
+            <GridColumnsBase @ref="_colsB" DebugTag="cs-laneB">
+                @foreach (var c in _layoutB.Columns)
+                {
+                    <GridColumn Field="@c.Field" HeaderText="@c.Header" Width="@c.Width"
+                                Visible="@c.Visible" AllowEditing="@c.Editable" />
+                }
+            </GridColumnsBase>
+        </GridControl>
+    </div>
+</div>
+
+@code {
+    public sealed class CRow
+    {
+        public string Code { get; set; } = "";
+        public double Qty { get; set; }
+        public double Price { get; set; }
+        public string Description { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public string Sku { get; set; } = "";
+        public bool Active { get; set; }
+    }
+
+    public sealed record ColSpec(string Field, string Header, string Width, bool Visible, bool Editable);
+    public sealed record LayoutDef(string Name, IReadOnlyList<ColSpec> Columns);
+
+    private static readonly Dictionary<string, LayoutDef> Layouts = new()
+    {
+        ["L1"] = new("L1", new ColSpec[]
+        {
+            new("Code", "Code", "90px", true, false),
+            new("Qty", "Qty", "90px", true, true),
+            new("Price", "Price", "100px", true, true),
+            new("Description", "Description", "200px", true, false),
+            new("Active", "Active", "80px", true, false),
+        }),
+        // Qty + Active REMOVED, Vendor + Sku ADDED, Price moved + widened, Description hidden
+        ["L2"] = new("L2", new ColSpec[]
+        {
+            new("Code", "Code", "90px", true, false),
+            new("Vendor", "Vendor", "140px", true, false),
+            new("Sku", "SKU", "110px", true, true),
+            new("Price", "Price", "140px", true, true),
+            new("Description", "Description", "200px", false, false),
+        }),
+        ["L3"] = new("L3", new ColSpec[]
+        {
+            new("Code", "Code", "90px", true, false),
+            new("Description", "Description", "300px", true, false),
+        }),
+    };
+
+    private static readonly List<CRow> Rows = Enumerable.Range(1, 200).Select(i => new CRow
+    {
+        Code = $"C{i:0000}",
+        Qty = i % 9 + 1,
+        Price = Math.Round(10 + i * 0.37, 2),
+        Description = $"Component {i} — swap bench row",
+        Vendor = $"Vendor {(i % 7) + 1}",
+        Sku = $"SKU-{i * 13 % 997:000}",
+        Active = i % 3 != 0,
+    }).ToList();
+
+    private GridControl<CRow>? _gridB;
+    private GridColumnsBase? _colsA, _colsB;
+    private LayoutDef _layoutA = Layouts["L1"], _layoutB = Layouts["L1"];
+    private int _aMountGen;
+    private long _aDelta, _bDelta;
+    private long _preSwap;
+    private char _pendingLane;
+    private string _bSelectedReport = "-";
+
+    private readonly SelectionSettings _selB = new() { Type = SelectionType.Multiple, Mode = SelectionMode.Cell, EnableToggle = true };
+    private readonly EditSettings _editB = new() { AllowEditing = true, Mode = EditMode.Batch };
+    private GridControlEvents<CRow>? _eventsB;
+
+    private static string BuildStamp =>
+        new DateTime(System.IO.File.GetLastWriteTimeUtc(typeof(GridControl<CRow>).Assembly.Location).Ticks, DateTimeKind.Utc)
+            .ToString("MM-dd HH:mm:ss");
+
+    private static string HeaderSig(GridColumnsBase? c) => c is null ? "" :
+        string.Join("|", c.Columns.Where(x => x.Visible && !string.IsNullOrEmpty(x.Field)).Select(x => $"{x.Field}:{x.Width}"));
+
+    private static int VisibleCount(GridColumnsBase? c) => c?.Columns.Count(x => x.Visible) ?? 0;
+
+    private static string Checksum() => Rows.Sum(r => r.Qty * 31 + r.Price).ToString("0.##");
+
+    private void ApplyA(string name)
+    {
+        _preSwap = GridRenderDiagnostics.RenderCount;
+        _pendingLane = 'A';
+        _layoutA = Layouts[name];
+        _aMountGen++;                       // today's path: @key teardown, full remount
+    }
+
+    private async Task ApplyB(string name)
+    {
+        _preSwap = GridRenderDiagnostics.RenderCount;
+        _pendingLane = 'B';
+        var target = Layouts[name];
+        _gridB!.BeginUpdate();
+        try
+        {
+            _layoutB = target;              // the foreach converges in the flush render
+        }
+        finally
+        {
+            await _gridB.EndUpdateAsync(target.Columns.Select(c => c.Field));
+        }
+        _bSelectedReport = "cleared on shape change (expected)";
+    }
+
+    private Task ReapplyB() => ApplyB(_layoutB.Name);
+
+    private void ResetStats()
+    {
+        GridRenderDiagnostics.Reset();
+        _aDelta = _bDelta = 0;
+        _preSwap = 0;
+        _pendingLane = default;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_pendingLane != default)
+        {
+            var d = GridRenderDiagnostics.RenderCount - _preSwap;
+            if (_pendingLane == 'A') _aDelta = d; else _bDelta = d;
+            _pendingLane = default;
+        }
+    }
+}

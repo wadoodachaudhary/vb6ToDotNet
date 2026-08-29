@@ -1,0 +1,685 @@
+@page "/radzen-bench"
+@rendermode InteractiveServer
+@using System.Diagnostics
+@using FlexKitTester.Services
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+@using Radzen
+@using Radzen.Blazor
+@inject BenchDataStore DataStore
+@implements IAsyncDisposable
+
+<PageTitle>FlexKit vs Radzen DataGrid Benchmark</PageTitle>
+
+<div class="radzen-bench-root">
+    <!-- Compact Toolbar Header -->
+    <div class="radzen-bench-header">
+        <!-- Row 1: Primary Controls (All Single-Selection Dropdowns) -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 py-1">
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="m-0 font-monospace" style="font-size: 0.92rem; font-weight: 700;">FlexKit vs Radzen Benchmark</h5>
+                <span class="badge bg-secondary" style="font-size: 0.70rem;">@_items.Count.ToString("N0") rows</span>
+            </div>
+
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <!-- Dataset Size Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-muted small fw-bold mb-0" style="font-size: 0.72rem;">Dataset:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4"
+                            style="font-size: 0.72rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@_items.Count"
+                            @onchange="OnDatasetChanged">
+                        <option value="1000">1,000 rows</option>
+                        <option value="5000">5,000 rows</option>
+                        <option value="10000">10,000 rows</option>
+                        <option value="50000">50,000 rows</option>
+                    </select>
+                </div>
+
+                <!-- View Mode Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-muted small fw-bold mb-0" style="font-size: 0.72rem;">View:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4"
+                            style="font-size: 0.72rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@_activeTab"
+                            @onchange="OnViewModeChanged">
+                        <option value="side-by-side">Side-by-Side (Both Grids)</option>
+                        <option value="flexkit">FlexKit Only</option>
+                        <option value="radzen">Radzen Only</option>
+                    </select>
+                </div>
+
+                <!-- Server Latency Delay Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-muted small fw-bold mb-0" style="font-size: 0.72rem;">Server Latency:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4"
+                            style="font-size: 0.72rem; height: 22px; width: auto; font-weight: 600; min-width: 140px; cursor: pointer;"
+                            value="@_latencyMs"
+                            @onchange="OnLatencyChanged">
+                        @foreach (var opt in _latencyOptions)
+                        {
+                            <option value="@opt.Ms">@opt.Label</option>
+                        }
+                    </select>
+                    @if (_latencyMs > 0)
+                    {
+                        <span class="badge bg-warning text-dark" style="font-size: 0.68rem;">+@(_latencyMs >= 1000 ? $"{_latencyMs / 1000.0:F1}s" : $"{_latencyMs}ms") delay</span>
+                    }
+                </div>
+
+                <!-- Radzen Keystroke Sync Mode Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-danger small fw-bold mb-0" style="font-size: 0.72rem;">Radzen Typing Mode:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4 border-danger"
+                            style="font-size: 0.72rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@(_radzenImmediate ? "immediate" : "blur")"
+                            @onchange="OnRadzenSyncModeChanged">
+                        <option value="immediate">Immediate = true (Live oninput - keystrokes roundtrip)</option>
+                        <option value="blur">Immediate = false (On-Blur - commit on cell exit)</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-sm btn-outline-secondary" style="font-size: 0.72rem; padding: 1px 6px;" @onclick="ResetDiagnostics">Reset</button>
+            </div>
+        </div>
+
+        <!-- Row 2: FlexCore Scroll & Blank White Rows Guard (Single-Choice Dropdowns) -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 py-1 border-top border-bottom bg-light px-2" style="font-size: 0.72rem;">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <!-- FlexCore Scroll & Guard Mode Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-dark small fw-bold mb-0">FlexCore Scroll & Guard:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4 border-primary"
+                            style="font-size: 0.70rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@_flexKitScrollMode"
+                            @onchange="OnFlexKitScrollModeChanged">
+                        <option value="live">Live Grid (ScrollTrack = true)</option>
+                        <option value="deferred">Not Live Grid (ScrollTrack = false / Deferred)</option>
+                        <option value="guard">Not Live Grid + Blank Rows Guard ON</option>
+                        <option value="slowdown">Not Live Grid + Guard + Edge Slowdown</option>
+                        <option value="adaptive">Not Live Grid + Guard + Slowdown + Adaptive Pacing</option>
+                    </select>
+                </div>
+
+                <!-- FlexCore Typing Engine Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-dark small fw-bold mb-0">FlexCore Typing:</label>
+                    <select class="form-select form-select-sm py-0 ps-2 pe-4"
+                            style="font-size: 0.70rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@_flexKitTypingMode"
+                            @onchange="OnFlexKitTypingModeChanged">
+                        <option value="client-buffered">Client-Buffered (Smooth 60fps local DOM + Excel keydown nav)</option>
+                        <option value="server-backed">Server-Backed (Roundtrip per keystroke)</option>
+                    </select>
+                </div>
+
+                <!-- Mouse Wheel Control Multiplier Dropdown -->
+                <div class="d-flex align-items-center gap-1">
+                    <label class="text-dark small fw-bold mb-0">Wheel Multiplier:</label>
+                    <select class="form-select form-select-sm py-0 ps-1 pe-3"
+                            style="font-size: 0.70rem; height: 22px; width: auto; font-weight: 600; cursor: pointer;"
+                            value="@_flexKitWheelScale"
+                            @onchange="OnWheelScaleChanged">
+                        <option value="0.25">0.25x (Very Slow)</option>
+                        <option value="0.5">0.5x (Slow)</option>
+                        <option value="0.75">0.75x (Smooth)</option>
+                        <option value="1.0">1.0x (Normal / 100%)</option>
+                        <option value="1.25">1.25x (Fast)</option>
+                        <option value="1.5">1.5x (Faster)</option>
+                        <option value="2.0">2.0x (Max Speed)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Real-time Diagnostics & Mouse Wheel Rows Tracker Bar (Fixed-width Tabular Layout) -->
+        <div class="d-flex gap-2 text-muted small bg-light px-2 py-0 rounded border align-items-center" style="font-size: 0.72rem; height: 24px; min-height: 24px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;">
+            <!-- Mouse Wheel Live Tracker -->
+            <div class="text-primary font-monospace d-flex align-items-center gap-1" style="min-width: 290px; width: 290px;">
+                <strong class="text-dark">Wheel:</strong>
+                <span class="badge bg-primary text-white" style="display: inline-block; width: 78px; text-align: center;">@_wheelDeltaRows rows/notch</span>
+                <span style="display: inline-block; width: 55px; text-align: right;">(@_wheelDeltaY.ToString("F0")px)</span>
+                <span class="text-muted ms-1">| Burst:</span>
+                <span class="badge bg-dark text-white" style="display: inline-block; width: 55px; text-align: center;">@_wheelTotalRows rows</span>
+            </div>
+
+            <!-- FlexKit Diagnostics -->
+            <div class="border-start ps-2 d-flex align-items-center gap-1" style="min-width: 250px; width: 250px;">
+                <strong>FlexKit:</strong>
+                <span>Renders:</span>
+                <span class="badge bg-info text-dark" style="display: inline-block; width: 34px; text-align: center;">@_flexKitRenderCount</span>
+                <span>Build:</span>
+                <span class="badge bg-info text-dark" style="display: inline-block; width: 48px; text-align: right;">@_flexKitLastMs.ToString("F1") ms</span>
+                <span class="badge bg-light text-dark border ms-1">@(_flexKitScrollTrack ? "Live" : "Deferred")</span>
+            </div>
+
+            <!-- Radzen Diagnostics -->
+            <div class="border-start ps-2 d-flex align-items-center gap-1" style="min-width: 240px; width: 240px;">
+                <strong>Radzen:</strong>
+                <span>Track:</span>
+                <span class="badge bg-success" style="display: inline-block; width: 34px; text-align: center;">@_radzenRenderCount</span>
+                <span>Load:</span>
+                <span class="badge bg-success" style="display: inline-block; width: 48px; text-align: right;">@_radzenLoadMs.ToString("F1") ms</span>
+                <span class="badge @(_radzenImmediate ? "bg-danger text-white" : "bg-secondary") ms-1">@(_radzenImmediate ? "oninput" : "blur")</span>
+            </div>
+
+            <div class="ms-auto text-secondary fst-italic ps-2" style="font-size: 0.68rem;">Row Height: 20px · Font: 11px · 100% Viewport</div>
+        </div>
+
+        <!-- Row 4: Interactive Typing Latency Test Comparison Bar -->
+        <div class="d-flex align-items-center gap-3 px-2 py-1 bg-white border rounded shadow-xs mt-1" style="font-size: 0.72rem;">
+            <span class="font-weight-bold text-dark font-monospace"><strong>Live Typing Latency Test:</strong></span>
+            
+            <!-- FlexKit Client-Buffered -->
+            <div class="d-flex align-items-center gap-1 flex-grow-1">
+                <span class="badge bg-dark text-white">FlexKit (Client-Buffered):</span>
+                <input type="text"
+                       class="form-control form-control-sm py-0 px-2 flex-grow-1"
+                       style="font-size: 0.72rem; height: 22px;"
+                       placeholder="Type here with 5000ms latency (smooth 60fps)..."
+                       @bind="_flexKitTypingTest"
+                       @bind:event="oninput" />
+                <span class="text-muted small">(@_flexKitTypingTest.Length chars)</span>
+            </div>
+
+            <!-- Radzen Server-Backed -->
+            <div class="d-flex align-items-center gap-1 flex-grow-1">
+                <span class="badge bg-primary text-white">Radzen (Server-Backed):</span>
+                <input type="text"
+                       class="form-control form-control-sm py-0 px-2 flex-grow-1 @(_radzenTypingPending ? "border-danger bg-warning bg-opacity-25" : "")"
+                       style="font-size: 0.72rem; height: 22px;"
+                       placeholder="Type here with 5000ms latency (stalls on each key)..."
+                       value="@_radzenTypingTest"
+                       @oninput="OnRadzenTypingInputAsync" />
+                @if (_radzenTypingPending)
+                {
+                    <span class="badge bg-danger text-white">Server waiting (@(_latencyMs)ms)...</span>
+                }
+                else
+                {
+                    <span class="text-muted small">(@_radzenTypingTest.Length chars)</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Grids Area (Both Grids Have Identical Row Counts in Viewport) -->
+    <div class="radzen-bench-grids" @onwheel="OnGridWheelScrolled">
+        @if (_activeTab is "side-by-side" or "flexkit")
+        {
+            <div class="radzen-bench-pane">
+                <div class="card shadow-sm h-100 flex-column d-flex">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center px-2 py-0" style="height: 24px; min-height: 24px;">
+                        <strong class="font-monospace" style="font-size: 0.78rem;">FlexKit GridControl (No Pagination · Virtualized)</strong>
+                        <span class="badge bg-info text-dark" style="font-size: 0.68rem;">Mode: @_flexKitScrollMode</span>
+                    </div>
+                    <div class="card-body p-0 flex-grow-1" style="min-height: 0; overflow: hidden;">
+                        <GridControl @ref="_flexKitGrid"
+                                     TValue="BenchRow"
+                                     DataSource="@_items"
+                                     Height="100%"
+                                     RowHeight="20"
+                                     MinRowHeight="18"
+                                     AllowPaging="false"
+                                     AutoPageRowThreshold="0"
+                                     DiagnosticWindowScrollDelayMs="@_latencyMs"
+                                     WindowOverscanRows="60"
+                                     ScrollTrack="@_flexKitScrollTrack"
+                                     WheelScrollScale="@_flexKitWheelScale"
+                                     EnableScrollBoundaryGuard="@_flexKitScrollBoundaryGuard"
+                                     EnableScrollBoundarySlowdown="@_flexKitScrollBoundarySlowdown"
+                                     EnableAdaptiveWheelScrollPacing="@_flexKitAdaptiveWheelPacing"
+                                     UseClientBufferedTextEditing="@(_flexKitTypingMode == "client-buffered")"
+                                     AllowSorting="true"
+                                     AllowResizing="true"
+                                     AllowFiltering="true"
+                                     AllowGrouping="false"
+                                     ShowSearchBar="false"
+                                     ShowRowCountInFooter="false"
+                                     AllowSelection="true"
+                                     HighlightSelectedRows="true"
+                                     EditSettingsRef="@_flexKitEditSettings">
+                            <GridColumnsBase>
+                                <GridColumn Field="@nameof(BenchRow.Id)" HeaderText="ID" Width="60px" AllowEditing="true" Type="Fx.ControlKit.Grid.ColumnType.Number" />
+                                <GridColumn Field="@nameof(BenchRow.ItemCode)" HeaderText="Item Code" Width="105px" AllowEditing="true" />
+                                <GridColumn Field="@nameof(BenchRow.Description)" HeaderText="Description" Width="180px" AllowEditing="true" />
+                                <GridColumn Field="@nameof(BenchRow.Category)" HeaderText="Category" Width="110px" AllowEditing="true" />
+                                <GridColumn Field="@nameof(BenchRow.Cost)" HeaderText="Cost" Width="80px" Type="Fx.ControlKit.Grid.ColumnType.Number" Format="C2" TextAlign="Fx.ControlKit.Grid.TextAlign.Right" AllowEditing="true" />
+                                <GridColumn Field="@nameof(BenchRow.Price)" HeaderText="Price" Width="80px" Type="Fx.ControlKit.Grid.ColumnType.Number" Format="C2" TextAlign="Fx.ControlKit.Grid.TextAlign.Right" AllowEditing="true" />
+                                <GridColumn Field="@nameof(BenchRow.Total)" HeaderText="Total" Width="90px" Type="Fx.ControlKit.Grid.ColumnType.Number" Format="C2" TextAlign="Fx.ControlKit.Grid.TextAlign.Right" AllowEditing="false" />
+                                <GridColumn Field="@nameof(BenchRow.Active)" HeaderText="Active" Width="65px" Type="Fx.ControlKit.Grid.ColumnType.CheckBox" TextAlign="Fx.ControlKit.Grid.TextAlign.Center" AllowEditing="true" />
+                            </GridColumnsBase>
+                        </GridControl>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (_activeTab is "side-by-side" or "radzen")
+        {
+            <div class="radzen-bench-pane">
+                <div class="card shadow-sm h-100 flex-column d-flex">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center px-2 py-0" style="height: 24px; min-height: 24px;">
+                        <strong class="font-monospace" style="font-size: 0.78rem;">RadzenDataGrid (No Pagination · Virtualized)</strong>
+                        <span class="badge bg-light text-primary" style="font-size: 0.68rem;">Live Radzen Controls · Compact 20px</span>
+                    </div>
+                    <div class="card-body p-0 flex-grow-1" style="min-height: 0; overflow: hidden;">
+                        <RadzenDataGrid @ref="_radzenGrid"
+                                        Data="@_radzenViewItems"
+                                        Count="@_radzenCount"
+                                        LoadData="@OnRadzenLoadData"
+                                        TItem="BenchRow"
+                                        AllowVirtualization="true"
+                                        AllowPaging="false"
+                                        Density="Radzen.Density.Compact"
+                                        VirtualizationOverscanCount="15"
+                                        Style="height: 100%; width: 100%;"
+                                        AllowSorting="true"
+                                        AllowFiltering="true"
+                                        FilterMode="Radzen.FilterMode.Simple"
+                                        FilterCaseSensitivity="Radzen.FilterCaseSensitivity.CaseInsensitive"
+                                        AllowColumnResize="true"
+                                        AllowGrouping="false"
+                                        SelectionMode="Radzen.DataGridSelectionMode.Multiple"
+                                        @bind-Value="@_selectedRadzenRows"
+                                        RowRender="@OnRadzenRowRender">
+                            <Columns>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Id)" Title="ID" Width="60px" Frozen="true">
+                                    <Template Context="row">
+                                        <RadzenNumeric Value="@row.Id"
+                                                       ValueChanged="@(async (int val) => await OnRadzenIntChangedAsync(row, nameof(row.Id), val))"
+                                                       Immediate="@_radzenImmediate"
+                                                       Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.ItemCode)" Title="Item Code" Width="105px">
+                                    <Template Context="row">
+                                        <RadzenTextBox Value="@row.ItemCode"
+                                                       ValueChanged="@(async (string val) => await OnRadzenStringChangedAsync(row, nameof(row.ItemCode), val))"
+                                                       Immediate="@_radzenImmediate"
+                                                       Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Description)" Title="Description" Width="180px">
+                                    <Template Context="row">
+                                        <RadzenTextBox Value="@row.Description"
+                                                       ValueChanged="@(async (string val) => await OnRadzenStringChangedAsync(row, nameof(row.Description), val))"
+                                                       Immediate="@_radzenImmediate"
+                                                       Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Category)" Title="Category" Width="110px">
+                                    <Template Context="row">
+                                        <RadzenDropDown Value="@row.Category"
+                                                        ValueChanged="@(async (string val) => await OnRadzenStringChangedAsync(row, nameof(row.Category), val))"
+                                                        Data="@_categories"
+                                                        Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Cost)" Title="Cost" Width="80px" TextAlign="Radzen.TextAlign.Right">
+                                    <Template Context="row">
+                                        <RadzenNumeric Value="@row.Cost"
+                                                       ValueChanged="@(async (decimal val) => await OnRadzenCostChangedAsync(row, val))"
+                                                       Format="C2"
+                                                       Immediate="@_radzenImmediate"
+                                                       Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Price)" Title="Price" Width="80px" TextAlign="Radzen.TextAlign.Right">
+                                    <Template Context="row">
+                                        <RadzenNumeric Value="@row.Price"
+                                                       ValueChanged="@(async (decimal val) => await OnRadzenPriceChangedAsync(row, val))"
+                                                       Format="C2"
+                                                       Immediate="@_radzenImmediate"
+                                                       Style="width:100%" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Total)" Title="Total" Width="95px" TextAlign="Radzen.TextAlign.Right">
+                                    <Template Context="row">
+                                        @if (_calculatingRowIds.Contains(row.Id))
+                                        {
+                                            <span class="badge bg-warning text-dark" style="font-size: 0.65rem;">
+                                                <span class="spinner-border spinner-border-sm" style="width: 8px; height: 8px;" role="status"></span>
+                                                Calc...
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-weight: 700; color: #1e293b;">@row.Total.ToString("C2")</span>
+                                        }
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn Property="@nameof(BenchRow.Active)" Title="Active" Width="65px" TextAlign="Radzen.TextAlign.Center">
+                                    <Template Context="row">
+                                        <RadzenCheckBox Value="@row.Active"
+                                                        ValueChanged="@(async (bool val) => await OnRadzenBoolChangedAsync(row, nameof(row.Active), val))" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            </Columns>
+                        </RadzenDataGrid>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    public sealed class BenchRow
+    {
+        public int Id { get; set; }
+        public string ItemCode { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Category { get; set; } = "";
+        public decimal Cost { get; set; }
+        public decimal Price { get; set; }
+        public decimal Total => Cost * Price;
+        public bool Active { get; set; }
+    }
+
+    private string _activeTab = "side-by-side";
+    private List<BenchRow> _items = new();
+    private List<BenchRow> _radzenViewItems = new();
+    private int _radzenCount;
+    private IList<BenchRow>? _selectedRadzenRows;
+    private GridControl<BenchRow>? _flexKitGrid;
+    private RadzenDataGrid<BenchRow>? _radzenGrid;
+
+    // FlexCore Grid & Guard Options
+    private string _flexKitScrollMode = "live";
+    private string _flexKitTypingMode = "client-buffered";
+    private bool _flexKitScrollTrack = true;
+    private bool _flexKitScrollBoundaryGuard = false;
+    private bool _flexKitScrollBoundarySlowdown = false;
+    private bool _flexKitAdaptiveWheelPacing = false;
+    private double _flexKitWheelScale = 1.0;
+
+    // Calculation Latency Tracker
+    private readonly HashSet<int> _calculatingRowIds = new();
+
+    // Mouse Wheel Tracking Metrics
+    private double _wheelDeltaY = 0;
+    private int _wheelDeltaRows = 3;
+    private int _wheelTotalRows = 0;
+    private DateTime _lastWheelEventTime = DateTime.MinValue;
+
+    // Typing Latency Simulation
+    private bool _radzenImmediate = true;
+    private string _flexKitTypingTest = "Sample Text 123";
+    private string _radzenTypingTest = "Sample Text 123";
+    private bool _radzenTypingPending = false;
+
+    private record LatencyOption(int Ms, string Label);
+
+    private static readonly LatencyOption[] _latencyOptions =
+    [
+        new(0, "Off (0ms)"),
+        new(25, "25ms (LAN)"),
+        new(50, "50ms (Fast)"),
+        new(100, "100ms (Typical)"),
+        new(200, "200ms (Cross-region)"),
+        new(300, "300ms (Mobile 3G/4G)"),
+        new(500, "500ms (Slow WAN)"),
+        new(750, "750ms"),
+        new(1000, "1.0s (1000ms)"),
+        new(1500, "1.5s (1500ms)"),
+        new(2000, "2.0s (2000ms)"),
+        new(3000, "3.0s (3000ms)"),
+        new(5000, "5.0s (5000ms)")
+    ];
+
+    private int _latencyMs = 0;
+    private double _flexKitLastMs = 0;
+    private double _radzenLoadMs = 0;
+    private int _flexKitRenderCount = 0;
+    private int _radzenRenderCount = 0;
+
+    private static readonly string[] _categories =
+    [
+        "Hardware", "Plumbing", "Electrical", "Lumber", "Paint",
+        "Roofing", "Masonry", "HVAC", "Flooring", "Fasteners"
+    ];
+
+    private readonly Fx.ControlKit.Grid.EditSettings _flexKitEditSettings = new()
+    {
+        AllowAdding = false,
+        AllowDeleting = false,
+        AllowEditing = true,
+        Mode = Fx.ControlKit.Grid.EditMode.Batch
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataSet(1000);
+    }
+
+    private async Task OnDatasetChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var count))
+        {
+            await LoadDataSet(count);
+        }
+    }
+
+    private void OnViewModeChanged(ChangeEventArgs e)
+    {
+        _activeTab = e.Value?.ToString() ?? "side-by-side";
+    }
+
+    private void OnRadzenSyncModeChanged(ChangeEventArgs e)
+    {
+        _radzenImmediate = (e.Value?.ToString() == "immediate");
+    }
+
+    private void OnFlexKitScrollModeChanged(ChangeEventArgs e)
+    {
+        _flexKitScrollMode = e.Value?.ToString() ?? "live";
+        switch (_flexKitScrollMode)
+        {
+            case "live":
+                _flexKitScrollTrack = true;
+                _flexKitScrollBoundaryGuard = false;
+                _flexKitScrollBoundarySlowdown = false;
+                _flexKitAdaptiveWheelPacing = false;
+                break;
+            case "deferred":
+                _flexKitScrollTrack = false;
+                _flexKitScrollBoundaryGuard = false;
+                _flexKitScrollBoundarySlowdown = false;
+                _flexKitAdaptiveWheelPacing = false;
+                break;
+            case "guard":
+                _flexKitScrollTrack = false;
+                _flexKitScrollBoundaryGuard = true;
+                _flexKitScrollBoundarySlowdown = false;
+                _flexKitAdaptiveWheelPacing = false;
+                break;
+            case "slowdown":
+                _flexKitScrollTrack = false;
+                _flexKitScrollBoundaryGuard = true;
+                _flexKitScrollBoundarySlowdown = true;
+                _flexKitAdaptiveWheelPacing = false;
+                break;
+            case "adaptive":
+                _flexKitScrollTrack = false;
+                _flexKitScrollBoundaryGuard = true;
+                _flexKitScrollBoundarySlowdown = true;
+                _flexKitAdaptiveWheelPacing = true;
+                break;
+        }
+    }
+
+    private void OnFlexKitTypingModeChanged(ChangeEventArgs e)
+    {
+        _flexKitTypingMode = e.Value?.ToString() ?? "client-buffered";
+    }
+
+    private async Task LoadDataSet(int count)
+    {
+        var sw = Stopwatch.StartNew();
+        var list = new List<BenchRow>(count);
+        var rng = new Random(42);
+
+        for (int i = 1; i <= count; i++)
+        {
+            var cost = Math.Round((decimal)(rng.NextDouble() * 500 + 5), 2);
+            var markup = Math.Round((decimal)(rng.NextDouble() * 0.5 + 1.1), 2);
+            var price = Math.Round(cost * markup, 2);
+
+            list.Add(new BenchRow
+            {
+                Id = i,
+                ItemCode = $"ITEM-{i:D6}",
+                Description = $"Industrial Grade Material Component #{i}",
+                Category = _categories[i % _categories.Length],
+                Cost = cost,
+                Price = price,
+                Active = (i % 7) != 0
+            });
+        }
+
+        _items = list;
+        _radzenCount = count;
+        _radzenViewItems = _items.Skip(0).Take(40).ToList();
+
+        sw.Stop();
+        _radzenLoadMs = sw.Elapsed.TotalMilliseconds;
+        _flexKitLastMs = Fx.ControlKit.Grid.GridRenderDiagnostics.LastBuildMs;
+        _flexKitRenderCount = (int)Fx.ControlKit.Grid.GridRenderDiagnostics.RenderCount;
+        StateHasChanged();
+    }
+
+    private async Task OnRadzenLoadData(LoadDataArgs args)
+    {
+        if (_latencyMs > 0)
+        {
+            await Task.Delay(_latencyMs);
+        }
+
+        var skip = args.Skip ?? 0;
+        var top = args.Top ?? 40;
+        _radzenCount = _items.Count;
+        _radzenViewItems = _items.Skip(skip).Take(top).ToList();
+        _radzenRenderCount++;
+    }
+
+    private async Task OnRadzenCostChangedAsync(BenchRow row, decimal val)
+    {
+        if (_latencyMs > 0)
+        {
+            _calculatingRowIds.Add(row.Id);
+            StateHasChanged();
+            await Task.Delay(_latencyMs);
+            _calculatingRowIds.Remove(row.Id);
+        }
+        row.Cost = val;
+        StateHasChanged();
+    }
+
+    private async Task OnRadzenPriceChangedAsync(BenchRow row, decimal val)
+    {
+        if (_latencyMs > 0)
+        {
+            _calculatingRowIds.Add(row.Id);
+            StateHasChanged();
+            await Task.Delay(_latencyMs);
+            _calculatingRowIds.Remove(row.Id);
+        }
+        row.Price = val;
+        StateHasChanged();
+    }
+
+    private async Task OnRadzenStringChangedAsync(BenchRow row, string property, string val)
+    {
+        if (_latencyMs > 0 && _radzenImmediate)
+        {
+            await Task.Delay(_latencyMs);
+        }
+        if (property == nameof(row.ItemCode)) row.ItemCode = val;
+        else if (property == nameof(row.Description)) row.Description = val;
+        else if (property == nameof(row.Category)) row.Category = val;
+    }
+
+    private async Task OnRadzenIntChangedAsync(BenchRow row, string property, int val)
+    {
+        if (_latencyMs > 0 && _radzenImmediate)
+        {
+            await Task.Delay(_latencyMs);
+        }
+        if (property == nameof(row.Id)) row.Id = val;
+    }
+
+    private async Task OnRadzenBoolChangedAsync(BenchRow row, string property, bool val)
+    {
+        if (_latencyMs > 0)
+        {
+            await Task.Delay(_latencyMs);
+        }
+        if (property == nameof(row.Active)) row.Active = val;
+    }
+
+    private async Task OnRadzenTypingInputAsync(ChangeEventArgs e)
+    {
+        _radzenTypingTest = e.Value?.ToString() ?? "";
+        if (_latencyMs > 0)
+        {
+            _radzenTypingPending = true;
+            StateHasChanged();
+            await Task.Delay(_latencyMs);
+            _radzenTypingPending = false;
+        }
+    }
+
+    private void OnGridWheelScrolled(WheelEventArgs e)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _lastWheelEventTime).TotalMilliseconds > 500)
+        {
+            _wheelTotalRows = 0;
+        }
+        _lastWheelEventTime = now;
+
+        _wheelDeltaY = e.DeltaY;
+        double effectiveDeltaY = Math.Abs(e.DeltaY * _flexKitWheelScale);
+        _wheelDeltaRows = Math.Max(1, (int)Math.Round(effectiveDeltaY / 20.0));
+        _wheelTotalRows += _wheelDeltaRows;
+    }
+
+    private void OnWheelScaleChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out var scale))
+        {
+            _flexKitWheelScale = scale;
+        }
+    }
+
+    private void OnLatencyChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var ms))
+        {
+            _latencyMs = ms;
+        }
+    }
+
+    private void ResetDiagnostics()
+    {
+        Fx.ControlKit.Grid.GridRenderDiagnostics.Reset();
+        _flexKitRenderCount = 0;
+        _flexKitLastMs = 0;
+        _radzenRenderCount = 0;
+        _radzenLoadMs = 0;
+        _wheelTotalRows = 0;
+        _calculatingRowIds.Clear();
+    }
+
+    private void OnRadzenRowRender(RowRenderEventArgs<BenchRow> args)
+    {
+        _radzenRenderCount++;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        BenchLatency.UplinkMs = 0;
+        return ValueTask.CompletedTask;
+    }
+}

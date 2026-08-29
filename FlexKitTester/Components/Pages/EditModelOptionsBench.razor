@@ -145,19 +145,27 @@
                          AllowSorting="true"
                          AllowResizing="true"
                          AllowSelection="true"
+                         ShowSelectionInfoBar="false"
+                         ShowRowSelectionEditColumnCue="true"
                          Height="100%"
                          RowHeight="18"
                          MinRowHeight="18"
+                         TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered"
                          EditSettingsRef="@_componentEditSettings"
                          SelectionSettingsRef="@_componentSelectionSettings"
-                         EventsRef="@_componentEvents">
+                         EventsRef="@_componentEvents"
+                         HostTabIndex="0"
+                         SeedActiveCellOnHostFocus="true"
+                         TabNavigationMode="GridTabNavigationMode.WrapRows"
+                         BatchEditBehavior="GridBatchEditBehavior.MultiRow"
+                         TypeAheadTargetField="@ComponentTypeAheadTargetField">
                 <GridColumnsBase>
                     <GridColumn Field="@nameof(ComponentRow.Community)" HeaderText="Community" Width="110px" AllowEditing="false" />
                     <GridColumn Field="@nameof(ComponentRow.Assembly)" HeaderText="Assembly" Width="100px" AllowEditing="false" />
                     <GridColumn Field="@nameof(ComponentRow.Model)" HeaderText="Model" Width="100px" AllowEditing="false" />
                     <GridColumn Field="@nameof(ComponentRow.Option)" HeaderText="Option" Width="110px" AllowEditing="false" />
                     <GridColumn Field="@nameof(ComponentRow.Description)" HeaderText="Description" Width="310px" AllowEditing="false" />
-                    <GridColumn Field="@nameof(ComponentRow.Qty)" HeaderText="Qty" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" />
+                    <GridColumn Field="@nameof(ComponentRow.Qty)" HeaderText="Qty" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="true" AllowCellDragSelection="true" SelectAllOnEdit="true" />
                     <GridColumn Field="@nameof(ComponentRow.Cost)" HeaderText="Cost" Width="95px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" Format="N2" />
                 </GridColumnsBase>
             </GridControl>
@@ -195,6 +203,7 @@
                          AllowResizing="true"
                          AllowSelection="true"
                          ShowSelectionInfoBar="false"
+                         ShowRowSelectionEditColumnCue="true"
                          AllowFiltering="true"
                          AllowGrouping="true"
                          GroupColumns="@_groupColumns"
@@ -214,6 +223,9 @@
                          EditSettingsRef="@_editSettings"
                          SelectionSettingsRef="@_selectionSettings"
                          EventsRef="@_gridEvents"
+                         HostTabIndex="0"
+                         SeedActiveCellOnHostFocus="true"
+                         TabNavigationMode="GridTabNavigationMode.WrapRows"
                          TypeAheadTargetField="@TypeAheadTargetField">
                 <GridColumnsBase>
                     <GridColumn Field="@nameof(ModelItemRow.Item)" HeaderText="Item" Width="80px" AllowEditing="false" />
@@ -339,12 +351,15 @@
     private int _edits;
     private int _fanOuts;
     private int _lastFanOutRows;
+    private string? _activeComponentEditColumn;
     private string? _activeEditColumn;
     private string _lastCommand = "Ready";
     private string _activeGrid = "none";
     private int _activeRow = -1;
     private int _activeColumn = -1;
 
+    private string ComponentTypeAheadTargetField =>
+        _activeComponentEditColumn ?? nameof(ComponentRow.Qty);
     private string TypeAheadTargetField => _activeEditColumn ?? "";
 
     private void SetPerformanceMode(GridPerformanceMode value)
@@ -370,7 +385,9 @@
     private readonly SelectionSettings _componentSelectionSettings = new()
     {
         Mode = SelectionMode.Row,
-        Type = SelectionType.Single
+        Type = SelectionType.Multiple,
+        EnableToggle = true,
+        MultiSelectBehavior = GridMultiSelectBehavior.VBMultiSelect
     };
 
     private readonly EditSettings _editSettings = new()
@@ -426,12 +443,12 @@
     private bool _redirectingPageFocus;
 
     private Task FocusComponentsEntryAsync(FocusEventArgs _) =>
-        FocusFirstGridCellAsync(_componentsGrid, "Components");
+        FocusFirstGridCellAsync(_componentsGrid, "Components", 5);
 
     private Task FocusItemsEntryAsync(FocusEventArgs _) =>
-        FocusFirstGridCellAsync(_itemsGrid, "Items");
+        FocusFirstGridCellAsync(_itemsGrid, "Items", 1);
 
-    private async Task FocusFirstGridCellAsync<TValue>(GridControl<TValue>? grid, string gridName)
+    private async Task FocusFirstGridCellAsync<TValue>(GridControl<TValue>? grid, string gridName, int cellIndex)
     {
         if (grid is null || _redirectingPageFocus)
             return;
@@ -439,8 +456,8 @@
         _redirectingPageFocus = true;
         try
         {
-            await grid.SelectCellAsync((0, 0));
-            SetActiveCell(gridName, 0, 0);
+            await grid.SelectCellAsync((0, cellIndex));
+            SetActiveCell(gridName, 0, cellIndex);
             await grid.FocusGridAsync();
         }
         finally
@@ -458,6 +475,33 @@
         Zoom.OnZoomChanged += HandleZoomChanged;
         _componentEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<ComponentRow>>(
             this, args => SetActiveCell("Components", args.RowIndex, args.CellIndex));
+        _componentEvents.OnCellEdit = EventCallback.Factory.Create<CellEditArgs<ComponentRow>>(
+            this, args => _activeComponentEditColumn = args.ColumnName);
+        _componentEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ComponentRow>>(this, args =>
+        {
+            if (args.Data != null)
+                _edits++;
+        });
+        _componentEvents.OnTypeAheadCommit = EventCallback.Factory.Create<TypeAheadCommitArgs<ComponentRow>>(this, args =>
+        {
+            if (!string.Equals(args.ColumnName, nameof(ComponentRow.Qty), StringComparison.OrdinalIgnoreCase)
+                || !decimal.TryParse(args.Value, out var quantity))
+                return;
+
+            var count = 0;
+            foreach (var component in args.SelectedItems.Where(item => item != null).Distinct())
+            {
+                component.Qty = quantity;
+                count++;
+            }
+
+            if (count == 0)
+                return;
+
+            _fanOuts++;
+            _lastFanOutRows = count;
+            StateHasChanged();
+        });
         _gridEvents.CellSelected = EventCallback.Factory.Create<CellSelectEventArgs<ModelItemRow>>(
             this, args => SetActiveCell("Items", args.RowIndex, args.CellIndex));
         _gridEvents.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ModelItemRow>>(this, args =>

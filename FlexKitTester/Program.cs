@@ -1,6 +1,7 @@
 using FlexKitTester.Components;
 using FlexKitTester.Services;
 using Microsoft.AspNetCore.SignalR;
+using Radzen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +24,9 @@ builder.Services.AddScoped<LatencyProbeService>();
 
 // Application-wide text zoom, one instance per circuit.
 builder.Services.AddScoped<Fx.ControlKit.ZoomService>();
+
+// Radzen Blazor component services (Dialog, Notification, Tooltip, ContextMenu).
+builder.Services.AddRadzenComponents();
 
 var app = builder.Build();
 
