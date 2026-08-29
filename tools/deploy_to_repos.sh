@@ -163,14 +163,32 @@ pack_flexkit() {
     fi
 
     local need_pack=false
+    local pack_reason=""
     if [ -z "$existing_nupkg" ]; then
-        need_pack=true
+        need_pack=true; pack_reason="no nupkg present"
     elif [ "$existing_ver" != "$cur_ver" ]; then
-        need_pack=true
+        need_pack=true; pack_reason="version $existing_ver -> $cur_ver"
+    else
+        # A version match is NOT proof the package is current. FlexKit source can
+        # advance without a version bump (2026-08-29: c9b726b added
+        # GridControl.RequestScrollToOrigin and 00a37db ported grid perf work, both
+        # after the 0.1.74 bump). The stale nupkg then fails the staged build with a
+        # missing-member error that never reproduces locally, because the working
+        # tree builds FlexKit by ProjectReference. Repack whenever any tracked source
+        # file is newer than the nupkg.
+        local newer
+        newer=$(find "$FLEXKIT_SRC" -newer "$existing_nupkg" \
+                    -not -path '*/obj/*' -not -path '*/bin/*' -not -path '*/.git/*' \
+                    \( -name '*.cs' -o -name '*.razor' -o -name '*.css' -o -name '*.js' -o -name '*.csproj' \) \
+                    -print -quit 2>/dev/null)
+        if [ -n "$newer" ]; then
+            need_pack=true
+            pack_reason="source newer than nupkg ($(basename "$newer"))"
+        fi
     fi
 
     if $need_pack; then
-        log "  Packing FlexKit $cur_ver" >&2
+        log "  Packing FlexKit $cur_ver — $pack_reason" >&2
         (dotnet pack "$FLEXKIT_CSPROJ" -c Release -o /tmp/flexkit-pack) >&2
         rm -f "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.nupkg
         rm -f "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.snupkg
