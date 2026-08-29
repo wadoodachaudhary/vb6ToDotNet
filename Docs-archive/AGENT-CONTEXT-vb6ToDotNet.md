@@ -154,11 +154,11 @@ Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
 7. Publish FlexCore to NuGet — **only if FlexCore changed.** Check the latest
    published version first and bump above it.
 
-**Current shipped versions (2026-08-29):** FlexKit **0.1.74**, FlexCore **0.2.23**
+**Current shipped versions (2026-08-29):** FlexKit **0.1.75**, FlexCore **0.2.24**
 (published to nuget.org). Both are bumped only when their own source changes; the
 two version lines are independent and are allowed to diverge.
 
-### Three traps in the deploy script — all fixed, all silent when they bite
+### Four traps in the deploy script — all fixed, all silent when they bite
 
 Worth knowing because each one reported success while doing the wrong thing.
 
@@ -184,6 +184,21 @@ Worth knowing because each one reported success while doing the wrong thing.
    which runs before each push. The one judgement call: if a file's mtime is still
    moving, wait for it to settle before shipping — `wwwroot` JS gets no compile
    check, so a half-written file would ship silently.
+4. **A stale FlexKit nupkg fails ONLY the staged build.** The apps consume FlexKit
+   two ways: `ProjectReference` in the working tree, `PackageReference` against the
+   packed nupkg in the staging clone. So a nupkg that predates a FlexKit source
+   change produces a missing-member error that **cannot reproduce locally** — every
+   local build stays green while the deploy dies. `pack_flexkit` used to repack only
+   on a version change, so FlexKit advancing without a bump silently reused the old
+   package. It now also repacks when any tracked FlexKit source file is newer than
+   the nupkg, and says why it packed. **Still bump the version** whenever FlexKit
+   source changed — that is what consumers pin. Seen 2026-08-29 on
+   `GridControl.RequestScrollToOrigin` (two commits landed after the 0.1.74 bump
+   without bumping again) and 2026-08-10 on `MaxLength`.
+   **Fallout:** a failed staged build leaves the `hyphen-pb` clone dirty, so the
+   R1-UAT stage then fails its checkout with "local changes would be overwritten".
+   That is a consequence, not a second bug — `git reset --hard origin/main &&
+   git clean -fd` in the clone, then re-run.
 
 ---
 

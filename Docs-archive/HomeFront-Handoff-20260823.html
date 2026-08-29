@@ -223,9 +223,9 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0;}
   <p class="lede">Everything the next operator needs to pick up HomeFront, HomeFrontPB, FlexKit and FlexCore on this machine — where the persistent context lives, how the repositories actually connect to GitLab, and the standing rules that keep a deploy from breaking production.</p>
   <div class="meta">
     <span><b>Machine</b> macOS · user <code>wadood</code></span>
-    <span><b>Prepared</b> 2026-08-29 · rev 4</span>
-    <span><b>FlexKit</b> 0.1.74</span>
-    <span><b>FlexCore</b> 0.2.23</span>
+    <span><b>Prepared</b> 2026-08-29 · rev 5</span>
+    <span><b>FlexKit</b> 0.1.75</span>
+    <span><b>FlexCore</b> 0.2.24</span>
   </div>
 </header>
 
@@ -326,7 +326,7 @@ hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0;}
 <p><strong>hyphen-pb is the one that matters.</strong> It is where the team's merge requests land, where QA/UAT deploy from, and the only repo with an <code>R1-UAT</code> branch.</p>
 
 <h3>FlexKit is consumed two different ways</h3>
-<p>In your working tree, HomeFrontPB and HomeFront reference FlexKit as a live <code>ProjectReference</code>, so FlexKit edits flow in on the next build with no repack. The deploy script temporarily swaps that to a <code>PackageReference</code> against a packed <code>.nupkg</code> in <code>local-packages/</code>, builds to verify, and pushes that form. <strong>Your working-tree csproj is never modified.</strong></p>
+<p>In your working tree, HomeFrontPB and HomeFront reference FlexKit as a live <code>ProjectReference</code>, so FlexKit edits flow in on the next build with no repack. The deploy script temporarily swaps that to a <code>PackageReference</code> against a packed <code>.nupkg</code> in <code>local-packages/</code>, builds to verify, and pushes that form. <strong>Your working-tree csproj is never modified.</strong> This split is also why a stale nupkg is so hard to spot — the local build sees current FlexKit source, the staged build sees the package. See the fourth trap in section 8.</p>
 
 <div class="hz warn">
   <p class="hz-t">Consequence · merging upstream csproj changes</p>
@@ -432,8 +432,8 @@ dotnet build <b>FlexCore.Showcase.sln</b> --no-incremental</pre>
 <div class="tw"><table>
 <thead><tr><th>Branch</th><th>Role</th><th>Current head</th></tr></thead>
 <tbody>
-<tr><td class="p">main</td><td>Deploy target (fed from <b>HomeFront</b>); MRs merge here</td><td class="p">5dfd45c</td></tr>
-<tr><td class="p">R1-UAT</td><td>Developer testing branch — built directly from <b>HomeFrontPB</b>, <em>never</em> merged from main</td><td class="p">ff7922a</td></tr>
+<tr><td class="p">main</td><td>Deploy target (fed from <b>HomeFront</b>); MRs merge here</td><td class="p">df14f36</td></tr>
+<tr><td class="p">R1-UAT</td><td>Developer testing branch — built directly from <b>HomeFrontPB</b>, <em>never</em> merged from main</td><td class="p">8345036</td></tr>
 <tr><td class="p">R1-UAT-Hyphen</td><td>Second UAT environment</td><td class="p">—</td></tr>
 <tr><td class="p">Dev, HHM-*, PrecisionBuilderAutomation</td><td>Feature and ticket branches</td><td class="p">—</td></tr>
 </tbody>
@@ -497,15 +497,16 @@ dotnet build <b>FlexCore.Showcase.sln</b> --no-incremental</pre>
 </div>
 
 <div class="hz crit">
-  <p class="hz-t">Three more traps — found 2026-08-28, all fixed, all silent</p>
+  <p class="hz-t">Four more traps — found 2026-08-28/29, all fixed, all silent</p>
   <p><strong>R1-UAT silently stopped pushing.</strong> The <code>xml_orig/*.xml</code> report files are CRLF, so <code>git status --porcelain</code> called them modified on every run — but <code>git add -A</code> normalizes them to LF and the staged tree came out <em>identical to HEAD</em>. <code>git commit</code> then exited non-zero with "nothing to commit" and <code>set -euo pipefail</code> killed the script <em>before</em> the push. Two deploys skipped R1-UAT entirely while printing green checkmarks. Fixed by staging first and testing <code>git diff --cached --quiet</code>. <b>Tell:</b> a run that prints <code>Lockdown intact</code> and then nothing.</p>
   <p><strong>The hyphen-pb clone serves two branches.</strong> Left parked on <code>R1-UAT</code>, the next run's <code>reset --hard origin/main</code> rewrites the UAT branch. A function-level <code>RETURN</code> trap is not enough — it does not fire when <code>set -e</code> aborts mid-function — so a script-level <code>trap … EXIT</code> now parks the clone on <code>main</code> on every exit path.</p>
   <p><strong>The deploy ships uncommitted edits — by design.</strong> It rsyncs the working tree, not <code>HEAD</code>. The owner and other sessions edit these trees directly and a late edit is <em>expected</em> to ship. Never gate a deploy on a clean tree; the staged build verification before each push is the real safety net. One judgement call: if a file's mtime is still moving, let it settle — <code>wwwroot</code> JS gets no compile check, so a half-written file ships silently.</p>
+  <p><strong>A stale FlexKit nupkg fails ONLY the staged build.</strong> FlexKit is consumed two ways — <code>ProjectReference</code> in the working tree, <code>PackageReference</code> against the packed nupkg in the staging clone — so a package that predates a FlexKit source change gives a missing-member error that <em>cannot reproduce locally</em>: every local build stays green while the deploy dies. <code>pack_flexkit</code> used to repack only on a version change, so FlexKit advancing without a bump silently reused the old package. It now also repacks when any tracked FlexKit source file is newer than the nupkg, and reports why. <strong>Still bump the version</strong> whenever FlexKit source changed — that is what consumers pin. Seen 2026-08-29 on <code>GridControl.RequestScrollToOrigin</code>, and 2026-08-10 on <code>MaxLength</code>. <strong>Fallout:</strong> a failed staged build leaves the <code>hyphen-pb</code> clone dirty, so the R1-UAT stage then fails its checkout — a consequence, not a second bug. <code>git reset --hard origin/main &amp;&amp; git clean -fd</code>, then re-run.</p>
 </div>
 </section>
 
 <footer class="foot">
-  Prepared 2026-08-29 (rev 4) · verified against the working tree, the GitLab remotes and the live memory store on this machine.
+  Prepared 2026-08-29 (rev 5) · verified against the working tree, the GitLab remotes and the live memory store on this machine.
 </footer>
 
 </div>
