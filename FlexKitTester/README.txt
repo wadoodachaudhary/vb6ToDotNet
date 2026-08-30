@@ -7,12 +7,16 @@ A standalone copy of two HomeFront screens, rebuilt as a small test harness so
 the "extreme slowness" can be reproduced and measured on the machine where it
 actually happens.
 
-NO DATABASE IS NEEDED. NO .NET INSTALL IS NEEDED.
+NO EXTERNAL DATABASE IS NEEDED. NO .NET INSTALL IS NEEDED.
 Everything required is inside this folder. The harness reads two exported data
 files from the Data folder and nothing else. The packaged harness contains no
 connection string, server name, host, or password. By default it makes no
 external network calls and listens only on this machine's loopback address
 (127.0.0.1).
+
+The SQLite provider screen creates a process-local temporary database lazily
+from the same exported HomeFront estimating rows. It does not contact HomeFront,
+SQL Server, or UAT, and the temporary database is removed when the bench exits.
 
 Each large-grid page has a collapsed "Latency diagnostics" panel. Its browser
 and circuit button only calls back to this same bench process. SQL, LAN, and VPN
@@ -37,10 +41,14 @@ HOW TO RUN IT
 If your browser does not open by itself, type either address below into it.
 
 
-THE TWO SCREENS
----------------
+THE MAIN SCREENS
+----------------
    Edit Items DB             http://127.0.0.1:5399/edit-items
       The Edit Items grid. 11,930 real item rows, 29 columns.
+
+   Edit Items SQLite         http://127.0.0.1:5399/edit-items-provider-sqlite
+      A separate provider-backed grid using SQLite COUNT and LIMIT/OFFSET
+      queries. The original Edit Items screen is unchanged.
 
    Edit Models and Options   http://127.0.0.1:5399/edit-model-options
       The Edit Models & Options grid. 21,317 real assembly-detail rows.

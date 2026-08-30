@@ -1,0 +1,426 @@
+@page "/edit-items-provider-sqlite"
+@rendermode InteractiveServer
+@using System.Collections.Concurrent
+@using FlexKitTester.Services
+@inject SqliteProviderBenchDatabase Database
+@implements IDisposable
+
+<PageTitle>Edit Items SQLite Provider Bench</PageTitle>
+
+<PageControl CssClass="sip-page">
+<div class="sip-shell">
+    <header class="sip-header">
+        <div>
+            <h4>Edit Items DB — SQLite provider bench</h4>
+            <p>
+                Opt-in <code>ItemsProvider</code> path. Rows are copied lazily from the local
+                HomeFront <code>@BenchDataStore.EstimatingFileName</code> export; this bench never
+                opens the live HomeFront or UAT database.
+            </p>
+        </div>
+        <span class="sip-isolated">ISOLATED · original Edit Items bench unchanged</span>
+    </header>
+
+    @if (_initializing)
+    {
+        <div class="sip-message">Creating the process-local SQLite database and indexing the HomeFront rows…</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="sip-error">SQLite provider bench could not start: @_error</div>
+    }
+    else if (_status is not null)
+    {
+        <section class="sip-controls" aria-label="Provider bench controls">
+            <label>
+                <span>Dataset rows</span>
+                <NumericTextBoxControl TValue="int"
+                                       Value="@_datasetRows"
+                                       ValueChanged="SetDatasetRows"
+                                       Min="1"
+                                       Max="@_status.RowCount"
+                                       Width="92px" />
+            </label>
+            @foreach (var size in DatasetSizeChoices)
+            {
+                <button @onclick="() => SetDatasetRows(size)"
+                        disabled="@(_datasetRows == size)">@SizeLabel(size)</button>
+            }
+
+            <label class="sip-search-label">
+                <span>Search phase, item, description, PO index, cost code</span>
+                <input @bind="_searchDraft"
+                       @bind:event="oninput"
+                       @onkeydown="OnSearchKeyDown"
+                       aria-label="SQLite provider search" />
+            </label>
+            <button @onclick="ApplySearch" disabled="@(_searchDraft.Trim() == _search)">Apply</button>
+            <button @onclick="ClearSearch" disabled="@(string.IsNullOrEmpty(_search) && string.IsNullOrEmpty(_searchDraft))">Clear</button>
+
+            <label>
+                <span>Overscan rows</span>
+                <NumericTextBoxControl TValue="int"
+                                       Value="@_overscan"
+                                       ValueChanged="SetOverscan"
+                                       Min="0"
+                                       Max="500"
+                                       Width="76px" />
+            </label>
+            <button @onclick="() => SetOverscan(60)" disabled="@(_overscan == 60)">60</button>
+            <button @onclick="() => SetOverscan(200)" disabled="@(_overscan == 200)">200</button>
+
+            <label>
+                <span>Simulated latency</span>
+                <select value="@_latencyMilliseconds" @onchange="SetLatency">
+                    @foreach (var delay in LatencyChoices)
+                    {
+                        <option value="@delay">@delay ms</option>
+                    }
+                </select>
+            </label>
+
+            <button @onclick="ToggleScrollTrack">
+                thumb: <b>@(_scrollTrack ? "LIVE" : "FIXED / RELEASE")</b>
+            </button>
+            <button @onclick="ToggleBoundaryGuard">
+                blank guard: <b>@(_boundaryGuard ? "ON" : "OFF")</b>
+            </button>
+            <button @onclick="ReloadProvider">Reload provider</button>
+        </section>
+
+        <section class="sip-source" aria-label="SQLite database status">
+            <span><b>source rows:</b> @_status.RowCount.ToString("N0")</span>
+            <span><b>active rows:</b> @_datasetRows.ToString("N0")</span>
+            <span><b>SQLite:</b> @FormatBytes(_status.DatabaseBytes)</span>
+            <span><b>first import:</b> @_status.InitializationMilliseconds.ToString("N1") ms</span>
+            <span class="sip-path" title="@_status.DatabasePath">@_status.DatabasePath</span>
+        </section>
+
+        <section class="sip-metrics" aria-label="Provider query metrics">
+            <span>requests <b>@_metrics.Requests.ToString("N0")</b></span>
+            <span>completed <b>@_metrics.Completed.ToString("N0")</b></span>
+            <span>cancelled <b>@_metrics.Cancelled.ToString("N0")</b></span>
+            <span>stale rejected <b>@_staleResultsRejected.ToString("N0")</b></span>
+            <span>failed <b>@_metrics.Failed.ToString("N0")</b></span>
+            <span>COUNT <b>@_metrics.CountQueries.ToString("N0")</b></span>
+            <span>range <b>@_metrics.RangeQueries.ToString("N0")</b></span>
+            <span>rows returned <b>@_metrics.RowsReturned.ToString("N0")</b></span>
+            <span>in flight <b>@_metrics.InFlight</b> (max @_metrics.MaxInFlight)</span>
+            <span>last <b>@_metrics.LastElapsedMilliseconds.ToString("N1") ms</b></span>
+            <span>average <b>@_metrics.AverageElapsedMilliseconds.ToString("N1") ms</b></span>
+            <span>last window <b>@_metrics.LastStartIndex.ToString("N0") + @_metrics.LastRequestedCount</b> → @_metrics.LastReturnedCount</span>
+            <button @onclick="RefreshMetrics">Refresh metrics</button>
+            <button @onclick="ResetMetrics">Reset metrics</button>
+        </section>
+
+        <ScrollTrackLatencyPanel Context="Edit Items / SQLite provider"
+                                 GridSelector=".sip-grid-host > .fx-grid" />
+        <WheelWindowMetricsPanel Context="Edit Items / SQLite provider"
+                                 GridSelector=".sip-grid-host > .fx-grid" />
+
+        <div class="sip-grid-host">
+            <GridControl @key="@GridRegistrationKey"
+                         TValue="SqliteEstimatingItemRow"
+                         ItemsProvider="@_itemsProvider"
+                         ItemsProviderContextKey="@ProviderContextKey"
+                         ItemKeySelector="RowKey"
+                         ShowRowCountInFooter="true"
+                         AutoPageRowThreshold="0"
+                         WindowOverscanRows="@_overscan"
+                         DeferredScrollOverscanRows="@DeferredReleaseRows"
+                         ScrollTrack="@_scrollTrack"
+                         WheelScrollScale="0.75"
+                         EnableScrollBoundaryGuard="@_boundaryGuard"
+                         EnableScrollBoundarySlowdown="@_boundaryGuard"
+                         EnableAdaptiveWheelScrollPacing="true"
+                         EnableScrollBoundaryTelemetry="true"
+                         AllowSorting="false"
+                         AllowSelection="true"
+                         AllowResizing="true"
+                         AllowColumnReorder="true"
+                         EnableHover="true"
+                         Height="100%"
+                         RowHeight="22"
+                         MinRowHeight="22"
+                         HostTabIndex="0"
+                         SeedActiveCellOnHostFocus="true"
+                         TabNavigationMode="GridTabNavigationMode.WrapRows"
+                         ShowGridOptionsRail="true"
+                         ShowColumnOptionsButton="true"
+                         CssClass="fx-grid-compact">
+                <GridColumnsBase>
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.DivisionId)" HeaderText="Division" Width="60px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Phase)" HeaderText="Phase" Width="65px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.CostType)" HeaderText="Cost Type" Width="65px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Item)" HeaderText="Item" Width="70px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.PhaseDescription)" HeaderText="Phase Description" Width="150px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Description)" HeaderText="Item Description" Width="280px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Notes)" HeaderText="Notes" Width="140px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.POIndex)" HeaderText="PO Index" Width="80px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.POIndexDescription)" HeaderText="PO Index Description" Width="170px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.CostCode)" HeaderText="Cost Code" Width="85px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.CostCodeDescription)" HeaderText="Cost Code Description" Width="160px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.TaxGroup)" HeaderText="Tax Group" Width="80px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.WastePercent)" HeaderText="Waste %" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.RoundDirection)" HeaderText="Rounding" Width="75px" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.RoundTo)" HeaderText="Round To" Width="75px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Price)" HeaderText="Price" Width="85px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.IsQuote)" HeaderText="Quote" Width="55px" Type="ColumnType.CheckBox" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Category)" HeaderText="Category" Width="70px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.CategoryDescription)" HeaderText="Category Description" Width="170px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.OrderUOM)" HeaderText="Order UOM" Width="80px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.ConversionFactor)" HeaderText="Conversion Factor" Width="115px" Type="ColumnType.Number" TextAlign="TextAlign.Right" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.PartNumber)" HeaderText="Part Number" Width="105px" AllowEditing="false" />
+                    <GridColumn Field="@nameof(SqliteEstimatingItemRow.Formula)" HeaderText="Formula" Width="130px" AllowEditing="false" />
+                </GridColumnsBase>
+            </GridControl>
+        </div>
+
+        <p class="sip-note">
+            This first provider bench is intentionally read-only. It measures true SQLite
+            <code>COUNT</code> plus deterministic <code>LIMIT/OFFSET</code> retrieval without
+            changing the existing in-memory editing harness or any HomeFront query.
+        </p>
+    }
+</div>
+</PageControl>
+
+@code {
+    private static readonly int[] LatencyChoices = [0, 25, 75, 150, 300, 500];
+    private readonly CancellationTokenSource _disposeCancellation = new();
+    private SqliteProviderDatabaseStatus? _status;
+    private SqliteProviderMetricsSnapshot _metrics = EmptyMetrics;
+    private bool _initializing = true;
+    private string? _error;
+    private int _datasetRows = 1;
+    private int _overscan = 60;
+    private int _latencyMilliseconds;
+    private bool _scrollTrack;
+    private bool _boundaryGuard = true;
+    private string _search = string.Empty;
+    private string _searchDraft = string.Empty;
+    private long _providerContextVersion;
+    private int _gridConfigurationVersion;
+    private long _staleResultsRejected;
+    private readonly ConcurrentDictionary<(long ContextVersion, long QueryVersion), int> _totalCounts = new();
+    private GridItemsProvider<SqliteEstimatingItemRow> _itemsProvider = default!;
+
+    private static SqliteProviderMetricsSnapshot EmptyMetrics => new(
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    private IEnumerable<int> DatasetSizeChoices
+    {
+        get
+        {
+            if (_status is null)
+                yield break;
+
+            foreach (var size in new[] { 1_000, 5_000, 10_000, _status.RowCount }
+                         .Where(size => size <= _status.RowCount)
+                         .Distinct())
+                yield return size;
+        }
+    }
+
+    private int DeferredReleaseRows => Math.Min(_overscan, Math.Max(20, _overscan / 3));
+
+    private string ProviderContextKey => string.Join(
+        ':',
+        _status?.Generation ?? 0,
+        Interlocked.Read(ref _providerContextVersion),
+        _datasetRows,
+        _search);
+
+    private string GridRegistrationKey => string.Join(
+        ':',
+        _gridConfigurationVersion,
+        _overscan,
+        DeferredReleaseRows,
+        _scrollTrack,
+        _boundaryGuard);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Cache the method-group delegate. GridControl uses provider identity as
+        // part of its query-generation key, so parent renders must not create a
+        // logically identical but reference-distinct provider instance.
+        _itemsProvider = LoadItemsAsync;
+        try
+        {
+            _status = await Database.GetStatusAsync(_disposeCancellation.Token);
+            _datasetRows = _status.RowCount;
+            _metrics = Database.GetMetrics();
+        }
+        catch (OperationCanceledException) when (_disposeCancellation.IsCancellationRequested)
+        {
+            // Normal circuit disposal during the lazy import.
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _initializing = false;
+        }
+    }
+
+    private async ValueTask<GridItemsResult<SqliteEstimatingItemRow>> LoadItemsAsync(
+        GridItemsRequest request)
+    {
+        if (_status is null)
+            return new GridItemsResult<SqliteEstimatingItemRow>([], 0);
+
+        var contextVersion = Interlocked.Read(ref _providerContextVersion);
+        var countKey = (contextVersion, request.QueryVersion);
+        var hasKnownTotalCount = _totalCounts.TryGetValue(countKey, out var cachedTotalCount);
+        int? knownTotalCount = hasKnownTotalCount ? cachedTotalCount : null;
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            request.CancellationToken,
+            _disposeCancellation.Token);
+
+        var page = await Database.QueryEstimatingItemsAsync(
+            request.StartIndex,
+            request.Count,
+            _datasetRows,
+            _search,
+            request.IncludeTotalCount,
+            knownTotalCount,
+            _latencyMilliseconds,
+            linkedCancellation.Token);
+
+        linkedCancellation.Token.ThrowIfCancellationRequested();
+
+        // Context changes (row limit/search/reload) invalidate an old result even
+        // if the database completed before the grid's cancellation reached it.
+        if (contextVersion != Interlocked.Read(ref _providerContextVersion))
+        {
+            Interlocked.Increment(ref _staleResultsRejected);
+            throw new OperationCanceledException(
+                "SQLite provider result belongs to a superseded bench context.",
+                new CancellationToken(canceled: true));
+        }
+
+        _totalCounts.TryAdd(countKey, page.TotalCount);
+
+        return new GridItemsResult<SqliteEstimatingItemRow>(page.Items, page.TotalCount);
+    }
+
+    private static object RowKey(SqliteEstimatingItemRow row) => row.RowId;
+
+    private void SetDatasetRows(int value)
+    {
+        if (_status is null)
+            return;
+
+        value = Math.Clamp(value, 1, _status.RowCount);
+        if (_datasetRows == value)
+            return;
+
+        _datasetRows = value;
+        InvalidateProviderContext();
+    }
+
+    private void SetOverscan(int value)
+    {
+        value = Math.Clamp(value, 0, 500);
+        if (_overscan == value)
+            return;
+
+        _overscan = value;
+        _gridConfigurationVersion++;
+    }
+
+    private void SetLatency(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var value))
+            return;
+
+        value = Math.Clamp(value, 0, 5_000);
+        if (_latencyMilliseconds == value)
+            return;
+
+        _latencyMilliseconds = value;
+        InvalidateProviderContext();
+    }
+
+    private void ToggleScrollTrack()
+    {
+        _scrollTrack = !_scrollTrack;
+        _gridConfigurationVersion++;
+    }
+
+    private void ToggleBoundaryGuard()
+    {
+        _boundaryGuard = !_boundaryGuard;
+        _gridConfigurationVersion++;
+    }
+
+    private void ApplySearch()
+    {
+        var value = _searchDraft.Trim();
+        if (string.Equals(_search, value, StringComparison.Ordinal))
+            return;
+
+        _search = value;
+        InvalidateProviderContext();
+    }
+
+    private void ClearSearch()
+    {
+        _searchDraft = string.Empty;
+        if (_search.Length == 0)
+            return;
+
+        _search = string.Empty;
+        InvalidateProviderContext();
+    }
+
+    private void OnSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            ApplySearch();
+    }
+
+    private void ReloadProvider() => InvalidateProviderContext();
+
+    private void InvalidateProviderContext()
+    {
+        Interlocked.Increment(ref _providerContextVersion);
+        _totalCounts.Clear();
+        RefreshMetrics();
+    }
+
+    private void RefreshMetrics() => _metrics = Database.GetMetrics();
+
+    private void ResetMetrics()
+    {
+        Database.ResetMetrics();
+        Interlocked.Exchange(ref _staleResultsRejected, 0);
+        RefreshMetrics();
+    }
+
+    private static string SizeLabel(int rows) => rows >= 1_000
+        ? $"{rows / 1_000d:0.#}k"
+        : rows.ToString("N0");
+
+    private static string FormatBytes(long bytes)
+    {
+        var value = (double)bytes;
+        var unit = "B";
+        foreach (var next in new[] { "KB", "MB", "GB" })
+        {
+            if (value < 1024d)
+                break;
+            value /= 1024d;
+            unit = next;
+        }
+        return $"{value:0.0} {unit}";
+    }
+
+    public void Dispose()
+    {
+        _disposeCancellation.Cancel();
+        _disposeCancellation.Dispose();
+    }
+}

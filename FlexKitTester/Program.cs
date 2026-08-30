@@ -15,6 +15,10 @@ builder.Services.AddRazorComponents()
 // The two exports are parsed once per process, not once per circuit.
 builder.Services.AddSingleton<BenchDataStore>();
 
+// Created lazily on first use of the isolated SQLite provider bench. The
+// original Edit Items bench never opens or initializes this database.
+builder.Services.AddSingleton<SqliteProviderBenchDatabase>();
+
 // Optional diagnostics used only when the operator presses a latency-probe
 // button. SQL/TCP probes remain unavailable until explicitly configured through
 // user-secrets or environment variables; no endpoint or credential is built in.
