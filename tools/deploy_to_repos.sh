@@ -92,24 +92,11 @@ RSYNC_EXCLUDE=(
     --exclude='.vscode/'
 )
 
-# Files that differ between source (ProjectReference) and deploy (PackageReference).
-# These are NEVER synced back from the remote — source versions are authoritative.
-PULL_EXCLUDE_PB=(
-    --exclude='HomeFrontPB.csproj'
-    --exclude='HomeFrontPB.sln'
-    --exclude='local-packages/'
-    --exclude='NuGet.Config'
-    --exclude='.git'
-    --exclude='.claude'
-    --exclude='.codex-backups'
-    --exclude='.idea'
-    --exclude='.DS_Store'
-    --exclude='bin/'
-    --exclude='obj/'
-    --exclude='Logs/'
-    --exclude='.vs/'
-    --exclude='.vscode/'
-)
+# PULL_EXCLUDE_PB retired 2026-08-31. Pull mode no longer targets HomeFrontPB —
+# that tree is FROZEN and is a source only, feeding the R1-UAT branch. Incoming
+# MRs on main now come back to MobileSource/HomeFront, and pull mode selects the
+# files the incoming commits touched (see PULL_PATHSPEC in PULL MODE below)
+# rather than rsyncing a whole tree.
 
 MODE="push"
 DRY_RUN=false
@@ -285,104 +272,106 @@ PROJECTS=(
 )
 
 # ════════════════════════════════════════════════════════════════════
-#  PULL MODE — fetch MR changes from remote → source
+#  PULL MODE — fetch MR changes from hyphen-pb main → HomeFront
 # ════════════════════════════════════════════════════════════════════
+# main is fed from MobileSource/HomeFront (owner directive 2026-08-27), so an
+# MR merged on main comes back to HomeFront. HomeFrontPB is FROZEN: it is a
+# SOURCE ONLY, feeding the R1-UAT branch, and nothing writes into it ever again
+# (owner directive 2026-08-31). The old pull path rsynced main onto HomeFrontPB
+# — written when main was still fed from PB — which would now drop HomeFront's
+# tree onto the wrong app. The PB→HF page mirror and its @namespace injection
+# went with it: main already carries HomeFront's Migrated/ layout.
 if [ "$MODE" = "pull" ]; then
-    log "PULL — fetching MR changes from hyphen-pb"
+    log "PULL — hyphen-pb main → HomeFront"
     GIT_DIR="$DEPLOY/hyphen-pb"
-    SRC_DIR="$HF_ROOT/HomeFrontPB"
-    REMOTE_URL="git@gitlab.innovatixinc.com:application-modernization/hyphen-pb.git"
+    SRC_DIR="$HF_ROOT/MobileSource/HomeFront"
 
     if [ ! -d "$GIT_DIR/.git" ]; then
         err "No staging repo at $GIT_DIR — run a push first to initialize"
         exit 1
     fi
 
-    # Fetch and show what's new
     git -C "$GIT_DIR" fetch origin
-    LOCAL_HEAD=$(git -C "$GIT_DIR" rev-parse HEAD)
+
+    # The clone serves two branches; park it on main before reading any sha.
+    if git -C "$GIT_DIR" rev-parse --verify main >/dev/null 2>&1; then
+        git -C "$GIT_DIR" checkout main --quiet
+    else
+        git -C "$GIT_DIR" checkout -b main origin/main --quiet
+    fi
+
+    # Compare origin/main to the sha WE last pushed — local main — never to HEAD.
+    # HEAD can be parked on R1-UAT, which makes our own main commits look upstream.
+    LAST_PUSHED=$(git -C "$GIT_DIR" rev-parse main)
     REMOTE_HEAD=$(git -C "$GIT_DIR" rev-parse origin/main)
 
-    if [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ]; then
+    if [ "$LAST_PUSHED" = "$REMOTE_HEAD" ]; then
         ok "No new changes on remote"
         exit 0
     fi
 
-    # Show incoming changes
     log "Incoming changes:"
-    git -C "$GIT_DIR" log --oneline "$LOCAL_HEAD..$REMOTE_HEAD"
+    git -C "$GIT_DIR" log --format='  %h %an | %s' "$LAST_PUSHED..$REMOTE_HEAD"
     echo ""
-    git -C "$GIT_DIR" diff --stat "$LOCAL_HEAD..$REMOTE_HEAD" -- \
-        ':!HomeFrontPB.csproj' ':!HomeFrontPB.sln' ':!local-packages/' ':!NuGet.Config'
+
+    # Branch-owned / environment files never come back to source: the csproj and
+    # sln carry the deploy's PackageReference form (source keeps ProjectReference),
+    # and appsettings/pipelines/certs belong to the remote. Deletions are reported,
+    # not applied — removing a local file is not something to do unattended.
+    PULL_PATHSPEC=(
+        ':!HomeFront.csproj' ':!HomeFront.sln'
+        ':!local-packages/' ':!NuGet.Config'
+        ':!appsettings*.json' ':!App_Data/jira-settings.json'
+        ':!azure-pipelines*.yml' ':!certs/'
+        ':!wwwroot/tickets/' ':!wwwroot/feedback/' ':!Logs/'
+    )
+
+    CHANGED_LIST=$(mktemp)
+    git -C "$GIT_DIR" diff --name-only --diff-filter=d "$LAST_PUSHED..$REMOTE_HEAD" \
+        -- "${PULL_PATHSPEC[@]}" > "$CHANGED_LIST"
+    DELETED=$(git -C "$GIT_DIR" diff --name-only --diff-filter=D "$LAST_PUSHED..$REMOTE_HEAD" \
+        -- "${PULL_PATHSPEC[@]}")
+    SKIPPED=$(git -C "$GIT_DIR" diff --name-only "$LAST_PUSHED..$REMOTE_HEAD" \
+        -- HomeFront.csproj HomeFront.sln 'appsettings*.json' 'azure-pipelines*.yml' NuGet.Config)
+
+    echo "  Files to sync into HomeFront:"
+    if [ -s "$CHANGED_LIST" ]; then sed 's/^/    /' "$CHANGED_LIST"; else echo "    (none)"; fi
+    if [ -n "$SKIPPED" ]; then
+        echo ""
+        err "Branch-owned files changed upstream — HAND-MERGE these, they are NOT synced:"
+        echo "$SKIPPED" | sed 's/^/    /'
+    fi
+    if [ -n "$DELETED" ]; then
+        echo ""
+        err "Deleted upstream — remove by hand if intended:"
+        echo "$DELETED" | sed 's/^/    /'
+    fi
     echo ""
 
     if $DRY_RUN; then
-        ok "DRY RUN — would merge and sync to $SRC_DIR"
+        ok "DRY RUN — would merge and sync the above into $SRC_DIR"
+        rm -f "$CHANGED_LIST"
         exit 0
     fi
 
-    # Merge remote into staging
     git -C "$GIT_DIR" merge origin/main --no-edit
     ok "Merged origin/main into staging"
 
-    # Sync staging → source (excluding build artifacts and deploy-only files)
-    rsync -a "${PULL_EXCLUDE_PB[@]}" "$GIT_DIR/" "$SRC_DIR/"
-    ok "Synced changes to HomeFrontPB source"
+    # Copy ONLY the files the incoming commits touched. A whole-tree rsync would
+    # also roll back any local edit made since the last push — these trees are
+    # edited live by the owner and other sessions.
+    if [ -s "$CHANGED_LIST" ]; then
+        rsync -a --files-from="$CHANGED_LIST" "$GIT_DIR/" "$SRC_DIR/"
+        ok "Synced $(wc -l < "$CHANGED_LIST" | tr -d ' ') file(s) into HomeFront"
+    else
+        ok "No syncable files in the incoming range"
+    fi
+    rm -f "$CHANGED_LIST"
 
-    # Also mirror to HomeFront (HF) for the sync pair
-    HF_DIR="$HF_ROOT/MobileSource/HomeFront"
-    log "Mirroring to HomeFront (sync pair)"
-    echo "  NOTE: Only razor/cs/css files in Components/Pages/ and Services/"
-    echo "        are auto-mirrored. FMain.razor is excluded (known drift)."
-    echo "        Review manually if the MR touched other files."
     echo ""
-
-    # Mirror page files (PB flat → HF Migrated/)
-    if [ -d "$GIT_DIR/Components/Pages" ]; then
-        for f in "$GIT_DIR"/Components/Pages/F*.razor "$GIT_DIR"/Components/Pages/F*.razor.css; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f")
-            # Skip FMain — known drift
-            [[ "$base" == FMain.razor* ]] && continue
-            hf_target="$HF_DIR/Components/Pages/Migrated/$base"
-            if [ -f "$hf_target" ]; then
-                cp "$f" "$hf_target"
-            fi
-        done
-        ok "Mirrored page files to HF Migrated/"
-
-        # HF Migrated/ files need @namespace HomeFront.Components.Pages
-        # (PB's flat Pages/ auto-gets the right namespace; Migrated/ doesn't).
-        # Inject the directive if missing — affects files referenced as types
-        # by other pages (FAttachments, FTakeoff, etc.).
-        for razor in "$HF_DIR"/Components/Pages/Migrated/F*.razor; do
-            [ -f "$razor" ] || continue
-            [[ "$razor" == *.razor.css ]] && continue
-            if ! grep -q '@namespace' "$razor"; then
-                # Insert after the FIRST closing comment block, or as line 1
-                if grep -qn '───── \*@' "$razor"; then
-                    line_num=$(grep -n '───── \*@' "$razor" | head -1 | cut -d: -f1)
-                    sed -i '' "${line_num}a\\
-@namespace HomeFront.Components.Pages" "$razor"
-                else
-                    sed -i '' '1i\
-@namespace HomeFront.Components.Pages
-' "$razor"
-                fi
-            fi
-        done
-        ok "Ensured @namespace on HF Migrated/ files"
-    fi
-
-    # Mirror service files
-    if [ -d "$GIT_DIR/Services" ]; then
-        rsync -a --existing "$GIT_DIR/Services/" "$HF_DIR/Services/"
-        ok "Mirrored service files to HF"
-    fi
-
-    log "Pull complete. Build both solutions to verify:"
-    echo "  dotnet build $SRC_DIR/HomeFrontPB.sln --no-incremental"
-    echo "  dotnet build $HF_DIR/HomeFront.sln --no-incremental"
+    err "HomeFrontPB is frozen — nothing was written to it (owner directive 2026-08-31)."
+    log "Pull complete. Build to verify:"
+    echo "  dotnet build $SRC_DIR/HomeFront.sln --no-incremental"
     exit 0
 fi
 
