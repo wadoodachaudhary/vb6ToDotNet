@@ -91,3 +91,51 @@ Two traps when the editor must open the moment the dialog opens:
    columns/view not built). Retry on REAL time (bounded ~10×40ms loop in
    OnAfterRenderAsync) until a wired OnCellEdit confirms the editor opened;
    StateHasChanged-chained retries share one synchronous cascade and all fail.
+
+## VB6 ColorizeItems-style conditional row formatting (added 2026-08-30)
+
+VB6 forms often repaint grid rows from user-editable `Format_*` AppOptions
+(e.g. FEstimateItems.ColorizeItems frm:7486: negative qty/rate, zero pretax,
+overridden rate, missing-data + warning icon; defaults in Options.cls:1044).
+Port pattern (donor: FEstimateItems):
+- `RowCssClassSelector` returns ONE fmt class following VB6's overwrite order
+  (LAST matching rule wins; a locked row short-circuits all conditionals).
+- Colors/weights are NEVER hardcoded: read the `Format_{rule}_{ForeColor,
+  BackColor,FontStyle}` AppOptions (division-aware `IN (0,@div)`), convert OLE
+  colors (value is BGR; `&H80000000` flags a system index — map 0x05→#FFF,
+  0x08→#000, 0x11→#808080), and emit CSS custom properties in a `style=` on a
+  page-scoped wrapper; the static `.razor.css` rules consume `var(--...)`.
+- Guard rule backgrounds with `:not(.fx-selected)` so row selection stays
+  visible; fore/font apply unconditionally.
+- Missing-data messages recompute at row load AND in OnCellSave (VB6 re-runs
+  ColorizeItems per edit); the warning column is a GridColumn Template
+  rendering `images/16/Warn.ico` with the message list as tooltip.
+
+## Single-cell mass edit needs FOUR opt-ins together (2026-08-30)
+
+`EditMode.Batch` alone gives in-cell editing but NOT the VB6 drag-a-band-and-
+type mass edit. The full FItems/FPricingWorkSheet stack is:
+1. `BatchEditBehavior="GridBatchEditBehavior.SingleCell"` on the GridControl,
+2. `AllowSingleCellColumnMassEdit="true"` (the actual gate),
+3. `SelectionSettings.Mode = SelectionMode.Cell` (+ Type=Multiple),
+4. `AllowCellDragSelection="true"` on every column (also enables Enter
+   fill-down — the flag is overloaded),
+plus donor-parity `TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered"`.
+Missing any one of 1-4 degrades silently: typing lands in a single-cell editor
+and only the active row commits. Symptom to recognize: "multi-edit lets me type
+but only the first row commits".
+
+## Per-row/per-cell edit locks (VB6 BeforeEdit parity, added 2026-08-30)
+
+VB6 grids gate edits per ROW in `g*_BeforeEdit` (locked once money is
+committed). Port pattern: GridControl's `CellEditablePredicate` —
+`Func<TValue,string,bool>` (item, field) — evaluated in ADDITION to
+column-level AllowEditing at every edit start, all mass-edit/fill-down
+fan-out targets (locked rows silently skipped, matching VB6's per-row
+ValidateEdit re-check), checkbox toggles (locked boxes render disabled),
+the OnTypeAheadCommit handoff lists, and the fx-cell-editable cue.
+Write the page predicate as a verbatim port of the VB6 BeforeEdit Cancel
+logic (row flags first, RowType short-circuit, blanket row gate, then the
+per-column Select Case — keep VB6's Case Else=locked whitelist and any
+latent clobber bugs deliberately, with comments). Keep it O(1) — it runs
+per rendered cell. Donor: FEstimateItems.CanEditEstimateCell.

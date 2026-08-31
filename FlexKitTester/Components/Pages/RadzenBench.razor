@@ -6,6 +6,7 @@
 @using Fx.ControlKit.Grid
 @using Radzen
 @using Radzen.Blazor
+@using System.Linq.Dynamic.Core
 @inject BenchDataStore DataStore
 @implements IAsyncDisposable
 
@@ -619,10 +620,37 @@
             await Task.Delay(_latencyMs);
         }
 
+        var query = _items.AsQueryable();
+
+        if (!string.IsNullOrEmpty(args.Filter))
+        {
+            try
+            {
+                query = query.Where(args.Filter);
+            }
+            catch
+            {
+                // Fallback in case of dynamic LINQ parser mismatch
+            }
+        }
+
+        if (!string.IsNullOrEmpty(args.OrderBy))
+        {
+            try
+            {
+                query = query.OrderBy(args.OrderBy);
+            }
+            catch
+            {
+                // Fallback
+            }
+        }
+
+        _radzenCount = query.Count();
+
         var skip = args.Skip ?? 0;
         var top = args.Top ?? 40;
-        _radzenCount = _items.Count;
-        _radzenViewItems = _items.Skip(skip).Take(top).ToList();
+        _radzenViewItems = query.Skip(skip).Take(top).ToList();
         _radzenRenderCount++;
     }
 

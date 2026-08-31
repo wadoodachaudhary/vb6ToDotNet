@@ -27,3 +27,19 @@ VB6 imagelist bitmaps already live in `wwwroot/images/16/*.ico` — render with 
 
 ## MDI navigation
 Every migrated page uses the `ParentNavigate` cascading parameter for navigation (`[CascadingParameter(Name = "ParentNavigate")] Action<string>?`), falling back to NavigationManager only when hosted standalone — direct NavigationManager calls break out of the FMain MDI shell and trigger the leave-page prompt.
+
+## VB6 multi-state node icons (MultiStateIcon pattern, added 2026-08-30)
+
+VB6 outline grids often paint ONE composite glyph per node that encodes
+check-state AND completion (`FMain.MultiStateIcons`, key `K{Completed}{Selected}`,
+each digit 0=none/1=some/2=all — completion digit FIRST; frm `MultiStateIcon`
+property + `CombineImgs` for overlays). Port pattern (donor: FEstimateItems):
+- Aggregate per-level SQL adds the mode-dependent TotalItems/CompletedItems and
+  computes the tri-state in C# (equal → 2, incl. 0-of-0; >0 → 1; else 0).
+- The K-icon .ico files ship in `wwwroot/images/16/` (K00..K22). Render inside
+  the tree column Template as a `ButtonControl BareStyle` wrapping the `<img>`;
+  click toggles msAll↔msNone and reuses the page's cascade-down/up selection.
+- Do NOT also render a CheckBoxControl — the K glyph IS the checkbox.
+- Status colors ride `RowCssClassSelector` (TreeGridControl has it, same
+  signature as GridControl) + page CSS; per-CELL color (e.g. a locked money
+  column) uses a column Template with a conditional class.
