@@ -46,3 +46,38 @@ clicking a boolean cell moves the row cursor; Ctrl/Shift fall through to
 range/toggle; FullMultiSelect grids preserve an armed multi-selection).
 When porting a form with selectable checkbox columns, no page-side wiring is
 needed — but test multi-select + mass-edit FIRST after touching this path.
+
+## VB6 Toolbar_ButtonDropDown → MenuDropDownControl OnOpening (added 2026-08-31)
+
+VB6 dropdown toolbar buttons (Style=5) rebuild their popup's items at OPEN
+time (`Toolbar_ButtonDropDown` — fresh DB reads, checked flags, stamped
+captions). The web analog is the `MenuDropDownControl.OnOpening`
+EventCallback (additive FlexKit param, 2026-08-31): fired on the
+closed→open transition from both mouse Toggle and keyboard Open,
+fire-and-forget so the panel opens instantly and an async handler
+re-renders it when the refresh lands. Wire `OnOpening="RefreshXxxAsync"`
+and ALSO load the same state when the host record loads, so the first
+open never paints stale. Checked VB6 menu items = `Icon="✓"` +
+`CssClass="is-selected"` (FItems idiom). Donor: FEstimateItems Snap Shot
+(3-slot checked menu, captions carry "(userid  dd-MMM-yy)" — VB6
+Format "medium date").
+
+## Report launches: seed conventions (Filter:/Multi:, updated 2026-08-31)
+
+Report XMLs are READ-ONLY; all VB6-side parameterization happens at launch
+via `IReportSeedParameters` (`ReportSeeds.Set(...)` then navigate to
+`/report-viewer/{escaped xml path}` — query strings never survive FMain).
+Three seed shapes, resolved by ReportWriterControl.ShowReportAsync:
+
+| Seed key | Meaning | VB6 analog |
+|---|---|---|
+| `Name` | single parameter value; a seeded param never prompts | `c.ParameterValue("Name", v)` once |
+| `Filter:Table.Field` | host-level row filter injected into the SQL (only for tables provably in the FROM) — for XMLs with no such parameter | report selection formulas |
+| `Multi:Name` | value = a U+0002-separated list -> string[] in the param pipeline: no prompt + `IN (...)` expansion via MultiValueParameterRewriter | repeated `c.ParameterValue("Name", v)` (multi-value Crystal param) |
+
+Donor: FEstimateItems OnPreviewPOsClick (Multi:PONumber per POFormat group)
+and OnPoHistoryReportClick (plain seeds). Traps: the PO print formats live
+in `wwwroot/resources/Estimating/PO Formats/xml/*.xml` (NOT next to the
+.rpt files one level up); and navigating the viewer to the SAME route while
+its tab is open re-uses the component without re-running the report — close
+the viewer tab (or vary the route) for a fresh render.

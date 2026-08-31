@@ -139,3 +139,44 @@ logic (row flags first, RowType short-circuit, blanket row gate, then the
 per-column Select Case — keep VB6's Case Else=locked whitelist and any
 latent clobber bugs deliberately, with comments). Keep it O(1) — it runs
 per rendered cell. Donor: FEstimateItems.CanEditEstimateCell.
+
+## VB6 ComboList cell buttons + EditMaxLength + value lists (added 2026-08-31)
+
+VB6 `BeforeEdit` side state maps to three GridColumn parameter groups on the
+layout-driven column loop (donors: FItems `_lookupPickerFields`,
+FEstimateItems ComboList batch):
+
+1. `.EditMaxLength = n` → `MaxLength="@n"` (keep VB6's cap even when the DB
+   column is longer — e.g. Location varchar(200) but VB6 caps 50).
+2. `.ComboList = "|..."` (typed + button) → keep `AllowEditing` and add
+   `ShowEditButton="true"`. `.ComboList = "..."` (picker-only) → same, with
+   typing already blocked (`AllowEditing=false`); dblclick opens the picker
+   (`OpenEditButtonOnDoubleClick` default). Gate per-row button visibility
+   with `ShowEditButtonPredicate` = the page's BeforeEdit predicate — VB6's
+   Cancel meant no edit ⇒ no button. A conditional button (VB6
+   `IIf(option, "|...", "")`) is just a bool in the helper (JCExtra/
+   Use_Timberline).
+3. `.ComboList = GetComboList(field)` (leading-pipe editable combo) →
+   `EditOptions="@values" AllowCustomEditOptionValue="true"`; load the
+   distinct-values lists per data load (VB6 re-queried per BeforeEdit); an
+   empty list must yield `EditOptions=null` (plain text cell, VB6 `""`).
+
+The `gItems_CellButtonClick` body becomes ONE `OnEditButtonClick` handler on
+GridControlEvents dispatching per `args.ColumnName`: capture
+`(row, field, targets)` where targets = `GetSelectedRecordsForColumn(field)`
+if the clicked row belongs to a >1 selection else the clicked row (the web
+analog of `For Row = Min(.Row,.RowSel) To Max`), then `FPickList.Open` with
+the VB6-exact SQL and a `Cell*` context; the `OnPickListSelected` branch
+fans the ONE pick over targets, re-gating EVERY row through the BeforeEdit
+predicate (VB6 re-calls `gItems_BeforeEdit` per row). Watch for VB6's
+ungated exceptions (FEI: Assembly range-writes ignore the gate; Formula
+writes only the CURRENT cell — `FillStyle=flexFillSingle` makes the loop's
+`.Text` writes hit the anchor N times, so port it clicked-row-only).
+Code+desc column pairs share one picker context; check per-case whether VB6
+swaps the SQL column order for the Desc variant (JCCostCodeDesc does,
+POIndexDescription does NOT). Long-text cells (`FComments.Edit`) get a
+dedicated FComments instance; Formula gets the real FFormulaEditor.
+Multi-step VB6 flows that prompt per row (variance category) batch into ONE
+picker after the fan-out — chain pickers via context handoff and wire
+FPickList `OnCancel` to clear the pending state (do NOT keep VB6's
+dirty-on-cancel AfterEdit quirk).
