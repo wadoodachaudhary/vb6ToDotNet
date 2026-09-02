@@ -354,19 +354,66 @@ if [ "$MODE" = "pull" ]; then
         exit 0
     fi
 
+    # Capture the BASE (what we last pushed) BEFORE merging — the 3-way merge
+    # below needs the common ancestor of "our local edits" and "their upstream
+    # change", and after the merge local main no longer points at it.
+    MERGE_BASE_SHA="$LAST_PUSHED"
+
     git -C "$GIT_DIR" merge origin/main --no-edit
     ok "Merged origin/main into staging"
 
-    # Copy ONLY the files the incoming commits touched. A whole-tree rsync would
-    # also roll back any local edit made since the last push — these trees are
-    # edited live by the owner and other sessions.
-    if [ -s "$CHANGED_LIST" ]; then
-        rsync -a --files-from="$CHANGED_LIST" "$GIT_DIR/" "$SRC_DIR/"
-        ok "Synced $(wc -l < "$CHANGED_LIST" | tr -d ' ') file(s) into HomeFront"
-    else
-        ok "No syncable files in the incoming range"
+    # Bring in ONLY the files the incoming commits touched, and 3-WAY MERGE each
+    # one rather than copying over it.
+    #
+    # A plain copy is safe only when the source file is untouched since the last
+    # push. These trees are edited live by the owner and other sessions, so a file
+    # can be BOTH incoming and locally dirty — on 2026-09-02 that was FPriceList
+    # and FPricingWorkSheet, and a copy would have silently destroyed uncommitted
+    # toolbar work. Merging with the last-pushed content as the base keeps both
+    # sides when the edits are in different regions, and stops with the file
+    # untouched when they genuinely collide.
+    MERGED=0; COPIED=0; CONFLICTED=0
+    CONFLICT_LIST=$(mktemp)
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        mkdir -p "$SRC_DIR/$(dirname "$f")"
+        if [ ! -f "$SRC_DIR/$f" ]; then
+            git -C "$GIT_DIR" show "origin/main:$f" > "$SRC_DIR/$f" 2>/dev/null && COPIED=$((COPIED+1))
+            continue
+        fi
+        BASE_TMP=$(mktemp); THEIRS_TMP=$(mktemp); OURS_TMP=$(mktemp)
+        if ! git -C "$GIT_DIR" show "$MERGE_BASE_SHA:$f" > "$BASE_TMP" 2>/dev/null; then
+            : > "$BASE_TMP"          # new upstream file: empty base
+        fi
+        git -C "$GIT_DIR" show "origin/main:$f" > "$THEIRS_TMP"
+        cp "$SRC_DIR/$f" "$OURS_TMP"
+
+        if cmp -s "$OURS_TMP" "$BASE_TMP"; then
+            # Source untouched since the last push — fast-forward, no merge needed.
+            cp "$THEIRS_TMP" "$SRC_DIR/$f"; COPIED=$((COPIED+1))
+        else
+            set +e
+            git merge-file -L "HomeFront (local)" -L "last pushed" -L "hyphen-pb main" \
+                "$OURS_TMP" "$BASE_TMP" "$THEIRS_TMP" >/dev/null 2>&1
+            rc=$?
+            set -e
+            if [ "$rc" -eq 0 ]; then
+                cp "$OURS_TMP" "$SRC_DIR/$f"; MERGED=$((MERGED+1))
+            else
+                echo "$f" >> "$CONFLICT_LIST"; CONFLICTED=$((CONFLICTED+1))
+            fi
+        fi
+        rm -f "$BASE_TMP" "$THEIRS_TMP" "$OURS_TMP"
+    done < "$CHANGED_LIST"
+
+    ok "Fast-forwarded $COPIED, 3-way merged $MERGED file(s) into HomeFront"
+    if [ "$CONFLICTED" -gt 0 ]; then
+        echo ""
+        err "$CONFLICTED file(s) CONFLICT — left UNCHANGED, merge by hand:"
+        sed 's/^/    /' "$CONFLICT_LIST"
+        err "Compare: git -C $GIT_DIR diff $MERGE_BASE_SHA..origin/main -- <file>"
     fi
-    rm -f "$CHANGED_LIST"
+    rm -f "$CONFLICT_LIST" "$CHANGED_LIST"
 
     echo ""
     err "HomeFrontPB is frozen — nothing was written to it (owner directive 2026-08-31)."
