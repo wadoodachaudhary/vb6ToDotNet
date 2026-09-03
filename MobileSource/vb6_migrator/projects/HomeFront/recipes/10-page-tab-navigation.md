@@ -102,3 +102,23 @@ fresh job open so reloads don't steal the keyboard.
   and refocus the tree/grid in ClearActiveCell — FInboxJobs pattern).
 - MenuDropDownControl and DialogControl already close on Escape and restore
   focus; FPickList is fully keyboard-operable (arrows + Enter pick).
+
+## Wrapping an EXISTING sized root — use the layout-neutral form
+
+`<PageControl>` renders a real `<div>`. If the page already has a sized root
+(`height:100%; display:flex`), wrapping it in a bare PageControl inserts a box
+into the height chain and collapses every `height:100%` grid beneath it (the
+2026-09-03 FAssembly blank-grid regression). Either make the PageControl the
+sized root itself (give it the page's root `CssClass`) or, when wrapping, use:
+
+```razor
+<PageControl NavigationGraph="@MyGraph"
+             Style="display:contents" ScrollMode="PageScrollMode.None">
+```
+
+## Load-time focus via the graph
+
+`FocusFirstNodeOnLoad="true"` focuses the graph's first target on load (VB6:
+keyboard lands on the lowest TabIndex). When that node is a grid, add
+`SeedActiveCellOnHostFocus="true"` to the grid so the focus also seeds an
+active cell. Leave it off on pages that seed their own focus (FEstimateItems).
