@@ -66,6 +66,18 @@ empty grid, which Tab passes straight through.
   (harness `computer key` does not reach these paths), and wait ~400-500ms
   after each dispatch for the server round-trip before reading
   `td.fx-cell-active` / the edge attribute.
+- **Testing — the document must HAVE focus.** In a hidden browser pane
+  `document.hasFocus()` is false and Chrome fires no `focus` event for a
+  programmatic `element.focus()`, so Blazor `@onfocus` handlers (the grid's
+  `SeedActiveCellOnHostFocus` seed) never run: the walk lands on the grid host
+  with no active cell and arrows are dead. Make one real pointer click on blank
+  page space before the keyboard walk. To prove the server logic in isolation,
+  `el.dispatchEvent(new FocusEvent('focus'))` is delivered even when hidden.
+- **"If present" grid stops**: an Element-mode node yields the grid host
+  whenever it is rendered, rows or not. To skip an EMPTY grid (VB6 "first cell
+  if present, else the next grid"), gate the node selector on a host class the
+  page toggles from the row count — FAssembly:
+  `.assembly-components-grid.has-rows .fx-grid`.
 
 ## Load-time focus
 
