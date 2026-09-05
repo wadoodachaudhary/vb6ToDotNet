@@ -50,6 +50,36 @@ THE MAIN SCREENS
       A separate provider-backed grid using SQLite COUNT and LIMIT/OFFSET
       queries. The original Edit Items screen is unchanged.
 
+   FlexCore Enterprise Grid  http://127.0.0.1:5399/flexcore-enterprise-grid
+      FlexCore-only bench with a resizable feature hierarchy on the left and
+      28 isolated test screens on the right. Only the selected grid is mounted;
+      every screen has focused instructions and its own Reset, with controls and
+      status shown only where that test needs them.
+      The screens cover ordered local multi-sort, all editing modes, validation,
+      separately testable typed/menu/checklist/template filters, header bands,
+      auto-generated columns, column menus and two-edge locking, complete local
+      state, individual template surfaces, adaptive layout,
+      accessibility, horizontal column virtualization, provider-side query,
+      grouping/aggregates/distinct-filter values, and local/provider CSV/XLSX
+      export. Provider query, grouping, and export use separate screens so their
+      request telemetry and state do not interfere with one another. The built-in
+      Custom Sort dialog opens from a grid header menu or the sorting screen's
+      button. Add/delete levels, select columns and order, move levels up/down,
+      then Apply or Cancel. The multi-sort check compares every exported row key
+      with an independent OrderBy/ThenBy result for the chosen levels. The bench is
+      intentionally omitted when the harness is built with -p:UseFlexKit=true.
+
+      Typed filter row uses FlexCore operator dropdowns. Turn off "Show operator
+      dropdowns" to use a textbox-only row with Contains for every column type.
+      All bench inputs, selectors, checkboxes, and buttons use FlexCore controls.
+
+      Important scope: numbered pager tests use the local DataSource grid;
+      ItemsProvider uses Skip/Take-style virtual ranges. Provider state cannot
+      restore selected/active/detail row keys that are outside the reloaded
+      window. A provider checklist only permits a partial selection after the
+      provider confirms the distinct-value response is complete. Full-provider
+      export pages the remote query but assembles the final result in memory.
+
    Edit Models and Options   http://127.0.0.1:5399/edit-model-options
       The Edit Models & Options grid. 21,317 real assembly-detail rows.
 
@@ -115,3 +145,12 @@ Only the fixed labels "LAN TCP handshake" and "VPN TCP handshake" appear in
 the results. Target names and addresses remain server-side. A VPN figure measures
 the configured endpoint through the route available to the bench host; the bench
 does not try to infer whether a VPN is connected.
+
+Editing bench: ordinary clicks replace a multi-row selection; Ctrl/Cmd-click,
+Shift-click, drag, and the selection checkboxes build a range. Batch type-over
+commits with Enter or Commit active edit even without a host bulk handler.
+Generated inline/dialog fields and the popup calendar use FlexCore controls.
+
+Grid context menu: right-click a header for the standard Multi-sort section and
+Custom Sort dialog. Sortable grids allow multi-sort by default. Three-dot header
+buttons are opt-in through ShowColumnMenuButton and are absent from this bench.

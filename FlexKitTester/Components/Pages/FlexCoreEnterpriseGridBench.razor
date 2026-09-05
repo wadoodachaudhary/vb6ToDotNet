@@ -1,0 +1,2366 @@
+@page "/flexcore-enterprise-grid"
+@rendermode InteractiveServer
+@using System.ComponentModel
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@using ClosedXML.Excel
+@using FlexKitTester.Services
+@inject BenchDataStore BenchData
+
+<PageTitle>FlexCore Enterprise Grid Bench</PageTitle>
+
+<PageControl ScrollMode="PageScrollMode.None">
+    <div class="fcg-page">
+    <div class="fcg-shell">
+        <header class="fcg-heading">
+            <div>
+                <h3>FlexCore enterprise-grid bench</h3>
+                <p>
+                    Select one test from the hierarchy. Only that test screen is mounted.
+                    Rows come from <code>@BenchDataStore.EstimatingFileName</code>; no HomeFront screen is changed.
+                </p>
+            </div>
+            <span class="fcg-kit">@ControlKitAssembly</span>
+        </header>
+
+        <div class="fcg-workbench">
+            <aside class="fcg-navigation" aria-label="Enterprise grid tests">
+                <div class="fcg-navigation-title">
+                    <b>Grid feature tests</b>
+                    <span>@FeatureTests.Count test screens</span>
+                </div>
+                <div class="fcg-tree-host">
+                    <TreeViewControl Nodes="@_navigationNodes"
+                                     SelectedNode="@_selectedNavigationNode"
+                                     SelectedNodeChanged="HandleNavigationChanged"
+                                     ToggleOnNodeClick="true"
+                                     ShowIcons="true"
+                                     UseVb6TreeStyle="true"
+                                     FolderStyle="TreeFolderStyle.Grey"
+                                     TreeIndentPixels="15"
+                                     CssClass="fcg-navigation-tree"
+                                     Height="100%" />
+                </div>
+                <p class="fcg-navigation-note">Drag the lower-right edge to resize this panel.</p>
+            </aside>
+
+            <section class="fcg-screen" aria-labelledby="fcg-screen-title">
+                <header class="fcg-screen-heading">
+                    <div>
+                        <span class="fcg-screen-group">@ActiveScreenGroup</span>
+                        <h4 id="fcg-screen-title">@ActiveScreenTitle</h4>
+                    </div>
+                    @if (_activeScreen != BenchScreen.Overview)
+                    {
+                        <ButtonControl BareStyle="true" CssClass="fcg-button fcg-reset" OnClick="ResetActiveTest">Reset test</ButtonControl>
+                    }
+                </header>
+
+                @if (_activeScreen == BenchScreen.Overview)
+                {
+                    <div class="fcg-overview">
+                        <section class="fcg-feature-strip" aria-label="Feature coverage">
+                            @foreach (var feature in FeatureCoverage)
+                            {
+                                <span title="@feature.Detail"><b>✓</b> @feature.Name</span>
+                            }
+                        </section>
+
+                        <section class="fcg-test-matrix" aria-label="Feature test matrix">
+                            <div class="fcg-test-matrix-heading">
+                                <b>Choose a focused test</b>
+                                <span>Each row opens its own screen.</span>
+                            </div>
+                            <div class="fcg-test-matrix-grid">
+                                @foreach (var test in FeatureTests)
+                                {
+                                    <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="() => SelectScreen(test.Screen)">
+                                        <b>@test.Feature</b>
+                                        <span>@test.Surface</span>
+                                        <span>@test.Action</span>
+                                    </ButtonControl>
+                                }
+                            </div>
+                        </section>
+                    </div>
+                }
+                else
+                {
+                    <section class="fcg-instructions">
+                        <b>How to test</b>
+                        <span>@ActiveTest?.Action</span>
+                    </section>
+
+                    @if (UsesLocalEnterpriseGrid)
+                    {
+                        <section class="fcg-controls" aria-label="Controls for the selected test">
+                            @if (_activeScreen == BenchScreen.MultiSort)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="OpenCustomSort">Custom Sort...</ButtonControl>
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="ApplyMultiSort">Apply Category ↑, Name ↓</ButtonControl>
+                                <span class="@MultiSortVerificationCss" title="@_multiSortSample">multi-sort: @_multiSortVerification</span>
+                            }
+                            @if (IsEditingScreen)
+                            {
+                                <span><b>Mode:</b> @_editMode</span>
+                                <span>@EditingScreenHint</span>
+                            }
+                            @if (_activeScreen == BenchScreen.BatchEditing)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="CommitActiveGridEdit">Commit active edit</ButtonControl>
+                            }
+                            @if (IsLocalFilteringScreen)
+                            {
+                                <span><b>Filter mode:</b> @ActiveFilterMode</span>
+                                <CheckBoxControl Label="case-sensitive" CssClass="fcg-check"
+                                                 @bind-Checked="_caseSensitive" @bind-Checked:after="RebuildMainGrid" />
+                                @if (_activeScreen == BenchScreen.FilterRow)
+                                {
+                                    <CheckBoxControl Label="Show operator dropdowns" CssClass="fcg-check"
+                                                     Checked="@_showFilterRowOperators"
+                                                     CheckedChanged="SetShowFilterRowOperators" />
+                                    @if (!_showFilterRowOperators)
+                                    {
+                                        <span>Type to filter with Contains.</span>
+                                    }
+                                }
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="ClearMainFilters">Clear filters</ButtonControl>
+                            }
+                            @if (_activeScreen == BenchScreen.MasterDetail)
+                            {
+                                <CheckBoxControl Label="show detail expand column" CssClass="fcg-check"
+                                                 @bind-Checked="_showExpandColumn" />
+                            }
+                            @if (_activeScreen == BenchScreen.Pager)
+                            {
+                                <label>
+                                    <span>Pager position</span>
+                                    <DropDownListControl TValue="GridPagerPosition" TItem="GridPagerPosition"
+                                                         DataSource="@(Enum.GetValues<GridPagerPosition>())"
+                                                         @bind-Value="_pagerPosition" AriaLabel="Pager position"
+                                                         PanelFitContentWidth="true" />
+                                </label>
+                            }
+                            @if (_activeScreen == BenchScreen.State)
+                            {
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="CaptureState">Capture complete state</ButtonControl>
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="RestoreState" Disabled="@(_savedState == null)">Restore JSON state</ButtonControl>
+                                <span>events: @_stateEventCount · serialized: @_stateJsonLength.ToString("N0") bytes</span>
+                            }
+                            @if (_activeScreen == BenchScreen.GridTemplates)
+                            {
+                                <span>Open the grid toolbar and the column chooser from the column UI.</span>
+                            }
+                            @if (_activeScreen == BenchScreen.AdaptiveLayout)
+                            {
+                                <label>
+                                    <span>Layout</span>
+                                    <DropDownListControl TValue="GridDataLayoutMode" TItem="GridDataLayoutMode"
+                                                         DataSource="@(Enum.GetValues<GridDataLayoutMode>())"
+                                                         @bind-Value="_layoutMode" AriaLabel="Layout"
+                                                         PanelFitContentWidth="true" />
+                                </label>
+                                <span>Stacked is immediate. For Auto while Columns is selected, resize the browser viewport below 720px; resizing this hierarchy only tests ordinary grid fit.</span>
+                            }
+                            @if (_activeScreen == BenchScreen.Accessibility)
+                            {
+                                <span>Keyboard: Ctrl+Home, Ctrl+End, Ctrl+Shift+A. Start editing a cell, then use Escape to cancel it.</span>
+                            }
+                            @if (_activeScreen is BenchScreen.LocalCsvExport or BenchScreen.LocalXlsxExport)
+                            {
+                                @if (_activeScreen == BenchScreen.LocalCsvExport)
+                                {
+                                    <label>
+                                        <span>CSV encoding</span>
+                                        <DropDownListControl TValue="GridDelimitedTextEncoding" TItem="GridDelimitedTextEncoding"
+                                                         DataSource="@(Enum.GetValues<GridDelimitedTextEncoding>())"
+                                                         @bind-Value="_delimitedEncoding" AriaLabel="CSV encoding"
+                                                         PanelFitContentWidth="true" />
+                                    </label>
+                                    <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="() => CreateLocalExport(GridExportFormat.Csv)">Build and verify CSV</ButtonControl>
+                                }
+                                else
+                                {
+                                    <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="() => CreateLocalExport(GridExportFormat.Xlsx)">Build and verify XLSX</ButtonControl>
+                                }
+                            }
+                        </section>
+
+                        <div class="fcg-status" role="status" aria-live="polite">
+                            <span>@_status</span>
+                        </div>
+
+                        <div class="fcg-local-grid-area">
+                            <section id="local-enterprise-grid" class="fcg-card fcg-main-card">
+                                <div class="fcg-card-title">
+                                    <b>@ActiveScreenTitle</b>
+                                    <span>@LocalGridCaption</span>
+                                </div>
+                                <div class="@MainGridHostCss">
+                                    <GridControl @key="_mainGridKey"
+                                                 @ref="_mainGrid"
+                                                 TValue="EnterpriseRow"
+                                                 DataSource="@_rows"
+                                                 ItemKeySelector="row => row.Id"
+                                                 Height="100%"
+                                                 AccessibleLabel="@($"{ActiveScreenTitle} test grid")"
+                                                 AllowSorting="true"
+                                                 ShowMultiColumnSortingIndex="true"
+                                                 AllowFiltering="@MainGridAllowsFiltering"
+                                                 FilterMode="@ActiveFilterMode"
+                                                 FilterSettingsRef="@CurrentFilterSettings"
+                                                 EnableAdvancedFilterPopup="@MainGridAllowsFiltering"
+                                                 EnableBlankRowFilter="@MainGridAllowsFiltering"
+                                                 ShowSearchBar="@MainGridAllowsFiltering"
+                                                 ShowColumnMenu="@MainGridShowsColumnMenu"
+                                                 ShowGridToolbar="@MainGridShowsToolbar"
+                                                 AllowGrouping="@MainGridAllowsGrouping"
+                                                 AllowPaging="@MainGridAllowsPaging"
+                                                 PageSettingsRef="@_pageSettings"
+                                                 PagerPosition="@_pagerPosition"
+                                                 AllowSelection="true"
+                                                 SelectionSettingsRef="@_selectionSettings"
+                                                 AllowResizing="true"
+                                                 AllowColumnReorder="@MainGridAllowsColumnLayout"
+                                                 ShowRowCountInFooter="true"
+                                                 EditSettingsRef="@ActiveEditSettings"
+                                                 ValidationSettings="@ActiveValidationSettings"
+                                                 ShowExpandColumn="@MainGridShowsDetails"
+                                                 ShowExpandAll="@MainGridShowsDetails"
+                                                 ColumnHeaderBands="@ActiveHeaderBands"
+                                                 DataLayoutMode="@ActiveDataLayoutMode"
+                                                 AdaptiveMode="@ActiveAdaptiveMode"
+                                                 StackedColumnsCount="2"
+                                                 DelimitedExportEncoding="@_delimitedEncoding"
+                                                 CustomKeyboardShortcuts="@KeyboardShortcuts"
+                                                 GridToolBarTemplate="@ActiveGridToolbarTemplate"
+                                                 DetailTemplate="@ActiveDetailTemplate"
+                                                 PagerTemplate="@ActivePagerTemplate"
+                                                 ColumnChooserTemplate="@ActiveColumnChooserTemplate"
+                                                 OnStateChanged="HandleStateChanged">
+                                        <ChildContent>
+                                            <GridColumnsBase>
+                                                <GridColumn Field="@nameof(EnterpriseRow.Id)" HeaderText="ID" Width="65px"
+                                                            IsPrimaryKey="true" IsFrozen="@MainGridUsesFrozenColumns" FrozenPosition="FrozenColumnPosition.Left"
+                                                            Type="ColumnType.Number" AllowEditing="false" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.Code)" HeaderText="Item" Width="90px" />
+                                                @if (_activeScreen == BenchScreen.FilterCellTemplate)
+                                                {
+                                                    <GridColumn Field="@nameof(EnterpriseRow.Name)" HeaderText="Description" Width="250px">
+                                                        <FilterCellTemplate Context="filter">
+                                                            <div class="fcg-custom-filter">
+                                                                <TextBoxControl Value="@filter.Value" Placeholder="custom template"
+                                                                                ValueChanged="value => ApplyCustomFilter(filter, value)" />
+                                                                <ButtonControl BareStyle="true" CssClass="fcg-button" Title="Clear description filter" OnClick="filter.ClearAsync">×</ButtonControl>
+                                                            </div>
+                                                        </FilterCellTemplate>
+                                                    </GridColumn>
+                                                }
+                                                else
+                                                {
+                                                    <GridColumn Field="@nameof(EnterpriseRow.Name)" HeaderText="Description" Width="250px" />
+                                                }
+                                                <GridColumn Field="@nameof(EnterpriseRow.Category)" HeaderText="Category" Width="150px" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.Quantity)" HeaderText="Qty" Width="80px"
+                                                            Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.Price)" HeaderText="Price" Width="100px"
+                                                            Type="ColumnType.Number" TextAlign="TextAlign.Right" Format="C2" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.Extended)" HeaderText="Extended" Width="115px"
+                                                            Type="ColumnType.Number" TextAlign="TextAlign.Right" Format="C2"
+                                                            Formula="@($"[{nameof(EnterpriseRow.Quantity)}] * [{nameof(EnterpriseRow.Price)}]")"
+                                                            AllowEditing="false" AllowSorting="false" AllowFiltering="false" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.EffectiveDate)" HeaderText="Effective" Width="115px"
+                                                            Type="ColumnType.Date" Format="d" />
+                                                <GridColumn Field="@nameof(EnterpriseRow.Active)" HeaderText="Active" Width="75px"
+                                                            Type="ColumnType.CheckBox" />
+                                                @if (_activeScreen == BenchScreen.FilterMenuTemplate)
+                                                {
+                                                    <GridColumn Field="@nameof(EnterpriseRow.Status)" HeaderText="Status" Width="110px"
+                                                                IsFrozen="@MainGridUsesFrozenColumns" FrozenPosition="FrozenColumnPosition.Right">
+                                                        <FilterMenuTemplate Context="menu">
+                                                            <div class="fcg-status-filter">
+                                                                <b>Custom status menu</b>
+                                                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick='() => ApplyStatusFilter(menu, "Active")'>Active</ButtonControl>
+                                                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick='() => ApplyStatusFilter(menu, "Pending")'>Pending</ButtonControl>
+                                                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="menu.ClearAsync">All</ButtonControl>
+                                                            </div>
+                                                        </FilterMenuTemplate>
+                                                    </GridColumn>
+                                                }
+                                                else
+                                                {
+                                                    <GridColumn Field="@nameof(EnterpriseRow.Status)" HeaderText="Status" Width="110px"
+                                                                IsFrozen="@MainGridUsesFrozenColumns" FrozenPosition="FrozenColumnPosition.Right" />
+                                                }
+                                            </GridColumnsBase>
+                                        </ChildContent>
+                                    </GridControl>
+                                </div>
+                            </section>
+
+                        </div>
+                    }
+                    else if (_activeScreen == BenchScreen.RowNoDataTemplates)
+                    {
+                        <section class="fcg-controls" aria-label="Row template controls">
+                            <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="ToggleTemplateRows">@(_templateRows.Count == 0 ? "Restore template rows" : "Show no-data template")</ButtonControl>
+                            <span>The host owns all cells in RowTemplate and the empty body in NoDataTemplate.</span>
+                        </section>
+                        <section id="template-grid" class="fcg-card fcg-special-card">
+                            <div class="fcg-card-title">
+                                <b>Full-row and no-data templates</b>
+                                <span>Toggle the rows with the control above.</span>
+                            </div>
+                            <div class="fcg-small-grid">
+                                <GridControl @key="_mainGridKey"
+                                             TValue="TemplateRow"
+                                             DataSource="@_templateRows"
+                                             Height="100%"
+                                             AllowSelection="true"
+                                             ShowRowCountInFooter="true">
+                                    <ChildContent>
+                                        <GridColumnsBase>
+                                            <GridColumn Field="@nameof(TemplateRow.Label)" HeaderText="Template row" Width="45%" />
+                                            <GridColumn Field="@nameof(TemplateRow.Value)" HeaderText="Value" Width="25%" />
+                                            <GridColumn Field="@nameof(TemplateRow.Note)" HeaderText="Note" Width="30%" />
+                                        </GridColumnsBase>
+                                    </ChildContent>
+                                    <RowTemplate Context="row">
+                                        <td class="fx-cell"><b>#@(row.RowIndex + 1) @row.Item.Label</b></td>
+                                        <td class="fx-cell">@row.Item.Value</td>
+                                        <td class="fx-cell"><span class="fcg-row-pill">@row.Item.Note</span></td>
+                                    </RowTemplate>
+                                    <NoDataTemplate>
+                                        <div class="fcg-empty">The custom empty template is active.</div>
+                                    </NoDataTemplate>
+                                </GridControl>
+                            </div>
+                        </section>
+                    }
+                    else if (_activeScreen == BenchScreen.AutoColumns)
+                    {
+                        <section id="auto-columns-grid" class="fcg-card fcg-special-card">
+                            <div class="fcg-card-title">
+                                <b>Annotation auto-generation</b>
+                                <span>Display, Key, Editable, formatting, and ScaffoldColumn.</span>
+                            </div>
+                            <div class="fcg-grid-host">
+                                <GridControl @key="_mainGridKey"
+                                             TValue="AutoRow"
+                                             DataSource="@_autoRows"
+                                             AutoGenerateColumns="true"
+                                             Height="100%"
+                                             AllowSorting="true"
+                                             AllowFiltering="true"
+                                             FilterMode="GridFilterMode.Simple"
+                                             ShowColumnMenu="true"
+                                             AllowSelection="true"
+                                             EditSettingsRef="@_editSettings"
+                                             ShowRowCountInFooter="true" />
+                            </div>
+                        </section>
+                    }
+                    else if (_activeScreen == BenchScreen.ColumnVirtualization)
+                    {
+                        <section class="fcg-controls" aria-label="Column virtualization controls">
+                            <label>Overscan columns <NumericTextBoxControl TValue="int" Min="0" Max="10" Width="60px" @bind-Value="_columnOverscan" /></label>
+                            <span>First and last columns remain mounted and frozen.</span>
+                        </section>
+                        <section id="column-virtualization-grid" class="fcg-card fcg-special-card">
+                            <div class="fcg-card-title">
+                                <b>42-column horizontal window</b>
+                                <span>Current overscan: @_columnOverscan</span>
+                            </div>
+                            <div class="fcg-grid-host">
+                                <GridControl @key="_mainGridKey"
+                                             TValue="WideRow"
+                                             DataSource="@_wideRows"
+                                             Height="100%"
+                                             EnableColumnVirtualization="true"
+                                             ColumnVirtualizationOverscan="@_columnOverscan"
+                                             ShowColumnVirtualizationFallback="true"
+                                             AllowSorting="true"
+                                             AllowSelection="true"
+                                             ShowRowCountInFooter="true">
+                                    <GridColumnsBase>
+                                        @foreach (var column in _wideColumns)
+                                        {
+                                            <GridColumn @key="column.Field"
+                                                        Field="@column.Field"
+                                                        HeaderText="@column.Header"
+                                                        Width="@column.Width"
+                                                        IsFrozen="@column.Frozen"
+                                                        FrozenPosition="@column.Position" />
+                                        }
+                                    </GridColumnsBase>
+                                </GridControl>
+                            </div>
+                        </section>
+                    }
+                    else if (UsesProviderGrid)
+                    {
+                        @if (_activeScreen == BenchScreen.ProviderExport)
+                        {
+                            <section class="fcg-controls" aria-label="Provider export controls">
+                                <label>
+                                    <span>CSV encoding</span>
+                                    <DropDownListControl TValue="GridDelimitedTextEncoding" TItem="GridDelimitedTextEncoding"
+                                                         DataSource="@(Enum.GetValues<GridDelimitedTextEncoding>())"
+                                                         @bind-Value="_delimitedEncoding" AriaLabel="CSV encoding"
+                                                         PanelFitContentWidth="true" />
+                                </label>
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="() => CreateProviderExport(GridExportFormat.Csv)" Disabled="@(_providerGrid?.IsProviderExporting == true)">Build complete CSV</ButtonControl>
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="() => CreateProviderExport(GridExportFormat.Xlsx)" Disabled="@(_providerGrid?.IsProviderExporting == true)">Build complete XLSX</ButtonControl>
+                                <ButtonControl BareStyle="true" CssClass="fcg-button" OnClick="CancelProviderExport" Disabled="@(_providerGrid?.IsProviderExporting != true)">Cancel export</ButtonControl>
+                            </section>
+                        }
+
+                        <div class="fcg-provider-status" role="status" aria-live="polite">
+                            <span>provider calls: @_providerRequestCount.ToString("N0")</span>
+                            <span class="fcg-provider-request"><b>last request:</b> @_providerLastRequest</span>
+                            @if (_activeScreen == BenchScreen.ProviderExport)
+                            {
+                                <span>export: @_providerExportText</span>
+                                <span>bytes: @_providerExportBytes.ToString("N0")</span>
+                            }
+                        </div>
+                        <section id="provider-enterprise-grid" class="fcg-card fcg-provider-card">
+                            <div class="fcg-card-title">
+                                <b>@ActiveScreenTitle</b>
+                                <span>@ProviderGridCaption</span>
+                            </div>
+                            <div class="fcg-provider-grid">
+                                <GridControl @key="ProviderGridRenderKey"
+                                             @ref="_providerGrid"
+                                             TValue="ProviderOrder"
+                                             ItemsProvider="@_provider"
+                                             ItemKeySelector="row => row.Id"
+                                             ItemsProviderContextKey="@ActiveProviderContextKey"
+                                             Height="100%"
+                                             AccessibleLabel="@($"{ActiveScreenTitle} provider grid")"
+                                             AllowGrouping="@IsProviderGroupingScreen"
+                                             GroupColumns="@ActiveProviderGroups"
+                                             EnableProviderGrouping="@IsProviderGroupingScreen"
+                                             ProviderGroupsInitiallyCollapsed="true"
+                                             ProviderGroupPageSize="2"
+                                             ProviderGroupItemPageSize="80"
+                                             ShowGroupCount="true"
+                                             AllowSorting="true"
+                                             AllowMultiSorting="true"
+                                             AllowFiltering="true"
+                                             FilterMode="@ActiveProviderFilterMode"
+                                             EnableAdvancedFilterPopup="true"
+                                             EnableBlankRowFilter="true"
+                                             EnableProviderFilterValueRequests="true"
+                                             ProviderFilterValueRequestSize="500"
+                                             ShowSearchBar="true"
+                                             ShowColumnMenu="true"
+                                             AllowResizing="true"
+                                             ExportAllProviderItems="true"
+                                             ProviderExportPageSize="350"
+                                             DelimitedExportEncoding="@_delimitedEncoding"
+                                             ProviderExportProgressChanged="@ActiveProviderProgressCallback"
+                                             ShowRowCountInFooter="true"
+                                             AggregateRows="@ActiveProviderAggregates">
+                                    <GridColumnsBase>
+                                        <GridColumn Field="@nameof(ProviderOrder.Id)" HeaderText="Order" Width="80px" Type="ColumnType.Number" />
+                                        <GridColumn Field="@nameof(ProviderOrder.Region)" HeaderText="Region" Width="105px" />
+                                        <GridColumn Field="@nameof(ProviderOrder.Category)" HeaderText="Category" Width="130px" />
+                                        <GridColumn Field="@nameof(ProviderOrder.Customer)" HeaderText="Customer" Width="210px" />
+                                        <GridColumn Field="@nameof(ProviderOrder.OrderDate)" HeaderText="Date" Width="105px" Type="ColumnType.Date" Format="d" />
+                                        <GridColumn Field="@nameof(ProviderOrder.Quantity)" HeaderText="Qty" Width="70px" Type="ColumnType.Number" TextAlign="TextAlign.Right" />
+                                        <GridColumn Field="@nameof(ProviderOrder.Amount)" HeaderText="Amount" Width="115px" Type="ColumnType.Number" Format="C2" TextAlign="TextAlign.Right" />
+                                    </GridColumnsBase>
+                                </GridControl>
+                            </div>
+                            <p class="fcg-provider-note">@ProviderScreenNote</p>
+                        </section>
+                    }
+                }
+            </section>
+        </div>
+    </div>
+    </div>
+</PageControl>
+
+@code {
+    private static string ControlKitAssembly =>
+        typeof(GridControl<>).Assembly.GetName().Name ?? "Unknown";
+
+    private enum BenchScreen
+    {
+        Overview,
+        MultiSort,
+        InlineEditing,
+        DialogEditing,
+        BatchEditing,
+        Validation,
+        FilterRow,
+        DualFilterMenu,
+        ExcelChecklist,
+        FilterCellTemplate,
+        FilterMenuTemplate,
+        HeaderBands,
+        ColumnMenu,
+        RightLocking,
+        AutoColumns,
+        MasterDetail,
+        LocalCsvExport,
+        LocalXlsxExport,
+        Pager,
+        State,
+        GridTemplates,
+        RowNoDataTemplates,
+        AdaptiveLayout,
+        Accessibility,
+        ColumnVirtualization,
+        ProviderQuery,
+        ProviderFilterValues,
+        ProviderGrouping,
+        ProviderExport
+    }
+
+    private GridControl<EnterpriseRow>? _mainGrid;
+    private GridControl<ProviderOrder>? _providerGrid;
+    private readonly List<EnterpriseRow> _rows = [];
+    private readonly List<EnterpriseRow> _rowSeed = [];
+    private readonly List<AutoRow> _autoRows = [];
+    private readonly List<AutoRow> _autoRowSeed = [];
+    private List<TemplateRow> _templateRows = [];
+    private readonly List<WideRow> _wideRows = [];
+    private readonly List<WideColumn> _wideColumns = [];
+    private readonly List<ProviderOrder> _providerRows = BuildProviderRows();
+    private readonly List<TreeNode> _navigationNodes = BuildNavigationNodes();
+    private GridItemsProvider<ProviderOrder> _provider = default!;
+    private TreeNode? _selectedNavigationNode;
+    private BenchScreen _activeScreen = BenchScreen.Overview;
+    private GridState? _savedState;
+    private int _mainGridKey;
+    private int _providerGridKey;
+    private int _stateEventCount;
+    private int _stateJsonLength;
+    private int _columnOverscan = 2;
+    private string _status = "Ready. Click two headers to verify ordered local multi-sort, or use the sample button.";
+    private string _multiSortVerification = "not run";
+    private string _multiSortSample = "";
+    private bool? _multiSortPassed;
+    private EditMode _editMode = EditMode.Batch;
+    private GridPagerPosition _pagerPosition = GridPagerPosition.Both;
+    private GridDataLayoutMode _layoutMode = GridDataLayoutMode.Columns;
+    private GridDelimitedTextEncoding _delimitedEncoding = GridDelimitedTextEncoding.Utf8NoBom;
+    private bool _caseSensitive;
+    private bool _showFilterRowOperators = true;
+    private bool _showExpandColumn = true;
+    private long _providerRequestCount;
+    private int _providerExportBytes;
+    private string _providerLastRequest = "waiting for first request";
+    private string _providerExportText = "not started";
+
+    private FeatureTest? ActiveTest =>
+        FeatureTests.FirstOrDefault(test => test.Screen == _activeScreen);
+
+    private string ActiveScreenTitle =>
+        _activeScreen == BenchScreen.Overview ? "Feature test overview" : ActiveTest?.Feature ?? "Grid test";
+
+    private string ActiveScreenGroup => _activeScreen switch
+    {
+        BenchScreen.Overview => "Overview",
+        BenchScreen.MultiSort => "Sorting",
+        BenchScreen.AutoColumns or BenchScreen.ColumnVirtualization => "Generated and virtualized",
+        BenchScreen.ProviderQuery or BenchScreen.ProviderFilterValues or BenchScreen.ProviderGrouping or BenchScreen.ProviderExport => "Provider grid",
+        BenchScreen.InlineEditing or BenchScreen.DialogEditing or BenchScreen.BatchEditing or BenchScreen.Validation => "Editing",
+        BenchScreen.FilterRow or BenchScreen.DualFilterMenu or BenchScreen.ExcelChecklist or BenchScreen.FilterCellTemplate or BenchScreen.FilterMenuTemplate => "Filtering",
+        BenchScreen.HeaderBands or BenchScreen.ColumnMenu or BenchScreen.RightLocking => "Columns",
+        BenchScreen.MasterDetail or BenchScreen.GridTemplates or BenchScreen.RowNoDataTemplates or BenchScreen.AdaptiveLayout or BenchScreen.Accessibility => "Rows and presentation",
+        BenchScreen.LocalCsvExport or BenchScreen.LocalXlsxExport => "Export",
+        BenchScreen.Pager or BenchScreen.State => "Data and state",
+        _ => "Local grid"
+    };
+
+    private string MainGridHostCss => _activeScreen == BenchScreen.RightLocking
+        ? "fcg-grid-host fcg-grid-host-locking"
+        : "fcg-grid-host";
+
+    private bool UsesLocalEnterpriseGrid => _activeScreen is
+        BenchScreen.MultiSort
+        or BenchScreen.InlineEditing
+        or BenchScreen.DialogEditing
+        or BenchScreen.BatchEditing
+        or BenchScreen.Validation
+        or BenchScreen.FilterRow
+        or BenchScreen.DualFilterMenu
+        or BenchScreen.ExcelChecklist
+        or BenchScreen.FilterCellTemplate
+        or BenchScreen.FilterMenuTemplate
+        or BenchScreen.HeaderBands
+        or BenchScreen.ColumnMenu
+        or BenchScreen.RightLocking
+        or BenchScreen.MasterDetail
+        or BenchScreen.LocalCsvExport
+        or BenchScreen.LocalXlsxExport
+        or BenchScreen.Pager
+        or BenchScreen.State
+        or BenchScreen.GridTemplates
+        or BenchScreen.AdaptiveLayout
+        or BenchScreen.Accessibility;
+
+    private bool UsesProviderGrid => _activeScreen is
+        BenchScreen.ProviderQuery
+        or BenchScreen.ProviderFilterValues
+        or BenchScreen.ProviderGrouping
+        or BenchScreen.ProviderExport;
+
+    private bool MainGridAllowsFiltering => _activeScreen is
+        BenchScreen.FilterRow
+        or BenchScreen.DualFilterMenu
+        or BenchScreen.ExcelChecklist
+        or BenchScreen.FilterCellTemplate
+        or BenchScreen.FilterMenuTemplate
+        or BenchScreen.ColumnMenu
+        or BenchScreen.State;
+
+    private bool MainGridShowsColumnMenu =>
+        _activeScreen is BenchScreen.DualFilterMenu
+            or BenchScreen.ExcelChecklist
+            or BenchScreen.FilterMenuTemplate
+            or BenchScreen.ColumnMenu
+            or BenchScreen.RightLocking
+            or BenchScreen.State
+            or BenchScreen.GridTemplates;
+
+    private bool MainGridShowsToolbar =>
+        _activeScreen == BenchScreen.GridTemplates;
+
+    private bool MainGridAllowsGrouping =>
+        _activeScreen == BenchScreen.State;
+
+    private bool MainGridAllowsPaging =>
+        _activeScreen is BenchScreen.Pager or BenchScreen.State;
+
+    private bool MainGridAllowsColumnLayout =>
+        _activeScreen is BenchScreen.ColumnMenu or BenchScreen.RightLocking or BenchScreen.State;
+
+    private bool MainGridUsesFrozenColumns =>
+        _activeScreen is BenchScreen.RightLocking or BenchScreen.State;
+
+    private bool MainGridShowsDetails =>
+        _showExpandColumn && (_activeScreen is BenchScreen.MasterDetail or BenchScreen.State);
+
+    private EditSettings? ActiveEditSettings =>
+        IsEditingScreen || _activeScreen == BenchScreen.Accessibility ? _editSettings : null;
+
+    private GridValidationSettings<EnterpriseRow>? ActiveValidationSettings =>
+        _activeScreen == BenchScreen.Validation ? _validationSettings : null;
+
+    private IReadOnlyList<GridColumnHeaderBand>? ActiveHeaderBands =>
+        _activeScreen is BenchScreen.HeaderBands or BenchScreen.State ? _headerBands : null;
+
+    private GridDataLayoutMode ActiveDataLayoutMode =>
+        _activeScreen == BenchScreen.AdaptiveLayout ? _layoutMode : GridDataLayoutMode.Columns;
+
+    private GridAdaptiveMode ActiveAdaptiveMode =>
+        _activeScreen == BenchScreen.AdaptiveLayout ? GridAdaptiveMode.Auto : GridAdaptiveMode.None;
+
+    private RenderFragment? ActiveGridToolbarTemplate =>
+        _activeScreen == BenchScreen.GridTemplates ? GridToolbarContent : null;
+
+    private RenderFragment<EnterpriseRow>? ActiveDetailTemplate =>
+        _activeScreen is BenchScreen.MasterDetail or BenchScreen.State ? DetailContent : null;
+
+    private RenderFragment<GridPagerContext>? ActivePagerTemplate =>
+        _activeScreen == BenchScreen.Pager ? PagerContent : null;
+
+    private RenderFragment<GridColumnChooserContext>? ActiveColumnChooserTemplate =>
+        _activeScreen == BenchScreen.GridTemplates ? ColumnChooserContent : null;
+
+    private RenderFragment GridToolbarContent =>
+        @<span class="fcg-toolbar-badge">custom toolbar template</span>;
+
+    private RenderFragment<EnterpriseRow> DetailContent => row =>
+        @<div class="fcg-detail">
+            <b>@row.Code</b> — @row.Name<br />
+            Source phase: @row.SourcePhase · row key: @row.Id
+        </div>;
+
+    private sealed record BenchPageSizeChoice(int Value, string Text);
+
+    private RenderFragment<GridPagerContext> PagerContent => pager =>
+        @<div class="fcg-pager">
+            <ButtonControl BareStyle="true" CssClass="fcg-button" Disabled="@(pager.CurrentPage <= 1)"
+                    OnClick="() => pager.GoToPageAsync(pager.CurrentPage - 1)">Previous</ButtonControl>
+            <span>custom pager · @pager.RowCountText · page @pager.CurrentPage of @pager.TotalPages</span>
+            <label>
+                rows
+                <DropDownListControl TValue="int" TItem="BenchPageSizeChoice"
+                                     DataSource="@(pager.PageSizes.Select(size => new BenchPageSizeChoice(size, size <= 0 ? "All" : size.ToString())))"
+                                     TextFieldName="Text" ValueFieldName="Value"
+                                     Value="@pager.PageSize" ValueChanged="size => SetPagerPageSize(pager, size)"
+                                     AriaLabel="Rows per page" PanelFitContentWidth="true" />
+            </label>
+            <ButtonControl BareStyle="true" CssClass="fcg-button" Disabled="@(pager.CurrentPage >= pager.TotalPages)"
+                    OnClick="() => pager.GoToPageAsync(pager.CurrentPage + 1)">Next</ButtonControl>
+        </div>;
+
+    private RenderFragment<GridColumnChooserContext> ColumnChooserContent => chooser =>
+        @<div class="fcg-chooser-template">
+            <b>Custom column chooser template</b>
+            @foreach (var column in chooser.Columns)
+            {
+                <CheckBoxControl Label="@column.Header" Checked="@column.Visible" Disabled="@(!column.CanHide)"
+                                 CheckedChanged="visible => SetChooserVisibility(chooser, column, visible)" />
+            }
+        </div>;
+
+    private GridFilterMode ActiveFilterMode => _activeScreen switch
+    {
+        BenchScreen.FilterRow or BenchScreen.FilterCellTemplate => GridFilterMode.Simple,
+        BenchScreen.ExcelChecklist => GridFilterMode.Excel,
+        _ => GridFilterMode.SimpleWithMenu
+    };
+
+    private GridFilterMode ActiveProviderFilterMode =>
+        _activeScreen == BenchScreen.ProviderFilterValues
+            ? GridFilterMode.Excel
+            : GridFilterMode.SimpleWithMenu;
+
+    private bool IsEditingScreen => _activeScreen is
+        BenchScreen.InlineEditing
+        or BenchScreen.DialogEditing
+        or BenchScreen.BatchEditing
+        or BenchScreen.Validation;
+
+    private bool IsLocalFilteringScreen => _activeScreen is
+        BenchScreen.FilterRow
+        or BenchScreen.DualFilterMenu
+        or BenchScreen.ExcelChecklist
+        or BenchScreen.FilterCellTemplate
+        or BenchScreen.FilterMenuTemplate;
+
+    private string EditingScreenHint => _activeScreen switch
+    {
+        BenchScreen.BatchEditing => "Select rows with checkboxes, Ctrl/Cmd-click, Shift-click, or drag. Type a shared value and press Enter; Escape cancels. A plain cell click selects only that row.",
+        BenchScreen.Validation => "Double-click a row and enter an invalid Item, Qty, or Price.",
+        _ => "Double-click a row, then use the generated Save and Cancel actions."
+    };
+
+    private bool IsProviderGroupingScreen =>
+        _activeScreen == BenchScreen.ProviderGrouping;
+
+    private List<string>? ActiveProviderGroups =>
+        IsProviderGroupingScreen ? _providerGroups : null;
+
+    private List<AggregateRow>? ActiveProviderAggregates =>
+        IsProviderGroupingScreen ? _providerAggregates : null;
+
+    private string ActiveProviderContextKey =>
+        $"enterprise-provider-bench-v2-{_activeScreen}-{_providerGridKey}";
+
+    private string ProviderGridRenderKey =>
+        ActiveProviderContextKey;
+
+    private EventCallback<GridProviderExportProgress> ActiveProviderProgressCallback
+    {
+        get
+        {
+            var generation = _providerGridKey;
+            return EventCallback.Factory.Create<GridProviderExportProgress>(
+                this,
+                progress => HandleProviderExportProgress(generation, progress));
+        }
+    }
+
+    private string LocalGridCaption => _activeScreen switch
+    {
+        BenchScreen.MultiSort => "Sort indicators and exported row order are verified together.",
+        BenchScreen.InlineEditing => "The complete row enters inline edit mode.",
+        BenchScreen.DialogEditing => "The selected row opens in an automated dialog form.",
+        BenchScreen.BatchEditing => "The active cell can commit one shared field across all editable selected rows.",
+        BenchScreen.Validation => "EditContext, DataAnnotations, IValidatableObject, and custom validation surface errors.",
+        BenchScreen.FilterRow => "Typed filter inputs remain directly beneath the headers.",
+        BenchScreen.DualFilterMenu => "Combine two typed criteria with AND or OR.",
+        BenchScreen.ExcelChecklist => "Search and select distinct values with tri-state selection.",
+        BenchScreen.FilterCellTemplate => "Description uses the host-supplied filter-row template.",
+        BenchScreen.FilterMenuTemplate => "Status uses the host-supplied filter-menu template.",
+        BenchScreen.HeaderBands => "Identity, Pricing, and Workflow form one-level parent bands.",
+        BenchScreen.ColumnMenu => "Use header menus for sort, filter, visibility, sizing, and locking.",
+        BenchScreen.RightLocking => "ID is left-frozen and Status is right-frozen with cumulative offsets.",
+        BenchScreen.MasterDetail => "Use the row or header expand controls.",
+        BenchScreen.LocalCsvExport => "CSV follows the visible column schema and selected encoding.",
+        BenchScreen.LocalXlsxExport => "XLSX preserves native values, formats, widths, and formulas.",
+        BenchScreen.Pager => $"Custom pager position: {_pagerPosition}.",
+        BenchScreen.State => "Change sorting, filters, grouping, columns, page, selection, and details.",
+        BenchScreen.GridTemplates => "Exercise the toolbar and custom column chooser surfaces.",
+        BenchScreen.AdaptiveLayout => $"Current layout: {_layoutMode}; Auto adapts at the narrow breakpoint.",
+        BenchScreen.Accessibility => "Use keyboard shortcuts and inspect grid, row, cell, sort, and active-cell ARIA metadata.",
+        _ => "Focused local grid test."
+    };
+
+    private string ProviderGridCaption => _activeScreen switch
+    {
+        BenchScreen.ProviderQuery => "Sort, search, filter, and inspect request-purpose telemetry.",
+        BenchScreen.ProviderFilterValues => "Open an Excel checklist to request the complete remote value set.",
+        BenchScreen.ProviderGrouping => "Expand Region, then Category, to load group children and items.",
+        BenchScreen.ProviderExport => "Visible ranges and complete-query export use independent requests.",
+        _ => "Provider test."
+    };
+
+    private string ProviderScreenNote => _activeScreen switch
+    {
+        BenchScreen.ProviderQuery => "Every sort, filter, and search change produces a new immutable query descriptor and range request; stale generations are canceled and ignored.",
+        BenchScreen.ProviderFilterValues => "The Excel checklist issues Purpose=FilterValues. Partial selection remains disabled until the provider confirms that all distinct values have been returned.",
+        BenchScreen.ProviderGrouping => "Region expansion issues GroupChildren; Category expansion issues GroupItems. Captions and the footer use provider-calculated aggregates.",
+        BenchScreen.ProviderExport => "Export uses independent Purpose=Export pages and never replaces the visible provider cache. Cancel interrupts only the active export.",
+        _ => ""
+    };
+
+    private string MultiSortVerificationCss => _multiSortPassed switch
+    {
+        true => "fcg-verification fcg-verification-pass",
+        false => "fcg-verification fcg-verification-fail",
+        _ => "fcg-verification"
+    };
+
+    private EditSettings _editSettings = CreateEditSettings(EditMode.Batch);
+    private readonly PageSettings _pageSettings = new()
+    {
+        PageSize = 25,
+        PageSizes = [10, 25, 50, 100],
+        PageCount = 5
+    };
+    private readonly SelectionSettings _selectionSettings = new()
+    {
+        Type = SelectionType.Multiple,
+        Mode = SelectionMode.Row,
+        PersistSelection = true,
+        ShowCheckboxes = true,
+        CheckboxOnly = false,
+        MultiSelectBehavior = GridMultiSelectBehavior.VBMultiSelect
+    };
+    private readonly GridValidationSettings<EnterpriseRow> _validationSettings = new()
+    {
+        EnableDataAnnotations = true,
+        ShowFieldMessages = true,
+        ShowValidationSummary = true,
+        CustomValidator = ValidateEnterpriseRow
+    };
+    private readonly IReadOnlyList<GridColumnHeaderBand> _headerBands =
+    [
+        new("Identity", nameof(EnterpriseRow.Id), nameof(EnterpriseRow.Code), nameof(EnterpriseRow.Name)),
+        new("Pricing", nameof(EnterpriseRow.Quantity), nameof(EnterpriseRow.Price), nameof(EnterpriseRow.Extended)),
+        new("Workflow", nameof(EnterpriseRow.EffectiveDate), nameof(EnterpriseRow.Active), nameof(EnterpriseRow.Status))
+    ];
+    private readonly List<string> _providerGroups =
+    [
+        nameof(ProviderOrder.Region),
+        nameof(ProviderOrder.Category)
+    ];
+    private readonly List<AggregateRow> _providerAggregates =
+    [
+        new AggregateRow
+        {
+            ShowInGroupCaption = true,
+            ShowInFooter = true,
+            Columns =
+            [
+                new AggregateColumn
+                {
+                    Field = nameof(ProviderOrder.Amount),
+                    Type = AggregateType.Sum,
+                    Format = "C2",
+                    GroupCaptionTemplate = "sum {value}",
+                    FooterTemplate = "Total {value}"
+                }
+            ]
+        }
+    ];
+
+    private FilterSettings CurrentFilterSettings => new()
+    {
+        EnableCaseSensitivity = _caseSensitive,
+        ShowFilterRowOperators = _showFilterRowOperators,
+        ImmediateModeDelay = 250
+    };
+
+    private static IReadOnlyDictionary<string, GridKeyboardCommand> KeyboardShortcuts { get; } =
+        new Dictionary<string, GridKeyboardCommand>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Ctrl+Home"] = GridKeyboardCommand.FirstRow,
+            ["Ctrl+End"] = GridKeyboardCommand.LastRow,
+            ["Ctrl+Shift+A"] = GridKeyboardCommand.SelectAll,
+            ["Escape"] = GridKeyboardCommand.CancelEdit
+        };
+
+    private static IReadOnlyList<FeatureLine> FeatureCoverage { get; } =
+    [
+        new("ordered local multi-sort", "Every descriptor is applied using OrderBy/ThenBy in explicit priority order."),
+        new("EditContext validation", "Inline, dialog and batch property edits show DataAnnotations/custom errors."),
+        new("typed filters + templates", "Filter row, two-condition/checklist menus and template hooks."),
+        new("header bands + auto columns", "Metadata-driven columns and one-level parent bands."),
+        new("column menu + two-edge locks", "Sort, filter, hide, fit, lock left/right and unlock."),
+        new("complete local state", "Local layout, query, paging, selection and expansion round-trip."),
+        new("local pager + broad templates", "DataSource pager position/template, toolbar, row, empty and chooser templates."),
+        new("adaptive + accessibility", "Stacked responsive layout, ARIA grid metadata and shortcut contract."),
+        new("CSV + XLSX export", "Select a delimited encoding and verify a computed column becomes a real XLSX formula."),
+        new("column virtualization", "Wide fixed-width schemas render a horizontal window plus overscan."),
+        new("provider query/group/export", "Remote descriptors, lazy groups, aggregates, filter values and export-all.")
+    ];
+
+    private static IReadOnlyList<FeatureTest> FeatureTests { get; } =
+    [
+        new(BenchScreen.MultiSort, "Ordered multi-sort", "Local grid / Multi-sort", "Right-click a column header and choose Multi-sort → Custom Sort, or use the Custom Sort button. Add columns, choose each order, move levels up/down, then Apply. Cancel must preserve the prior order. The bench independently verifies every resulting row."),
+        new(BenchScreen.InlineEditing, "Inline row editing", "Editing / Inline", "Double-click a row. Verify the entire row switches to editors with inline Save and Cancel actions, then save one change and cancel another."),
+        new(BenchScreen.DialogEditing, "Dialog (popup) editing", "Editing / Dialog", "Double-click a row. Verify the generated dialog contains the editable fields and that Save and Cancel close it with the expected result."),
+        new(BenchScreen.BatchEditing, "Batch and in-cell editing", "Editing / Batch", "Select rows using checkboxes, Ctrl/Cmd-click, Shift-click, or drag. Type into the active column and press Enter to update the selection. Escape cancels; a plain click replaces the selection."),
+        new(BenchScreen.Validation, "EditContext and validation", "Editing / Validation", "Double-click a row. Enter an empty or one-character item code, quantity 0, or price over 100,000; verify DataAnnotations and the custom validator prevent save."),
+        new(BenchScreen.FilterRow, "Typed filter row", "Filtering / Filter row", "Enter text, number, date, and Boolean criteria beneath the headers. Turn off Show operator dropdowns to type with Contains in every column."),
+        new(BenchScreen.DualFilterMenu, "Dual-condition filter menu", "Filtering / Advanced menu", "Open a column filter menu, enter two conditions, switch AND/OR, apply, and confirm both criteria affect the result."),
+        new(BenchScreen.ExcelChecklist, "Excel-style checklist filtering", "Filtering / Checklist", "Open a column filter, search its distinct values, test select-all/partial tri-state behavior, and apply a partial selection."),
+        new(BenchScreen.FilterCellTemplate, "Filter-cell template", "Filtering / Cell template", "Use the custom Description input and clear button. Verify it participates in the same filtering pipeline as built-in filter cells."),
+        new(BenchScreen.FilterMenuTemplate, "Filter-menu template", "Filtering / Menu template", "Open the Status filter and use the host-supplied Active, Pending, and All commands."),
+        new(BenchScreen.HeaderBands, "Multi-column header bands", "Columns / Header bands", "Verify Identity, Pricing, and Workflow span their configured child columns and remain aligned while resizing."),
+        new(BenchScreen.ColumnMenu, "Column menu", "Columns / Menu", "Use header commands for sorting, filtering, hiding/showing, best fit, reordering, and locking; verify the grid updates immediately."),
+        new(BenchScreen.RightLocking, "Left and right column locking", "Columns / Locking", "Scroll horizontally and verify ID remains fixed left while Status remains fixed right. Change locks from a header menu and verify cumulative offsets."),
+        new(BenchScreen.AutoColumns, "Metadata-generated columns", "Generated / Auto columns", "Inspect Display and DisplayName ordering and currency formats. Double-click SKU or Description to edit; verify the primary-key Item # and [Editable(false)] Extended cells refuse editing, and InternalNote is omitted."),
+        new(BenchScreen.MasterDetail, "Master/detail", "Local grid / Master-detail", "Use the expand-all header and individual row buttons. Hide and restore the detail expand column with the screen control."),
+        new(BenchScreen.GridTemplates, "Toolbar and column-chooser templates", "Presentation / Grid templates", "Verify the custom toolbar badge, open the custom column chooser, hide and restore columns, and confirm ordinary cells need no host template."),
+        new(BenchScreen.RowNoDataTemplates, "Row and no-data templates", "Presentation / Row templates", "Inspect the host-owned row cells, then choose Show no-data template and restore the rows."),
+        new(BenchScreen.AdaptiveLayout, "Adaptive and stacked layout", "Presentation / Adaptive", "Switch to Stacked for an immediate card layout. Return to Columns and resize the browser viewport below 720px to exercise Auto; hierarchy resizing tests normal grid fit but does not change the viewport breakpoint."),
+        new(BenchScreen.Accessibility, "Accessibility and keyboard commands", "Presentation / Accessibility", "Use Ctrl+Home, Ctrl+End, and Ctrl+Shift+A. Start an edit and use Escape to cancel it. Inspect grid/row/gridcell roles, sort state, row counts, indexes, and aria-activedescendant."),
+        new(BenchScreen.LocalCsvExport, "Local CSV export", "Export / CSV", "Choose each encoding, build CSV, and verify the byte prefix plus the current visible schema and query order."),
+        new(BenchScreen.LocalXlsxExport, "Native XLSX export", "Export / XLSX", "Build XLSX. The bench verifies native number/date cells, Excel formats, widths, and the same-row Extended formula."),
+        new(BenchScreen.Pager, "Pager placement and template", "Data / Pager", "Switch Top, Bottom, and Both. Change pages and page sizes through the custom pager. Provider grids intentionally use virtual ranges instead."),
+        new(BenchScreen.State, "Serializable state", "Data / State", "Change columns, sorting, filtering, grouping, page, selection, and detail expansion; capture; change again; then restore through JSON."),
+        new(BenchScreen.ColumnVirtualization, "Horizontal column virtualization", "Generated / Virtualization", "Scroll the 42-column grid horizontally and vary overscan. Verify the first and last frozen columns remain mounted and fallback status appears when required."),
+        new(BenchScreen.ProviderQuery, "Remote query pipeline", "Provider / Query", "Sort, multi-sort, search, and filter. Confirm every descriptor and the requested Skip/Take-style range in the request telemetry."),
+        new(BenchScreen.ProviderFilterValues, "Remote checklist values", "Provider / Filter values", "Open the Category Excel checklist. Verify Purpose=FilterValues requests and that partial selection unlocks only after the provider confirms completeness."),
+        new(BenchScreen.ProviderGrouping, "Lazy provider grouping and aggregates", "Provider / Grouping", "Expand Region and then Category. Verify separate group-child and group-item requests, group counts, caption sums, and the scoped footer total."),
+        new(BenchScreen.ProviderExport, "Provider export-all and cancellation", "Provider / Export", "Build complete CSV or XLSX and watch paged progress. Cancel an in-flight export and verify the visible range remains intact.")
+    ];
+
+    private static List<TreeNode> BuildNavigationNodes() =>
+    [
+        CreateNavigationLeaf(BenchScreen.Overview, "Overview", selected: true),
+        new TreeNode
+        {
+            Text = "Sorting",
+            IsBold = true,
+            IsExpanded = true,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.MultiSort, "Ordered multi-sort")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Editing",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.InlineEditing, "Inline row editing"),
+                CreateNavigationLeaf(BenchScreen.DialogEditing, "Dialog editing"),
+                CreateNavigationLeaf(BenchScreen.BatchEditing, "Batch / in-cell editing"),
+                CreateNavigationLeaf(BenchScreen.Validation, "EditContext and validation")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Filtering",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.FilterRow, "Typed filter row"),
+                CreateNavigationLeaf(BenchScreen.DualFilterMenu, "Dual-condition menu"),
+                CreateNavigationLeaf(BenchScreen.ExcelChecklist, "Excel-style checklist"),
+                CreateNavigationLeaf(BenchScreen.FilterCellTemplate, "Filter-cell template"),
+                CreateNavigationLeaf(BenchScreen.FilterMenuTemplate, "Filter-menu template")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Columns",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.HeaderBands, "Header bands"),
+                CreateNavigationLeaf(BenchScreen.ColumnMenu, "Column menu"),
+                CreateNavigationLeaf(BenchScreen.RightLocking, "Left / right locking")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Rows and presentation",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.MasterDetail, "Master/detail"),
+                CreateNavigationLeaf(BenchScreen.GridTemplates, "Toolbar / chooser templates"),
+                CreateNavigationLeaf(BenchScreen.RowNoDataTemplates, "Row / no-data templates"),
+                CreateNavigationLeaf(BenchScreen.AdaptiveLayout, "Adaptive layout"),
+                CreateNavigationLeaf(BenchScreen.Accessibility, "Accessibility / keyboard")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Export",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.LocalCsvExport, "Local CSV"),
+                CreateNavigationLeaf(BenchScreen.LocalXlsxExport, "Local XLSX")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Data and state",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.Pager, "Pager and template"),
+                CreateNavigationLeaf(BenchScreen.State, "Serializable state")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Generated and virtualized",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.AutoColumns, "Metadata-generated columns"),
+                CreateNavigationLeaf(BenchScreen.ColumnVirtualization, "Column virtualization")
+            ]
+        },
+        new TreeNode
+        {
+            Text = "Provider grid",
+            IsBold = true,
+            IsExpanded = false,
+            Children =
+            [
+                CreateNavigationLeaf(BenchScreen.ProviderQuery, "Remote query pipeline"),
+                CreateNavigationLeaf(BenchScreen.ProviderFilterValues, "Remote checklist values"),
+                CreateNavigationLeaf(BenchScreen.ProviderGrouping, "Lazy grouping and aggregates"),
+                CreateNavigationLeaf(BenchScreen.ProviderExport, "Export-all and cancellation")
+            ]
+        }
+    ];
+
+    private static TreeNode CreateNavigationLeaf(
+        BenchScreen screen,
+        string text,
+        bool selected = false) => new()
+        {
+            Id = $"fcg-screen-{screen}",
+            Text = text,
+            Tag = screen,
+            IsSelected = selected
+        };
+
+    protected override void OnInitialized()
+    {
+        _provider = LoadProviderRowsAsync;
+        _selectedNavigationNode = FindNavigationNode(BenchScreen.Overview);
+        BenchData.Load();
+        var source = BenchData.EstimatingItems.Take(320).ToList();
+        for (var index = 0; index < source.Count; index++)
+        {
+            var item = source[index];
+            _rows.Add(new EnterpriseRow
+            {
+                Id = index + 1,
+                Code = item.Item ?? $"ITEM-{index + 1:D4}",
+                Name = item.ItemDesc ?? "Unnamed item",
+                Category = item.PhaseDesc ?? item.CostCategory ?? "Uncategorized",
+                Quantity = Math.Max(1, item.WastePercent ?? (index % 12) + 1),
+                Price = item.Price ?? (index % 40) * 3.75m,
+                EffectiveDate = new DateTime(2026, 1, 1).AddDays(index % 180),
+                Active = item.IsQuote != true,
+                Status = item.IsQuote == true ? "Pending" : "Active",
+                SourcePhase = item.Phase ?? ""
+            });
+        }
+
+        if (_rows.Count == 0)
+        {
+            for (var index = 1; index <= 120; index++)
+            {
+                _rows.Add(new EnterpriseRow
+                {
+                    Id = index,
+                    Code = $"ITEM-{index:D4}",
+                    Name = $"Fallback test item {index % 25:D2}",
+                    Category = $"Category {index % 6}",
+                    Quantity = (index % 20) + 1,
+                    Price = index * 2.5m,
+                    EffectiveDate = new DateTime(2026, 1, 1).AddDays(index),
+                    Active = index % 5 != 0,
+                    Status = index % 5 == 0 ? "Pending" : "Active",
+                    SourcePhase = $"{index % 10:D2}000"
+                });
+            }
+        }
+
+        _rowSeed.AddRange(_rows.Select(CloneEnterpriseRow));
+
+        _autoRows.AddRange(_rows.Take(12).Select(row => new AutoRow
+        {
+            Id = row.Id,
+            Sku = row.Code,
+            Description = row.Name,
+            Price = row.Price,
+            Extended = row.Price * row.Quantity,
+            InternalNote = "excluded"
+        }));
+        _autoRowSeed.AddRange(_autoRows.Select(CloneAutoRow));
+        RestoreTemplateRows();
+
+        for (var rowIndex = 1; rowIndex <= 80; rowIndex++)
+        {
+            var wide = new WideRow();
+            for (var columnIndex = 0; columnIndex < 42; columnIndex++)
+                wide[$"C{columnIndex:D2}"] = $"R{rowIndex:D3} / C{columnIndex:D2}";
+            _wideRows.Add(wide);
+        }
+
+        for (var index = 0; index < 42; index++)
+        {
+            _wideColumns.Add(new WideColumn(
+                $"C{index:D2}",
+                index == 0 ? "Key" : $"Column {index:D2}",
+                index == 0 ? "90px" : "145px",
+                index is 0 or 41,
+                index == 41 ? FrozenColumnPosition.Right : FrozenColumnPosition.Left));
+        }
+    }
+
+    private Task HandleNavigationChanged(TreeNode node)
+    {
+        if (node.Tag is BenchScreen screen)
+        {
+            ActivateScreen(screen, node);
+        }
+        else
+        {
+            // Branches remain selectable so ArrowUp/ArrowDown can traverse the
+            // complete hierarchy instead of being forced back to the prior leaf.
+            // A branch displays the neutral overview, so collapsing it cannot
+            // leave a hidden child test mounted on the right.
+            if (_providerGrid?.IsProviderExporting == true)
+                _providerGrid.CancelProviderExport();
+            if (_selectedNavigationNode is not null
+                && !ReferenceEquals(_selectedNavigationNode, node))
+            {
+                _selectedNavigationNode.IsSelected = false;
+            }
+            node.IsSelected = true;
+            _selectedNavigationNode = node;
+            _activeScreen = BenchScreen.Overview;
+            _mainGrid = null;
+            _providerGrid = null;
+            ResetActiveTest();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void SelectScreen(BenchScreen screen)
+    {
+        var node = FindNavigationNode(screen);
+        if (node is not null)
+        {
+            ExpandNavigationPath(node);
+            ActivateScreen(screen, node);
+        }
+    }
+
+    private void ActivateScreen(BenchScreen screen, TreeNode node)
+    {
+        if (_providerGrid?.IsProviderExporting == true)
+            _providerGrid.CancelProviderExport();
+
+        if (_selectedNavigationNode is not null)
+            _selectedNavigationNode.IsSelected = false;
+
+        node.IsSelected = true;
+        _selectedNavigationNode = node;
+        _activeScreen = screen;
+        _mainGrid = null;
+        _providerGrid = null;
+        ResetActiveTest();
+    }
+
+    private void ResetActiveTest()
+    {
+        if (_providerGrid?.IsProviderExporting == true)
+            _providerGrid.CancelProviderExport();
+
+        RestoreEnterpriseRows();
+        RestoreAutoRows();
+        RestoreTemplateRows();
+        _editMode = _activeScreen switch
+        {
+            BenchScreen.InlineEditing or BenchScreen.Validation => EditMode.Inline,
+            BenchScreen.DialogEditing => EditMode.Dialog,
+            _ => EditMode.Batch
+        };
+        _editSettings = CreateEditSettings(_editMode);
+        _pagerPosition = GridPagerPosition.Both;
+        _layoutMode = GridDataLayoutMode.Columns;
+        _delimitedEncoding = GridDelimitedTextEncoding.Utf8NoBom;
+        _caseSensitive = false;
+        _showFilterRowOperators = true;
+        _showExpandColumn = true;
+        _columnOverscan = 2;
+        _savedState = null;
+        _stateEventCount = 0;
+        _stateJsonLength = 0;
+        _multiSortVerification = "not run";
+        _multiSortSample = "";
+        _multiSortPassed = null;
+        _providerRequestCount = 0;
+        _providerExportBytes = 0;
+        _providerLastRequest = "waiting for first request";
+        _providerExportText = "not started";
+        _status = GetReadyStatus(_activeScreen);
+        _mainGridKey++;
+        _providerGridKey++;
+    }
+
+    private void RestoreEnterpriseRows()
+    {
+        if (_rowSeed.Count == 0)
+            return;
+
+        _rows.Clear();
+        _rows.AddRange(_rowSeed.Select(CloneEnterpriseRow));
+    }
+
+    private static EnterpriseRow CloneEnterpriseRow(EnterpriseRow row) => new()
+    {
+        Id = row.Id,
+        Code = row.Code,
+        Name = row.Name,
+        Category = row.Category,
+        Quantity = row.Quantity,
+        Price = row.Price,
+        EffectiveDate = row.EffectiveDate,
+        Active = row.Active,
+        Status = row.Status,
+        SourcePhase = row.SourcePhase
+    };
+
+    private void RestoreAutoRows()
+    {
+        if (_autoRowSeed.Count == 0)
+            return;
+
+        _autoRows.Clear();
+        _autoRows.AddRange(_autoRowSeed.Select(CloneAutoRow));
+    }
+
+    private static AutoRow CloneAutoRow(AutoRow row) => new()
+    {
+        Id = row.Id,
+        Sku = row.Sku,
+        Description = row.Description,
+        Price = row.Price,
+        Extended = row.Extended,
+        InternalNote = row.InternalNote
+    };
+
+    private static string GetReadyStatus(BenchScreen screen) => screen switch
+    {
+        BenchScreen.MultiSort => "Ready. Right-click a header → Multi-sort → Custom Sort to choose columns and priorities.",
+        BenchScreen.InlineEditing => "Ready. Double-click a row to test complete-row inline editing.",
+        BenchScreen.DialogEditing => "Ready. Double-click a row to test the generated popup editor.",
+        BenchScreen.BatchEditing => "Ready. Select multiple rows, edit a shared field, then commit the active cell or cancel it with Escape.",
+        BenchScreen.Validation => "Ready. Double-click a row and enter invalid values to exercise validation.",
+        BenchScreen.FilterRow => "Ready. Enter typed criteria directly in the filter row.",
+        BenchScreen.DualFilterMenu => "Ready. Combine two criteria from a header filter menu.",
+        BenchScreen.ExcelChecklist => "Ready. Search and select values in an Excel-style checklist.",
+        BenchScreen.FilterCellTemplate => "Ready. Use the custom Description filter cell.",
+        BenchScreen.FilterMenuTemplate => "Ready. Use the custom Status filter menu.",
+        BenchScreen.HeaderBands => "Ready. Inspect and resize the grouped column headers.",
+        BenchScreen.ColumnMenu => "Ready. Right-click a column header to exercise its context-menu commands.",
+        BenchScreen.RightLocking => "Ready. Scroll horizontally and change left/right column locks.",
+        BenchScreen.MasterDetail => "Ready. Expand individual rows or all rows from the header.",
+        BenchScreen.LocalCsvExport => "Ready. Choose an encoding and build the local CSV.",
+        BenchScreen.LocalXlsxExport => "Ready. Build and inspect the native XLSX workbook.",
+        BenchScreen.Pager => "Ready. Test each pager location and its page-size selector.",
+        BenchScreen.State => "Ready. Make changes, capture the state, make different changes, and restore.",
+        BenchScreen.GridTemplates => "Ready. Exercise the custom toolbar and column chooser.",
+        BenchScreen.RowNoDataTemplates => "Ready. Inspect custom rows, then switch to the no-data template.",
+        BenchScreen.AdaptiveLayout => "Ready. Switch layout directly, or resize the browser viewport below 720px to test Auto.",
+        BenchScreen.Accessibility => "Ready. Use keyboard commands, including Escape during an active edit, and inspect the rendered ARIA metadata.",
+        _ => "Ready. Follow the instructions above the test surface."
+    };
+
+    private TreeNode? FindNavigationNode(BenchScreen screen) =>
+        FlattenNavigationNodes(_navigationNodes)
+            .FirstOrDefault(node => node.Tag is BenchScreen candidate && candidate == screen);
+
+    private static IEnumerable<TreeNode> FlattenNavigationNodes(IEnumerable<TreeNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            yield return node;
+            foreach (var child in FlattenNavigationNodes(node.Children))
+                yield return child;
+        }
+    }
+
+    private void ExpandNavigationPath(TreeNode target)
+    {
+        foreach (var root in _navigationNodes)
+        {
+            if (ExpandNavigationPath(root, target))
+                return;
+        }
+    }
+
+    private static bool ExpandNavigationPath(TreeNode current, TreeNode target)
+    {
+        if (ReferenceEquals(current, target))
+            return true;
+
+        foreach (var child in current.Children)
+        {
+            if (!ExpandNavigationPath(child, target))
+                continue;
+            current.IsExpanded = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static EditSettings CreateEditSettings(EditMode mode) => new()
+    {
+        AllowEditing = true,
+        AllowAdding = true,
+        AllowDeleting = true,
+        AllowEditOnDblClick = true,
+        EditOnEnterKey = true,
+        Mode = mode,
+        ShowConfirmDialog = false
+    };
+
+    private void SetShowFilterRowOperators(bool show)
+    {
+        _showFilterRowOperators = show;
+        _status = show
+            ? "Operator dropdowns enabled. Choose a typed comparison for each column."
+            : "Operator dropdowns hidden. Type in any filter cell to use Contains.";
+    }
+
+    private void RebuildMainGrid()
+    {
+        _mainGridKey++;
+        _status = _caseSensitive ? "Case-sensitive filters enabled." : "Case-insensitive filters enabled.";
+    }
+
+    private Task OpenCustomSort() => _mainGrid?.OpenSortDialogAsync() ?? Task.CompletedTask;
+
+    private async Task ApplyMultiSort()
+    {
+        if (_mainGrid == null)
+            return;
+
+        await _mainGrid.ClearFilteringAsync();
+        var state = _mainGrid.GetState();
+        state.Sorts =
+        [
+            new GridSortDescriptor(nameof(EnterpriseRow.Category), SortDirection.Ascending),
+            new GridSortDescriptor(nameof(EnterpriseRow.Name), SortDirection.Descending)
+        ];
+        state.CurrentPage = 1;
+        await _mainGrid.SetStateAsync(state);
+    }
+
+    private void CaptureState()
+    {
+        if (_mainGrid == null)
+            return;
+        _savedState = _mainGrid.GetState();
+        _stateJsonLength = _savedState.ToJson().Length;
+        _status = "Captured complete local state in memory.";
+    }
+
+    private async Task RestoreState()
+    {
+        if (_mainGrid == null || _savedState == null)
+            return;
+        await _mainGrid.SetStateAsync(GridState.FromJson(_savedState.ToJson()));
+        _status = "Restored local state through a JSON round trip.";
+    }
+
+    private async Task ClearMainFilters()
+    {
+        if (_mainGrid != null)
+            await _mainGrid.ClearFilteringAsync();
+        _status = "Cleared all filter surfaces.";
+    }
+
+    private async Task CommitActiveGridEdit()
+    {
+        if (_mainGrid == null)
+            return;
+
+        await _mainGrid.EndEditAsync();
+        _status = "Committed the active batch cell. With multiple rows selected, the edited field is applied to every editable selected row.";
+    }
+
+    private void CreateLocalExport(GridExportFormat format)
+    {
+        if (_mainGrid == null)
+            return;
+
+        var result = _mainGrid.CreateExport(
+            format,
+            $"flexcore-enterprise-local{GridExporter.DefaultExtension(format)}",
+            "FlexCore local enterprise bench");
+
+        if (format == GridExportFormat.Xlsx)
+        {
+            using var stream = new MemoryStream(result.Bytes, writable: false);
+            using var workbook = new XLWorkbook(stream);
+            var sheet = workbook.Worksheets.First();
+            var headers = sheet.Row(1).CellsUsed().ToDictionary(
+                cell => cell.GetString(),
+                cell => cell.Address.ColumnNumber,
+                StringComparer.OrdinalIgnoreCase);
+            var idCell = sheet.Cell(2, headers["ID"]);
+            var quantityCell = sheet.Cell(2, headers["Qty"]);
+            var priceCell = sheet.Cell(2, headers["Price"]);
+            var formulaCell = sheet.Cell(2, headers["Extended"]);
+            var dateCell = sheet.Cell(2, headers["Effective"]);
+            var formula = formulaCell.FormulaA1;
+            var quantityAddress = quantityCell.Address.ToStringRelative();
+            var priceAddress = priceCell.Address.ToStringRelative();
+            var exportedId = idCell.DataType == XLDataType.Number
+                ? Convert.ToInt32(idCell.GetDouble(), CultureInfo.InvariantCulture)
+                : int.TryParse(idCell.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedId)
+                    ? parsedId
+                    : -1;
+            var exportedRow = _rows.FirstOrDefault(row => row.Id == exportedId);
+            var nativeValuesValid = exportedRow is not null
+                && quantityCell.DataType == XLDataType.Number
+                && priceCell.DataType == XLDataType.Number
+                && dateCell.DataType == XLDataType.DateTime
+                && Math.Abs(quantityCell.GetDouble() - exportedRow.Quantity) < 0.000001
+                && Math.Abs(priceCell.GetDouble() - (double)exportedRow.Price) < 0.000001
+                && dateCell.GetDateTime().Date == exportedRow.EffectiveDate.Date;
+            var nativeFormatsValid = !string.Equals(priceCell.Style.NumberFormat.Format, "C2", StringComparison.Ordinal)
+                && priceCell.Style.NumberFormat.Format.Contains("#,##0", StringComparison.Ordinal)
+                && !string.Equals(dateCell.Style.NumberFormat.Format, "d", StringComparison.Ordinal)
+                && dateCell.Style.NumberFormat.Format.Contains("yyyy", StringComparison.OrdinalIgnoreCase);
+            var formulaValid = !string.IsNullOrWhiteSpace(formula)
+                && formula.Contains(quantityAddress, StringComparison.OrdinalIgnoreCase)
+                && formula.Contains(priceAddress, StringComparison.OrdinalIgnoreCase);
+            var runtimeWidths = _mainGrid.GetState().ColumnSettings.Widths;
+            (string Header, string Field, double DefaultPixels)[] widthExpectations =
+            [
+                ("ID", nameof(EnterpriseRow.Id), 65),
+                ("Item", nameof(EnterpriseRow.Code), 90),
+                ("Description", nameof(EnterpriseRow.Name), 250),
+                ("Category", nameof(EnterpriseRow.Category), 150),
+                ("Qty", nameof(EnterpriseRow.Quantity), 80),
+                ("Price", nameof(EnterpriseRow.Price), 100),
+                ("Extended", nameof(EnterpriseRow.Extended), 115),
+                ("Effective", nameof(EnterpriseRow.EffectiveDate), 115),
+                ("Active", nameof(EnterpriseRow.Active), 75),
+                ("Status", nameof(EnterpriseRow.Status), 110)
+            ];
+            var widthsValid = widthExpectations.All(expectation =>
+            {
+                var pixels = runtimeWidths is not null
+                    && runtimeWidths.TryGetValue(expectation.Field, out var runtimeWidth)
+                        ? runtimeWidth
+                        : expectation.DefaultPixels;
+                var expectedWidth = ConvertPixelsToExpectedExcelWidth(pixels);
+                var actualWidth = sheet.Column(headers[expectation.Header]).Width;
+                return Math.Abs(actualWidth - expectedWidth) <= 0.35;
+            });
+            _status = nativeValuesValid && nativeFormatsValid && formulaValid && widthsValid
+                ? $"Built XLSX ({result.Bytes.Length:N0} bytes); verified native number/date cells, Excel formats, all visible column widths, and formula '{formula}'."
+                : $"Built XLSX ({result.Bytes.Length:N0} bytes), but workbook verification failed "
+                    + $"(types={quantityCell.DataType}/{priceCell.DataType}/{dateCell.DataType}, formats={nativeFormatsValid}, widths={widthsValid}, formula='{formula}').";
+            return;
+        }
+
+        VerifyLocalCsv(result);
+    }
+
+    private void VerifyLocalCsv(GridExportResult csvResult)
+    {
+        if (_mainGrid == null)
+            return;
+
+        var encoding = ResolveDelimitedEncoding(_delimitedEncoding);
+        var expectedPreamble = ResolveDelimitedPreamble(_delimitedEncoding);
+        var hasKnownPreamble = csvResult.Bytes.AsSpan().StartsWith(Encoding.UTF8.GetPreamble())
+            || csvResult.Bytes.AsSpan().StartsWith(Encoding.Unicode.GetPreamble());
+        var preambleValid = expectedPreamble.Length > 0
+            ? csvResult.Bytes.AsSpan().StartsWith(expectedPreamble)
+            : !hasKnownPreamble;
+        var contentOffset = expectedPreamble.Length > 0 && preambleValid
+            ? expectedPreamble.Length
+            : 0;
+        var content = encoding.GetString(
+            csvResult.Bytes,
+            contentOffset,
+            csvResult.Bytes.Length - contentOffset);
+        var roundTripValid = csvResult.Bytes.AsSpan(contentOffset)
+            .SequenceEqual(encoding.GetBytes(content));
+        var records = ParseCsv(content);
+
+        var jsonResult = _mainGrid.CreateExport(
+            GridExportFormat.Json,
+            "flexcore-csv-verification.json",
+            "FlexCore CSV verification");
+        using var document = JsonDocument.Parse(jsonResult.Bytes);
+        var jsonRows = document.RootElement.EnumerateArray().ToList();
+        var jsonHeaders = jsonRows.Count == 0
+            ? new List<string>()
+            : jsonRows[0].EnumerateObject().Select(property => property.Name).ToList();
+        List<string> csvHeaders = records.Count == 0 ? [] : records[0];
+        var csvRows = records.Skip(1)
+            .Where(row => row.Any(value => value.Length > 0))
+            .ToList();
+        var schemaValid = jsonHeaders.Count > 0
+            && csvHeaders.SequenceEqual(jsonHeaders, StringComparer.Ordinal);
+        var rowShapeValid = csvRows.All(row => row.Count == csvHeaders.Count);
+        var idColumn = csvHeaders.FindIndex(header =>
+            string.Equals(header, "ID", StringComparison.OrdinalIgnoreCase));
+        List<string> csvIds = idColumn < 0
+            ? []
+            : csvRows.Select(row => idColumn < row.Count ? row[idColumn] : "<missing>").ToList();
+        var jsonIds = jsonRows
+            .Select(row => ReadJsonExportValue(row, "ID"))
+            .ToList();
+        var queryOrderValid = csvIds.SequenceEqual(jsonIds, StringComparer.Ordinal);
+        var passed = preambleValid
+            && roundTripValid
+            && schemaValid
+            && rowShapeValid
+            && queryOrderValid;
+        var prefixLength = Math.Min(3, csvResult.Bytes.Length);
+        var prefix = Convert.ToHexString(csvResult.Bytes.AsSpan(0, prefixLength));
+        _status = passed
+            ? $"Built and verified CSV with {_delimitedEncoding}: {csvRows.Count:N0} rows, {csvHeaders.Count:N0} visible columns, current query order, exact encoding round trip, prefix {prefix}."
+            : $"Built CSV ({csvResult.Bytes.Length:N0} bytes), but verification failed "
+                + $"(preamble={preambleValid}, encoding={roundTripValid}, schema={schemaValid}, row-shape={rowShapeValid}, order={queryOrderValid}, prefix={prefix}).";
+    }
+
+    private static Encoding ResolveDelimitedEncoding(GridDelimitedTextEncoding encoding) => encoding switch
+    {
+        GridDelimitedTextEncoding.Utf16LittleEndian =>
+            new UnicodeEncoding(bigEndian: false, byteOrderMark: false, throwOnInvalidBytes: true),
+        GridDelimitedTextEncoding.Ascii => Encoding.ASCII,
+        _ => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+    };
+
+    private static byte[] ResolveDelimitedPreamble(GridDelimitedTextEncoding encoding) => encoding switch
+    {
+        GridDelimitedTextEncoding.Utf8WithBom => Encoding.UTF8.GetPreamble(),
+        GridDelimitedTextEncoding.Utf16LittleEndian => Encoding.Unicode.GetPreamble(),
+        _ => []
+    };
+
+    private static double ConvertPixelsToExpectedExcelWidth(double pixels) =>
+        Math.Clamp((pixels - 5d) / 7d, 4d, 80d);
+
+    private static List<List<string>> ParseCsv(string content)
+    {
+        var records = new List<List<string>>();
+        var record = new List<string>();
+        var field = new StringBuilder();
+        var inQuotes = false;
+
+        for (var index = 0; index < content.Length; index++)
+        {
+            var current = content[index];
+            if (inQuotes)
+            {
+                if (current == '"')
+                {
+                    if (index + 1 < content.Length && content[index + 1] == '"')
+                    {
+                        field.Append('"');
+                        index++;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+                else
+                {
+                    field.Append(current);
+                }
+                continue;
+            }
+
+            switch (current)
+            {
+                case '"':
+                    inQuotes = true;
+                    break;
+                case ',':
+                    record.Add(field.ToString());
+                    field.Clear();
+                    break;
+                case '\r':
+                    if (index + 1 < content.Length && content[index + 1] == '\n')
+                        index++;
+                    record.Add(field.ToString());
+                    field.Clear();
+                    records.Add(record);
+                    record = [];
+                    break;
+                case '\n':
+                    record.Add(field.ToString());
+                    field.Clear();
+                    records.Add(record);
+                    record = [];
+                    break;
+                default:
+                    field.Append(current);
+                    break;
+            }
+        }
+
+        if (field.Length > 0 || record.Count > 0)
+        {
+            record.Add(field.ToString());
+            records.Add(record);
+        }
+
+        return records;
+    }
+
+    private void HandleStateChanged(GridStateChangedEventArgs args)
+    {
+        _stateEventCount++;
+        if (_activeScreen == BenchScreen.MultiSort
+            && args.ChangeKind is GridStateChangeKind.Sorting or GridStateChangeKind.StateApplied)
+            VerifyLocalMultiSort();
+        else
+            _status = $"State event: {args.ChangeKind}.";
+    }
+
+    private static async Task ApplyCustomFilter(GridFilterCellTemplateContext filter, object? value)
+    {
+        await filter.ValueChanged(value);
+        await filter.ApplyAsync();
+    }
+
+    private static async Task ApplyStatusFilter(GridFilterMenuTemplateContext menu, string status)
+    {
+        await menu.ValueChanged(status);
+        await menu.ApplyAsync();
+    }
+
+    private static void SetChooserVisibility(
+        GridColumnChooserContext chooser,
+        GridColumnChooserItem column,
+        object? value)
+    {
+        var visible = value is bool boolean
+            ? boolean
+            : bool.TryParse(value?.ToString(), out var parsed) && parsed;
+        chooser.SetVisible(column.Field, visible);
+        chooser.Select(column.Field);
+    }
+
+    private static Task SetPagerPageSize(GridPagerContext pager, object? value) =>
+        int.TryParse(value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var size)
+            ? pager.SetPageSizeAsync(size)
+            : Task.CompletedTask;
+
+    private void ToggleTemplateRows()
+    {
+        if (_templateRows.Count == 0)
+            RestoreTemplateRows();
+        else
+            _templateRows = [];
+    }
+
+    private void RestoreTemplateRows() => _templateRows =
+    [
+        new("Full row template", "Active", "host-owned cells"),
+        new("No data template", "Ready", "clear/restore above"),
+        new("Toolbar / chooser", "Active", "tested in main grid")
+    ];
+
+    private static IEnumerable<ValidationResult> ValidateEnterpriseRow(
+        GridValidationRequest<EnterpriseRow> request)
+    {
+        if ((request.FieldName == nameof(EnterpriseRow.Price) || request.FieldName == null)
+            && request.Item.Price > 100_000m)
+        {
+            yield return new ValidationResult(
+                "Bench rule: Price cannot exceed $100,000.",
+                [nameof(EnterpriseRow.Price)]);
+        }
+    }
+
+    private async ValueTask<GridItemsResult<ProviderOrder>> LoadProviderRowsAsync(
+        GridItemsRequest request)
+    {
+        Interlocked.Increment(ref _providerRequestCount);
+        await Task.Delay(
+            request.Purpose == GridItemsRequestPurpose.Export ? 12 : 65,
+            request.CancellationToken);
+
+        var filtered = ApplyProviderQuery(_providerRows, request.Query).ToList();
+        request.CancellationToken.ThrowIfCancellationRequested();
+        if (Equals(request.ContextKey, ActiveProviderContextKey))
+        {
+            _providerLastRequest = DescribeProviderRequest(request);
+            await InvokeAsync(StateHasChanged);
+        }
+
+        if (request.Purpose == GridItemsRequestPurpose.FilterValues)
+        {
+            var field = request.FilterField
+                ?? throw new InvalidOperationException("FilterValues requests require FilterField.");
+            var allValues = filtered
+                .GroupBy(row => Convert.ToString(
+                    GetProviderFieldValue(row, field),
+                    CultureInfo.InvariantCulture) ?? string.Empty,
+                    StringComparerFrom(request.Query.CaseSensitive
+                        ? StringComparison.Ordinal
+                        : StringComparison.OrdinalIgnoreCase))
+                .Select(group => new GridProviderFilterValue(
+                    group.Key,
+                    group.Key.Length == 0 ? "(blank)" : group.Key,
+                    group.Count()))
+                .OrderBy(value => value.DisplayText, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+            var page = allValues.Skip(request.StartIndex).Take(request.Count).ToList();
+            return new GridItemsResult<ProviderOrder>([], filtered.Count)
+            {
+                FilterValues = page,
+                ResultSetCount = allValues.Count,
+                HasMore = request.StartIndex + page.Count < allValues.Count
+            };
+        }
+
+        var scoped = ApplyProviderGroupKeys(filtered, request.GroupRequest?.ParentKeys).ToList();
+
+        if (request.Purpose is GridItemsRequestPurpose.Groups or GridItemsRequestPurpose.GroupChildren)
+        {
+            var level = request.Purpose == GridItemsRequestPurpose.Groups
+                ? 0
+                : request.GroupRequest!.Level + 1;
+            if (level >= request.Query.Groups.Count)
+                return new GridItemsResult<ProviderOrder>([], filtered.Count);
+
+            var descriptor = request.Query.Groups[level];
+            var grouped = scoped
+                .GroupBy(row => GetProviderFieldValue(row, descriptor.Field))
+                .Select(group => new ProviderGroupPage(group.Key, group.ToList()));
+            grouped = descriptor.Direction == SortDirection.Descending
+                ? grouped.OrderByDescending(group => Convert.ToString(group.Key, CultureInfo.CurrentCulture))
+                : grouped.OrderBy(group => Convert.ToString(group.Key, CultureInfo.CurrentCulture));
+            var allGroups = grouped.ToList();
+            var page = allGroups
+                .Skip(request.StartIndex)
+                .Take(request.Count)
+                .Select(group => new GridProviderGroup<ProviderOrder>(
+                    descriptor.Field,
+                    group.Key,
+                    Convert.ToString(group.Key, CultureInfo.CurrentCulture),
+                    group.Rows.Count)
+                {
+                    HasChildren = group.Rows.Count > 0,
+                    ChildCount = level + 1 < request.Query.Groups.Count
+                        ? group.Rows.Select(row => GetProviderFieldValue(row, request.Query.Groups[level + 1].Field)).Distinct().Count()
+                        : group.Rows.Count,
+                    Aggregates = BuildProviderAggregates(group.Rows, request.Query.Aggregates)
+                })
+                .ToList();
+
+            return new GridItemsResult<ProviderOrder>([], filtered.Count)
+            {
+                Groups = page,
+                ResultSetCount = allGroups.Count,
+                HasMore = request.StartIndex + page.Count < allGroups.Count,
+                Aggregates = BuildProviderAggregates(scoped, request.Query.Aggregates)
+            };
+        }
+
+        var sorted = ApplyProviderSorts(scoped, request.Query.Sorts).ToList();
+        var items = sorted.Skip(request.StartIndex).Take(request.Count).ToList();
+        return new GridItemsResult<ProviderOrder>(items, filtered.Count)
+        {
+            ResultSetCount = sorted.Count,
+            HasMore = request.StartIndex + items.Count < sorted.Count,
+            Aggregates = BuildProviderAggregates(
+                request.Purpose == GridItemsRequestPurpose.Export ? filtered : scoped,
+                request.Query.Aggregates)
+        };
+    }
+
+    private static string DescribeProviderRequest(GridItemsRequest request)
+    {
+        var query = request.Query;
+        var endExclusive = (long)request.StartIndex + request.Count;
+        var parts = new List<string>
+        {
+            request.Purpose.ToString(),
+            $"range [{request.StartIndex:N0}..{endExclusive:N0}) / Take {request.Count:N0}",
+            $"version {request.QueryVersion:N0}",
+            request.IncludeTotalCount ? "total requested" : "total not requested",
+            "sort " + (query.Sorts.Count == 0
+                ? "none"
+                : string.Join(" > ", query.Sorts.Select((sort, index) =>
+                    $"{index + 1}:{sort.Field} {sort.Direction}"))),
+            "filter " + (query.Filters.Count == 0
+                ? "none"
+                : string.Join("; ", query.Filters.Select(DescribeProviderFilter)))
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            parts.Add($"search {TelemetryValue(query.SearchText)} in "
+                + (query.SearchFields.Count == 0 ? "all fields" : string.Join(",", query.SearchFields)));
+        }
+        if (!string.IsNullOrWhiteSpace(query.ExpressionFilterText))
+            parts.Add($"expression {TelemetryValue(query.ExpressionFilterText)}");
+        if (query.Groups.Count > 0)
+        {
+            parts.Add("groups " + string.Join(" > ", query.Groups.Select(group =>
+                $"{group.Field} {group.Direction}")));
+        }
+        if (query.Aggregates.Count > 0)
+        {
+            parts.Add("aggregates " + string.Join(", ", query.Aggregates.Select(aggregate =>
+                $"{aggregate.Type}({aggregate.Field})")));
+        }
+        if (request.GroupRequest is not null)
+        {
+            var keys = string.Join(" > ", request.GroupRequest.ParentKeys.Select(key =>
+                $"{key.Field}={TelemetryValue(Convert.ToString(key.Value, CultureInfo.InvariantCulture))}"));
+            parts.Add($"group-parent level {request.GroupRequest.Level}, path {TelemetryValue(request.GroupRequest.ParentPath)}, keys {keys}");
+        }
+        if (!string.IsNullOrWhiteSpace(request.FilterField))
+            parts.Add($"filter-values field {request.FilterField}");
+        if (query.CaseSensitive)
+            parts.Add("case-sensitive");
+
+        return string.Join(" · ", parts);
+    }
+
+    private static string DescribeProviderFilter(GridFilterDescriptor filter)
+    {
+        var primaryOperator = filter.AdvancedOperator?.ToString() ?? filter.Operator.ToString();
+        var parts = new List<string>
+        {
+            $"{filter.Field}[{filter.Source}/{filter.Kind}] {primaryOperator} {TelemetryValue(filter.Value)}"
+        };
+
+        if (filter.Values.Count > 0)
+            parts.Add("values={" + string.Join(",", filter.Values.Select(TelemetryValue)) + "}");
+        if (filter.Minimum.HasValue || filter.Maximum.HasValue)
+            parts.Add($"bounds={filter.Minimum?.ToString(CultureInfo.InvariantCulture) ?? "−∞"}..{filter.Maximum?.ToString(CultureInfo.InvariantCulture) ?? "+∞"}");
+        if (filter.NumericRanges.Count > 0)
+        {
+            parts.Add("ranges={" + string.Join(",", filter.NumericRanges.Select(range =>
+                $"{range.Key}[{range.Minimum?.ToString(CultureInfo.InvariantCulture) ?? "−∞"}..{range.Maximum?.ToString(CultureInfo.InvariantCulture) ?? "+∞"}{(range.IncludeMaximum ? "]" : ")")}{(range.IsBlank ? "/blank" : "")}")) + "}");
+        }
+        if (filter.SecondOperator.HasValue || filter.SecondAdvancedOperator.HasValue)
+        {
+            var secondOperator = filter.SecondAdvancedOperator?.ToString()
+                ?? filter.SecondOperator?.ToString()
+                ?? "condition";
+            parts.Add($"{filter.LogicalOperator} {secondOperator} {TelemetryValue(filter.SecondValue)}");
+        }
+        if (filter.BlankRowFilter != BlankRowFilterMode.All)
+            parts.Add($"blank={filter.BlankRowFilter}");
+
+        return string.Join(" ", parts);
+    }
+
+    private static string TelemetryValue(string? value) =>
+        value is null ? "<null>" : $"'{value.Replace("'", "''", StringComparison.Ordinal)}'";
+
+    private async Task CreateProviderExport(GridExportFormat format)
+    {
+        var grid = _providerGrid;
+        if (grid == null)
+            return;
+        var contextKey = ActiveProviderContextKey;
+        var generation = _providerGridKey;
+        _providerExportBytes = 0;
+        _providerExportText = "starting";
+        try
+        {
+            var result = await grid.CreateProviderExportAsync(
+                format,
+                $"flexcore-provider-bench{GridExporter.DefaultExtension(format)}",
+                "FlexCore provider bench");
+            if (!ReferenceEquals(grid, _providerGrid)
+                || generation != _providerGridKey
+                || !string.Equals(contextKey, ActiveProviderContextKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+            _providerExportBytes = result.Bytes.Length;
+            _providerExportText = $"{format} complete ({grid.ProviderExportProgress?.ExportedRows:N0} rows)";
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(grid, _providerGrid) && generation == _providerGridKey)
+                _providerExportText = "canceled";
+        }
+        catch (Exception exception)
+        {
+            if (ReferenceEquals(grid, _providerGrid) && generation == _providerGridKey)
+                _providerExportText = $"failed: {exception.Message}";
+        }
+    }
+
+    private void CancelProviderExport() => _providerGrid?.CancelProviderExport();
+
+    private Task HandleProviderExportProgress(
+        int generation,
+        GridProviderExportProgress progress)
+    {
+        if (_activeScreen != BenchScreen.ProviderExport || generation != _providerGridKey)
+            return Task.CompletedTask;
+
+        _providerExportText = progress.IsCanceled
+            ? "canceled"
+            : progress.IsCompleted
+                ? $"complete ({progress.ExportedRows:N0} rows)"
+                : $"{progress.ExportedRows:N0} / {(progress.TotalRows?.ToString("N0") ?? "?")}";
+        return Task.CompletedTask;
+    }
+
+    private static IEnumerable<ProviderOrder> ApplyProviderQuery(
+        IEnumerable<ProviderOrder> source,
+        GridQueryDescriptor query)
+    {
+        var comparison = query.CaseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            var search = query.SearchText;
+            source = source.Where(row => query.SearchFields.Any(field =>
+                (Convert.ToString(GetProviderFieldValue(row, field), CultureInfo.CurrentCulture) ?? string.Empty)
+                    .Contains(search, comparison)));
+        }
+
+        foreach (var filter in query.Filters)
+        {
+            var captured = filter;
+            source = source.Where(row => PassesProviderFilter(
+                GetProviderFieldValue(row, captured.Field),
+                captured,
+                comparison));
+        }
+
+        return source;
+    }
+
+    private static bool PassesProviderFilter(
+        object? rawValue,
+        GridFilterDescriptor filter,
+        StringComparison comparison)
+    {
+        var text = Convert.ToString(rawValue, CultureInfo.InvariantCulture) ?? string.Empty;
+        var isBlank = string.IsNullOrWhiteSpace(text);
+        if (filter.BlankRowFilter == BlankRowFilterMode.BlanksOnly && !isBlank)
+            return false;
+        if (filter.BlankRowFilter == BlankRowFilterMode.NonBlanksOnly && isBlank)
+            return false;
+
+        if (filter.Kind == GridProviderFilterKind.CheckedValues)
+            return filter.Values.Contains(text, StringComparerFrom(comparison));
+
+        if (filter.Kind == GridProviderFilterKind.NumericBounds)
+        {
+            if (!decimal.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var number))
+                return false;
+            return (!filter.Minimum.HasValue || number >= filter.Minimum.Value)
+                && (!filter.Maximum.HasValue || number <= filter.Maximum.Value);
+        }
+
+        if (filter.Kind == GridProviderFilterKind.NumericRanges && filter.NumericRanges.Count > 0)
+        {
+            if (!decimal.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var number))
+                return filter.NumericRanges.Any(range => range.IsBlank && isBlank);
+            return filter.NumericRanges.Any(range => !range.IsBlank
+                && (!range.Minimum.HasValue || number >= range.Minimum.Value)
+                && (!range.Maximum.HasValue
+                    || (range.IncludeMaximum ? number <= range.Maximum.Value : number < range.Maximum.Value)));
+        }
+
+        var first = MatchesProviderOperator(rawValue, text, filter.Value, filter.Operator, comparison);
+        if (!filter.SecondOperator.HasValue)
+            return first;
+        var second = MatchesProviderOperator(rawValue, text, filter.SecondValue, filter.SecondOperator.Value, comparison);
+        return filter.LogicalOperator == LogicalFilterOperator.Or ? first || second : first && second;
+    }
+
+    private static bool MatchesProviderOperator(
+        object? rawValue,
+        string actual,
+        string? expected,
+        TextFilterOperator filterOperator,
+        StringComparison comparison)
+    {
+        expected ??= string.Empty;
+        var compare = CompareProviderFilterValues(rawValue, actual, expected, comparison);
+        return filterOperator switch
+        {
+            TextFilterOperator.ChooseOne => true,
+            TextFilterOperator.Equals => compare == 0,
+            TextFilterOperator.DoesNotEqual => compare != 0,
+            TextFilterOperator.BeginsWith => actual.StartsWith(expected, comparison),
+            TextFilterOperator.DoesNotBeginWith => !actual.StartsWith(expected, comparison),
+            TextFilterOperator.EndsWith => actual.EndsWith(expected, comparison),
+            TextFilterOperator.DoesNotEndWith => !actual.EndsWith(expected, comparison),
+            TextFilterOperator.Contains => actual.Contains(expected, comparison),
+            TextFilterOperator.DoesNotContain => !actual.Contains(expected, comparison),
+            TextFilterOperator.GreaterThan => compare > 0,
+            TextFilterOperator.GreaterThanOrEqual => compare >= 0,
+            TextFilterOperator.LessThan => compare < 0,
+            TextFilterOperator.LessThanOrEqual => compare <= 0,
+            TextFilterOperator.IsEmpty => string.IsNullOrEmpty(actual),
+            TextFilterOperator.IsNotEmpty => !string.IsNullOrEmpty(actual),
+            _ => true
+        };
+    }
+
+    private static int CompareProviderFilterValues(
+        object? rawValue,
+        string actual,
+        string expected,
+        StringComparison comparison)
+    {
+        if (rawValue is DateTime date
+            && DateTime.TryParse(expected, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out var expectedDate))
+        {
+            return date.Date.CompareTo(expectedDate.Date);
+        }
+
+        if (rawValue is bool boolean && bool.TryParse(expected, out var expectedBoolean))
+            return boolean.CompareTo(expectedBoolean);
+
+        return CompareProviderValues(actual, expected, comparison);
+    }
+
+    private static int CompareProviderValues(
+        string left,
+        string right,
+        StringComparison comparison)
+    {
+        if (decimal.TryParse(left, NumberStyles.Any, CultureInfo.InvariantCulture, out var leftNumber)
+            && decimal.TryParse(right, NumberStyles.Any, CultureInfo.InvariantCulture, out var rightNumber))
+        {
+            return leftNumber.CompareTo(rightNumber);
+        }
+        return string.Compare(left, right, comparison);
+    }
+
+    private static StringComparer StringComparerFrom(StringComparison comparison) => comparison switch
+    {
+        StringComparison.Ordinal => StringComparer.Ordinal,
+        _ => StringComparer.OrdinalIgnoreCase
+    };
+
+    private static IEnumerable<ProviderOrder> ApplyProviderGroupKeys(
+        IEnumerable<ProviderOrder> source,
+        IReadOnlyList<GridProviderGroupKey>? keys)
+    {
+        if (keys == null)
+            return source;
+        foreach (var key in keys)
+        {
+            source = source.Where(row => string.Equals(
+                Convert.ToString(GetProviderFieldValue(row, key.Field), CultureInfo.InvariantCulture),
+                Convert.ToString(key.Value, CultureInfo.InvariantCulture),
+                StringComparison.Ordinal));
+        }
+        return source;
+    }
+
+    private static IEnumerable<ProviderOrder> ApplyProviderSorts(
+        IEnumerable<ProviderOrder> source,
+        IReadOnlyList<GridSortDescriptor> sorts)
+    {
+        IOrderedEnumerable<ProviderOrder>? ordered = null;
+        foreach (var sort in sorts)
+        {
+            Func<ProviderOrder, object?> selector = row => GetProviderFieldValue(row, sort.Field);
+            ordered = ordered == null
+                ? sort.Direction == SortDirection.Descending
+                    ? source.OrderByDescending(selector, ProviderValueComparer.Instance)
+                    : source.OrderBy(selector, ProviderValueComparer.Instance)
+                : sort.Direction == SortDirection.Descending
+                    ? ordered.ThenByDescending(selector, ProviderValueComparer.Instance)
+                    : ordered.ThenBy(selector, ProviderValueComparer.Instance);
+        }
+        return ordered ?? source.OrderBy(row => row.Id);
+    }
+
+    private static object? GetProviderFieldValue(ProviderOrder row, string field) => field switch
+    {
+        nameof(ProviderOrder.Id) => row.Id,
+        nameof(ProviderOrder.Region) => row.Region,
+        nameof(ProviderOrder.Category) => row.Category,
+        nameof(ProviderOrder.Customer) => row.Customer,
+        nameof(ProviderOrder.OrderDate) => row.OrderDate,
+        nameof(ProviderOrder.Quantity) => row.Quantity,
+        nameof(ProviderOrder.Amount) => row.Amount,
+        _ => null
+    };
+
+    private static IReadOnlyList<GridAggregateResult> BuildProviderAggregates(
+        IReadOnlyCollection<ProviderOrder> rows,
+        IReadOnlyList<GridAggregateQueryDescriptor> requested) =>
+        requested.Select(aggregate => new GridAggregateResult(
+            aggregate.Field,
+            aggregate.Type,
+            (aggregate.Field, aggregate.Type) switch
+            {
+                (nameof(ProviderOrder.Amount), AggregateType.Sum) => rows.Sum(row => row.Amount),
+                (nameof(ProviderOrder.Amount), AggregateType.Average) when rows.Count > 0 => rows.Average(row => row.Amount),
+                (nameof(ProviderOrder.Amount), AggregateType.Min) when rows.Count > 0 => rows.Min(row => row.Amount),
+                (nameof(ProviderOrder.Amount), AggregateType.Max) when rows.Count > 0 => rows.Max(row => row.Amount),
+                (_, AggregateType.Count) => rows.Count,
+                _ => null
+            })).ToList();
+
+    private void VerifyLocalMultiSort()
+    {
+        if (_mainGrid == null)
+            return;
+
+        var state = _mainGrid.GetState();
+        IOrderedEnumerable<EnterpriseRow>? ordered = null;
+        foreach (var sort in state.Sorts)
+        {
+            Func<EnterpriseRow, object?> selector = row => GetEnterpriseSortValue(row, sort.Field);
+            ordered = ordered == null
+                ? sort.Direction == SortDirection.Descending
+                    ? _rows.OrderByDescending(selector, EnterpriseSortComparer.Instance)
+                    : _rows.OrderBy(selector, EnterpriseSortComparer.Instance)
+                : sort.Direction == SortDirection.Descending
+                    ? ordered.ThenByDescending(selector, EnterpriseSortComparer.Instance)
+                    : ordered.ThenBy(selector, EnterpriseSortComparer.Instance);
+        }
+        var expectedRows = (ordered ?? (IEnumerable<EnterpriseRow>)_rows).ToList();
+        var expected = expectedRows
+            .Select(row => new ExportSignature(row.Id.ToString(CultureInfo.InvariantCulture), row.Category, row.Name))
+            .ToList();
+
+        var result = _mainGrid.CreateExport(
+            GridExportFormat.Json,
+            "flexcore-multisort-verification.json",
+            "FlexCore multi-sort verification");
+        using var document = JsonDocument.Parse(result.Bytes);
+        var actual = document.RootElement.EnumerateArray()
+            .Select(row => new ExportSignature(
+                ReadJsonExportValue(row, "ID"),
+                ReadJsonExportValue(row, "Category"),
+                ReadJsonExportValue(row, "Description")))
+            .ToList();
+
+        var secondaryComparisons = 0;
+        for (var index = 1; index < expectedRows.Count; index++)
+        {
+            for (var priority = 0; priority < state.Sorts.Count - 1; priority++)
+            {
+                var field = state.Sorts[priority].Field;
+                if (EnterpriseSortComparer.Instance.Compare(
+                        GetEnterpriseSortValue(expectedRows[index - 1], field),
+                        GetEnterpriseSortValue(expectedRows[index], field)) != 0)
+                    break;
+                secondaryComparisons++;
+            }
+        }
+
+        var mismatchIndex = expected.Count == actual.Count
+            ? Enumerable.Range(0, expected.Count).FirstOrDefault(index => expected[index] != actual[index], -1)
+            : Math.Min(expected.Count, actual.Count);
+        _multiSortPassed = expected.Count == actual.Count && mismatchIndex < 0;
+        _multiSortVerification = _multiSortPassed == true
+            ? $"PASS — {actual.Count:N0} rows / {state.Sorts.Count} levels / {secondaryComparisons:N0} tie comparisons"
+            : $"FAIL — first mismatch at row {mismatchIndex + 1:N0}";
+        _multiSortSample = string.Join(" | ", state.Sorts.Select(sort => $"{sort.Field} {sort.Direction}"));
+        _status = _multiSortPassed == true
+            ? $"Verified all {actual.Count:N0} exported rows against an independent ordering with {state.Sorts.Count} sort levels."
+            : $"Multi-sort verification failed. expected={expected.Count:N0}, actual={actual.Count:N0}, mismatch={mismatchIndex + 1:N0}.";
+    }
+
+    private static object? GetEnterpriseSortValue(EnterpriseRow row, string field) => field switch
+    {
+        nameof(EnterpriseRow.Id) => row.Id,
+        nameof(EnterpriseRow.Code) => row.Code,
+        nameof(EnterpriseRow.Name) => row.Name,
+        nameof(EnterpriseRow.Category) => row.Category,
+        nameof(EnterpriseRow.Quantity) => row.Quantity,
+        nameof(EnterpriseRow.Price) => row.Price,
+        nameof(EnterpriseRow.Extended) => row.Extended,
+        nameof(EnterpriseRow.EffectiveDate) => row.EffectiveDate,
+        nameof(EnterpriseRow.Active) => row.Active,
+        nameof(EnterpriseRow.Status) => row.Status,
+        _ => throw new InvalidOperationException($"Unknown sort field: {field}.")
+    };
+
+    private sealed class EnterpriseSortComparer : IComparer<object?>
+    {
+        internal static EnterpriseSortComparer Instance { get; } = new();
+        public int Compare(object? left, object? right) =>
+            left is string leftText && right is string rightText
+                ? StringComparer.CurrentCultureIgnoreCase.Compare(leftText, rightText)
+                : Comparer<object?>.Default.Compare(left, right);
+    }
+
+    private static string ReadJsonExportValue(JsonElement row, string header)
+    {
+        if (!row.TryGetProperty(header, out var value))
+            return "";
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? "",
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => bool.TrueString,
+            JsonValueKind.False => bool.FalseString,
+            JsonValueKind.Null => "",
+            _ => value.ToString()
+        };
+    }
+
+    private static List<ProviderOrder> BuildProviderRows()
+    {
+        string[] regions = ["North", "South", "East", "West"];
+        string[] categories = ["Cabinets", "Electrical", "Flooring", "Hardware", "Plumbing", "Windows"];
+        var rows = new List<ProviderOrder>(12_000);
+        for (var id = 1; id <= 12_000; id++)
+        {
+            rows.Add(new ProviderOrder
+            {
+                Id = id,
+                Region = regions[id % regions.Length],
+                Category = categories[(id * 7) % categories.Length],
+                Customer = $"HomeFront customer {(id * 13) % 425:D3}",
+                OrderDate = new DateTime(2024, 1, 1).AddDays(id % 730),
+                Quantity = 1 + id % 50,
+                Amount = 25m + (id % 500) * 3.17m
+            });
+        }
+        return rows;
+    }
+
+    public sealed class EnterpriseRow
+    {
+        [Key]
+        public int Id { get; set; }
+
+        [Required, StringLength(20, MinimumLength = 2)]
+        public string Code { get; set; } = "";
+
+        [Required, StringLength(120, MinimumLength = 3)]
+        public string Name { get; set; } = "";
+
+        [Required]
+        public string Category { get; set; } = "";
+
+        [Range(1, 10_000)]
+        public int Quantity { get; set; }
+
+        [Range(typeof(decimal), "0", "100000")]
+        public decimal Price { get; set; }
+
+        public decimal Extended => Quantity * Price;
+
+        public DateTime EffectiveDate { get; set; }
+        public bool Active { get; set; }
+        public string Status { get; set; } = "";
+        public string SourcePhase { get; set; } = "";
+    }
+
+    public sealed class AutoRow
+    {
+        [Key, Display(Name = "Item #", Order = 0, GroupName = "Identity")]
+        public int Id { get; set; }
+
+        [Required, Display(Name = "SKU", Order = 1, GroupName = "Identity")]
+        public string Sku { get; set; } = "";
+
+        [DisplayName("Description")]
+        public string Description { get; set; } = "";
+
+        [Display(Name = "Unit price", GroupName = "Amounts"), DisplayFormat(DataFormatString = "{0:C2}")]
+        public decimal Price { get; set; }
+
+        [Editable(false), Display(Name = "Extended", GroupName = "Amounts"), DisplayFormat(DataFormatString = "{0:C2}")]
+        public decimal Extended { get; set; }
+
+        [ScaffoldColumn(false)]
+        public string InternalNote { get; set; } = "";
+    }
+
+    public sealed record TemplateRow(string Label, string Value, string Note);
+
+    public sealed class WideRow : Dictionary<string, object?>
+    {
+    }
+
+    private sealed class ProviderOrder
+    {
+        public int Id { get; init; }
+        public string Region { get; init; } = "";
+        public string Category { get; init; } = "";
+        public string Customer { get; init; } = "";
+        public DateTime OrderDate { get; init; }
+        public int Quantity { get; init; }
+        public decimal Amount { get; init; }
+    }
+
+    private sealed record ProviderGroupPage(object? Key, List<ProviderOrder> Rows);
+
+    private sealed class ProviderValueComparer : IComparer<object?>
+    {
+        internal static ProviderValueComparer Instance { get; } = new();
+
+        public int Compare(object? left, object? right)
+        {
+            if (ReferenceEquals(left, right)) return 0;
+            if (left == null) return -1;
+            if (right == null) return 1;
+            if (left.GetType() == right.GetType() && left is IComparable comparable)
+                return comparable.CompareTo(right);
+            return StringComparer.OrdinalIgnoreCase.Compare(
+                Convert.ToString(left, CultureInfo.InvariantCulture),
+                Convert.ToString(right, CultureInfo.InvariantCulture));
+        }
+    }
+
+    private sealed record WideColumn(
+        string Field,
+        string Header,
+        string Width,
+        bool Frozen,
+        FrozenColumnPosition Position);
+
+    private sealed record FeatureLine(string Name, string Detail);
+    private sealed record FeatureTest(BenchScreen Screen, string Feature, string Surface, string Action);
+    private sealed record ExportSignature(string Id, string Category, string Name);
+}
