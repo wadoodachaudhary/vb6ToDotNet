@@ -1,0 +1,87 @@
+@page "/flexcore-controls/tree-view"
+@rendermode InteractiveServer
+<PageTitle>TreeView bench</PageTitle>
+<ControlBenchFrame Name="TreeView" Instructions="Click, Ctrl/Cmd-click, or Shift-click nodes. Use arrows, Home/End, Space to check, F2 to rename, and Enter to commit. Expand Remote to load children. Drag a node onto a loaded branch, or use the move buttons. Filter reveals matching descendants of collapsed branches." Status="@_status">
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="8px">
+        <ButtonControl OnClick="Reset">Reset tree</ButtonControl>
+        <ButtonControl OnClick="Large">Load 10,000 nodes</ButtonControl>
+        <ButtonControl OnClick="Expand">Expand loaded branches</ButtonControl>
+        <ButtonControl OnClick="Collapse">Collapse all</ButtonControl>
+        <ButtonControl OnClick="SaveState">Save view state</ButtonControl>
+        <ButtonControl OnClick="RestoreState" Disabled="@(_saved is null)">Restore view state</ButtonControl>
+        <CheckBoxControl Label="Fail next lazy load" @bind-Checked="_failNext" />
+        <CheckBoxControl Label="Show node template" @bind-Checked="_template" />
+    </StackLayoutControl>
+    <TextBoxControl @bind-Value="_filter" UpdateOnInput="true" Placeholder="Find a node" aria-label="Find a node" />
+    <TreeViewControl @key="_version" @ref="_tree" Nodes="@_nodes" AriaLabel="Project tree" Height="340px" ItemSize="32"
+        AllowMultiSelect="true" ShowCheckboxes="true" AutoCheck="true" ToggleOnNodeClick="false"
+        AllowEditing="true" AllowDragAndDrop="true" EnableVirtualization="@_large" FilterText="@_filter"
+        @bind-SelectedNodeIds="_selected" @bind-CheckedNodeIds="_checked" @bind-ExpandedNodeIds="_expanded"
+        NodeTemplate="@(_template ? Template : null)" LoadChildren="LoadChildren" NodeEditCommitting="ValidateEdit"
+        OnNodeExpand="Expanded" NodeEdited="Edited" NodeMoved="Moved"
+        Error="e => _status = e" />
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="8px">
+        <ButtonControl OnClick="Rename" Disabled="@(_selected.Count == 0)">Rename selected</ButtonControl>
+        <ButtonControl OnClick="Add" Disabled="@_large">Add to Engineering</ButtonControl>
+        <ButtonControl OnClick="Remove" Disabled="@(_selected.Count == 0)">Delete selected subtree</ButtonControl>
+        <ButtonControl OnClick="MoveToSales" Disabled="@(_large || _selected.Count == 0)">Move selected into Sales</ButtonControl>
+        <ButtonControl OnClick="MoveBeforeSales" Disabled="@(_large || _selected.Count == 0)">Move selected before Sales</ButtonControl>
+    </StackLayoutControl>
+    <p id="tree-selection" data-ready="@(_ready ? "true" : "false")">Selected: @string.Join(",", _selected)</p>
+    <p id="tree-checks">Checked: @string.Join(",", _checked)</p>
+    <p id="tree-expansion">Expanded: @string.Join(",", _expanded)</p>
+    <p id="tree-loads">Lazy requests: @_loads</p>
+    <p>Blank names and “reserved” are rejected. Disabled nodes are skipped by selection and cascade checking. In the large sample, only a window of the 10,000 nodes is rendered.</p>
+</ControlBenchFrame>
+@code {
+    private bool _ready;
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) { _ready = true; StateHasChanged(); } }
+    private TreeViewControl? _tree;
+    private List<TreeNode> _nodes = [];
+    private IReadOnlyList<string> _selected = [], _checked = [], _expanded = [];
+    private (string[] Selected, string[] Checked, string[] Expanded)? _saved;
+    private string _status = "Ready", _filter = "";
+    private int _version, _loads, _added;
+    private bool _failNext, _large, _template;
+    protected override void OnInitialized() => Reset();
+    private void Reset()
+    {
+        _version++; _large = false; _selected = []; _checked = []; _expanded = ["engineering", "sales"];
+        _loads = 0; _filter = ""; _failNext = false; _status = "Ready";
+        _nodes = [new() { Id = "engineering", Text = "Engineering", Children = [
+            new() { Id = "alpha", Text = "Alpha" }, new() { Id = "beta", Text = "Beta" },
+            new() { Id = "disabled", Text = "Disabled task", IsDisabled = true }] },
+            new() { Id = "sales", Text = "Sales", Children = [new() { Id = "east", Text = "East" }, new() { Id = "west", Text = "West" }] },
+            new() { Id = "remote", Text = "Remote", HasUnloadedChildren = true },
+            new() { Id = "literal", Text = "<b>Literal label</b>" }];
+    }
+    private void Large()
+    {
+        _version++; _large = true; _selected = []; _checked = []; _expanded = []; _filter = "";
+        _nodes = Enumerable.Range(1, 10000).Select(i => new TreeNode { Id = $"n{i}", Text = $"Node {i:D5}" }).ToList();
+        _status = "10,000 nodes loaded";
+    }
+    private async Task<IReadOnlyList<TreeNode>> LoadChildren(TreeNode node, CancellationToken token)
+    {
+        _loads++; await Task.Delay(150, token);
+        if (_failNext) { _failNext = false; throw new InvalidOperationException("Simulated load failure. Expand Remote to retry."); }
+        return [new() { Id = "remote-a", Text = "Remote Alpha" }, new() { Id = "remote-b", Text = "Remote Beta" }];
+    }
+    private void ValidateEdit(TreeNodeEditEventArgs e)
+    {
+        if (string.Equals(e.Text, "reserved", StringComparison.OrdinalIgnoreCase)) e.Error = "This name is reserved.";
+    }
+    private void Expanded(TreeNode node) => _status = $"Expanded {node.Text}";
+    private void Edited(TreeNodeEditEventArgs e) => _status = $"Renamed: {e.Node.Text}";
+    private void Moved(TreeNodeMoveEventArgs e) => _status = $"Moved {e.Node.Text} {e.Position} {e.Target.Text}";
+    private Task Expand() => _tree!.ExpandAllAsync();
+    private Task Collapse() => _tree!.CollapseAllAsync();
+    private void SaveState() { _saved = (_selected.ToArray(), _checked.ToArray(), _expanded.ToArray()); _status = "View state saved"; }
+    private void RestoreState() { (_selected, _checked, _expanded) = _saved!.Value; _status = "View state restored"; }
+    private Task Rename() => _tree!.BeginEditAsync(_selected[0]);
+    private Task Add() => _tree!.AddNodeAsync(new() { Id = $"added-{++_added}", Text = $"New task {_added}" }, "engineering");
+    private Task Remove() => _tree!.RemoveNodeAsync(_selected[0]);
+    private async Task MoveToSales() { try { await _tree!.MoveNodeAsync(_selected[0], "sales"); } catch (Exception e) { _status = e.Message; } }
+    private async Task MoveBeforeSales() { try { await _tree!.MoveNodeAsync(_selected[0], "sales", TreeDropPosition.Before); } catch (Exception e) { _status = e.Message; } }
+    private RenderFragment<TreeNode> Template => node => @<span>@node.Text <BadgeControl Text="@node.Id" /></span>;
+}

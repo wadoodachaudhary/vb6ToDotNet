@@ -1,0 +1,38 @@
+@page "/flexcore-controls/pdf"
+@rendermode InteractiveServer
+@using Fx.ControlKit.Pdf
+@inject NavigationManager Navigation
+
+<PageTitle>PDF Viewer parity bench</PageTitle>
+<ControlBenchFrame Name="PDF Viewer" Instructions="Search alpha: four occurrences on two pages. Test Match case, next/previous, Escape to clear, nested bookmarks, form edits and a saved PDF round trip." Status="@_status">
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="12px">
+        <ButtonControl OnClick="Reset">Reset sample</ButtonControl>
+        <ButtonControl OnClick="SearchAsync" Disabled="@(!_ready)">Find alpha via API</ButtonControl>
+        <ButtonControl OnClick="SaveAsync" Disabled="@(!_ready)">Save snapshot</ButtonControl>
+        <ButtonControl OnClick="ReloadAsync" Disabled="@(_saved is null)">Reload snapshot</ButtonControl>
+        <CheckBoxControl Label="Allow form filling" @bind-Checked="_forms" />
+        <CheckBoxControl Label="Allow annotations" @bind-Checked="_annotations" />
+    </StackLayoutControl>
+    <p>Find <strong>brave new</strong> to test text split across font styles. Bookmarks include a nested entry and a grouping heading. All buttons, fields and dialogs are FlexCore controls.</p>
+    <PdfViewerControl @ref="_viewer" Url="@SampleUrl" FileName="pdf-parity.pdf" Height="550px" AllowFormFilling="@_forms" AllowAnnotations="@_annotations"
+                      Loaded="Loaded" PageChanged="PageChanged" SearchChanged="SearchChanged" Error="Error" />
+    <p id="pdf-bench-state" role="status">Page @_page of @_pages · Search @_match of @_matches · @_bookmarkCount bookmark entries</p>
+</ControlBenchFrame>
+
+@code {
+    private PdfViewerControl? _viewer;
+    private byte[]? _saved;
+    private bool _ready, _forms = true, _annotations = true;
+    private int _revision, _page = 1, _pages, _match, _matches, _bookmarkCount;
+    private string _status = "Opening sample";
+    private string SampleUrl => Navigation.ToAbsoluteUri($"samples/pdf-parity.pdf?revision={_revision}").AbsoluteUri;
+    private void Reset() { _revision++; _ready = false; _match = _matches = 0; _status = "Opening sample"; }
+    private void Loaded(PdfDocumentInfo info) { _ready = true; _page = 1; _pages = info.Pages; _match = _matches = 0; _bookmarkCount = Count(info.Bookmarks); _status = $"Loaded {info.Pages} pages and {info.Fields.Count} form fields"; }
+    private static int Count(IEnumerable<PdfBookmark> entries) => entries.Sum(e => 1 + Count(e.Children));
+    private void PageChanged(int page) => _page = page;
+    private void SearchChanged(PdfSearchState state) { _match = state.CurrentIndex + 1; _matches = state.Matches.Count; _status = $"Search '{state.Query}': {_match} of {_matches}"; }
+    private void Error(string error) => _status = error;
+    private Task SearchAsync() => _viewer!.SearchTextAsync("alpha");
+    private async Task SaveAsync() { _saved = await _viewer!.SaveAsync(); _status = $"Saved {_saved.Length} PDF bytes"; }
+    private async Task ReloadAsync() { _ready = false; await _viewer!.OpenAsync(_saved!, "pdf-parity.pdf"); }
+}

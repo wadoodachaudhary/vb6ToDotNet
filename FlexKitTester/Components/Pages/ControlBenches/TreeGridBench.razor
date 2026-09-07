@@ -1,0 +1,89 @@
+@page "/flexcore-controls/tree-grid"
+@rendermode InteractiveServer
+@using Fx.ControlKit.Grid
+@using System.Text.Json
+<PageTitle>TreeGrid bench</PageTitle>
+<ControlBenchFrame Name="TreeGrid" Instructions="Right-click a column header for Custom sort, or Shift-click headers to add sort levels. Sorting stays within siblings. Filter a column with one or two typed conditions. Collapse all, then filter to verify that matching descendants are revealed. Save view state, change sorting/filtering/expansion, and restore it." Status="@_status">
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="8px">
+        <ButtonControl OnClick="Reset">Reset tree grid</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.OpenSortDialogAsync()">Custom sort</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.ExpandAllAsync()">Expand all</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.CollapseAllAsync()">Collapse all</ButtonControl>
+        <ButtonControl OnClick="FilterBudget">Budget greater than 10</ButtonControl>
+        <ButtonControl OnClick="FilterTask">Find Task via API</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.ClearFiltersAsync()">Clear filters</ButtonControl>
+        <ButtonControl OnClick="SortApi">Sort Team then Budget</ButtonControl>
+        <ButtonControl OnClick="SaveState">Save view state</ButtonControl>
+        <ButtonControl OnClick="Restore" Disabled="@(_saved is null)">Restore view state</ButtonControl>
+        <ButtonControl OnClick="ExportCsv">Export CSV</ButtonControl>
+        <ButtonControl OnClick="ExportXlsx">Export XLSX</ButtonControl>
+        <ButtonControl OnClick="ExportPdf">Export PDF</ButtonControl>
+    </StackLayoutControl>
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="8px">
+        <span>Filter relatives</span>
+        <DropDownListControl TItem="TreeGridFilterHierarchyMode" TValue="TreeGridFilterHierarchyMode"
+            DataSource="@(Enum.GetValues<TreeGridFilterHierarchyMode>())" @bind-Value="_hierarchy" AriaLabel="Filter relatives" />
+        <CheckBoxControl Label="Match case" @bind-Checked="_matchCase" />
+        <CheckBoxControl Label="Page rows" @bind-Checked="_paging" />
+        <CheckBoxControl Label="Fail next lazy load" @bind-Checked="_failNext" />
+    </StackLayoutControl>
+    <TreeGridControl TValue="PlanRow" @key="_version" @ref="_grid" DataSource="@_rows" IdMapping="Id" ParentIdMapping="ParentId"
+        AriaLabel="Project plan" AllowSorting="true" AllowMultiSorting="true" AllowFiltering="true" AllowResizing="true"
+        ToggleOnRowClick="false" Height="340px" AllowPaging="@_paging" PageSize="5" FilterHierarchyMode="@_hierarchy" FilterMatchCase="@_matchCase"
+        EnableCollapseAll="true" TreatAsParent="row => row.Id == 900" LoadChildren="LoadChildren" LoadFailed="e => _status = e"
+        Expanded="Expanded" SortChanged="Sorted"
+        RowSelected="Selected">
+        <TreeGridColumn Field="Name" HeaderText="Name" Width="280px" />
+        <TreeGridColumn Field="Team" HeaderText="Team" Width="120px" />
+        <TreeGridColumn Field="Budget" HeaderText="Budget" Type="ColumnType.Number" Format="N2" Width="100px" />
+        <TreeGridColumn Field="Due" HeaderText="Due" Type="ColumnType.Date" Format="yyyy-MM-dd" Width="120px" />
+        <TreeGridColumn Field="Active" HeaderText="Active" Type="ColumnType.Boolean" Width="80px" />
+    </TreeGridControl>
+    <p id="tree-grid-sorts" data-ready="@(_ready ? "true" : "false")">Sorts: @_sortText</p>
+    <p id="tree-grid-loads">Lazy requests: @_loads</p>
+    <p>The pager counts visible flattened rows, so a page can begin with a child. Exports include every row in the current visible query across pages, with a Level column and native numbers/dates in XLSX. Remote children are loaded on expansion.</p>
+</ControlBenchFrame>
+@code {
+    private bool _ready;
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) { _ready = true; StateHasChanged(); } }
+    public sealed record PlanRow(int Id, int? ParentId, string Name, string Team, decimal Budget, DateTime Due, bool Active);
+    private TreeGridControl<PlanRow>? _grid;
+    private List<PlanRow> _rows = [];
+    private string _status = "Ready", _sortText = "";
+    private string? _saved;
+    private int _version, _loads;
+    private bool _paging = true, _matchCase, _failNext;
+    private TreeGridFilterHierarchyMode _hierarchy = TreeGridFilterHierarchyMode.Both;
+    protected override void OnInitialized() => Reset();
+    private void Reset()
+    {
+        _version++; _loads = 0; _sortText = ""; _status = "Ready"; _failNext = false;
+        _rows = [Row(1, null, "Engineering", "A", 150), Row(11, 1, "Task Zebra", "A", 20), Row(12, 1, "Task Alpha", "A", 3),
+            Row(13, 1, "Task Delta", "B", 12), Row(14, 1, "Task Beta", "A", 20),
+            Row(2, null, "Sales", "B", 75), Row(21, 2, "Task North", "B", 2), Row(22, 2, "Task South", "A", 100),
+            Row(900, null, "Remote", "C", 0)];
+    }
+    private static PlanRow Row(int id, int? parent, string name, string team, decimal budget) => new(id, parent, name, team, budget, new(2026, 9, id % 28 + 1), id % 2 == 0);
+    private async Task<IReadOnlyList<PlanRow>> LoadChildren(PlanRow row, CancellationToken token)
+    {
+        _loads++; await InvokeAsync(StateHasChanged); await Task.Delay(150, token);
+        if (_failNext) { _failNext = false; throw new InvalidOperationException("Simulated load failure. Expand Remote to retry."); }
+        return [Row(901, 900, "Remote Task", "C", 40), Row(902, 900, "Remote Other", "C", 10)];
+    }
+    private void Expanded(TreeNodeEventArgs<PlanRow> e) => _status = $"Expanded {e.Data?.Name}";
+    private void Sorted(IReadOnlyList<GridSortDescriptor> sorts) => _sortText = string.Join(", ", sorts.Select(s => $"{s.Field} {s.Direction}"));
+    private void Selected(TreeRowSelectEventArgs<PlanRow> e) => _status = $"Selected {e.Data?.Name}";
+    private Task FilterBudget() => _grid!.SetFilterAsync(new("Budget", TextFilterOperator.GreaterThan, "10"));
+    private Task FilterTask() => _grid!.SetFilterAsync(new("Name", TextFilterOperator.Contains, "Task"));
+    private Task SortApi() => _grid!.SetSortsAsync([new("Team", SortDirection.Ascending), new("Budget", SortDirection.Descending)]);
+    private void SaveState() { _saved = JsonSerializer.Serialize(_grid!.CaptureState()); _status = "View state saved as JSON"; }
+    private async Task Restore()
+    {
+        var state = JsonSerializer.Deserialize<TreeGridViewState>(_saved!)!;
+        _hierarchy = state.HierarchyMode; _matchCase = state.MatchCase;
+        await _grid!.RestoreStateAsync(state); _status = "View state restored";
+    }
+    private Task ExportCsv() => _grid!.DownloadAsync(GridExportFormat.Csv, "Tree plan");
+    private Task ExportXlsx() => _grid!.DownloadAsync(GridExportFormat.Xlsx, "Tree plan");
+    private Task ExportPdf() => _grid!.DownloadAsync(GridExportFormat.Pdf, "Tree plan");
+}

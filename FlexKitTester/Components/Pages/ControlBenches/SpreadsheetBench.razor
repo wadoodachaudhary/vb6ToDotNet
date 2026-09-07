@@ -1,0 +1,35 @@
+@page "/flexcore-controls/spreadsheet"
+@rendermode InteractiveServer
+<PageTitle>Spreadsheet bench</PageTitle>
+<ControlBenchFrame Name="Spreadsheet" Instructions="Edit formulas or load the larger filter/freeze sample. Select B2 and freeze, then scroll and page in both directions. Filter the Region column, undo, and reopen a saved XLSX to check persistence." Status="@_status">
+<StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="12px">
+    <ButtonControl OnClick="LoadSmall">Load formula sample</ButtonControl>
+    <ButtonControl OnClick="LoadLarge">Load filter and freeze sample</ButtonControl>
+    <ButtonControl OnClick="FreezeAsync">Freeze first row and column via API</ButtonControl>
+    <ButtonControl OnClick="FilterAsync">Filter Region North via API</ButtonControl>
+    <ButtonControl OnClick="ClearFiltersAsync">Clear filters via API</ButtonControl>
+    <ButtonControl OnClick="SaveSnapshotAsync">Save snapshot</ButtonControl>
+    <ButtonControl OnClick="ReloadSnapshot" Disabled="@(_saved is null)">Reload snapshot</ButtonControl>
+    <CheckBoxControl Label="Read only" @bind-Checked="_readOnly" />
+</StackLayoutControl>
+<p>The larger sample has 120 data rows and 14 columns. Column B is Region; use Contains “North” and then filter column A to combine conditions. Use Clear column or Clear filters to restore rows.</p>
+<SpreadsheetControl @ref="_sheet" DocumentBytes="@_bytes" ReadOnly="@_readOnly" Height="360px" Changed="Changed" Saved="Saved" />
+</ControlBenchFrame>
+@code {
+ private string _status="Ready";
+ private SpreadsheetControl? _sheet;private bool _readOnly;private byte[]? _saved;
+ private byte[] _bytes=Array.Empty<byte>();protected override void OnInitialized()=>LoadSmall();
+ private void LoadSmall(){using var document=new SpreadsheetDocument();document.SetRange(new(),"Item\tQty\tPrice\tTotal\nWidget\t2\t12.5\t=B2*C2\nService\t3\t20\t=B3*C3\nTotal\t\t\t=SUM(D2:D3)");document.Format(new(1,1,1,4),"bold","true");_bytes=document.Save();_status="Formula sample loaded";}
+ private void LoadLarge()
+ {
+    using var document=new SpreadsheetDocument();var text=new System.Text.StringBuilder("Item\tRegion\tQty\tPrice\tTotal\tStatus\tG\tH\tI\tJ\tK\tL\tM\tN");
+    for(var row=2;row<=121;row++)text.Append($"\nItem {row-1:D3}\t{(row%2==0?"North":"South")}\t{row}\t10\t=C{row}*D{row}\t{(row%3==0?"Closed":"Open")}\tG{row}\tH{row}\tI{row}\tJ{row}\tK{row}\tL{row}\tM{row}\tN{row}");
+    document.SetRange(new(),text.ToString());document.Format(new(1,1,1,14),"bold","true");_bytes=document.Save();_status="Filter and freeze sample loaded: 120 data rows";
+ }
+ private Task FreezeAsync()=>_sheet!.FreezeAsync(1,1);
+ private Task FilterAsync()=>_sheet!.ApplyTextFilterAsync(new(1,1,121,14),2,"North");
+ private Task ClearFiltersAsync()=>_sheet!.ClearFiltersAsync();
+ private async Task SaveSnapshotAsync(){_saved=await _sheet!.SaveAsync();_status=$"Saved {_saved.Length} workbook bytes";}
+ private void ReloadSnapshot(){_bytes=_saved!.ToArray();_status="Snapshot restored";}
+ private void Changed(SpreadsheetChange e)=>_status=$"{e.Action}: {e.Sheet}!{e.Address}"; private void Saved(byte[] bytes)=>_status=$"Saved {bytes.Length} workbook bytes";
+}

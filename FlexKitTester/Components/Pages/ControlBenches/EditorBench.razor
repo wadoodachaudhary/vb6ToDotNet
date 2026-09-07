@@ -1,0 +1,79 @@
+@page "/flexcore-controls/editor"
+@rendermode InteractiveServer
+@using Fx.ControlKit.Editor
+
+<PageTitle>EditorControl parity bench</PageTitle>
+<ControlBenchFrame Name="EditorControl" Instructions="Type, format, search and replace. Test Ctrl/Cmd+Z, redo, read-only mode, pagination, and saving/reloading a formatted snapshot." Status="@_status">
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="12px">
+        <ButtonControl OnClick="ResetAsync">Reset sample</ButtonControl>
+        <ButtonControl OnClick="SaveAsync">Save snapshot</ButtonControl>
+        <ButtonControl OnClick="LoadAsync" Disabled="@(_saved is null)">Load snapshot</ButtonControl>
+        <ButtonControl OnClick="InspectAsync">Read blocks</ButtonControl>
+        <ButtonControl OnClick="CopyAsync">Copy to comparison editor</ButtonControl>
+        <ButtonControl OnClick="CaretAsync">Caret to first paragraph</ButtonControl>
+        <CheckBoxControl Label="Read only" @bind-Checked="_readOnly" />
+        <CheckBoxControl Label="Paginated" @bind-Checked="_paginated" />
+        <CheckBoxControl Label="Echo changes into Blocks" @bind-Checked="_echo" />
+    </StackLayoutControl>
+    <p>Find <strong>alpha</strong> to test case and whole-word options. Find <strong>brave new</strong> across formatting. Replace all, then undo once to restore every match.</p>
+    <div class="editor-bench-viewport">
+        <EditorControl @ref="_editor" EditorId="editor-parity" AriaLabel="Parity editor" Blocks="@_blocks"
+                       ShowToolbar="true" EnableHistory="true" HistoryLimit="50" ReadOnly="@_readOnly" Paginate="@_paginated"
+                       FontFamily="Arial" FontSizePx="16" LineHeight="1.5" OnBlocksChanged="Changed" HistoryChanged="HistoryChanged" />
+    </div>
+    <p id="editor-history" role="status">Undo: @_history.UndoCount · Redo: @_history.RedoCount · Changes: @_changes</p>
+    <h2>Comparison editor</h2>
+    <p>This separate read-only editor shares a sample block ID. Editing, history and caret commands should stay in the editor they target.</p>
+    <div class="editor-bench-comparison">
+        <EditorControl @ref="_comparison" AriaLabel="Comparison editor" Blocks="@_comparisonBlocks" ReadOnly="true"
+                       FontFamily="Arial" FontSizePx="15" />
+    </div>
+    @if (_inspection.Length > 0)
+    {
+        <h2>Snapshot readback</h2>
+        <pre id="editor-snapshot">@_inspection</pre>
+    }
+</ControlBenchFrame>
+
+@code {
+    private EditorControl? _editor, _comparison;
+    private IReadOnlyList<EditorBlock> _blocks = Sample();
+    private readonly IReadOnlyList<EditorBlock> _comparisonBlocks = [new("p1", EditorBlockKind.Paragraph, "Comparison content stays independent.")];
+    private IReadOnlyList<EditorBlock>? _saved;
+    private bool _readOnly, _paginated, _echo;
+    private int _changes;
+    private string _status = "Ready", _inspection = "";
+    private EditorHistoryState _history = new(false, false, 0, 0);
+
+    private static IReadOnlyList<EditorBlock> Sample() => [
+        new("title", EditorBlockKind.ChapterHeading, "A working document"),
+        new("p1", EditorBlockKind.Paragraph, "Alpha alpha alphabet. Alpha & omega.", Html: "Alpha alpha alphabet. <strong>Alpha</strong> &amp; <em>omega</em>."),
+        new("p2", EditorBlockKind.Paragraph, "A formatted brave new world. Second line stays.", Html: "A formatted <strong>brave</strong> new world.<br>Second line stays."),
+        new("break", EditorBlockKind.PageBreak, ""),
+        new("p3", EditorBlockKind.Paragraph, "Alpha on the next page. Café café cafétéria.")
+    ];
+
+    private async Task ResetAsync()
+    {
+        _blocks = Sample(); _changes = 0; _inspection = "";
+        if (_editor is not null) await _editor.PushAsync(_blocks);
+        _history = new(false, false, 0, 0); _status = "Sample reset";
+    }
+    private void Changed(IReadOnlyList<EditorBlock> blocks)
+    {
+        _changes++;
+        if (_echo) _blocks = blocks;
+        _status = $"Change {_changes}: {blocks.Count} blocks received";
+    }
+    private void HistoryChanged(EditorHistoryState state) => _history = state;
+    private async Task SaveAsync() { _saved = await _editor!.ReadBlocksAsync(); _status = $"Saved {_saved.Count} blocks"; }
+    private async Task LoadAsync() { if (_saved is null) return; _blocks = _saved; await _editor!.PushAsync(_saved); _status = "Snapshot restored"; _history = new(false, false, 0, 0); }
+    private async Task InspectAsync()
+    {
+        var blocks = await _editor!.ReadBlocksAsync();
+        _inspection = System.Text.Json.JsonSerializer.Serialize(blocks, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        _status = $"Read {blocks.Count} blocks; {blocks.Count(b => b.Kind == EditorBlockKind.PageBreak)} page break(s)";
+    }
+    private async Task CopyAsync() { await _comparison!.PushAsync(await _editor!.ReadBlocksAsync()); _status = "Copied formatted blocks to comparison editor"; }
+    private Task CaretAsync() => _editor!.SetCaretAsync("p1", 0);
+}

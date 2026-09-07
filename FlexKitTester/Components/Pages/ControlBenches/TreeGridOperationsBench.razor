@@ -1,0 +1,94 @@
+@page "/flexcore-controls/tree-grid-operations"
+@rendermode InteractiveServer
+@using Fx.ControlKit.Grid
+@using System.ComponentModel.DataAnnotations
+@using System.Text.Json
+<PageTitle>TreeGrid operations bench</PageTitle>
+<ControlBenchFrame Name="TreeGrid · editing and hierarchy" Instructions="Select a row and use Edit row, F2, or double-click a cell. Enter saves an inline/dialog row and stages a batch row; Save changes commits the batch. Try an empty name, invalid number or budget above 10,000. Check a parent, collapse/filter/page, and verify its descendants. Move rows using the toolbar, Ctrl+Left/Right, or drag onto Before/Inside/After. Right-click a header to freeze it, then scroll horizontally and resize columns." Status="@_status">
+    <StackLayoutControl Orientation="FlexOrientation.Horizontal" Wrap="true" Gap="8px">
+        <ButtonControl OnClick="Reset">Reset operations</ButtonControl>
+        <DropDownListControl TItem="EditMode" TValue="EditMode" DataSource="@(Enum.GetValues<EditMode>())" Value="_settings.Mode" ValueChanged="SetMode" AriaLabel="Editing mode" />
+        <CheckBoxControl Label="Cascade checks" @bind-Checked="_cascade" />
+        <CheckBoxControl Label="Page rows" @bind-Checked="_paging" />
+        <CheckBoxControl Label="Reject next change" @bind-Checked="_rejectNext" />
+        <CheckBoxControl Label="Fail next child load" @bind-Checked="_failLoad" />
+        <ButtonControl OnClick="() => _grid!.ExpandAllAsync()">Expand all</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.CollapseAllAsync()">Collapse all</ButtonControl>
+        <ButtonControl OnClick="Filter">Find Draft</ButtonControl>
+        <ButtonControl OnClick="() => _grid!.ClearFiltersAsync()">Clear filters</ButtonControl>
+        <ButtonControl OnClick="SaveView">Save view</ButtonControl>
+        <ButtonControl OnClick="RestoreView" Disabled="@(_saved is null)">Restore view</ButtonControl>
+    </StackLayoutControl>
+    <TreeGridControl TValue="WorkRow" @key="_version" @ref="_grid" @bind-DataSource="_rows" IdMapping="Id" ParentIdMapping="ParentId" AriaLabel="Editable project tree"
+        EditSettingsRef="_settings" NewItemFactory="NewRow" Validator="ValidateRow" DataChanging="BeforeChange" DataChanged="AfterChange"
+        SelectionMode="SelectionMode.Cell" ShowCheckboxes="true" AutoCheckHierarchy="_cascade" CheckedItems="_checked" CheckedItemsChanged="CheckedChanged" CanCheckRow="row => row.Id != 14"
+        AllowRowDragAndDrop="true" RowMoved="Moved" CanDrop="args => args.Item.Id != 14"
+        FrozenColumns="1" AllowResizing="true" ShowColumnOptionsButton="true" ShowGridOptionsRail="true"
+        AllowSorting="true" AllowFiltering="true" AllowPaging="_paging" PageSize="5" ToggleOnRowClick="false" Height="440px"
+        EnableCollapseAll="true" TreatAsParent="row => row.Id == 900" LoadChildren="LoadChildren">
+        <TreeGridColumn Field="Name" HeaderText="Name" Width="300px" />
+        <TreeGridColumn Field="Id" HeaderText="ID" IsPrimaryKey="true" AllowEditing="false" Type="ColumnType.Number" Width="90px" />
+        <TreeGridColumn Field="Team" HeaderText="Team" Width="180px" />
+        <TreeGridColumn Field="Budget" HeaderText="Budget" Type="ColumnType.Number" Format="N2" Width="160px" />
+        <TreeGridColumn Field="Due" HeaderText="Due" Type="ColumnType.Date" Format="yyyy-MM-dd" Width="190px" />
+        <TreeGridColumn Field="Notes" HeaderText="Notes" Width="480px" />
+        <TreeGridColumn Field="Active" HeaderText="Active" Type="ColumnType.Boolean" IsFrozen="true" FrozenPosition="FrozenColumnPosition.Right" Width="100px" />
+    </TreeGridControl>
+    <p id="operations-ready" data-ready="@(_ready ? "true" : "false")">Mode: @_settings.Mode · Commits: @_commits · Lazy requests: @_loads</p>
+    <p id="operations-checks">Checked: @string.Join(",", _checked.Select(r => r.Id))</p>
+    <p>Checkboxes cover loaded rows, including those hidden by collapse, filtering or paging. A checked lazy parent passes its check to newly loaded children. Row 14 cannot be checked or moved. Moves and deletes include descendants. Save or cancel drafts before moving.</p>
+    <p id="operations-source">Source: @string.Join(" | ", _rows.Select(r => $"{r.Id}:{r.ParentId?.ToString() ?? "root"}:{r.Name}:{r.Budget}"))</p>
+</ControlBenchFrame>
+@code {
+    public sealed class WorkRow
+    {
+        public int Id { get; set; }
+        public int? ParentId { get; set; }
+        [Required, MinLength(2)] public string Name { get; set; } = "";
+        public string Team { get; set; } = "";
+        [Range(1, 100000)] public decimal Budget { get; set; }
+        public DateTime Due { get; set; } = new(2026, 9, 6);
+        public string Notes { get; set; } = "Editable project notes";
+        public bool Active { get; set; } = true;
+    }
+    private TreeGridControl<WorkRow>? _grid;
+    private IEnumerable<WorkRow> _rows = [];
+    private IReadOnlyList<WorkRow> _checked = [];
+    private EditSettings _settings = new() { AllowAdding = true, AllowEditing = true, AllowDeleting = true, Mode = EditMode.Inline };
+    private string _status = "Ready";
+    private TreeGridViewState? _saved;
+    private int _version, _nextId = 1000, _commits, _loads;
+    private bool _ready, _cascade = true, _paging, _rejectNext, _failLoad;
+    protected override void OnInitialized() => Reset();
+    protected override void OnAfterRender(bool firstRender) { if (firstRender) { _ready = true; StateHasChanged(); } }
+    private void Reset()
+    {
+        _version++; _commits = _loads = 0; _checked = []; _status = "Ready"; _rejectNext = _failLoad = false;
+        _rows = [Row(1,null,"Engineering",100), Row(11,1,"Draft specification",20), Row(111,11,"Review draft",5), Row(12,1,"Build prototype",30), Row(14,1,"Locked task",10),
+            Row(2,null,"Sales",80), Row(21,2,"Prepare launch",15), Row(900,null,"Remote",1)];
+    }
+    private static WorkRow Row(int id, int? parent, string name, decimal budget) => new() { Id=id, ParentId=parent, Name=name, Budget=budget, Team=parent==2?"Sales":"Product" };
+    private WorkRow NewRow() => Row(_nextId++,null,"New task",1);
+    private async Task SetMode(EditMode mode)
+    {
+        await _grid!.CancelChangesAsync();
+        _settings = new() { AllowAdding=true,AllowEditing=true,AllowDeleting=true,Mode=mode };
+        _status = $"Mode: {mode}";
+    }
+    private static IEnumerable<ValidationResult> ValidateRow(WorkRow row)
+    { if (row.Budget > 10000) yield return new("Budget must not exceed 10,000.", [nameof(WorkRow.Budget)]); }
+    private void BeforeChange(TreeGridDataChangeEventArgs<WorkRow> args)
+    { if (_rejectNext) { _rejectNext=false; args.Cancel=true; args.Error="Simulated server rejection. Drafts are retained."; } }
+    private void AfterChange(TreeGridDataChangeEventArgs<WorkRow> args) { _commits++; _status=$"Committed {args.Changes.Count} change(s): {string.Join(", ",args.Changes.Select(c=>c.Kind))}"; }
+    private void CheckedChanged(IReadOnlyList<WorkRow> rows) { _checked=rows; }
+    private void Moved(TreeGridRowMoveEventArgs<WorkRow> args) => _status=$"Moved {args.Item.Name} {args.Position} {args.Target.Name}";
+    private Task Filter() => _grid!.SetFilterAsync(new("Name",TextFilterOperator.Contains,"Draft"));
+    private void SaveView() { _saved=JsonSerializer.Deserialize<TreeGridViewState>(JsonSerializer.Serialize(_grid!.CaptureState())); _status="View saved"; }
+    private async Task RestoreView() { await _grid!.RestoreStateAsync(_saved!); _status="View restored"; }
+    private async Task<IReadOnlyList<WorkRow>> LoadChildren(WorkRow row,CancellationToken token)
+    {
+        _loads++; await Task.Delay(120,token);
+        if (_failLoad) { _failLoad=false; throw new InvalidOperationException("Simulated child load failure. Expand Remote to retry."); }
+        return [Row(901,900,"Remote task",25), Row(902,900,"Remote review",15)];
+    }
+}

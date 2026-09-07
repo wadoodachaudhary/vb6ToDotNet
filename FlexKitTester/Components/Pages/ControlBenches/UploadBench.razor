@@ -1,0 +1,11 @@
+@page "/flexcore-controls/upload"
+@rendermode InteractiveServer
+<PageTitle>Upload bench</PageTitle>
+<ControlBenchFrame Name="Upload" Instructions="Upload text files in chunks. This bench stores bytes only in its own memory. Cancel, retry, and remove are enabled." Status="@_status">
+<UploadControl Id="upload-bench" UploadHandler="Receive" RemoveHandler="Remove" AllowedExtensions="@(new[]{".txt",".csv"})" ChunkSize="4096" Completed="Completed" /><p>Transfer destination: bench memory only.</p>
+</ControlBenchFrame>
+@code {
+ private string _status="Ready";
+ private readonly Dictionary<string,System.IO.MemoryStream> _data=new();private async Task Receive(UploadChunk chunk,CancellationToken token){if(chunk.Offset==0){if(_data.Remove(chunk.FileId,out var old))old.Dispose();_data[chunk.FileId]=new();}var stream=_data[chunk.FileId];if(stream.Length!=chunk.Offset)throw new InvalidOperationException("Unexpected chunk offset");await stream.WriteAsync(chunk.Bytes,token);await Task.Delay(25,token);}private Task Remove(UploadFile file,CancellationToken token){if(_data.Remove(file.Id,out var stream))stream.Dispose();return Task.CompletedTask;}
+ private void Completed(UploadFile file)=>_status=$"Received {file.Name}: {_data[file.Id].Length} bytes";
+}

@@ -154,3 +154,41 @@ Generated inline/dialog fields and the popup calendar use FlexCore controls.
 Grid context menu: right-click a header for the standard Multi-sort section and
 Custom Sort dialog. Sortable grids allow multi-sort by default. Three-dot header
 buttons are opt-in through ShowColumnMenuButton and are absent from this bench.
+
+FlexCore dedicated control benches
+---------------------------------
+Open /flexcore-controls, or choose "FlexCore Control Benches (37)" in navigation.
+Each of the 32 remaining dedicated controls has its own route and state: inputs,
+overlays, layout, upload/drop zone, signature, chat/AI input, Spreadsheet, Scheduler,
+and Map. How-to-test instructions appear at the top of every bench.
+
+Upload data stays in bench memory. Chat and AI examples are labeled local demos.
+The Map bench uses local vectors. Speech recognition needs browser support and a
+microphone permission; errors stay visible. No production service is configured.
+
+These benches compile for the default FlexCore target and are omitted with
+-p:UseFlexKit=true. Library API details and feature boundaries are documented in
+../../FlexCore/docs/remaining-controls.md.
+
+EditorControl parity bench
+--------------------------
+Open /flexcore-controls/editor for find/replace, undo/redo, read-only mode,
+formatted snapshots, pagination and two-editor selection isolation.
+
+PDF Viewer and Spreadsheet parity benches
+-----------------------------------------
+/flexcore-controls/pdf has a three-page sample with repeated search terms,
+font changes, a form field and nested bookmarks. Test next/previous results,
+Match case, zoom/rotation and saving/reloading the PDF.
+/flexcore-controls/spreadsheet now includes a 120-row filter/freeze sample.
+Select B2 and freeze, scroll and page in both directions, apply Region North
+and Item filters together, clear one column, undo and round-trip the XLSX.
+Both pages expose snapshot and API buttons and use FlexCore controls.
+See FlexCore/docs/pdf-spreadsheet-parity-progress.md for implemented scope.
+
+TreeGrid editing and hierarchy bench
+-----------------------------------
+Open /flexcore-controls/tree-grid-operations for inline/dialog/batch drafts,
+EditContext validation, atomic saves and cancellation, add/delete subtrees,
+hierarchy checkboxes, lazy check inheritance, Before/Inside/After row moves,
+indent/outdent, and left/right frozen columns with resizing and view state.
