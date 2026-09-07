@@ -126,6 +126,40 @@ Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
    parked on `R1-UAT`. Mirror incoming page changes **PB → HF only** (owner
    directive 2026-08-28); there is no HF → PB flow of any kind. Hand-merge the
    csproj.
+0b. **ALSO check for OPEN merge requests** (added 2026-09-07). `origin/main`
+   matching the last-pushed sha does **NOT** mean there is nothing to take. An
+   open MR's commits live on its source branch, never on `main`, so the step-0
+   sha check reports "no upstream work" while real fixes sit unmerged. Missed
+   exactly this way on 2026-09-07 (hyphen-pb **!27**, open 18 hours, deployed
+   straight past — the owner had to point it out):
+   ```bash
+   cd Deploy/repos/hyphen-pb && git fetch origin --prune
+   for b in $(git branch -r --format='%(refname:short)' \
+              | grep -vE 'HEAD|origin/(main|R1-UAT|R1-UAT-Hyphen|master|Dev)$'); do
+       n=$(git log --oneline origin/main..$b | wc -l | tr -d ' ')
+       [ "$n" != 0 ] && echo "$b  $n ahead — possible open MR"
+   done
+   ```
+   Stale ticket branches (HHM-172/331/566/620, all July) sit ahead forever, so a
+   hit is a *candidate*, not proof — confirm in the GitLab UI. Git cannot tell
+   you who authored an MR: the commit author is this machine's identity
+   (`wc2595@columbia.edu`) regardless of who wrote it, and only GitLab's MR
+   author field names the real person. Claude-in-Chrome carries the owner's real
+   session once they are signed in to GitLab **in Chrome** (a Safari session does
+   not carry over, and the sandboxed Browser pane never authenticates).
+   **Applying an open MR: diff against its MERGE BASE, never against `main`** —
+   the branch is usually based on an older main, so `git diff origin/main..<branch>`
+   shows it *deleting* everything since, a pure artifact. Use
+   `git merge-base origin/main <branch>`, then 3-way merge each touched file
+   (`git merge-file OURS BASE THEIRS`). On !27 that turned an alarming
+   48-file/-6928-line diff into the real change: 4 files, +196/-128, zero
+   conflicts — even though two of those files had been rewritten that same day.
+   Apply multiple MRs in **base order** (oldest base first). **Never merge or
+   close the MR from here** — that is the owner's or author's call on GitLab; say
+   explicitly that the content reaches `main` via the source→main push while the
+   MR stays open. (Verified 2026-09-07 on !28/!31: applying locally and letting
+   the owner merge afterwards is safe — the two paths produced byte-identical
+   content and the upstream merge was a clean no-op.)
 1. Commit what is dirty in each source tree — HomeFront, HomeFrontPB, FlexKit,
    FlexCore. This is housekeeping, **not a gate**: the deploy rsyncs the WORKING
    TREE, not HEAD, so uncommitted edits ship either way and last-minute changes
@@ -139,8 +173,12 @@ Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
    with false positives.
 2. Bump FlexKit + repack + refresh `local-packages/` nupkg — **only if FlexKit
    source changed.**
-3. Build `HomeFront.sln` and `HomeFrontPB.sln` (+ `FlexCore.Showcase.sln` if
-   FlexCore changed). All 0 errors. Always build the `.sln`, never the csproj.
+3. Build `HomeFront.sln` (+ `FlexCore.Showcase.sln` if FlexCore changed). All 0
+   errors. Always build the `.sln`, never the csproj. **Do NOT build
+   `HomeFrontPB.sln`** — `CLAUDE.md` (2026-08-31) says HomeFrontPB must not be
+   modified, built, or synced without an explicit request naming it. The R1-UAT
+   stage inside `deploy_to_repos.sh` builds its own staged copy; that is the
+   pipeline's job, not an ad-hoc build on your part.
 4. `bash tools/deploy_to_repos.sh`
 5. Verify on `origin/main`: Azure token placeholders present,
    `appsettings.Development.json` still 97 lines, csproj publish-exclusion intact.
@@ -154,11 +192,11 @@ Run in order, every time. `tools/deploy_to_repos.sh` (`--dry-run`, `--pull`).
 7. Publish FlexCore to NuGet — **only if FlexCore changed.** Check the latest
    published version first and bump above it.
 
-**Current shipped versions (2026-08-29):** FlexKit **0.1.75**, FlexCore **0.2.24**
+**Current shipped versions (2026-09-07):** FlexKit **0.1.86**, FlexCore **0.2.32**
 (published to nuget.org). Both are bumped only when their own source changes; the
 two version lines are independent and are allowed to diverge.
 
-### Four traps in the deploy script — all fixed, all silent when they bite
+### Five traps in the deploy script — all fixed, all silent when they bite
 
 Worth knowing because each one reported success while doing the wrong thing.
 
@@ -195,6 +233,23 @@ Worth knowing because each one reported success while doing the wrong thing.
    source changed — that is what consumers pin. Seen 2026-08-29 on
    `GridControl.RequestScrollToOrigin` (two commits landed after the 0.1.74 bump
    without bumping again) and 2026-08-10 on `MaxLength`.
+5. **Repacking the SAME version shadows itself via the GLOBAL NuGet cache** —
+   a worse variant of #4 that *survives* the auto-repack. `dotnet restore`
+   resolves a `PackageReference` against `~/.nuget/packages/flexkit/<version>/`
+   first and treats an already-extracted version as immutable, so once a version
+   has been resolved anywhere on this machine, restoring it again never re-reads
+   the local feed — no matter how recently `pack_flexkit` rewrote the `.nupkg`.
+   Hit 2026-09-06: FlexKit source changed without a version bump, `pack_flexkit`
+   correctly detected source-newer-than-nupkg and repacked 0.1.85, and the staged
+   build *still* failed on `GridControl.GetFilteredRecords` — a method that was
+   in the fresh nupkg but not in what restore actually served. **There is no
+   clean recovery except bumping the version**; never delete or edit
+   `~/.nuget/packages/flexkit/<version>/`, it is machine-wide and other consumers
+   (GhostWriter, GhostWriterLLM, FlexCore.Showcase) may have resolved it too.
+   **Tell:** the staged error names a member that demonstrably *does* exist in
+   current FlexKit source — grep to confirm before suspecting a bad merge.
+   This is why "bump whenever FlexKit source changed" is not optional: the
+   auto-repack is a safety net for a missed bump, not a substitute for one.
    **Fallout:** a failed staged build leaves the `hyphen-pb` clone dirty, so the
    R1-UAT stage then fails its checkout with "local changes would be overwritten".
    That is a consequence, not a second bug — `git reset --hard origin/main &&

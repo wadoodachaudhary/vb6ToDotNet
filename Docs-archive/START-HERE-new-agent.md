@@ -190,8 +190,9 @@ Every prompt assumes **Part A has already been run in that session.**
 >
 > Confirm back to me: the eight steps of the deploy sequence in order, which two
 > steps are conditional and on what, what `ENV_CONFIG_EXCLUDE` protects, which
-> source tree feeds `main` and which feeds `R1-UAT`, and why you must never merge
-> main into R1-UAT. Then wait — do not deploy until I ask.
+> source tree feeds `main` and which feeds `R1-UAT`, why you must never merge
+> main into R1-UAT, and **why an unchanged `origin/main` still does not mean
+> there is nothing to pull**. Then wait — do not deploy until I ask.
 
 ---
 
