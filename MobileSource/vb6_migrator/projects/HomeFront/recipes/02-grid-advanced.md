@@ -180,3 +180,26 @@ Multi-step VB6 flows that prompt per row (variance category) batch into ONE
 picker after the fan-out — chain pickers via context handoff and wire
 FPickList `OnCancel` to clear the pending state (do NOT keep VB6's
 dirty-on-cancel AfterEdit quirk).
+
+## Dropdown cells — always the grid's own option-list editor (2026-09-08)
+
+Never render a `DropDownListControl` inside a `<GridColumn><Template>` to make a
+cell "pick from a list" (the FVendorChange regression: first click opened the
+list, the editor sat 2px inside the cell, the list opened at the top then
+jumped, and the template's `@onclick:stopPropagation` kept the previously
+selected row highlighted). The library editor gives every owner-standard
+behaviour for free:
+
+```razor
+<GridControl ... SelectionSettingsRef="@sel" EditSettingsRef="@edit" EventsRef="@events">
+    <GridColumn Field="Vendor" AllowEditing="true" EditOptionsProvider="@VendorCodeOptions" />
+```
+`sel` = Type Multiple / Mode Row (a pick fans out to the whole selection —
+VB6 `.Row..RowSel`), `edit` = AllowEditing + `EditMode.Batch`, and
+`events.OnCellSave` receives the row AFTER the grid wrote the picked value into
+it (once per fan-out target) — derive paired fields (code ⇄ name) and the dirty
+flag from the row there. Row-aware lists: `EditOptionsProvider="@(item => ...)"`;
+prepend the row's current (possibly inactive) value so it stays pickable.
+Behaviour you get: first click places the CLOSED editor (arrow), second click
+opens; the list paints already scrolled to the current value; no side gap;
+row selection follows the click.
