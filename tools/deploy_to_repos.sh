@@ -243,6 +243,168 @@ PYEOF
     fi
 }
 
+# ── The development login-skip must never ship ──────────────────────
+# Owner directive 2026-09-12: "make sure the Login page skip is removed and
+# taken back, so users login properly" — AND "Login Page skip should remain
+# functional on this development device". So the working tree KEEPS
+# Services/DevAutoLogin.cs + the app.UseDevAutoLogin() line, and the deploy
+# removes them from the STAGED CLONE, before the build check so the build
+# proves the stripped tree still compiles.
+#
+# An rsync --exclude cannot do this job: --exclude means rsync neither copies
+# NOR deletes, so the copy already committed on origin/main (it went up in
+# 8f03fa3, 2026-09-12) would simply survive untouched in the clone. The strip
+# has to delete it, every run.
+#
+# Files are matched on CONTENT, not on a hard-coded path, so renaming, moving
+# or splitting the middleware cannot walk it past the guard. After stripping,
+# the guard re-scans and refuses to push on any surviving trace, and asserts
+# POSITIVELY that the real password check is still wired up — an empty tree
+# would otherwise pass an absence-only check.
+strip_dev_login_bypass() {
+    local git_dir="$1"
+    local label="${2:-repo}"
+
+    # Not an app tree (flexkit / flexcore) — nothing to strip or assert.
+    [ -f "$git_dir/Program.cs" ] || return 0
+
+    if ! python3 - "$git_dir" "$label" <<'PYEOF'
+import os, re, sys
+
+staged, label = sys.argv[1], sys.argv[2]
+# Every spelling of the bypass: the class, the extension method, the
+# configuration key, and the environment-variable form. IConfiguration keys are
+# case-INSENSITIVE, so the haystack is lowercased before matching — a
+# "devautologin:user" key arms it exactly like the canonical casing.
+MARKERS = ("devautologin", "usedevautologin", "devautologin__")
+SKIP_DIRS = {".git", "bin", "obj", "node_modules", "local-packages", ".vs", ".idea",
+             ".codex-backups", "__MACOSX"}
+# Binaries and media cannot be a bypass, and the tree carries large assets
+# (screen recordings, .nupkg) that are pointless to read.
+BINARY_EXT = {".dll", ".pdb", ".exe", ".nupkg", ".snupkg", ".zip", ".ico", ".png",
+              ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".woff", ".woff2", ".ttf",
+              ".eot", ".mp4", ".mov", ".avi", ".pdf", ".rpt", ".xls", ".xlsx",
+              ".doc", ".docx", ".cache", ".bin", ".so", ".dylib"}
+MAX_BYTES = 2 * 1024 * 1024
+CODE_EXT = {".cs", ".razor", ".cshtml"}      # the bypass itself — delete
+DOC_EXT = {".md", ".txt"}                    # prose about a dev feature — harmless
+# Anything else that holds a marker (config, script, CI, extensionless) is
+# treated as "could ARM the bypass" and refuses the deploy rather than being
+# deleted on a guess: deleting the wrong appsettings or pipeline file would
+# break the deployment, and that decision belongs to a human.
+
+def scan():
+    hits = {}
+    for root, dirs, files in os.walk(staged):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for name in files:
+            ext = os.path.splitext(name)[1].lower()
+            if ext in BINARY_EXT:
+                continue
+            full = os.path.join(root, name)
+            try:
+                if os.path.getsize(full) > MAX_BYTES:
+                    continue
+                text = open(full, encoding="utf-8", errors="ignore").read().lower()
+            except OSError:
+                continue
+            if any(m in text for m in MARKERS):
+                hits[os.path.relpath(full, staged).replace(os.sep, "/")] = ext
+    return hits
+
+removed, edited, docs = [], [], []
+for rel, ext in sorted(scan().items()):
+    if ext in DOC_EXT:
+        docs.append(rel)
+    elif ext not in CODE_EXT:
+        print(f"  CONFIGURATION COULD ARM THE BYPASS: {rel} — refusing to deploy; "
+              f"remove the key by hand (this file is never deleted automatically)")
+        sys.exit(2)
+    elif rel != "Program.cs":
+        os.remove(os.path.join(staged, rel))
+        removed.append(rel)
+
+# Program.cs keeps the whole startup, so edit rather than delete: drop the
+# registration line plus the comment block that introduces it. The upward walk
+# stops at a blank line so it cannot eat a comment belonging to the PREVIOUS
+# statement, and the anchor is the exact call, so no neighbouring middleware
+# line can be swallowed. `using HomeFront.Auth;` deliberately STAYS —
+# HomeFront.Auth.Cognito keeps that namespace alive, so it still compiles, and a
+# strip that touches more than it must is how a staged build breaks.
+program = os.path.join(staged, "Program.cs")
+if os.path.exists(program):
+    lines = open(program, encoding="utf-8").read().split("\n")
+    call = re.compile(r"^\s*app\.UseDevAutoLogin\(\)\s*;\s*$")
+    comment = re.compile(r"^\s*//")
+    drop = set()
+    for i, line in enumerate(lines):
+        if call.match(line):
+            drop.add(i)
+            j = i - 1
+            while j >= 0 and comment.match(lines[j]) and lines[j].strip():
+                drop.add(j)
+                j -= 1
+    for i, line in enumerate(lines):
+        if i in drop or not any(m in line.lower() for m in MARKERS):
+            continue
+        if comment.match(line):
+            drop.add(i)
+        else:
+            print(f"  Program.cs:{i + 1} uses the bypass outside its registration — "
+                  f"refusing to guess: {line.strip()[:90]}")
+            sys.exit(2)
+    if drop:
+        open(program, "w", encoding="utf-8").write(
+            "\n".join(l for i, l in enumerate(lines) if i not in drop))
+        edited.append(f"Program.cs (-{len(drop)} lines)")
+
+survivors = {r: e for r, e in scan().items() if e not in DOC_EXT}
+if survivors:
+    for rel in sorted(survivors):
+        print(f"  STILL PRESENT: {rel}")
+    sys.exit(2)
+
+# Absence is not enough — prove the real login path still ships, and that the
+# strip did not take a neighbouring middleware line with it.
+problems = []
+flogin = []
+for root, dirs, files in os.walk(staged):
+    dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+    flogin += [os.path.join(root, f) for f in files if f == "FLogin.razor"]
+if not flogin:
+    problems.append("no FLogin.razor in the staged tree")
+elif not any("Sec.EnforcePasswordCheck" in open(p, encoding="utf-8", errors="ignore").read()
+             for p in flogin):
+    problems.append("FLogin.razor no longer consults Sec.EnforcePasswordCheck")
+if not os.path.exists(program):
+    problems.append("no Program.cs in the staged tree")
+else:
+    startup = open(program, encoding="utf-8", errors="ignore").read()
+    for required in ("app.UseAuthentication();", "app.UseAuthorization();",
+                     "app.UseAntiforgery();", "/auth/signin"):
+        if required not in startup:
+            problems.append(f"Program.cs no longer has {required} — the strip was too greedy")
+if problems:
+    for p in problems:
+        print(f"  LOGIN PATH BROKEN: {p}")
+    sys.exit(3)
+
+summary = []
+if removed:
+    summary.append(f"removed {', '.join(removed)}")
+if edited:
+    summary.append(", ".join(edited))
+if docs:
+    summary.append(f"{len(docs)} doc mention(s) left as prose ({', '.join(docs)})")
+print("  " + ("; ".join(summary) if summary else "nothing to strip"))
+PYEOF
+    then
+        err "$label: development login-skip could not be removed from the staged tree"
+        return 1
+    fi
+    ok "$label: no login skip in the pushed copy — password check intact"
+}
+
 # ── Build verification ──────────────────────────────────────────────
 verify_build() {
     local deploy_dir="$1"
@@ -465,6 +627,12 @@ for entry in "${PROJECTS[@]}"; do
     rsync -a --delete "${RSYNC_EXCLUDE[@]}" "$src_dir/" "$git_dir/"
     ok "Synced source"
 
+    # No pushed copy may be able to skip the login page (owner 2026-09-12).
+    if ! strip_dev_login_bypass "$git_dir" "$name"; then
+        err "Skipping $name due to the login-skip guard"
+        continue
+    fi
+
     # ── hyphen-pb: pack FlexKit, swap ref, verify build ─────────────
     if [ "$name" = "hyphen-pb" ]; then
         FLEXKIT_VER=$(pack_flexkit "$git_dir")
@@ -480,9 +648,21 @@ for entry in "${PROJECTS[@]}"; do
 
     # ── Commit & push ────────────────────────────────────────────────
     git -C "$git_dir" add -A
-    if [ -f "$git_dir/App_Data/jira-settings.json" ]; then
-        git -C "$git_dir" add -f App_Data/jira-settings.json 2>/dev/null || true
+    # Final gate on the BYTES that would be pushed, not just the worktree the
+    # strip edited: anything the file walk missed still has to pass through the
+    # index to reach GitLab. Docs are exempt — prose describing a dev-only
+    # feature is not a bypass. Added 2026-09-12.
+    if git -C "$git_dir" grep --cached -I -i -q -e devautologin -- ':!*.md' 2>/dev/null; then
+        err "$name: the staged index still carries the login-skip — not pushing"
+        continue
     fi
+
+    # App_Data/jira-settings.json is NOT force-added any more (2026-09-12). It
+    # holds a live Atlassian API token, .gitignore says "never commit/ship", and
+    # ENV_CONFIG_EXCLUDE already treats it as remote-owned — yet the force-add
+    # re-committed it on every run, so the exposure could never be cleaned up.
+    # The rsync excludes the path, so a copy already on the branch is left alone
+    # and the server keeps its settings; nothing new is written.
     if git -C "$git_dir" diff --cached --quiet 2>/dev/null; then
         ok "No changes to push"
         continue
@@ -492,7 +672,11 @@ for entry in "${PROJECTS[@]}"; do
     if $DRY_RUN; then
         ok "DRY RUN — would commit and push ($TIMESTAMP)"
         git -C "$git_dir" diff --cached --stat
-        git -C "$git_dir" checkout -- . 2>/dev/null || true
+        # `checkout -- .` restores the worktree FROM the index, so the staged
+        # strip (a deleted file, an edited Program.cs) stayed staged and the
+        # clone was left dirty — and the reset at the top of the loop is
+        # conditional, so nothing cleaned it up. Fixed 2026-09-12.
+        git -C "$git_dir" reset -q --hard HEAD 2>/dev/null || true
     else
         git -C "$git_dir" commit -m "Deploy $name — $TIMESTAMP"
         git -C "$git_dir" push origin main
@@ -511,6 +695,13 @@ deploy_r1uat() {
 
     # Always hand the clone back on main, on every exit path.
     trap 'git -C "'"$DEPLOY"'/hyphen-pb" checkout main --quiet 2>/dev/null || true' RETURN
+
+    # --dry-run only ever gated the main loop; this stage ignored it and pushed
+    # for real — a "dry run" deployed to the branch QA pulls. Fixed 2026-09-12.
+    if $DRY_RUN; then
+        log "R1-UAT: DRY RUN — skipping (source $src_dir)"
+        return 0
+    fi
 
     log "R1-UAT: $src_dir → hyphen-pb R1-UAT"
     git -C "$git_dir" fetch origin --quiet
@@ -532,6 +723,12 @@ deploy_r1uat() {
     git -C "$git_dir" checkout -- Components/Pages/FLogin.razor 2>/dev/null || true
     ok "Restored branch-only FLogin lockdown"
 
+    if ! strip_dev_login_bypass "$git_dir" "R1-UAT"; then
+        err "R1-UAT login-skip guard failed — not pushing"
+        git -C "$git_dir" checkout main --quiet
+        return 1
+    fi
+
     if ! verify_build "$git_dir" "HomeFrontPB"; then
         err "R1-UAT build failed — not pushing"
         git -C "$git_dir" checkout main --quiet
@@ -540,7 +737,15 @@ deploy_r1uat() {
 
     # The lockdown must survive every run; refuse to push if it did not.
     local toggles
-    toggles=$(grep -c 'Disabled="true"' "$git_dir/Components/Pages/FLogin.razor" || echo 0)
+    # `grep -c` with ZERO matches prints "0" and EXITS 1, so a `|| echo 0`
+    # fallback appended a SECOND line: toggles became "0\n0", `[ -ne 5 ]` then
+    # died with "integer expression expected" (status 2), and `if` read that as
+    # false — so a completely missing lockdown printed "intact" and PUSHED an
+    # FLogin with all five security toggles enabled. Counting occurrences with
+    # `grep -o | wc -l` always yields one integer (0 for a missing file, which
+    # blocks), and it no longer under-counts two toggles on one line.
+    # Fixed 2026-09-12.
+    toggles=$(grep -o 'Disabled="true"' "$git_dir/Components/Pages/FLogin.razor" 2>/dev/null | wc -l | tr -d ' ')
     if [ "$toggles" -ne 5 ]; then
         err "R1-UAT security lockdown lost ($toggles/5 toggles) — not pushing"
         git -C "$git_dir" checkout main --quiet
@@ -555,6 +760,16 @@ deploy_r1uat() {
     # script BEFORE the push. R1-UAT silently stopped deploying. Fixed 2026-08-28;
     # this now matches the main loop's guard.
     git -C "$git_dir" add -A
+    # Final gate on the BYTES that would be pushed, not just the worktree the
+    # strip edited: anything the file walk missed still has to pass through the
+    # index to reach GitLab. Docs are exempt — prose describing a dev-only
+    # feature is not a bypass. Added 2026-09-12.
+    if git -C "$git_dir" grep --cached -I -i -q -e devautologin -- ':!*.md' 2>/dev/null; then
+        err "R1-UAT: the staged index still carries the login-skip — not pushing"
+        git -C "$git_dir" checkout main --quiet
+        return 1
+    fi
+
     if git -C "$git_dir" diff --cached --quiet 2>/dev/null; then
         ok "R1-UAT: no changes to push"
     else
