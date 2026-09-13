@@ -13,12 +13,18 @@
 # Usage:
 #   ./tools/deploy_to_repos.sh              # push all repos
 #   ./tools/deploy_to_repos.sh --dry-run    # push dry run
+#   ./tools/deploy_to_repos.sh --with-r1uat # ALSO deploy R1-UAT (frozen by default)
 #   ./tools/deploy_to_repos.sh --pull       # pull MR changes from hyphen-pb
 set -euo pipefail
 
 ROOT="/Users/wadood/projects/VBToCSharp"
 HF_ROOT="$ROOT/HomeFront"
 DEPLOY="$HF_ROOT/Deploy/repos"
+# The packed FlexKit feed lives beside the staging clones (outer .gitignore: /Deploy/).
+# It used to be HomeFrontPB/local-packages, so every FlexKit change rewrote files in the
+# frozen HomeFrontPB tree (AGENTS.md: never modify HomeFrontPB unless asked by name).
+# Each staged clone still receives its own copy in <clone>/local-packages.
+PKG_DIR="$HF_ROOT/Deploy/local-packages"
 FLEXKIT_SRC="$ROOT/FlexKit"
 FLEXKIT_CSPROJ="$FLEXKIT_SRC/FlexKit.csproj"
 
@@ -100,10 +106,14 @@ RSYNC_EXCLUDE=(
 
 MODE="push"
 DRY_RUN=false
+# R1-UAT is FROZEN (owner 2026-09-12: "R1-UAT is frozen"). A push run no longer
+# deploys it; --with-r1uat deploys it for that one run, only when the owner asks.
+WITH_R1UAT=false
 for arg in "$@"; do
     case "$arg" in
         --pull)   MODE="pull" ;;
         --dry-run) DRY_RUN=true ;;
+        --with-r1uat) WITH_R1UAT=true ;;
     esac
 done
 
@@ -142,8 +152,9 @@ pack_flexkit() {
 
     local cur_ver
     cur_ver=$(grep '<Version>' "$FLEXKIT_CSPROJ" | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')
+    mkdir -p "$PKG_DIR"
     local existing_nupkg
-    existing_nupkg=$(ls "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.nupkg 2>/dev/null | head -1 || true)
+    existing_nupkg=$(ls "$PKG_DIR/FlexKit."*.nupkg 2>/dev/null | head -1 || true)
     local existing_ver=""
     if [ -n "$existing_nupkg" ]; then
         existing_ver=$(basename "$existing_nupkg" | sed 's/FlexKit\.\(.*\)\.nupkg/\1/')
@@ -177,10 +188,10 @@ pack_flexkit() {
     if $need_pack; then
         log "  Packing FlexKit $cur_ver — $pack_reason" >&2
         (dotnet pack "$FLEXKIT_CSPROJ" -c Release -o /tmp/flexkit-pack) >&2
-        rm -f "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.nupkg
-        rm -f "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.snupkg
-        cp /tmp/flexkit-pack/FlexKit."$cur_ver".nupkg "$HF_ROOT/HomeFrontPB/local-packages/"
-        cp /tmp/flexkit-pack/FlexKit."$cur_ver".snupkg "$HF_ROOT/HomeFrontPB/local-packages/" 2>/dev/null || true
+        rm -f "$PKG_DIR/FlexKit."*.nupkg
+        rm -f "$PKG_DIR/FlexKit."*.snupkg
+        cp /tmp/flexkit-pack/FlexKit."$cur_ver".nupkg "$PKG_DIR/"
+        cp /tmp/flexkit-pack/FlexKit."$cur_ver".snupkg "$PKG_DIR/" 2>/dev/null || true
         rm -rf /tmp/flexkit-pack
         ok "Packed FlexKit $cur_ver" >&2
     else
@@ -190,8 +201,8 @@ pack_flexkit() {
     mkdir -p "$target_dir/local-packages"
     rm -f "$target_dir/local-packages/FlexKit."*.nupkg
     rm -f "$target_dir/local-packages/FlexKit."*.snupkg
-    cp "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.nupkg "$target_dir/local-packages/"
-    cp "$HF_ROOT/HomeFrontPB/local-packages/FlexKit."*.snupkg "$target_dir/local-packages/" 2>/dev/null || true
+    cp "$PKG_DIR/FlexKit."*.nupkg "$target_dir/local-packages/"
+    cp "$PKG_DIR/FlexKit."*.snupkg "$target_dir/local-packages/" 2>/dev/null || true
 
     echo "$cur_ver"
 }
@@ -781,5 +792,9 @@ deploy_r1uat() {
 }
 
 if [ "$MODE" = "push" ]; then
-    deploy_r1uat
+    if $WITH_R1UAT; then
+        deploy_r1uat
+    else
+        log "R1-UAT: FROZEN — not deployed (pass --with-r1uat to deploy it)"
+    fi
 fi
