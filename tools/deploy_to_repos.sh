@@ -81,7 +81,33 @@ R1UAT_PRESERVE_EXCLUDE=(
     --exclude='Components/Pages/FLogin.razor'
 )
 
+# Not needed to build or run the apps / libraries: AI-agent instruction files,
+# test and verification harnesses, internal notes. Owner 2026-09-13: "delete codex,
+# claude files and other files not needed for HomeFront to run when deploying (keep
+# them locally if needed) -- remove them from repositories as well."
+# Leading "/" anchors each pattern to the repo root, so nothing deeper can match.
+# Two layers, because an rsync --exclude neither copies NOR deletes: this list keeps
+# new copies out, strip_non_runtime_files() deletes copies already on the branch.
+# KEPT on purpose: README.md (packed into the FlexKit/FlexCore nupkgs — pack fails
+# without it), LICENSE files (vendored third-party code), .gitignore, build/CI files.
+NON_RUNTIME_EXCLUDE=(
+    --exclude='/CLAUDE.md'
+    --exclude='/AGENTS.md'
+    --exclude='/GEMINI.md'
+    --exclude='/PUBLISHING.md'
+    --exclude='/Data/DataControl.API.md'
+    --exclude='/.agents/'
+    --exclude='/.claude/'
+    --exclude='/.codex/'
+    --exclude='/.codex-backups/'
+    --exclude='/verification/'
+    --exclude='/tests/'
+    --exclude='/docs/'
+    --exclude='/Docs/'
+    --exclude='*.vb6_gap.txt'
+)
 RSYNC_EXCLUDE=(
+    "${NON_RUNTIME_EXCLUDE[@]}"
     "${ENV_CONFIG_EXCLUDE[@]}"
     "${RUNTIME_DATA_EXCLUDE[@]}"
     "${NON_WINDOWS_EXCLUDE[@]}"
@@ -272,6 +298,52 @@ PYEOF
 # the guard re-scans and refuses to push on any surviving trace, and asserts
 # POSITIVELY that the real password check is still wired up — an empty tree
 # would otherwise pass an absence-only check.
+# ── Files not needed to build or run never stay on a branch ─────────
+# Deletes tracked copies of NON_RUNTIME_EXCLUDE from the staged clone (the rsync
+# exclude alone would leave them committed forever), removes untracked leftovers
+# of those root folders, and drops .sln project entries that point into them so
+# the staged build cannot reference a project that is no longer there.
+strip_non_runtime_files() {
+    local git_dir="$1"
+    python3 - "$git_dir" <<'PYEOF'
+import os, re, shutil, subprocess, sys
+root = sys.argv[1]
+ROOT_FILES = {"CLAUDE.md", "AGENTS.md", "GEMINI.md", "PUBLISHING.md", "Data/DataControl.API.md"}
+ROOT_DIRS = [".agents", ".claude", ".codex", ".codex-backups", "verification", "tests", "docs", "Docs"]
+SUFFIXES = (".vb6_gap.txt",)
+def doomed(rel):
+    return rel in ROOT_FILES or rel.split("/")[0] in ROOT_DIRS or rel.endswith(SUFFIXES)
+tracked = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True).stdout.decode("utf-8", "surrogateescape").split("\0")
+removed = {}
+for rel in tracked:
+    if rel and doomed(rel):
+        p = os.path.join(root, rel)
+        if os.path.lexists(p):
+            os.remove(p)
+        key = rel.split("/")[0] if "/" in rel else rel
+        removed[key] = removed.get(key, 0) + 1
+for d in ROOT_DIRS:
+    if os.path.isdir(os.path.join(root, d)):
+        shutil.rmtree(os.path.join(root, d))
+for f in ROOT_FILES:
+    if os.path.isfile(os.path.join(root, f)):
+        os.remove(os.path.join(root, f))
+dirs = "|".join(re.escape(d) for d in ROOT_DIRS)
+proj = re.compile(r'Project\([^)]*\)\s*=\s*"[^"]*",\s*"(?:' + dirs + r')[\\/][^"]*"[^\n]*\n.*?EndProject\r?\n', re.S)
+for name in os.listdir(root):
+    if name.endswith(".sln"):
+        path = os.path.join(root, name)
+        with open(path, encoding="utf-8", newline="") as fh:
+            text = fh.read()
+        text2, n = proj.subn("", text)
+        if n:
+            with open(path, "w", encoding="utf-8", newline="") as fh:
+                fh.write(text2)
+            removed[name + " project entries"] = n
+print("  " + ("; ".join(f"{k} ({v})" for k, v in sorted(removed.items())) if removed else "nothing to strip"))
+PYEOF
+}
+
 strip_dev_login_bypass() {
     local git_dir="$1"
     local label="${2:-repo}"
@@ -643,6 +715,8 @@ for entry in "${PROJECTS[@]}"; do
         err "Skipping $name due to the login-skip guard"
         continue
     fi
+    log "  $name: removing files not needed to run (agent files, harnesses, notes)"
+    strip_non_runtime_files "$git_dir"
 
     # ── hyphen-pb: pack FlexKit, swap ref, verify build ─────────────
     if [ "$name" = "hyphen-pb" ]; then
@@ -739,6 +813,8 @@ deploy_r1uat() {
         git -C "$git_dir" checkout main --quiet
         return 1
     fi
+    log "  R1-UAT: removing files not needed to run (agent files, harnesses, notes)"
+    strip_non_runtime_files "$git_dir"
 
     if ! verify_build "$git_dir" "HomeFrontPB"; then
         err "R1-UAT build failed — not pushing"
