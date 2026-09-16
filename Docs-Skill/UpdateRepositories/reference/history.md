@@ -15,7 +15,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 | 09-12 16:59 | 8f03fa3 | 9910e05 | 48eb73c (0.1.95) | 8cf89d7 (0.2.37 published) | 0519173 | app f50421f, FlexKit bfe8672, FlexCore f3ebcd2 | restored MR !33 that our 09-09 deploy had reverted; login-skip still shipped (guard not yet written) |
 | 09-10 23:45 | 6de7a2b | 7c354ff | e7f6123 (0.1.94) | — | 5f23759 | app 63b16b4, FlexKit e7c8599 | FlexKit edited mid-run → R1-UAT got an unverified 0.1.94 |
 
-nuget.org has no FlexCore 0.2.40 (skipped). FlexKit is not on nuget.org — `Deploy/local-packages` is its only ship route.
+nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only in the local NuGet cache). FlexKit is not on nuget.org — `Deploy/local-packages` is its only ship route.
 
 ## Lessons, in the order they were learned
 

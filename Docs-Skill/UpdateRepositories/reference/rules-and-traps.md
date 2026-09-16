@@ -8,15 +8,15 @@ Each trap has a **tell** (how it shows up) so you can recognise it mid-run.
 | Rule | Since |
 |---|---|
 | Uncommitted working-tree edits ship by design — "changes can happen at the last minute, outside Claude as well". Never gate on a clean tree; still commit first. | 2026-08-28 |
-| Pull BOTH remotes before pushing; compare `origin/main` against the sha we last pushed (the clone's local `main`), never against the clone's HEAD. | 2026-08-30 |
+| Pull BOTH remotes before pushing; compare `origin/main` against the sha we last pushed (the clone's local `main`), never against the clone's HEAD. | 2026-08-17 (hyphen-pb) / 08-28 (homefront) |
 | Before deploying, check GitLab for open merge requests (step 0b) and bring them in. | 2026-09-07 |
 | HomeFrontPB feeds R1-UAT only and nothing writes into it. Never build `HomeFrontPB.sln`. | 2026-08-31 / 09-08 |
 | "No changes to HomeFrontPB on the local device and R1-UAT is frozen." The deploy skips R1-UAT unless `--with-r1uat`; the FlexKit feed moved to `Deploy/local-packages`. | 2026-09-12/13 |
 | FlexKit → FlexCore always, as a port (keep FlexCore's own code and branding), then rebuild FlexCore.Showcase. FlexCore → FlexKit only on request. | 2026-09-10 |
-| Never merge FlexCore to main of FlexKit; FlexKit ships from `telerik-parity-20260904`. | 2026-08-22 |
+| Never merge FlexCore (or FlexKit's working branch) into a GitLab main; FlexKit ships from `telerik-parity-20260904`. | 2026-09-01 |
 | Publish FlexCore to nuget.org after every deploy that changed it. NuGet key only via `security find-generic-password -s flexcore-nuget-key -w`. | 2026-08-11 |
 | Bump FlexKit before every deploy that changes it. | 2026-08-29 |
-| Never push local `appsettings*.json` — the remote owns environment config. | 2026-08-24 |
+| Never push local `appsettings*.json` — the remote owns environment config. | 2026-08-20 |
 | No comment stripping — code ships as written. | 2026-08-02 |
 | The dev login-skip stays functional on this machine and is removed from every pushed copy. | 2026-09-12 |
 | "Delete codex, claude files and other files not needed for HomeFront to run when deploying (keep them locally)." | 2026-09-13 |
@@ -55,8 +55,8 @@ dry-run and pack from a stripped scratch copy before changing a strip list.
 The push rsyncs our tree over hyphen-pb main. A teammate's commit merged between two of our deploys
 is overwritten by our older copy; afterwards `origin/main == our tree`, the MR still shows Merged, its
 commit is still in history, and step 0 looks clean forever.
-**Tell:** none, unless you look. **Check:** blob hashes per file — ours == `commit^:path` means
-reverted (preflight §5). **Fix:** `deploy_to_repos.sh --pull`, or `git show <sha> -- <files> | git apply`
+**Tell:** none, unless you look. **Check:** preflight §5 and the gate judge every teammate change by its
+distinctive lines (`REVERT`, `ABSENT`, `RESURRECT`, `HANDMERGE`; `LOST` when our deploy already overwrote it). **Fix:** `deploy_to_repos.sh --pull`, or `git show <sha> -- <files> | git apply`
 when our copy still hashes to the MR base. Happened to MR !33 (07faa53, 2026-09-09, restored 09-12);
 caught in time for Irfan b23d656 + Deepika aede435 (09-15) and Irfan 432c842 / 29f8287 / 40ef498 +
 Deepika 3581c61 (pending as of 09-16).
@@ -66,8 +66,8 @@ Deepika 3581c61 (pending as of 09-16).
 push-mode run — including `--dry-run` — resets local `main` to `origin/main` whenever upstream moved.
 From then on `--pull` prints `✓ No new changes on remote`, step 0 looks clean, and the next push
 rsyncs our tree over the teammates' commits. **Tell:** a `✓ Reset to origin/main (remote had new
-commits)` line in a push log. **Fix:** run `--pull` FIRST; if it already happened, preflight §5's blob
-check still sees the lost files — merge them from the commits it names.
+commits)` line in a push log. **Fix:** run `--pull` FIRST; if it already happened, preflight §5 and the gate still see the
+missing content (`REVERT`) — merge it from the commits they name with the safe merge in SKILL.md.
 
 ### A rejected push, then `--pull`, reverts OUR OWN changes
 A push rejected because a teammate merged between the fetch and the push aborts the run and leaves the
@@ -78,11 +78,24 @@ included. Reproduced with a fixture on 2026-09-16. **Tell:** preflight/gate repo
 clone. **Fix:** `git -C <clone> reset --hard $(git -C <clone> merge-base main origin/main)` BEFORE
 `--pull`, then check that `--pull --dry-run` lists only the teammates' files. Never force-push.
 
-### `--pull` conflicts are reported once, then vanish
+### `--pull` conflicts vanish — and the next `--pull` silently drops the teammate's side
 `--pull` runs `git merge origin/main` in the clone before the per-file 3-way merges, so afterwards local
-`main == origin/main`: a second `--pull` prints `No new changes`, and step 0 is clean. The conflict list is
-printed only once. **Fix:** save it and hand-merge every file. Preflight §5 flags a `diverged` file in a
-teammate commit newer than the last `Deploy <repo>` commit on origin/main as `DIVERGED:`.
+`main == origin/main`. The `✗ N file(s) CONFLICT — left UNCHANGED` list is printed once. A second `--pull`
+with no new upstream prints `No new changes`; worse, if a teammate merges again, the next `--pull` uses the
+FIRST teammate's version as the base, our unmerged copy looks like a deliberate removal of their change, the
+merge comes out "clean", and their hunk is gone (reproduced 2026-09-16). **Fix:** write the list to
+`Deploy/pull-conflicts.txt` immediately — the gate blocks while it exists — resolve every file with the safe
+merge, then delete it. Never `--pull` again or push in between.
+
+### `--pull` output that is NOT harmless
+- `✗ Branch-owned files changed upstream — HAND-MERGE these, they are NOT synced:` — `HomeFront.csproj` and
+  `HomeFront.sln` are NOT excluded from the push rsync, so our copies overwrite a teammate's edits (Irfan's
+  67b3a03 and 2e740db both edited the csproj). Merge their hunks into the source; the swap only rewrites the
+  FlexKit reference. Only `appsettings*.json`, `azure-pipelines*.yml` and `NuGet.Config` are truly safe to leave.
+- `✗ Deleted upstream — remove by hand if intended:` — `--pull` never deletes; the next push re-adds the file.
+- **Renames are not reported at all:** the new path is synced, the old path is neither synced nor listed, and
+  the push restores it on main. Find them with `git diff -M --name-status <base> origin/main | grep '^R'`.
+  Preflight/gate classify with `--no-renames`, so a leftover old path shows as `RESURRECT`.
 
 ### `--pull` covers hyphen-pb main only
 Pull mode is hard-wired to the hyphen-pb clone and `MobileSource/HomeFront` (the `[repo]` argument in the
@@ -98,9 +111,14 @@ run and the real run repacks the same version against a cache holding the dry ru
 ### The script reports success that did not happen
 - Unknown arguments are ignored: `--dryrun`, `--with-r1-uat` → a REAL push. (`pre_deploy_gate.sh`
   rejects unknown arguments.)
-- A login-guard, staged-build or index-gate failure skips only that repo (`✗ … Skipping`); the others
-  still push and the run ends `▸ Done.` with exit 0. A rejected `git push`, by contrast, aborts the whole
-  run under `set -e` — see the next trap.
+- A login-guard, staged-build or index-gate failure skips only that repo (`✗ Skipping <repo> due to …` or
+  `✗ <repo>: … — not pushing`); the others still push and the run ends `▸ Done.` with exit 0. A rejected
+  `git push`, by contrast, aborts the whole run under `set -e`. With `--with-r1uat`, R1-UAT runs AFTER
+  `▸ Done.`, and any failure there exits 1.
+- `✓ Reset to origin/main (remote had new commits)` fires whenever local `main` ≠ `origin/main` — also for an
+  unpushed local commit, so it is not proof that upstream moved.
+- FlexKit is repacked only when a `.cs/.razor/.css/.js/.csproj` file is newer than the feed nupkg: a changed
+  image, json or README under the same version ships the STALE package (the gate blocks and asks for a bump).
 - `pack_flexkit` runs inside `$(…)`, where bash 3.2's errexit does not apply: a failed `dotnet pack`
   still prints `✓ Packed FlexKit X`, empties the clone's local-packages, and — if X is in the NuGet
   cache — the staged build passes and main is pushed referencing a package it does not carry.
@@ -125,8 +143,9 @@ the OLD bytes while the branch ships the NEW nupkg.
 **Fix:** bump. Never delete from `~/.nuget/packages` (other consumers share it).
 
 ### FlexKit edited during the run
-The script packs once per run, but if FlexKit source changes between the main and R1-UAT passes, the
-second pass repacks the same version and the staged build restores the first pack from the cache.
+`pack_flexkit` runs on each pass — main, then R1-UAT with `--with-r1uat` — and repacks the same version if
+FlexKit source got newer in between, while the staged build restores the first pack from the cache.
+Pack-once-per-run is proposed, not applied.
 **Tell:** two `Packing FlexKit X` lines for the same X in one log. **Fix:** don't deploy while a
 session is editing FlexKit; re-run with a bumped version.
 
@@ -140,6 +159,8 @@ directory, recursively — background workflows write to `subagents/workflows/<i
 ### Publishing FlexCore before a review lands
 Git pushes can be followed up; nuget.org versions can only be unlisted. FlexCore 0.2.41 shipped a
 defect because the review finished after the publish (09-13). Hold the publish until reviews land.
+The hold creates its own trap: packing the LIVE FlexCore tree hours later publishes whatever other
+sessions changed meanwhile. `publish_flexcore.sh` packs the snapshot actually pushed to GitHub instead.
 
 ### Silent success in shell
 - `grep -c … || echo 0` is **fail-open**: zero matches prints "0" AND exits 1, so the fallback appends
@@ -150,6 +171,9 @@ defect because the review finished after the publish (09-13). Hold the publish u
   Read the log for `✗` and missing `main -> main` lines.
 - `checkout -- .` restores the worktree FROM the index, so staged strips survive a dry run — the
   script now resets `--hard`.
+- `producer | grep -q …` under `set -o pipefail` fails at RANDOM on large output: `grep -q` exits at the first
+  match, the producer gets SIGPIPE, and the pipeline's status is 141. Capture into a variable or use a
+  here-string (`grep -q … <<< "$x"`).
 
 ### FlexCore's other consumers
 Since 2026-09-14 Mutarjim, GhostWriter and DotNetCCM ProjectReference **FlexCore** (GhostWriterLLM,
@@ -169,6 +193,11 @@ FlexCore reaches GitHub only through the staging clone. `FlexCore.Llm/` goes to 
 - Empty output is not proof of "clean" — check the command actually ran.
 - zsh does not word-split unquoted variables: `set -- $x` gives ONE argument. Use `set -- ${=x}` in zsh,
   or run the loop under bash.
+- zsh ties the names `path`, `fpath`, `status`, `argv` to shell internals: `local path=…` inside a function
+  sourced into zsh wipes `$PATH` and every command in it becomes "command not found". Run scripts with `bash`.
+- macOS `/var` is a symlink to `/private/var`. A .NET project under `mktemp -d` (/var/folders/…) makes the
+  Razor generator see two roots, fall back to bare file names, and fail on duplicates
+  (`Editor/TextAreaControl.razor` vs `TextAreaControl.razor`). Use `$(cd "$(mktemp -d)" && pwd -P)`.
 
 ### `git rev-parse` echoes what it cannot resolve
 `git rev-parse <sha>:<missing path>` prints the argument itself on stdout, so `x=$(git rev-parse …)` is
@@ -179,12 +208,17 @@ never empty and every "does this file exist at that commit?" test silently passe
 `verification/**` is excluded from `HomeFront.csproj`, so API/signature changes build clean and then
 throw at runtime. Run them. A failing harness is often stale against an intended behaviour change —
 e.g. WizardChecks needed `_gridReady` seeding (09-10) and a debounce wait for filter-row input.
+`Sdk="Microsoft.NET.Sdk.Web"` projects under `verification/` (InputDialogBrowserChecks) are browser-driven
+fixture HOSTS, not console harnesses: started bare they never exit or fail to bind :5000 (AirPlay owns it).
+`run_harnesses.sh` skips and lists them; run one by hand per its README.
 
 ### Published FlexCore SourceLink points at commits GitHub does not have
 The nuspec of each published FlexCore names the LOCAL FlexCore commit (e.g. 0.2.43 → 6d8d7bf), but
 GitHub `main` is deploy-snapshot history (5be387c), so the SourceLink commit does not exist there. Local
 tracking refs also look diverged for the same reason (FlexCore `main…github/main`, app `main…origin/main`
 on the personal wchaudhary remote) — that is not drift; compare against the staging clones instead.
+Packages published with `publish_flexcore.sh` are built from the staging clone, so their SourceLink commit is
+the GitHub snapshot and does exist there.
 
 ### Secrets that are already pushed
 `App_Data/jira-settings.json` carries a live Atlassian API token and is tracked on hyphen-pb main,

@@ -1,35 +1,27 @@
 #!/bin/bash
 # preflight.sh — READ-ONLY checks before an Update Repositories run.
-# Changes nothing except `git fetch` in the staging clones. Every check runs and reports;
-# the ATTENTION list at the end is what needs a decision before deploying.
+# Changes nothing except `git fetch` in the staging clones. Every check runs and reports; the ATTENTION
+# list at the end is what needs a decision before deploying.
 #
-#   bash preflight.sh            # default: upstream commits from the last 10 days
-#   bash preflight.sh 21         # look back 21 days for teammates' merged work
+#   bash preflight.sh        # historic check looks back 10 days (unshipped commits are always checked)
+#   bash preflight.sh 21
 set -uo pipefail   # deliberately NOT -e: a failing check must not hide the ones after it
 
 DAYS="${1:-10}"
-V=/Users/wadood/projects/VBToCSharp
-H=$V/HomeFront
-HF=$H/MobileSource/HomeFront
-PB=$H/HomeFrontPB
-D=$H/Deploy/repos
-SKILL_SRC=$H/Docs-Skill/UpdateRepositories
-SKILL_DST=$HOME/.claude/skills/update-repositories
+source "$(cd "$(dirname "$0")" && pwd)/_common.sh"
 ATTN=()
 attn() { ATTN+=("$1"); }
 hdr()  { printf '\n== %s\n' "$1"; }
 now=$(date +%s)
 
 # ── 1. Other agent sessions ─────────────────────────────────────────────────────
-# A session that dispatched a background agent/workflow can be silent in its main
-# transcript for many minutes while its agents still edit files, so the check walks
-# every file under each session directory (subagents/, subagents/workflows/<id>/).
+# A session that dispatched a background agent/workflow can be silent in its main transcript for many
+# minutes while its agents still edit files, so this walks every file under each session directory.
 hdr "1. Agent sessions active in the last 30 minutes (your own session is listed too)"
 found=0
 for t in "$HOME"/.claude/projects/*VBToCSharp*/*.jsonl; do
   [ -e "$t" ] || continue
-  newest=$(stat -f %m "$t")
-  base=${t%.jsonl}
+  newest=$(stat -f %m "$t"); base=${t%.jsonl}
   if [ -d "$base" ]; then
     sub=$(find "$base" -type f -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
     [ -n "$sub" ] && [ "$sub" -gt "$newest" ] && newest=$sub
@@ -59,8 +51,12 @@ for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore" "outer|$H" "Ho
   fi
 done
 echo "   (HomeFrontPB is FROZEN: its local entries are expected — never commit, revert or build it)"
+if [ -s "$PULL_CONFLICTS" ]; then
+  attn "UNRESOLVED --pull conflicts in $PULL_CONFLICTS — hand-merge each, then delete the file; do not --pull again or push until then"
+  sed 's/^/   conflict: /' "$PULL_CONFLICTS"
+fi
 
-# ── 3. Step 0: both remotes vs what we last pushed ──────────────────────────────
+# ── 3. Step 0: every remote vs what we last pushed ──────────────────────────────
 hdr "3. Step 0 — fetch every staging clone; origin vs the sha we LAST PUSHED (local main)"
 for r in hyphen-pb homefront flexkit flexcore; do
   c=$D/$r
@@ -68,18 +64,16 @@ for r in hyphen-pb homefront flexkit flexcore; do
   cur=$(git -C "$c" branch --show-current)
   om=$(git -C "$c" rev-parse --short origin/main 2>/dev/null)
   lm=$(git -C "$c" rev-parse --short main 2>/dev/null)
-  extra=""
-  [ "$r" = hyphen-pb ] && extra="  R1-UAT=$(git -C "$c" rev-parse --short origin/R1-UAT 2>/dev/null)"
+  extra=""; [ "$r" = hyphen-pb ] && extra="  R1-UAT=$(git -C "$c" rev-parse --short origin/R1-UAT 2>/dev/null)"
   printf '   %-10s on=%-8s origin/main=%-9s last-pushed=%-9s%s\n' "$r" "$cur" "$om" "$lm" "$extra"
   [ "$cur" != main ] && attn "$r staging clone is parked on '$cur', not main"
   dirty=$(git -C "$c" status --porcelain | wc -l | tr -d ' ')
   [ "$dirty" -gt 0 ] && attn "$r staging clone has $dirty dirty entries"
-  # A push that was REJECTED (or aborted by set -e) leaves an unpushed "Deploy …" commit as the clone's
-  # local main. --pull would then treat OUR unpushed content as the base and fast-forward GitLab's
-  # OLDER copies over our own changes. Drop it first (the commit is only a deploy snapshot).
+  # A REJECTED or aborted push leaves an unpushed "Deploy …" commit as the clone's main; --pull would
+  # take it as the base and copy GitLab's OLDER files over our own changes.
   ahead=$(git -C "$c" rev-list --count "origin/main..main" 2>/dev/null || echo 0)
   if [ "${ahead:-0}" -gt 0 ]; then
-    attn "$r staging clone main has $ahead UNPUSHED commit(s) — a previous push failed. Before --pull or any push run: git -C $c reset --hard \$(git -C $c merge-base main origin/main)"
+    attn "$r staging clone main has $ahead UNPUSHED commit(s) from a failed push — before --pull or any push run: git -C $c reset --hard \$(git -C $c merge-base main origin/main)"
     git -C "$c" log --format='      unpushed: %h %cs %s' "origin/main..main" 2>/dev/null | head -3
   fi
   behind=$(git -C "$c" rev-list --count "main..origin/main" 2>/dev/null || echo 0)
@@ -87,7 +81,7 @@ for r in hyphen-pb homefront flexkit flexcore; do
     if [ "$r" = hyphen-pb ]; then
       attn "hyphen-pb: $behind upstream commit(s) past our last push — run 'bash tools/deploy_to_repos.sh --pull' BEFORE any push-mode run (even --dry-run)"
     else
-      attn "$r: $behind upstream commit(s) past our last push — --pull does NOT cover $r: merge them into the source tree by hand BEFORE any push-mode run (SKILL.md step 3)"
+      attn "$r: $behind upstream commit(s) past our last push — --pull does NOT cover $r: merge by hand BEFORE any push-mode run (SKILL.md step 3)"
     fi
     git -C "$c" log --format='      %h %cs %an: %s' "main..origin/main" 2>/dev/null | grep -v 'Deploy ' | head -10
   fi
@@ -99,87 +93,63 @@ c=$D/hyphen-pb
 for b in $(git -C "$c" for-each-ref --format='%(refname:short)' refs/remotes/origin | grep -vE '^origin/(HEAD|main|R1-UAT)$|^origin$'); do
   n=$(git -C "$c" rev-list --count "origin/main..$b" 2>/dev/null || echo 0)
   [ "${n:-0}" -gt 0 ] || continue
-  last=$(git -C "$c" log -1 --format=%ct "$b")
-  age=$(( (now - last) / 86400 ))
-  printf '   %-44s ahead=%-3s last commit %s days ago (%s)\n' "$b" "$n" "$age" "$(git -C "$c" log -1 --format=%an "$b")"
-  # parked/* are snapshots pushed from another machine, not merge requests — listed, never flagged.
-  case "$b" in origin/parked/*) continue ;; esac
+  last=$(git -C "$c" log -1 --format=%ct "$b"); age=$(( (now - last) / 86400 ))
+  printf '   %-50s ahead=%-3s last commit %s days ago (%s)\n' "$b" "$n" "$age" "$(git -C "$c" log -1 --format=%an "$b")"
+  case "$b" in origin/parked/*) continue ;; esac   # snapshots pushed from another machine, not MRs
   [ "$age" -le 14 ] && attn "branch $b has commits from the last 14 days — check for an open MR"
 done
 echo "   GitLab UI: https://gitlab.innovatixinc.com/groups/application-modernization/-/merge_requests/?state=opened"
 
-# ── 5. Would the push REVERT a teammate's merged work? ──────────────────────────
-# The deploy rsyncs our trees over each remote. A teammate's commit that is on origin/main but whose
-# content is not in our tree gets silently undone — and once undone, origin/main == our tree, so step 0
-# looks clean forever after. Blob proof per file: ours == commit^ blob -> REVERTED; == commit -> present.
-# A commit NEWER than the latest "Deploy <repo>" commit on origin/main has not shipped from here yet:
-# a "diverged" file in it may be a --pull conflict that --pull will never list again, so it is flagged.
-hdr "5. Teammate commits on each origin/main in the last $DAYS days — is their content in OUR tree?"
-reverted=0
-for spec in "hyphen-pb|$HF" "homefront|$HF" "flexkit|$V/FlexKit" "flexcore|$V/FlexCore"; do
-  r=${spec%%|*}; src=${spec#*|}; c=$D/$r
-  lastdeploy=$(git -C "$c" log -1 --format=%H --grep="^Deploy $r" origin/main 2>/dev/null)
-  commits=$(git -C "$c" log --since="$DAYS days ago" --no-merges --format='%h|%cs|%an|%s' origin/main 2>/dev/null | grep -v "|Deploy ")
+# ── 5. Would the push undo a teammate's work? ───────────────────────────────────
+# The deploy rsyncs our trees over each remote, so a teammate change missing from our tree is silently
+# undone — and once undone, origin/main == our tree and step 0 looks clean forever. Checked for EVERY
+# commit after our last "Deploy <repo>" commit (unshipped, regardless of date) plus the last $DAYS days
+# (to catch changes an earlier deploy already overwrote). Judged by whether the teammate's distinctive
+# lines are in our file, so our own edits to the same file and the deploy's transforms don't false-alarm.
+# --no-renames: a rename is a delete + add, so the old path is checked too.
+hdr "5. Teammate changes on each origin/main — are they in OUR tree?"
+problems=0
+for r in hyphen-pb homefront flexkit flexcore; do
+  c=$D/$r
+  unshipped=$(unshipped_commits "$r")
+  # Only hyphen-pb takes teammates' merges; on the push-only repos every non-deploy commit is our own
+  # history, so only commits after our last deploy (someone else pushed there) are worth checking.
+  historic=""
+  [ "$r" = hyphen-pb ] && historic=$(git -C "$c" log --since="$DAYS days ago" --no-merges --format='%h|%cs|%an|%s' origin/main 2>/dev/null | grep -v '|Deploy ')
+  commits=$(printf '%s\n%s\n' "$unshipped" "$historic" | awk 'NF && !seen[$0]++')
   [ -z "$commits" ] && continue
-  echo "   [$r -> ${src#$V/}]"
+  echo "   [$r -> $(src_for "$r" | sed "s|$V/||")]"
   while IFS='|' read -r sha date author subj; do
     [ -z "$sha" ] && continue
-    files=$(git -C "$c" show --name-only --format='' "$sha" 2>/dev/null | grep -v '^$')
+    files=$(git -C "$c" show --name-only --no-renames --format='' "$sha" 2>/dev/null | grep -v '^$')
     [ -z "$files" ] && continue
-    unshipped=false
-    if [ -n "$lastdeploy" ] && ! git -C "$c" merge-base --is-ancestor "$sha" "$lastdeploy" 2>/dev/null; then unshipped=true; fi
-    printf '   %s %s %s: %s%s\n' "$sha" "$date" "$author" "$(echo "$subj" | cut -c1-56)" "$($unshipped && echo '  [NOT YET SHIPPED FROM HERE]')"
-    while read -r f; do
+    tag=""; printf '%s\n' "$unshipped" | grep -q "^$sha|" && tag="  [NOT YET SHIPPED FROM HERE]"
+    printf '   %s %s %s: %s%s\n' "$sha" "$date" "$author" "$(echo "$subj" | cut -c1-56)" "$tag"
+    while IFS= read -r f; do
       [ -z "$f" ] && continue
-      # Repo-owned / environment files never live in our tree by design (REPO_OWNED_EXCLUDE +
-      # ENV_CONFIG_EXCLUDE leave the branch's copies alone).
-      case "$f" in
-        azure-pipelines*.yml|NuGet.Config|local-packages/*|certs/*|appsettings*.json|App_Data/jira-settings.json)
-          printf '      %-58s %s\n' "$f" "repo-owned (never in our tree — not a revert)"; continue ;;
-      esac
-      base=$(git -C "$c" rev-parse --verify --quiet "${sha}^:${f}" 2>/dev/null)
-      post=$(git -C "$c" rev-parse --verify --quiet "${sha}:${f}" 2>/dev/null)
-      if [ -e "$src/$f" ]; then ours=$(git -C "$src" hash-object "$src/$f"); else ours=MISSING; fi
-      # What origin/main holds NOW, and who last touched the path there. A later teammate commit that
-      # moved or removed the file is legitimate; a later "Deploy <repo>" commit that did it means OUR
-      # deploy already undid their work on the remote (the MR !33 case) and it is still lost.
-      cur=$(git -C "$c" rev-parse --verify --quiet "origin/main:${f}" 2>/dev/null)
-      lastsubj=$(git -C "$c" log -1 --format=%s origin/main -- "$f" 2>/dev/null)
-      bydeploy=false; case "$lastsubj" in "Deploy $r"*) bydeploy=true ;; esac
-      if [ "$ours" = "$post" ]; then st="present"
-      elif [ "$ours" = MISSING ] && [ -z "$cur" ] && ! $bydeploy; then st="moved/removed upstream later — fine"
-      elif [ "$ours" = MISSING ] && [ -z "$cur" ]; then st="REMOVED ON THE REMOTE BY OUR DEPLOY"; reverted=1
-           attn "LOST: $r $f from $sha ($author) was deleted from origin/main by our own deploy — restore it"
-      elif [ -n "$base" ] && [ "$ours" = "$base" ] && [ "$cur" = "$ours" ]; then st="REVERTED ON THE REMOTE by an earlier deploy of ours"; reverted=1
-           attn "LOST: $r $f from $sha ($author) was already reverted on origin/main by our deploy — restore it"
-      elif [ -n "$base" ] && [ "$ours" = "$base" ]; then st="REVERTED — ours is the pre-commit blob"; reverted=1
-           attn "REVERT: $r $f from $sha ($author) is NOT in our tree — merge it before pushing"
-      elif [ "$ours" = MISSING ] && [ -z "$post" ]; then st="deleted upstream"
-      elif [ "$ours" = MISSING ]; then st="ABSENT in our tree"; attn "ABSENT: $r $f from $sha ($author)"
-      else
-        st="diverged — read both versions"
-        $unshipped && attn "DIVERGED: $r $f from unshipped $sha ($author) — possibly an unresolved --pull conflict; read both versions"
+      res=$(classify_file "$r" "$sha" "$f"); state=${res%%|*}; text=${res#*|}
+      printf '      %-58s %s%s\n' "$f" "$([ "$state" = ok ] || echo "$state — ")" "$text"
+      if [ "$state" != ok ] && [ "$state" != NOTE ]; then
+        problems=1
+        attn "$state: $r $f ($sha, $author) — $text"
       fi
-      printf '      %-58s %s\n' "$f" "$st"
     done <<< "$files"
   done <<< "$commits"
 done
-[ $reverted = 0 ] && echo "   no teammate file is at its pre-commit blob in our trees"
+[ $problems = 0 ] && echo "   every teammate change checked is present in our trees"
 
 # ── 6. Does a working-tree edit UNDO a recent commit? ───────────────────────────
-# Seen 2026-09-13: a stale-copy edit restored a file byte-for-byte to the blob BEFORE
-# a fix, re-shipping the bug. Proof: working blob == <recent commit>^:<path>.
+# Seen 2026-09-13: a stale-copy edit restored a file byte-for-byte to the blob BEFORE a fix.
 hdr "6. Uncommitted edits that exactly undo a recent commit"
 undo=0
 for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore"; do
   name=${spec%%|*}; dir=${spec#*|}
-  while read -r f; do
-    [ -z "$f" ] || [ ! -f "$dir/$f" ] && continue
+  while IFS= read -r f; do
+    { [ -z "$f" ] || [ ! -f "$dir/$f" ]; } && continue
     ours=$(git -C "$dir" hash-object "$dir/$f")
     for sha in $(git -C "$dir" log -8 --format=%h -- "$f" 2>/dev/null); do
-      parent=$(git -C "$dir" rev-parse --verify --quiet "${sha}^:${f}" 2>/dev/null) || continue
-      mine=$(git -C "$dir" rev-parse --verify --quiet "${sha}:${f}" 2>/dev/null)
-      if [ "$ours" = "$parent" ] && [ "$ours" != "$mine" ]; then
+      parent=$(blob_at "$dir" "${sha}^" "$f"); mine=$(blob_at "$dir" "$sha" "$f")
+      if [ -n "$parent" ] && [ "$ours" = "$parent" ] && [ "$ours" != "$mine" ]; then
         printf '   %-9s %-50s UNDOES %s (%s)\n' "$name" "$f" "$sha" "$(git -C "$dir" log -1 --format=%s "$sha" | cut -c1-50)"
         attn "$name/$f exactly undoes $sha — likely a stale copy; check before shipping"; undo=1; break
       fi
@@ -188,29 +158,38 @@ for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore"; do
 done
 [ $undo = 0 ] && echo "   none"
 
-# ── 7. Library versions: burned or not? ─────────────────────────────────────────
-# NuGet treats an extracted version as immutable: a repack of a version already in
-# ~/.nuget/packages is SHADOWED in the staged build, which then verifies stale bytes.
-# A version published to nuget.org can be unlisted but never replaced.
+# ── 7. Library versions ─────────────────────────────────────────────────────────
+# NuGet treats an extracted version as immutable: a repack of a version already in ~/.nuget/packages is
+# shadowed in the staged build. A version on nuget.org can be unlisted but never replaced.
 hdr "7. Library versions"
 fk=$(grep -o '<Version>[^<]*' "$V/FlexKit/FlexKit.csproj" | head -1 | cut -c10-)
 fc=$(grep -o '<Version>[^<]*' "$V/FlexCore/FlexCore.csproj" | head -1 | cut -c10-)
-fk_changed=$(( $(git -C "$V/FlexKit" status --porcelain | wc -l) ))
-fc_changed=$(( $(git -C "$V/FlexCore" status --porcelain | wc -l) ))
 if [ -d "$HOME/.nuget/packages/flexkit/$fk" ]; then fk_state="BURNED (already extracted)"; else fk_state="fresh"; fi
-published=$(curl -s --max-time 15 https://api.nuget.org/v3-flatcontainer/flexcore/index.json | python3 -c 'import sys,json; v=json.load(sys.stdin)["versions"]; print(v[-1])' 2>/dev/null || echo "?")
-printf '   FlexKit  csproj %-9s %s   (uncommitted entries: %s)\n' "$fk" "$fk_state" "$fk_changed"
-printf '   FlexCore csproj %-9s nuget.org latest: %s   (uncommitted entries: %s)\n' "$fc" "$published" "$fc_changed"
+fc_check=$(curl -s --max-time 15 https://api.nuget.org/v3-flatcontainer/flexcore/index.json | python3 -c '
+import sys, json
+want = sys.argv[1]
+try: vs = json.load(sys.stdin)["versions"]
+except Exception: print("UNKNOWN|nuget.org unreachable"); sys.exit()
+key = lambda v: tuple(int(x) if x.isdigit() else 0 for x in v.split("-")[0].split("."))
+latest = max(vs, key=key)
+if want in vs: print(f"PUBLISHED|{want} is already on nuget.org (latest {latest})")
+elif key(want) <= key(latest): print(f"LOWER|{want} is not above the latest published {latest}")
+else: print(f"OK|{want} is above the latest published {latest}")' "$fc" 2>/dev/null)
+printf '   FlexKit  csproj %-9s %s   (uncommitted entries: %s)\n' "$fk" "$fk_state" "$(git -C "$V/FlexKit" status --porcelain | wc -l | tr -d ' ')"
+printf '   FlexCore csproj %-9s %s   (uncommitted entries: %s)\n' "$fc" "${fc_check#*|}" "$(git -C "$V/FlexCore" status --porcelain | wc -l | tr -d ' ')"
 printf '   feed: %s\n' "$(ls "$H/Deploy/local-packages" 2>/dev/null | tr '\n' ' ')"
-[ "$fk_state" != fresh ] && attn "FlexKit $fk is burned — bump FlexKit.csproj if ANY FlexKit change ships this run"
-[ "$published" = "$fc" ] && attn "FlexCore $fc is already on nuget.org — bump FlexCore.csproj before the next publish"
+[ "$fk_state" != fresh ] && attn "FlexKit $fk is burned — bump FlexKit.csproj if ANY FlexKit change (code or asset) ships this run"
+case "${fc_check%%|*}" in
+  PUBLISHED|LOWER) attn "FlexCore: ${fc_check#*|} — bump FlexCore.csproj above it before the next publish" ;;
+  UNKNOWN) attn "FlexCore version could not be checked against nuget.org" ;;
+esac
 
 # ── 8. The installed skill matches its canonical source? ────────────────────────
 hdr "8. Skill install"
-if [ -d "$SKILL_DST" ]; then
-  if diff -rq "$SKILL_SRC" "$SKILL_DST" >/dev/null 2>&1; then echo "   ~/.claude/skills/update-repositories matches Docs-Skill"
-  else echo "   installed copy DIFFERS from Docs-Skill"; attn "skill install is stale — run: bash $SKILL_SRC/install.sh"; fi
-else echo "   not installed"; attn "skill not installed — run: bash $SKILL_SRC/install.sh"; fi
+if [ -d "$INSTALLED" ]; then
+  if diff -rq -x .DS_Store "$CANON" "$INSTALLED" >/dev/null 2>&1; then echo "   $INSTALLED matches Docs-Skill"
+  else echo "   installed copy DIFFERS from Docs-Skill"; attn "skill install is stale — run: bash $CANON/install.sh"; fi
+else echo "   not installed"; attn "skill not installed — run: bash $CANON/install.sh"; fi
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 hdr "ATTENTION (${#ATTN[@]})"
