@@ -64,7 +64,7 @@ echo "   (HomeFrontPB is FROZEN: its local entries are expected — never commit
 hdr "3. Step 0 — fetch every staging clone; origin vs the sha we LAST PUSHED (local main)"
 for r in hyphen-pb homefront flexkit flexcore; do
   c=$D/$r
-  git -C "$c" fetch -q --all --prune 2>/dev/null || attn "$r: git fetch failed"
+  git -C "$c" fetch -q --all --prune 2>/dev/null || attn "$r: git fetch failed — step 0 cannot be trusted"
   cur=$(git -C "$c" branch --show-current)
   om=$(git -C "$c" rev-parse --short origin/main 2>/dev/null)
   lm=$(git -C "$c" rev-parse --short main 2>/dev/null)
@@ -74,9 +74,21 @@ for r in hyphen-pb homefront flexkit flexcore; do
   [ "$cur" != main ] && attn "$r staging clone is parked on '$cur', not main"
   dirty=$(git -C "$c" status --porcelain | wc -l | tr -d ' ')
   [ "$dirty" -gt 0 ] && attn "$r staging clone has $dirty dirty entries"
-  if [ "$om" != "$lm" ]; then
-    new=$(git -C "$c" log --oneline "main..origin/main" 2>/dev/null | grep -v 'Deploy ' | wc -l | tr -d ' ')
-    attn "$r: origin/main moved past our last push ($new non-deploy commit(s)) — run --pull before pushing"
+  # A push that was REJECTED (or aborted by set -e) leaves an unpushed "Deploy …" commit as the clone's
+  # local main. --pull would then treat OUR unpushed content as the base and fast-forward GitLab's
+  # OLDER copies over our own changes. Drop it first (the commit is only a deploy snapshot).
+  ahead=$(git -C "$c" rev-list --count "origin/main..main" 2>/dev/null || echo 0)
+  if [ "${ahead:-0}" -gt 0 ]; then
+    attn "$r staging clone main has $ahead UNPUSHED commit(s) — a previous push failed. Before --pull or any push run: git -C $c reset --hard \$(git -C $c merge-base main origin/main)"
+    git -C "$c" log --format='      unpushed: %h %cs %s' "origin/main..main" 2>/dev/null | head -3
+  fi
+  behind=$(git -C "$c" rev-list --count "main..origin/main" 2>/dev/null || echo 0)
+  if [ "${behind:-0}" -gt 0 ]; then
+    if [ "$r" = hyphen-pb ]; then
+      attn "hyphen-pb: $behind upstream commit(s) past our last push — run 'bash tools/deploy_to_repos.sh --pull' BEFORE any push-mode run (even --dry-run)"
+    else
+      attn "$r: $behind upstream commit(s) past our last push — --pull does NOT cover $r: merge them into the source tree by hand BEFORE any push-mode run (SKILL.md step 3)"
+    fi
     git -C "$c" log --format='      %h %cs %an: %s' "main..origin/main" 2>/dev/null | grep -v 'Deploy ' | head -10
   fi
 done
@@ -97,38 +109,62 @@ done
 echo "   GitLab UI: https://gitlab.innovatixinc.com/groups/application-modernization/-/merge_requests/?state=opened"
 
 # ── 5. Would the push REVERT a teammate's merged work? ──────────────────────────
-# The deploy rsyncs our tree over hyphen-pb main. A teammate's commit that is on
-# origin/main but whose content is not in our tree gets silently undone — and once
-# undone, origin/main == our tree, so step 0 looks clean forever after.
-# Blob proof per file: ours == commit^ blob -> REVERTED; ours == commit blob -> present.
-hdr "5. Teammate commits on origin/main in the last $DAYS days — is their content in OUR tree?"
+# The deploy rsyncs our trees over each remote. A teammate's commit that is on origin/main but whose
+# content is not in our tree gets silently undone — and once undone, origin/main == our tree, so step 0
+# looks clean forever after. Blob proof per file: ours == commit^ blob -> REVERTED; == commit -> present.
+# A commit NEWER than the latest "Deploy <repo>" commit on origin/main has not shipped from here yet:
+# a "diverged" file in it may be a --pull conflict that --pull will never list again, so it is flagged.
+hdr "5. Teammate commits on each origin/main in the last $DAYS days — is their content in OUR tree?"
 reverted=0
-while IFS='|' read -r sha date author subj; do
-  [ -z "$sha" ] && continue
-  files=$(git -C "$c" show --name-only --format='' "$sha" 2>/dev/null | grep -v '^$')
-  [ -z "$files" ] && continue          # merge commits list no files
-  printf '   %s %s %s: %s\n' "$sha" "$date" "$author" "$(echo "$subj" | cut -c1-60)"
-  while read -r f; do
-    [ -z "$f" ] && continue
-    # Repo-owned / environment files never live in our tree by design (the deploy's
-    # REPO_OWNED_EXCLUDE + ENV_CONFIG_EXCLUDE leave the branch's copies alone).
-    case "$f" in
-      azure-pipelines*.yml|NuGet.Config|local-packages/*|certs/*|appsettings*.json|App_Data/jira-settings.json)
-        printf '      %-58s %s\n' "$f" "repo-owned (never in our tree — not a revert)"; continue ;;
-    esac
-    base=$(git -C "$c" rev-parse "${sha}^:${f}" 2>/dev/null)
-    post=$(git -C "$c" rev-parse "${sha}:${f}" 2>/dev/null)
-    if [ -e "$HF/$f" ]; then ours=$(git -C "$HF" hash-object "$HF/$f"); else ours=MISSING; fi
-    if   [ "$ours" = "$post" ]; then st="present"
-    elif [ -n "$base" ] && [ "$ours" = "$base" ]; then st="REVERTED — ours is the pre-commit blob"; reverted=1
-         attn "REVERT: $f from $sha ($author) is NOT in our tree — merge it before pushing"
-    elif [ "$ours" = MISSING ] && [ -z "$post" ]; then st="deleted upstream"
-    elif [ "$ours" = MISSING ]; then st="ABSENT in our tree"; attn "ABSENT: $f from $sha ($author)"
-    else st="diverged — read both versions"; fi
-    printf '      %-58s %s\n' "$f" "$st"
-  done <<< "$files"
-done < <(git -C "$c" log --since="$DAYS days ago" --no-merges --format='%h|%cs|%an|%s' origin/main 2>/dev/null | grep -v '|Deploy ')
-[ $reverted = 0 ] && echo "   no teammate file is at its pre-commit blob in our tree"
+for spec in "hyphen-pb|$HF" "homefront|$HF" "flexkit|$V/FlexKit" "flexcore|$V/FlexCore"; do
+  r=${spec%%|*}; src=${spec#*|}; c=$D/$r
+  lastdeploy=$(git -C "$c" log -1 --format=%H --grep="^Deploy $r" origin/main 2>/dev/null)
+  commits=$(git -C "$c" log --since="$DAYS days ago" --no-merges --format='%h|%cs|%an|%s' origin/main 2>/dev/null | grep -v "|Deploy ")
+  [ -z "$commits" ] && continue
+  echo "   [$r -> ${src#$V/}]"
+  while IFS='|' read -r sha date author subj; do
+    [ -z "$sha" ] && continue
+    files=$(git -C "$c" show --name-only --format='' "$sha" 2>/dev/null | grep -v '^$')
+    [ -z "$files" ] && continue
+    unshipped=false
+    if [ -n "$lastdeploy" ] && ! git -C "$c" merge-base --is-ancestor "$sha" "$lastdeploy" 2>/dev/null; then unshipped=true; fi
+    printf '   %s %s %s: %s%s\n' "$sha" "$date" "$author" "$(echo "$subj" | cut -c1-56)" "$($unshipped && echo '  [NOT YET SHIPPED FROM HERE]')"
+    while read -r f; do
+      [ -z "$f" ] && continue
+      # Repo-owned / environment files never live in our tree by design (REPO_OWNED_EXCLUDE +
+      # ENV_CONFIG_EXCLUDE leave the branch's copies alone).
+      case "$f" in
+        azure-pipelines*.yml|NuGet.Config|local-packages/*|certs/*|appsettings*.json|App_Data/jira-settings.json)
+          printf '      %-58s %s\n' "$f" "repo-owned (never in our tree — not a revert)"; continue ;;
+      esac
+      base=$(git -C "$c" rev-parse --verify --quiet "${sha}^:${f}" 2>/dev/null)
+      post=$(git -C "$c" rev-parse --verify --quiet "${sha}:${f}" 2>/dev/null)
+      if [ -e "$src/$f" ]; then ours=$(git -C "$src" hash-object "$src/$f"); else ours=MISSING; fi
+      # What origin/main holds NOW, and who last touched the path there. A later teammate commit that
+      # moved or removed the file is legitimate; a later "Deploy <repo>" commit that did it means OUR
+      # deploy already undid their work on the remote (the MR !33 case) and it is still lost.
+      cur=$(git -C "$c" rev-parse --verify --quiet "origin/main:${f}" 2>/dev/null)
+      lastsubj=$(git -C "$c" log -1 --format=%s origin/main -- "$f" 2>/dev/null)
+      bydeploy=false; case "$lastsubj" in "Deploy $r"*) bydeploy=true ;; esac
+      if [ "$ours" = "$post" ]; then st="present"
+      elif [ "$ours" = MISSING ] && [ -z "$cur" ] && ! $bydeploy; then st="moved/removed upstream later — fine"
+      elif [ "$ours" = MISSING ] && [ -z "$cur" ]; then st="REMOVED ON THE REMOTE BY OUR DEPLOY"; reverted=1
+           attn "LOST: $r $f from $sha ($author) was deleted from origin/main by our own deploy — restore it"
+      elif [ -n "$base" ] && [ "$ours" = "$base" ] && [ "$cur" = "$ours" ]; then st="REVERTED ON THE REMOTE by an earlier deploy of ours"; reverted=1
+           attn "LOST: $r $f from $sha ($author) was already reverted on origin/main by our deploy — restore it"
+      elif [ -n "$base" ] && [ "$ours" = "$base" ]; then st="REVERTED — ours is the pre-commit blob"; reverted=1
+           attn "REVERT: $r $f from $sha ($author) is NOT in our tree — merge it before pushing"
+      elif [ "$ours" = MISSING ] && [ -z "$post" ]; then st="deleted upstream"
+      elif [ "$ours" = MISSING ]; then st="ABSENT in our tree"; attn "ABSENT: $r $f from $sha ($author)"
+      else
+        st="diverged — read both versions"
+        $unshipped && attn "DIVERGED: $r $f from unshipped $sha ($author) — possibly an unresolved --pull conflict; read both versions"
+      fi
+      printf '      %-58s %s\n' "$f" "$st"
+    done <<< "$files"
+  done <<< "$commits"
+done
+[ $reverted = 0 ] && echo "   no teammate file is at its pre-commit blob in our trees"
 
 # ── 6. Does a working-tree edit UNDO a recent commit? ───────────────────────────
 # Seen 2026-09-13: a stale-copy edit restored a file byte-for-byte to the blob BEFORE
@@ -141,8 +177,8 @@ for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore"; do
     [ -z "$f" ] || [ ! -f "$dir/$f" ] && continue
     ours=$(git -C "$dir" hash-object "$dir/$f")
     for sha in $(git -C "$dir" log -8 --format=%h -- "$f" 2>/dev/null); do
-      parent=$(git -C "$dir" rev-parse "${sha}^:${f}" 2>/dev/null) || continue
-      mine=$(git -C "$dir" rev-parse "${sha}:${f}" 2>/dev/null)
+      parent=$(git -C "$dir" rev-parse --verify --quiet "${sha}^:${f}" 2>/dev/null) || continue
+      mine=$(git -C "$dir" rev-parse --verify --quiet "${sha}:${f}" 2>/dev/null)
       if [ "$ours" = "$parent" ] && [ "$ours" != "$mine" ]; then
         printf '   %-9s %-50s UNDOES %s (%s)\n' "$name" "$f" "$sha" "$(git -C "$dir" log -1 --format=%s "$sha" | cut -c1-50)"
         attn "$name/$f exactly undoes $sha — likely a stale copy; check before shipping"; undo=1; break

@@ -89,7 +89,13 @@ quiet; a main transcript can sit silent while its agents still edit. Or ask the 
 - **Open MRs:** GitLab UI (the Chrome extension carries the owner's session):
   `https://gitlab.innovatixinc.com/groups/application-modernization/-/merge_requests/?state=opened`.
   The MR author is the real person; every git commit on this machine reads `wadood`.
-- **Merged work** (preflight shows `origin/main moved`, `REVERT:` or `ABSENT:`):
+- **First, a failed earlier push?** If preflight says a staging clone has UNPUSHED commits, a previous
+  push was rejected or aborted and left a `Deploy …` commit as the clone's `main`. `--pull` would take
+  that as the base and copy GitLab's OLDER files over our own changes. Drop it first (it is only a
+  deploy snapshot; our source trees are untouched):
+  `git -C Deploy/repos/<repo> reset --hard $(git -C Deploy/repos/<repo> merge-base main origin/main)`.
+- **Merged work on hyphen-pb** (preflight shows `origin/main moved`, `REVERT:`, `LOST:`, `ABSENT:` or
+  `DIVERGED:`):
   ```bash
   bash tools/deploy_to_repos.sh --pull --dry-run   # lists incoming commits and files, changes nothing
   bash tools/deploy_to_repos.sh --pull             # 3-way merges them into MobileSource/HomeFront
@@ -97,9 +103,17 @@ quiet; a main transcript can sit silent while its agents still edit. Or ask the 
   Expect `✓ Fast-forwarded N, 3-way merged M file(s) into HomeFront`. Two red lines are **normal**:
   `✗ HomeFrontPB is frozen — nothing was written`, and `✗ Branch-owned files changed upstream —
   HAND-MERGE these` (csproj, sln, appsettings, pipelines, NuGet.Config are listed, never synced).
-  A genuine conflict leaves the file UNCHANGED and listed — merge it by hand. Then **commit the app**
-  (`Merge hyphen-pb main: <teammate commits>`), rebuild, and re-run preflight until no `REVERT:` remains.
-  `--pull` covers hyphen-pb only; if preflight says `homefront` moved, merge that by hand.
+  Read the `--pull --dry-run` file list first: it must name only the teammates' files. **Save the
+  `✗ N file(s) CONFLICT — left UNCHANGED` list** — `--pull` merges `origin/main` into the clone, so a
+  second run prints `No new changes` and never shows those conflicts again. Hand-merge each one with the
+  `git -C … diff <base>..origin/main -- <file>` it prints. Then **commit the app**
+  (`Merge hyphen-pb main: <teammate commits>`), rebuild, and re-run preflight until it has no `REVERT:`,
+  `LOST:`, `ABSENT:` or `DIVERGED:` line and no `origin/main moved` line for ANY repo.
+- **`--pull` covers hyphen-pb main only.** If `homefront`, `flexkit` or `flexcore` moved upstream, merge
+  by hand before any push-mode run: `git -C Deploy/repos/<repo> log main..origin/main --stat`, then for
+  each file 3-way merge into the owning source tree (app / FlexKit / FlexCore) with
+  `git merge-file <ours> <base = main:<file>> <theirs = origin/main:<file>>`, and fast-forward that clone's
+  `main` only after the merged source is committed.
 
 ### 4. Read what is about to ship
 
@@ -163,8 +177,10 @@ files not needed to run` → hyphen-pb only: `Packing FlexKit X` / `nupkg is cur
 (`0 Error(s)`, `✓ Build succeeded`) → index gate → commit → `main -> main`. Then `▸ Done.` and
 `▸ R1-UAT: FROZEN — not deployed`.
 
-**Green lines are not proof.** The run exits 0 and prints `Done.` even when a repo was skipped
-(`✗ … Skipping`); `✓ Packed`, `✓ Swapped` and `✓ Restored branch-only FLogin lockdown` print whether or
+**A rejected `git push` aborts the WHOLE run** (`set -e`): later repos never ship, there is no `Done.`,
+and the clone keeps an unpushed `Deploy …` commit — never force-push; go back to step 3's recovery.
+**Green lines are not proof.** A login-guard, staged-build or index-gate failure only skips that repo
+(`✗ … Skipping`) — the others still push and the run exits 0 with `Done.`; `✓ Packed`, `✓ Swapped` and `✓ Restored branch-only FLogin lockdown` print whether or
 not the work happened, and a failed `dotnet pack` does not stop the run. A missing `main -> main` means
 that repo did not ship. Step 10 is the proof.
 

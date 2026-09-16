@@ -39,8 +39,10 @@ branch survives every later deploy unless it is actively removed:
   **Kept on purpose:** README.md (FlexKit/FlexCore `PackageReadmeFile` — pack FAILS without it),
   LICENSE files, .gitignore, build/CI files, and `wwwroot/resources/**.zip` (runtime download
   templates, not backups).
-- **Repo-owned, never touched:** `azure-pipelines*.yml`, `NuGet.Config`, `local-packages/`, `certs/`,
-  `appsettings*.json`, `App_Data/jira-settings.json`.
+- **Repo-owned, never touched:** `azure-pipelines*.yml`, `NuGet.Config`, `certs/`, `appsettings*.json`,
+  `App_Data/jira-settings.json`.
+- **`local-packages/`**: rsync never touches it, but on hyphen-pb (main, and R1-UAT when deployed) the
+  script replaces `FlexKit.*.nupkg/.snupkg` with the freshly packed version and commits it.
 
 Only hyphen-pb main gets the FlexKit pack + PackageReference swap and a staged build. `homefront` main
 keeps `<ProjectReference Include="..\..\..\FlexKit\FlexKit.csproj" />` and no local-packages, so that repo
@@ -67,6 +69,26 @@ rsyncs our tree over the teammates' commits. **Tell:** a `✓ Reset to origin/ma
 commits)` line in a push log. **Fix:** run `--pull` FIRST; if it already happened, preflight §5's blob
 check still sees the lost files — merge them from the commits it names.
 
+### A rejected push, then `--pull`, reverts OUR OWN changes
+A push rejected because a teammate merged between the fetch and the push aborts the run and leaves the
+unpushed `Deploy <repo> — …` commit as the clone's local `main`. `--pull` uses local `main` as
+LAST_PUSHED, so its file list includes every file WE changed; for each, our source equals that "base",
+and the fast-forward branch copies origin/main's OLDER copy over our working tree — uncommitted edits
+included. Reproduced with a fixture on 2026-09-16. **Tell:** preflight/gate report UNPUSHED commits on a
+clone. **Fix:** `git -C <clone> reset --hard $(git -C <clone> merge-base main origin/main)` BEFORE
+`--pull`, then check that `--pull --dry-run` lists only the teammates' files. Never force-push.
+
+### `--pull` conflicts are reported once, then vanish
+`--pull` runs `git merge origin/main` in the clone before the per-file 3-way merges, so afterwards local
+`main == origin/main`: a second `--pull` prints `No new changes`, and step 0 is clean. The conflict list is
+printed only once. **Fix:** save it and hand-merge every file. Preflight §5 flags a `diverged` file in a
+teammate commit newer than the last `Deploy <repo>` commit on origin/main as `DIVERGED:`.
+
+### `--pull` covers hyphen-pb main only
+Pull mode is hard-wired to the hyphen-pb clone and `MobileSource/HomeFront` (the `[repo]` argument in the
+script header is ignored). Upstream commits on `homefront`, `flexkit` or GitHub `flexcore` must be merged
+by hand; a push-mode run would otherwise reset those clones and rsync over them.
+
 ### `--dry-run` burns the FlexKit version
 A dry run skips only commit/push. It still runs a real `dotnet pack` into `Deploy/local-packages` and
 the full staged build, which restores that version into `~/.nuget/packages`. Change FlexKit after a dry
@@ -76,7 +98,9 @@ run and the real run repacks the same version against a cache holding the dry ru
 ### The script reports success that did not happen
 - Unknown arguments are ignored: `--dryrun`, `--with-r1-uat` → a REAL push. (`pre_deploy_gate.sh`
   rejects unknown arguments.)
-- A skipped repo (`✗ … Skipping`) still ends `▸ Done.` with exit 0; the other repos still push.
+- A login-guard, staged-build or index-gate failure skips only that repo (`✗ … Skipping`); the others
+  still push and the run ends `▸ Done.` with exit 0. A rejected `git push`, by contrast, aborts the whole
+  run under `set -e` — see the next trap.
 - `pack_flexkit` runs inside `$(…)`, where bash 3.2's errexit does not apply: a failed `dotnet pack`
   still prints `✓ Packed FlexKit X`, empties the clone's local-packages, and — if X is in the NuGet
   cache — the staged build passes and main is pushed referencing a package it does not carry.
@@ -145,6 +169,11 @@ FlexCore reaches GitHub only through the staging clone. `FlexCore.Llm/` goes to 
 - Empty output is not proof of "clean" — check the command actually ran.
 - zsh does not word-split unquoted variables: `set -- $x` gives ONE argument. Use `set -- ${=x}` in zsh,
   or run the loop under bash.
+
+### `git rev-parse` echoes what it cannot resolve
+`git rev-parse <sha>:<missing path>` prints the argument itself on stdout, so `x=$(git rev-parse …)` is
+never empty and every "does this file exist at that commit?" test silently passes. Use
+`git rev-parse --verify --quiet …`, which prints nothing on failure.
 
 ### Reflection harnesses
 `verification/**` is excluded from `HomeFront.csproj`, so API/signature changes build clean and then

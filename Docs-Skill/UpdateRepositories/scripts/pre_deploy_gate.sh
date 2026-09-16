@@ -33,9 +33,19 @@ $WITH_R1UAT && refs="$refs hyphen-pb:R1-UAT"
 for spec in $refs; do
   r=${spec%%:*}; b=${spec#*:}
   if ! git -C "$D/$r" fetch -q origin 2>/dev/null; then no "$r: fetch failed — cannot prove upstream is unchanged"; continue; fi
+  # An unpushed commit on the clone's branch means a previous push was rejected or aborted; --pull
+  # would take it as the base and copy GitLab's older files over our own changes.
+  a=$(git -C "$D/$r" rev-list --count "origin/${b}..${b}" 2>/dev/null || echo "?")
+  if [ "$a" != "0" ]; then
+    no "$r $b has $a UNPUSHED commit(s) from a failed push — first: git -C $D/$r reset --hard \$(git -C $D/$r merge-base $b origin/$b)"
+  fi
   n=$(git -C "$D/$r" rev-list --count "${b}..origin/${b}" 2>/dev/null || echo "?")
   if [ "$n" = "0" ]; then yes "$r $b: no upstream commits past our last push"
-  else no "$r $b: $n upstream commit(s) not merged — run: bash tools/deploy_to_repos.sh --pull (then commit the app)"; fi
+  elif [ "$r" = hyphen-pb ] && [ "$b" = main ]; then
+    no "$r $b: $n upstream commit(s) not merged — run: bash tools/deploy_to_repos.sh --pull (then commit the app)"
+  else
+    no "$r $b: $n upstream commit(s) not merged — --pull does not cover $r $b: merge them by hand (SKILL.md step 3)"
+  fi
 done
 
 # 2. Nobody saved source in the last $QUIET minutes (the deploy ships working trees). Runtime data
