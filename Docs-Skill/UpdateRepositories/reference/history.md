@@ -6,6 +6,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 
 | When (EDT) | hyphen-pb main | homefront | flexkit (FlexKit) | flexcore GitHub (FlexCore → nuget.org) | R1-UAT | Local commits | Notes |
 |---|---|---|---|---|---|---|---|
+| 09-17 07:11 | c3b0ef3 | e79586c | d8941ad (0.1.102) | ea6de7c (0.2.44 pushed 07:12 listed 07:20) | ca518c4 frozen | app 1944b8e (`--pull` Irfan 40ef498 29f8287 432c842, Deepika 3581c61 32204cb) + aac9d99 (Baaria MR !35 + !36, still OPEN in GitLab) + f8d1a33; FlexKit 0b76a21, FlexCore 5eae357, outer 291e961 | review wf_af95484b-ac5 landed BEFORE push: blocker in Irfan 29f8287 (System Settings OK wiped every division's standard items) fixed + acked; 3 stale harnesses (HHM-977, HHM-1062, MR !35) |
 | 09-15 00:30 | 1313b21 | 9b23aa8 | ef988bc (0.1.101) | 5be387c (0.2.43 published; FlexCore.Llm on GitHub only) | ca518c4 frozen | FlexKit 2b071f1, FlexCore 6d8d7bf, app 0327ccd | step 0 caught Irfan b23d656 + Deepika aede435 → `--pull` (0327ccd is a single-parent rsync commit, not a git merge) |
 | 09-14 01:29 | 4a2794c | 768a1c8 | e05090f (0.1.100) | 7e27e76 (0.2.42 published) | ca518c4 frozen | FlexKit b2f5cba, FlexCore 274e5db, app 134938b + 6bc7058 | held until session 5c72594a was idle; review wf_f62e78d5-387 fixes shipped |
 | 09-13 09:30 | 5d075fc | 6a92f8f | 7568d15 (0.1.99) | e21156b (0.2.41 published) | ca518c4 frozen | FlexKit ee0bc4d, FlexCore 2be495b, app 94202f2 | review landed AFTER the publish: 8 defects shipped, incl. a Multi-sort revert now permanent in 0.2.41 |
@@ -32,28 +33,33 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 7. **09-15** — step 0 + the blob check caught two teammates' commits the push would have reverted;
    `--pull` merged them (FOptions 3-way with our own edit, no conflict).
 
-## Open as of 2026-09-16 13:30 (from the live preflight and refresh when this skill was written)
+8. **09-17** — three harnesses failed at once and all were STALE, not regressions: a teammate's intro step
+   (HHM-977), our own 09-16 HHM-1062 commit made without its harness, and MR !35's design-time columns.
+   `git log` on the page settles it. The review of the merged teammate code found a data-loss blocker
+   already live on hyphen-pb main (29f8287); fixing it makes preflight report REVERT for that commit, so
+   the rejected hunk goes into `Deploy/preflight-ack.txt` after checking it is the ONLY missing part
+   (diff our file against origin/main).
 
-- **Teammates' work not yet in our tree.** hyphen-pb main moved 1313b21 → **432c842**: Irfan 40ef498
-  (FDuplicateModelOptions, HHM-977/978/987/990) + merge 926f1a7 (HHM-991); Deepika 3581c61 (FCustomQuote,
-  HHM-1061) + merge 5453b8e; Irfan 29f8287 (FOptions — BuildPro Settings, Community Standards); Irfan
-  432c842 (FAddProperty.razor/.css, FOptions, new wwwroot/images/16/AddProperty.ico). Our app HEAD and
-  working copy hold the PRE-commit blobs. **A push without `--pull` reverts all six.** None overlap the
-  app's current uncommitted files.
-- **FEstimateItems.razor has four divergent versions** — hyphen-pb main, `origin/wip/festimateitems-local-20260914`
-  (d145722, "WIP snapshot before laptop migration", +236/−176), `origin/HHM-1057` (d9ae4c4, "seed and
-  persist the gItems layout from the VB6 design-time columns", +283/−223, based on 29f8287, not merged),
-  and the app working tree (being edited). Owner decision.
-- **Another session was actively editing** the app (14 modified, 2 untracked), FlexKit (30 modified,
-  11 untracked — Reports designer work) and FlexCore (25 modified, 11 untracked) at 13:11–13:24.
-- **FlexKit → FlexCore port still owed** for FlexKit-only dirty files: DatePickerControl.razor,
-  Grid/TreeGridControl.razor.cs, TextBoxControl.razor, wwwroot/legacy-scrollbar.js, wwwroot/textbox-control.js.
-- **Next versions:** FlexKit ≥ 0.1.102 (0.1.101 burned), FlexCore ≥ 0.2.44 (0.2.43 published).
-  FlexCore.Llm.csproj says 0.2.42 and FlexCore.Documents 0.2.35 (never published) — decide whether they
-  track FlexCore.
-- **Owner decisions still open:** Atlassian token rotation (App_Data/jira-settings.json on hyphen-pb
-  main, R1-UAT, homefront main); the QA login page's live dev panel; the runtime-limitations panel on 14
-  Estimating reports; designer saves to App_Data/report-designs that nothing reopens; session 5c72594a's
-  HomeFrontPB FReportDesigner edit and its paste-image patch.
-- **Housekeeping:** outer repo has uncommitted FlexKitTester Crystal bench work (another session) and
-  stray `MobileSource/m/Program.cs` + `MobileSource/t_rec3.sh`; the deploy never pushes the outer repo.
+## Open as of 2026-09-17 07:20 (after the 09-17 deploy)
+
+- **Baaria's MRs !35 (HHM-1057, branch HHM-1057) and !36 (festimateitems-phase-dropdown) are still OPEN in
+  GitLab.** Their content shipped on main c3b0ef3 (owner asked to include them). Merging or closing them is
+  the owner's/Baaria's action; a merge now should be a near no-op or conflict only where f8d1a33 changed
+  their code (Quote-mode Project refusal moved before the view reset/save; Phase list cleared for a new job).
+- **Owner decisions from review wf_af95484b-ac5:** (1) MR !35 still refuses "Project" in Quote mode while
+  the 09-13 owner decision (memory hhm1057_prepare_quote_same_as_vb6) says literal VB6; (2) Irfan's
+  System Settings add-division creates a division without System_Setup/ReportAccess/AppOptions copies
+  (VB6 FOptions.frm:8341-8387); (3) Deepika's HHM-1061 commented out FCustomQuote's Format_InvalidData row
+  colouring (VB6 FCustomQuote.frm:1462-1469); (4) tell Irfan his table-wide `DELETE FROM
+  communitystandarditems` was replaced (acked in preflight-ack.txt).
+- **Report engine (info, open):** OnFormula vs UseFormula running-total conditions (formula text not
+  converted); the 100,000-measurement cap throws past the approximate fallback; tabular HTML export lacks
+  scoped styling; FlexCore 0.2.44 exposes the unfinished Crystal engine as public API (ReportLayoutArea
+  constructor changed).
+- **Not an MR, not applied:** `wip/festimateitems-local-20260914` (d145722). Owner decision.
+- **Still open from earlier:** Atlassian token rotation; QA login dev panel (`Security__HideDevPanel`);
+  runtime-limitations panel; report-designs saves nothing reopens; session 5c72594a's PB edit + paste patch;
+  FlexCore.Llm/Documents versions.
+- **Next versions:** FlexKit ≥ 0.1.103 (0.1.102 burned), FlexCore ≥ 0.2.45.
+- **Housekeeping:** outer repo still has the Crystal session's uncommitted FlexKitTester bench work and stray
+  `MobileSource/m/` + `MobileSource/t_rec3.sh`; the deploy never pushes the outer repo.
