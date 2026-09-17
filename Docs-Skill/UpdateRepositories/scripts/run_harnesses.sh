@@ -38,8 +38,11 @@ for d in verification/*/; do
     continue
   fi
   total=$((total + 1))
-  if $LIST; then printf '  %-26s would run\n' "$name"; continue; fi
-  ( cd "$d" && run_bounded dotnet run --project "$(basename "$proj")" -c Release > "$LOGS/$name.log" 2>&1 )
+  # A harness that reads the app's appsettings via Directory.GetCurrentDirectory() (e.g. PricingWorksheetChecks,
+  # "Run from HomeFront") runs from the app directory; the rest run from their own.
+  where="$d"; grep -qs 'GetCurrentDirectory' "$d"*.cs && where="$HF/"
+  if $LIST; then [ "$where" = "$d" ] && at="$d" || at="the app directory"; printf '  %-26s would run  (from %s)\n' "$name" "$at"; continue; fi
+  ( cd "$where" && run_bounded dotnet run --project "$HF/$proj" -c Release > "$LOGS/$name.log" 2>&1 )
   rc=$?
   [ $rc -ne 0 ] && fail=$((fail + 1))
   printf '  %-26s rc=%-3s %s\n' "$name" "$rc" "$(grep -vE '^\s*$|warning |Determining|Restored| -> |^Build succeeded' "$LOGS/$name.log" | tail -1 | cut -c1-80)"

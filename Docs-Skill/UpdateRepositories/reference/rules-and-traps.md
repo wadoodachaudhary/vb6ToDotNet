@@ -207,7 +207,12 @@ never empty and every "does this file exist at that commit?" test silently passe
 ### Reflection harnesses
 `verification/**` is excluded from `HomeFront.csproj`, so API/signature changes build clean and then
 throw at runtime. Run them. A failing harness is often stale against an intended behaviour change —
-e.g. WizardChecks needed `_gridReady` seeding (09-10) and a debounce wait for filter-row input.
+e.g. WizardChecks needed `_gridReady` seeding (09-10) and a debounce wait for filter-row input; on 09-17
+three were stale at once — Irfan's Duplicate Model intro step (HHM-977), our own HHM-1062 vendor box
+(committed 09-16 without its harness) and MR !35's design-time gItems columns. Check `git log` on the
+page: a teammate's or our own recent commit that changed the behaviour the harness asserts means stale.
+A harness that reads `appsettings.json` via `Directory.GetCurrentDirectory()` (PricingWorksheetChecks)
+must run from the app directory — `run_harnesses.sh` does that; by hand it throws FileNotFoundException.
 `Sdk="Microsoft.NET.Sdk.Web"` projects under `verification/` (InputDialogBrowserChecks) are browser-driven
 fixture HOSTS, not console harnesses: started bare they never exit or fail to bind :5000 (AirPlay owns it).
 `run_harnesses.sh` skips and lists them; run one by hand per its README.
