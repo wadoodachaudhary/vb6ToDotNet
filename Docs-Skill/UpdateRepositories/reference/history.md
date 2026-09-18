@@ -6,6 +6,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 
 | When (EDT) | hyphen-pb main | homefront | flexkit (FlexKit) | flexcore GitHub (FlexCore → nuget.org) | R1-UAT | Local commits | Notes |
 |---|---|---|---|---|---|---|---|
+| 09-18 09:21 | d5ec26f | f41fe81 | d60ec9b (0.1.103) | 2bd8273 (0.2.45 published, listed 09:27) | ca518c4 frozen | app 910c3e0 (Irfan f16d2d3), 23bcb3a (Baaria MR !36 update 935b451), ac73ddf (Irfan 23ddbf1), 3b45a5e+ef2fdba (R2-QA 09-17), 8e3a6cc/59bd589/64fc269 (91ef9618 grid-filter harness), f690c82 (Codex HHM-1070/1071), a003489; FlexKit e238107 3aa3457 + 91ef9618 cf98ec4..7f4e66d + Codex 932a67b; FlexCore 27d582e 4cc08d5 + ports; outer 291e961.. | held overnight: 91ef9618's half-written GridControl edits broke the FlexKit build mid-chain; shipped after a 12-min quiet watch. Reviews wf_14845c13-5fc (Codex report work: blank viewer buttons, currency counts, uncleared pick lists, PDF reload — fixed) and wf_47238abd-a8a (FLogin autofilled Password never published, dropdown bottom-row open, Min/Max stepping, filter-row double apply — fixed); fixes verified by wf_69e310d1-677 / wf_4c5dd264-729 |
 | 09-17 07:11 | c3b0ef3 | e79586c | d8941ad (0.1.102) | ea6de7c (0.2.44 pushed 07:12 listed 07:20) | ca518c4 frozen | app 1944b8e (`--pull` Irfan 40ef498 29f8287 432c842, Deepika 3581c61 32204cb) + aac9d99 (Baaria MR !35 + !36, still OPEN in GitLab) + f8d1a33; FlexKit 0b76a21, FlexCore 5eae357, outer 291e961 | review wf_af95484b-ac5 landed BEFORE push: blocker in Irfan 29f8287 (System Settings OK wiped every division's standard items) fixed + acked; 3 stale harnesses (HHM-977, HHM-1062, MR !35) |
 | 09-15 00:30 | 1313b21 | 9b23aa8 | ef988bc (0.1.101) | 5be387c (0.2.43 published; FlexCore.Llm on GitHub only) | ca518c4 frozen | FlexKit 2b071f1, FlexCore 6d8d7bf, app 0327ccd | step 0 caught Irfan b23d656 + Deepika aede435 → `--pull` (0327ccd is a single-parent rsync commit, not a git merge) |
 | 09-14 01:29 | 4a2794c | 768a1c8 | e05090f (0.1.100) | 7e27e76 (0.2.42 published) | ca518c4 frozen | FlexKit b2f5cba, FlexCore 274e5db, app 134938b + 6bc7058 | held until session 5c72594a was idle; review wf_f62e78d5-387 fixes shipped |
@@ -40,26 +41,35 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
    the rejected hunk goes into `Deploy/preflight-ack.txt` after checking it is the ONLY missing part
    (diff our file against origin/main).
 
-## Open as of 2026-09-17 07:20 (after the 09-17 deploy)
+9. **09-18** — another session's implementation agent started editing FlexKit's GridControl in the
+   middle of the verification chain; every build after that failed on members it had not written yet.
+   Hold means hold: watch the session's transcript AND `subagents/` AND the source trees until all are
+   quiet (12 min), then re-run everything. Other sessions' FINISHED work still needs the ship review:
+   both reviews this round found real regressions in work its authors had verified (blank toolbar
+   buttons in HomeFront, and an autofilled login password never reaching the server).
 
-- **Baaria's MRs !35 (HHM-1057, branch HHM-1057) and !36 (festimateitems-phase-dropdown) are still OPEN in
-  GitLab.** Their content shipped on main c3b0ef3 (owner asked to include them). Merging or closing them is
-  the owner's/Baaria's action; a merge now should be a near no-op or conflict only where f8d1a33 changed
-  their code (Quote-mode Project refusal moved before the view reset/save; Phase list cleared for a new job).
-- **Owner decisions from review wf_af95484b-ac5:** (1) MR !35 still refuses "Project" in Quote mode while
-  the 09-13 owner decision (memory hhm1057_prepare_quote_same_as_vb6) says literal VB6; (2) Irfan's
-  System Settings add-division creates a division without System_Setup/ReportAccess/AppOptions copies
-  (VB6 FOptions.frm:8341-8387); (3) Deepika's HHM-1061 commented out FCustomQuote's Format_InvalidData row
-  colouring (VB6 FCustomQuote.frm:1462-1469); (4) tell Irfan his table-wide `DELETE FROM
-  communitystandarditems` was replaced (acked in preflight-ack.txt).
-- **Report engine (info, open):** OnFormula vs UseFormula running-total conditions (formula text not
-  converted); the 100,000-measurement cap throws past the approximate fallback; tabular HTML export lacks
-  scoped styling; FlexCore 0.2.44 exposes the unfinished Crystal engine as public API (ReportLayoutArea
-  constructor changed).
+## Open as of 2026-09-18 09:30 (after the 09-18 deploy)
+
+- **Baaria's MRs !35 (HHM-1057) and !36 (festimateitems-phase-dropdown, tip ee2db8a) are still OPEN in
+  GitLab.** Their content shipped. From 935b451 (merged into !36) the HHM-1075 hover-text half was NOT
+  taken — 3b45a5e already titles the tree via the VB6 PrettyName port (acked in Deploy/preflight-ack.txt).
+- **Jira (session 91ef9618 asked the owner):** move HHM-988 and HHM-874 to Development Review with its
+  one-line comment. The Codex session already moved HHM-1025/1070/1071.
+- **Owner decisions from the reviews:** HomeFront's Reports menu now renders fresh native conversions of
+  .rpt files, not the checked-in xml/ exports (Codex change, deliberate); FlexCore NuGet users need the
+  unpublished FlexCore.Documents for the Crystal PDF preview; ReportVectorShape's constructor changed
+  (binary break vs 0.2.44); the grid toolbar/side-panel searches stop page-level Blazor keydown shortcuts;
+  MR !35 still refuses Project in Quote mode (owner 09-13 said literal VB6); Irfan's add-division skips
+  the System_Setup copies; Deepika's HHM-1061 turned off FCustomQuote invalid-data colouring.
+- **Follow-up tasks offered as chips (not started):** persist assembly-tree widths on fallback columns
+  (FEstimateItems gAssemblies); make department delete select the next department (FOptions, Irfan's area).
+- **Test gaps:** WizardChecks never calls FVendorChange.ChooseReplacementVendorAsync (guard, column filter).
+- **Rule breaks seen:** the Codex report session built HomeFrontPB.sln on 09-17 22:12-22:16 (source untouched).
+  FLogin still logs the typed password when debug_mode is on and NoPasswordLogging is off (pre-existing, opt 7).
 - **Not an MR, not applied:** `wip/festimateitems-local-20260914` (d145722). Owner decision.
 - **Still open from earlier:** Atlassian token rotation; QA login dev panel (`Security__HideDevPanel`);
   runtime-limitations panel; report-designs saves nothing reopens; session 5c72594a's PB edit + paste patch;
   FlexCore.Llm/Documents versions.
-- **Next versions:** FlexKit ≥ 0.1.103 (0.1.102 burned), FlexCore ≥ 0.2.45.
+- **Next versions:** FlexKit ≥ 0.1.104 (0.1.103 burned), FlexCore ≥ 0.2.46.
 - **Housekeeping:** outer repo still has the Crystal session's uncommitted FlexKitTester bench work and stray
   `MobileSource/m/` + `MobileSource/t_rec3.sh`; the deploy never pushes the outer repo.
