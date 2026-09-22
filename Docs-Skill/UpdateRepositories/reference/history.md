@@ -6,6 +6,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 
 | When (EDT) | hyphen-pb main | homefront | flexkit (FlexKit) | flexcore GitHub (FlexCore → nuget.org) | R1-UAT | Local commits | Notes |
 |---|---|---|---|---|---|---|---|
+| 09-22 01:05 | 34f41b9 | 392ed78 | 97e3bc6 (0.1.104) | d407e87 (0.2.46 published) | ca518c4 frozen | app 2eb1836 (`--pull` Deepika 7e4face, Irfan fa2c839 + 71497be; 2 conflicts safe-merged + acked), 9e36b26, 3c5cb0e, 5fb28a1 (HHM-1074, session 23165bb4), fa8be39 (HHM-1149 + job-band slider, session 5c72594a), afaf1b2 (Baaria MR !39 by intent); FlexKit 3b9ab51 a6b345a 2e8f6d2; FlexCore 725ce87 7b26080 6829c0b | held twice for live sessions (Codex Choose Columns 21:34-21:56, 23165bb4 HHM-1074 to 22:36, 5c72594a HHM-1149 to 00:01). Reviews landed BEFORE the push: pre-deploy review of 09-20/21 work (C1-C12: Field PO Requests, Manual PO VB6 parity, Takeoff Delete, Attachments header sort, keyless keys, report pane minimum), wf_6d3426a4-c65 (chooser slide-off discarded edits; Best Fit to Grid could not grow FitColumns grids), wf_40a65f51-808 (band combos clipped by the new slider; !39 view-switch race; slider double-click default; splitter fallback stuck drag), plus a verifier on the DialogControl fix. MRs !35-!38 already in; GitLab MR close NOT done (not signed in, Chrome extension disconnected). Staged build took 16 min. |
 | 09-18 09:21 | d5ec26f | f41fe81 | d60ec9b (0.1.103) | 2bd8273 (0.2.45 published, listed 09:27) | ca518c4 frozen | app 910c3e0 (Irfan f16d2d3), 23bcb3a (Baaria MR !36 update 935b451), ac73ddf (Irfan 23ddbf1), 3b45a5e+ef2fdba (R2-QA 09-17), 8e3a6cc/59bd589/64fc269 (91ef9618 grid-filter harness), f690c82 (Codex HHM-1070/1071), a003489; FlexKit e238107 3aa3457 + 91ef9618 cf98ec4..7f4e66d + Codex 932a67b; FlexCore 27d582e 4cc08d5 + ports; outer 291e961.. | held overnight: 91ef9618's half-written GridControl edits broke the FlexKit build mid-chain; shipped after a 12-min quiet watch. Reviews wf_14845c13-5fc (Codex report work: blank viewer buttons, currency counts, uncleared pick lists, PDF reload — fixed) and wf_47238abd-a8a (FLogin autofilled Password never published, dropdown bottom-row open, Min/Max stepping, filter-row double apply — fixed); fixes verified by wf_69e310d1-677 / wf_4c5dd264-729 |
 | 09-17 07:11 | c3b0ef3 | e79586c | d8941ad (0.1.102) | ea6de7c (0.2.44 pushed 07:12 listed 07:20) | ca518c4 frozen | app 1944b8e (`--pull` Irfan 40ef498 29f8287 432c842, Deepika 3581c61 32204cb) + aac9d99 (Baaria MR !35 + !36, still OPEN in GitLab) + f8d1a33; FlexKit 0b76a21, FlexCore 5eae357, outer 291e961 | review wf_af95484b-ac5 landed BEFORE push: blocker in Irfan 29f8287 (System Settings OK wiped every division's standard items) fixed + acked; 3 stale harnesses (HHM-977, HHM-1062, MR !35) |
 | 09-15 00:30 | 1313b21 | 9b23aa8 | ef988bc (0.1.101) | 5be387c (0.2.43 published; FlexCore.Llm on GitHub only) | ca518c4 frozen | FlexKit 2b071f1, FlexCore 6d8d7bf, app 0327ccd | step 0 caught Irfan b23d656 + Deepika aede435 → `--pull` (0327ccd is a single-parent rsync commit, not a git merge) |
@@ -47,6 +48,33 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
    quiet (12 min), then re-run everything. Other sessions' FINISHED work still needs the ship review:
    both reviews this round found real regressions in work its authors had verified (blank toolbar
    buttons in HomeFront, and an autofilled login password never reaching the server).
+
+## Open as of 2026-09-22 01:30 (after the 09-22 deploy)
+
+- **Close the MRs in GitLab (owner asked; not done — GitLab not signed in, Chrome extension
+  disconnected):** hyphen-pb !35 (HHM-1057), !36 (festimateitems-phase-dropdown), !37 (merged into
+  !36's branch; close if still open), !38 (HHM-1053), !39 (HHM-1057-persist-on-first-use). All their
+  content is on main 34f41b9 (!39 by intent, afaf1b2). `wip/festimateitems-local-20260914` is not an MR.
+- **Owner decision:** !39 writes the VB6 design-time gItems layout on first use; VB6 writes the same
+  rows only at Form_Unload, and the 09-13 HHM-1057 direction said "save on close". Taken because the
+  owner asked for every MR; revert afaf1b2 if on-close only is wanted.
+- **Jira:** session 5c72594a asks whether to move HHM-1149 to Development Review; HHM-1074 (session
+  23165bb4) likewise.
+- **Low review findings not fixed:** short windows clip the grid bottom under the 144 px band;
+  the job splitter re-measures on every page render; SplitterControl leaks its DotNetObjectReference
+  if disposed during its first registration (pre-existing); Best Fit to Grid on a FitColumns grid
+  with the options rail counts the rail margin (pre-existing); TreeGrid best fit is on by default for
+  trees that did not opt in; HHM-1074 deferral: a double Enter can reopen the picker, and closing the
+  variance prompt with X/Escape leaves the "..." picker unopened; ArrowUp/Down in Choose Columns can
+  scroll the page; the grid's client-buffered typing buffer can still take chooser keys (pre-existing).
+- **From the 09-21 review, still for the owner:** Application.GetDb external-DB throw; tree
+  double-click on a collapsed node; Manual PO: edit-time coding lists cached, blank-vendor POs not in
+  the Open PO picker (VB6-faithful); FAttachments Remove/Find order after sorting;
+  HeaderClickShowsColumns now unused by the app; Ctrl/Alt+Delete in Takeoff Settings;
+  ParameterAudit/AuditChecks pre-existing defects.
+- **Housekeeping:** the Codex Choose Columns bench (FlexKitTester choose-columns-popup + verification)
+  and the Crystal bench work are uncommitted in the outer repo. Next versions: FlexKit >= 0.1.105
+  (0.1.104 burned), FlexCore >= 0.2.47.
 
 ## Open as of 2026-09-18 09:30 (after the 09-18 deploy)
 
