@@ -52,9 +52,12 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 
 ## Open as of 2026-09-23 09:05 (after the 09-23 deploy)
 
-- **Close the MRs in GitLab — still not done** (GitLab not signed in here, Chrome extension
-  disconnected): hyphen-pb !35, !36, !37, !38, !39 and now **!40** (HHM-1100, taken in 3d6f63b).
-  Every MR's content is on main 22b5713.
+- **MRs (owner, 2026-09-23 afternoon):** !35 closed; !37 shows merged (into !36's branch
+  festimateitems-phase-dropdown on 09-17); **!40 merged into main by the owner** (9a3f78a — no file
+  change, main already carried it from 3d6f63b; absorbed with `--pull`, step 0 clean). Still to
+  **CLOSE, not merge:** !36, !38, !39. Their content is on main through aac9d99/23bcb3a, cffe624 and
+  afaf1b2, partly in adapted form; a GitLab merge would re-apply their old diffs — !36 would bring
+  back the HHM-1075 hover text deliberately not taken, and !39 targets the pre-622851a gItems load.
 - **Cost Forecasting — SETTLED 2026-09-23.** It stays disabled in the Tasks menu, the Vendor Pricing
   sidebar and FPriceList's toolbar (route and page still live). Owner: "VB6 has it enabled but for
   Web that is out of scope for this release. It will be enabled later." EstimateChecks pins the
