@@ -49,15 +49,20 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
    quiet (12 min), then re-run everything. Other sessions' FINISHED work still needs the ship review:
    both reviews this round found real regressions in work its authors had verified (blank toolbar
    buttons in HomeFront, and an autofilled login password never reaching the server).
+10. **09-23** — merge-request refs (`refs/merge-requests/N/head`) carry no MR STATE. "Not in main" was read
+   as "open": !39, closed by the owner on 09-21 (its description asked for a real-division check first),
+   was taken into main on 09-22 and had to be reverted (8e10e6d). Before taking an MR, confirm in the
+   GitLab UI that it is OPEN; if the UI is unreachable, ask the owner rather than infer it from git.
 
 ## Open as of 2026-09-23 09:05 (after the 09-23 deploy)
 
-- **MRs (owner, 2026-09-23 afternoon):** !35 closed; !37 shows merged (into !36's branch
-  festimateitems-phase-dropdown on 09-17); **!40 merged into main by the owner** (9a3f78a — no file
-  change, main already carried it from 3d6f63b; absorbed with `--pull`, step 0 clean). Still to
-  **CLOSE, not merge:** !36, !38, !39. Their content is on main through aac9d99/23bcb3a, cffe624 and
-  afaf1b2, partly in adapted form; a GitLab merge would re-apply their old diffs — !36 would bring
-  back the HHM-1075 hover text deliberately not taken, and !39 targets the pre-622851a gItems load.
+- **MRs — settled 2026-09-23.** !35, !36, !38, !39 were already CLOSED (the "still open" reading came
+  from git refs; see lesson above); !37 merged into !36's branch; !40 merged into main by the owner
+  (9a3f78a, no file change; pulled). **!39 REVERTED** (8e10e6d, owner): it had been closed on 09-21, so
+  the gItems layout is again written on view switch / close only, as VB6 does. **New MR !41**
+  (HHM-922/964/1159/1161, branch HHM-922-964-1159-1161, ad18508, base 22b5713; FEstimateItems +
+  FPricingWorkSheet) is OPEN — owner: take it in the NEXT update, reviewed; do not merge it in GitLab
+  first (main is QA). The revert ships with that update.
 - **Cost Forecasting — SETTLED 2026-09-23.** It stays disabled in the Tasks menu, the Vendor Pricing
   sidebar and FPriceList's toolbar (route and page still live). Owner: "VB6 has it enabled but for
   Web that is out of scope for this release. It will be enabled later." EstimateChecks pins the
@@ -74,7 +79,7 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 - **FRFPWizard** was deleted as dead. It is a VB6-shipped form (HFEst.vbp:50) whose entry point,
   FEstimateItems' NewRFQ toolbar button, was never migrated; restore from git history when that
   button is ported.
-- **Still open from 09-22:** !39's write-on-first-use vs VB6's on-close; Jira HHM-1149 / HHM-1074 to
+- **Still open from 09-22:** Jira HHM-1149 / HHM-1074 to
   Development Review; the low review findings listed under "Open as of 2026-09-22".
 - **Next versions:** FlexKit >= 0.1.106 (0.1.105 burned), FlexCore >= 0.2.48.
 
