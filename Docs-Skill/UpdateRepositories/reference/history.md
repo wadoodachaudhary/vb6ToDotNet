@@ -55,12 +55,11 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 - **Close the MRs in GitLab — still not done** (GitLab not signed in here, Chrome extension
   disconnected): hyphen-pb !35, !36, !37, !38, !39 and now **!40** (HHM-1100, taken in 3d6f63b).
   Every MR's content is on main 22b5713.
-- **Owner decision — Cost Forecasting.** The 09-23 batch disables it in the Tasks menu, the Vendor
-  Pricing sidebar and FPriceList's toolbar, while `/cost-forecast` and FCostForecast stay live. VB6
-  offers it from all three surfaces under UserPermission("SetupVendorPricing") (FMain.frm:1923,
-  :2760, :2138; FPriceList.frm:182). The app CLAUDE.md records the change but cites no owner
-  directive, unlike its neighbours. Confirm the withdrawal or revert the three edits (the review's
-  verdict carries the exact revert).
+- **Cost Forecasting — SETTLED 2026-09-23.** It stays disabled in the Tasks menu, the Vendor Pricing
+  sidebar and FPriceList's toolbar (route and page still live). Owner: "VB6 has it enabled but for
+  Web that is out of scope for this release. It will be enabled later." EstimateChecks pins the
+  three disabled surfaces; re-enabling later means re-enabling those entry points only. Memory note:
+  cost_forecasting_disabled_this_release.
 - **Owner FYI, deliberate VB6 divergences in this batch:** Field PO Requests removed from both
   navigation lists (HHM-790 sunset posture; route kept; EstimateChecks asserts the removal — note it
   was restored on 09-21 as a regression, so the two rounds disagree); the TBD wizard clears vendors
