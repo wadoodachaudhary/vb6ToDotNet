@@ -6,6 +6,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 
 | When (EDT) | hyphen-pb main | homefront | flexkit (FlexKit) | flexcore GitHub (FlexCore → nuget.org) | R1-UAT | Local commits | Notes |
 |---|---|---|---|---|---|---|---|
+| 09-23 17:19 | 316afba | 9f4fca6 | 0ff5af6 (0.1.106) | 4566b0e (0.2.48 NOT published — held) | ca518c4 frozen | app 8e10e6d (revert MR !39 — owner had closed it 09-21), 3f3df5d (wizard harness, 15 wizards), b021eb1 (MR !41 HHM-922/964/1159/1161), 6272974 (HHM-1159 DELETE gated on saved keys), 7822dee (Codex Reports → Manage + "Convert to Open XML" label); FlexKit b4e1978; FlexCore 99821fa | held three times for live Codex sessions (Crystal reader, report manager, record-161 fix; last quiet 16:51). Reviews before the push: wf_06f8c26a-ce4 (!41: HHM-1159 DELETE could wipe a live row's saved record — fixed, verified 3 rounds), wf_48805d75-d75 + wf_02a1512f-0d0 + wf_2ae6ecc6-545 (Crystal reader + Reports → Manage: security/data-loss and library defects — owner: "just ship it", report work is not QA's focus). NuGet publish of FlexCore 0.2.48 HELD until the confirmed library defects are fixed (a publish is permanent). No teammate commits; MR !41 taken. |
 | 09-23 08:56 | 22b5713 | 2261abc | 243ca03 (0.1.105) | eccf524 (0.2.47 published, listed 09:04 — indexing lagged past the script's 6-min wait) | ca518c4 frozen | app 46c383a (`--pull` Irfan a42eb60, Deepika 6b9507b — fast-forward, no conflicts), 3d6f63b (Baaria MR !40 HHM-1100), 9174ec2 (Codex wizard/WizardControl batch + deleted dead pages + HHM-1156 TBD + review fixes); FlexKit 0eb4634; FlexCore 6b38787 | review wf_14d2d7a0-336 (4 dimensions + adversarial verify) landed BEFORE the push. Fixed: the filter checklist lost its full value set when Search values was cleared under a condition, so Apply stored a checked-value filter that outlived the condition (FlexKit+FlexCore); EstimateChecks asserted a constant for the disabled-Forecasting guard. Refuted after verification: deleting FRFPWizard (orphaned page, VB6 NewRFQ button never migrated), Field PO Requests removal (documented HHM-790 sunset + regression tests), TBD Ctrl+Delete (documented HHM-1156 spec). Open for the owner: Cost Forecasting disabled on all three surfaces with no owner attribution. New harness TbdAssignmentChecks (220 browser + 572 visual). |
 | 09-22 01:05 | 34f41b9 | 392ed78 | 97e3bc6 (0.1.104) | d407e87 (0.2.46 published) | ca518c4 frozen | app 2eb1836 (`--pull` Deepika 7e4face, Irfan fa2c839 + 71497be; 2 conflicts safe-merged + acked), 9e36b26, 3c5cb0e, 5fb28a1 (HHM-1074, session 23165bb4), fa8be39 (HHM-1149 + job-band slider, session 5c72594a), afaf1b2 (Baaria MR !39 by intent); FlexKit 3b9ab51 a6b345a 2e8f6d2; FlexCore 725ce87 7b26080 6829c0b | held twice for live sessions (Codex Choose Columns 21:34-21:56, 23165bb4 HHM-1074 to 22:36, 5c72594a HHM-1149 to 00:01). Reviews landed BEFORE the push: pre-deploy review of 09-20/21 work (C1-C12: Field PO Requests, Manual PO VB6 parity, Takeoff Delete, Attachments header sort, keyless keys, report pane minimum), wf_6d3426a4-c65 (chooser slide-off discarded edits; Best Fit to Grid could not grow FitColumns grids), wf_40a65f51-808 (band combos clipped by the new slider; !39 view-switch race; slider double-click default; splitter fallback stuck drag), plus a verifier on the DialogControl fix. MRs !35-!38 already in; GitLab MR close NOT done (not signed in, Chrome extension disconnected). Staged build took 16 min. |
 | 09-18 09:21 | d5ec26f | f41fe81 | d60ec9b (0.1.103) | 2bd8273 (0.2.45 published, listed 09:27) | ca518c4 frozen | app 910c3e0 (Irfan f16d2d3), 23bcb3a (Baaria MR !36 update 935b451), ac73ddf (Irfan 23ddbf1), 3b45a5e+ef2fdba (R2-QA 09-17), 8e3a6cc/59bd589/64fc269 (91ef9618 grid-filter harness), f690c82 (Codex HHM-1070/1071), a003489; FlexKit e238107 3aa3457 + 91ef9618 cf98ec4..7f4e66d + Codex 932a67b; FlexCore 27d582e 4cc08d5 + ports; outer 291e961.. | held overnight: 91ef9618's half-written GridControl edits broke the FlexKit build mid-chain; shipped after a 12-min quiet watch. Reviews wf_14845c13-5fc (Codex report work: blank viewer buttons, currency counts, uncleared pick lists, PDF reload — fixed) and wf_47238abd-a8a (FLogin autofilled Password never published, dropdown bottom-row open, Min/Max stepping, filter-row double apply — fixed); fixes verified by wf_69e310d1-677 / wf_4c5dd264-729 |
@@ -53,6 +54,35 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
    as "open": !39, closed by the owner on 09-21 (its description asked for a real-division check first),
    was taken into main on 09-22 and had to be reverted (8e10e6d). Before taking an MR, confirm in the
    GitLab UI that it is OPEN; if the UI is unreachable, ask the owner rather than infer it from git.
+
+## Open as of 2026-09-23 17:30 (after the second 09-23 deploy)
+
+- **FlexCore 0.2.48 is on GitHub but NOT on nuget.org** — held on purpose. Fix these library defects
+  (FlexKit + FlexCore, byte-identical) first, then publish 0.2.48 (still unburned) or higher:
+  1. pre-v9 strings: TslvArchiveReader.LoadString decodes UTF-8 while LegacyCrystalDatabaseParser.Text
+     and the legacy field name use Latin-1 — non-ASCII names break the formulas that use them;
+  2. a dropped legacy join runs as a CROSS JOIN; CrystalXmlReportLoader never surfaces
+     ConversionDiagnostics (CRYSTAL_PARTIAL_EXTRACTION) at runtime (direct-.rpt viewer path is silent);
+  3. CrystalFormula StartsWith with an array argument returns false instead of any-prefix;
+  4. CompoundFileReader / CrystalRptBinaryReader: many directory entries sharing one sector chain make
+     a small crafted .rpt allocate far beyond its size (reachable from Reports → Manage uploads);
+  5. cross-tab percentage summaries (HasPercentSummary / SummaryType) convert as plain Sum/Count.
+  Exact fixes are in the verdicts of wf_02a1512f-0d0 and wf_2ae6ecc6-545. FlexKit next version >= 0.1.107.
+- **Reports → Manage shipped with known defects (owner: "just ship it", 09-23):** the private-storage
+  check in UserReportLibrary.ResolveReportPath can be bypassed from the viewer (relative path resolves
+  against the content root; Windows device/UNC paths) — one user can read another's import; User/Reports
+  lives inside the deployed content root, so QA deploys can wipe imports; the manager filter no longer
+  filters as you type; a file name ending in " ." corrupts the user's list; server paths shown in the
+  browser. An uploaded report's SQL runs under the app's DB login — owner: acceptable for now.
+- **Owner question — HHM-964 (MR !41):** CellEditablePredicate now makes multi-row edits (fill-down,
+  column mass edit) skip rows VB6 writes to; VB6 gates only the active cell (frm:3195-3199).
+- **Pre-existing, found this round:** FPricingWorkSheet.SaveDataAsync writes fewer columns than VB6
+  SaveData on Design Center sheets (drops Pretax/Tax/Markup/Margin 2..10, Color/Style/Finish lists,
+  SpecDocument, GraphicPath and more) — every save of a DC sheet loses them. HIGH for DC users.
+  Also: SaveDataAsync sets WorksheetId before commit, so a failed new-sheet save leaves a dead id.
+- **FAssemblyReplicator** completion page keeps Cancel enabled beside Finish (owner call).
+- **MRs:** all of !35-!41 are settled (!41 taken; close it in GitLab — its content is on main 316afba).
+  Before taking any MR, confirm it is OPEN in the GitLab UI (lesson 10).
 
 ## Open as of 2026-09-23 09:05 (after the 09-23 deploy)
 
