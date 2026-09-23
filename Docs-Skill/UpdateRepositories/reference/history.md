@@ -60,9 +60,11 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
   Web that is out of scope for this release. It will be enabled later." EstimateChecks pins the
   three disabled surfaces; re-enabling later means re-enabling those entry points only. Memory note:
   cost_forecasting_disabled_this_release.
-- **Owner FYI, deliberate VB6 divergences in this batch:** Field PO Requests removed from both
-  navigation lists (HHM-790 sunset posture; route kept; EstimateChecks asserts the removal — note it
-  was restored on 09-21 as a regression, so the two rounds disagree); the TBD wizard clears vendors
+- **Field PO Requests — SETTLED 2026-09-23: descoped.** It stays out of both FMain navigation lists
+  (route, page and task handler still live). VB6 lists it in both (FMain.frm:1838, :2745 under
+  IssuePOs Or GeneratePOs); the 09-21 restore was the mistake, not the 09-23 removal.
+  EstimateChecks asserts both lists stay clear. Memory note: field_po_requests_descoped.
+- **Owner FYI, remaining deliberate VB6 divergences in this batch:** the TBD wizard clears vendors
   with Ctrl+Delete instead of VB6's plain Delete and its Clear vendor button is gone (HHM-1156 spec,
   pinned by WizardChecks); Mass Change enables Next on the Choose-Action page where VB6 disables it
   for Add/Remove/Substitute (owner 2026-09-22 "no pickers on this page").
