@@ -23,6 +23,28 @@ and circuit button only calls back to this same bench process. SQL, LAN, and VPN
 buttons stay disabled unless an operator explicitly supplies opt-in environment
 configuration as described below. Nothing runs automatically.
 
+PICKLIST SELECTION LATENCY (FLEXCORE / FLEXKIT)
+--------------------------------------------
+On /picklist-churn, choose 50 rows, First row, and turn off the opening filter.
+Choose Single or Multiple, open the optimized grid, then select an Uplink delay.
+Click between rows quickly, return to earlier rows, and hold a row pressed.
+Only the newest plain-click selection should remain highlighted. Multiple mode
+retains Ctrl/Cmd and Shift selection. The /row-selection bench has the same
+delay control and also supports drag selection and multi-row editing.
+
+Uplink delay uses the existing tester-wide SignalR simulation. Set it to Off
+before timing other tabs; leaving the page also resets it when disposed.
+The HHM-930 selection fix is shared by FlexCore and FlexKit. The tester defaults
+to FlexCore; build with -p:UseFlexKit=true to verify FlexKit using the separate
+bin/Debug/flexkit/net10.0 output. The picklist heading shows the loaded library.
+
+Automated browser checks: from the source checkout, with the tester running
+and Playwright available, run node verification/pointer-selection-latency.mjs.
+BENCH_URL overrides the
+default http://127.0.0.1:5299. The checks separately delay both directions of
+the actual Blazor WebSocket and exercise the built-in uplink simulation.
+Results and screenshots default to /tmp/flexcore-pointer-selection.
+
 
 HOW TO RUN IT
 -------------

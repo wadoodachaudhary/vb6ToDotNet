@@ -1,0 +1,64 @@
+@page "/r2qa-grid"
+@rendermode InteractiveServer
+@using System.Dynamic
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>Grid QA</PageTitle>
+<div id="qa-controls">
+    <ButtonControl OnClick="() => _grid!.OpenSortDialogAsync()">Custom Sort</ButtonControl>
+    <DropDownListControl TValue="string" TItem="string" DataSource="@_units" @bind-Value="_unit" Width="120px" />
+    <span id="qa-edits">@_edits</span>
+</div>
+<div id="qa-grid" style="height:650px;">
+    <GridControl @ref="_grid" TValue="ExpandoObject" DataSource="@_rows"
+                 Height="100%" RowHeight="20" MinRowHeight="20" WidthMode="GridWidthMode.FitColumns"
+                 ScrollTrack="false" EnableColumnVirtualization="@WindowColumns"
+                 DeferredScrollOverscanRows="@ReleaseRows"
+                 AllowSelection="true" AllowSorting="true" AllowFiltering="true"
+                 SelectionSettingsRef="@_selection" EditSettingsRef="@_editing" EventsRef="@_events"
+                 BatchEditBehavior="GridBatchEditBehavior.SingleCell" AllowSingleCellColumnMassEdit="true"
+                 TextEditorTypingBehavior="TextBoxTypingBehavior.ClientBuffered">
+        <GridColumnsBase>
+            @foreach (var field in _fields)
+            {
+                <GridColumn Field="@field" HeaderText="@field" Width="120px"
+                            Type="@(field == "Inactive" ? ColumnType.CheckBox : ColumnType.Text)"
+                            AllowEditing="@(field is "Description" or "Inactive")"
+                            AllowCellDragSelection="true" />
+            }
+        </GridColumnsBase>
+    </GridControl>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public bool WindowColumns { get; set; }
+    [SupplyParameterFromQuery] public int Count { get; set; } = 5000;
+    [SupplyParameterFromQuery] public int? Overscan { get; set; }
+    private int ReleaseRows => Overscan ?? 20;
+    private GridControl<ExpandoObject>? _grid;
+    private List<ExpandoObject> _rows = [];
+    private readonly string[] _fields = new[] { "OptionID", "Community", "Description", "Inactive" }
+        .Concat(Enumerable.Range(4, 125).Select(i => $"Column{i}")).ToArray();
+    private readonly string[] _units = ["EA", "SF", "LSUM"];
+    private string _unit = "EA";
+    private int _edits;
+    private readonly SelectionSettings _selection = new() { Type = SelectionType.Multiple, Mode = SelectionMode.Cell };
+    private readonly EditSettings _editing = new() { AllowEditing = true, Mode = EditMode.Batch };
+    private readonly GridControlEvents<ExpandoObject> _events = new();
+
+    protected override void OnInitialized()
+    {
+        for (var rowIndex = 0; rowIndex < Math.Clamp(Count, 10, 50000); rowIndex++)
+        {
+            var row = new ExpandoObject();
+            var values = (IDictionary<string, object?>)row;
+            foreach (var field in _fields) values[field] = $"{field} {rowIndex:00000}";
+            values["OptionID"] = $"OPTION{rowIndex / 3:00000}";
+            values["Community"] = (rowIndex % 3) switch { 0 => "LILY", 1 => "DAISY", _ => "" };
+            values["Inactive"] = rowIndex % 2 == 0;
+            _rows.Add(row);
+        }
+        _events.OnCellSave = EventCallback.Factory.Create<CellSaveArgs<ExpandoObject>>(this, _ => _edits++);
+    }
+}

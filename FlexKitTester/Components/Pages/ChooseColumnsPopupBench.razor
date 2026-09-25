@@ -1,0 +1,60 @@
+@page "/choose-columns-popup"
+@rendermode InteractiveServer
+@using Fx.ControlKit
+@using Fx.ControlKit.Grid
+
+<PageTitle>Choose Columns Popup</PageTitle>
+
+<h4>Choose Columns</h4>
+<div class="popup-bench-status">
+    <span id="popup-kit">@typeof(GridControl<BenchRow>).Assembly.GetName().Name</span>
+    <span>Host right-clicks: <output id="popup-context-count">@_contextCount</output></span>
+    <span>Commits: <output id="popup-commit-count">@_commitCount</output></span>
+    <ButtonControl OnClick="() => _modal = true">Open modal grid</ButtonControl>
+</div>
+
+<div id="popup-grid-host" @oncontextmenu="() => _contextCount++" @oncontextmenu:preventDefault="true">
+    @if (_modal)
+    {
+        <DialogControl Visible="true" Header="Grid host" Width="900px" Height="580px"
+                       CssClass="fx-dialog-classic" OnClose="() => _modal = false">
+            @BenchGrid
+        </DialogControl>
+    }
+    else
+    {
+        @BenchGrid
+    }
+</div>
+
+@code {
+    private int _contextCount;
+    private int _commitCount;
+    private bool _modal;
+    private readonly List<BenchRow> _rows =
+    [
+        new() { Code = "A", Description = "First item", Vendor = "Vendor A", Quantity = 1 },
+        new() { Code = "B", Description = "Second item", Vendor = "Vendor B", Quantity = 2 }
+    ];
+
+    private RenderFragment BenchGrid => @<GridControl TValue="BenchRow" DataSource="@_rows"
+            Height="400px" AutoPageRowThreshold="0" AllowSelection="true"
+            EnableHeaderContextMenu="true" OnLayoutChanged="OnLayoutChanged">
+        <GridColumnsBase>
+            <GridColumn Field="Code" HeaderText="Code" Width="110px" />
+            <GridColumn Field="Description" HeaderText="Description" Width="220px" />
+            <GridColumn Field="Vendor" HeaderText="Vendor" Width="160px" Visible="false" />
+            <GridColumn Field="Quantity" HeaderText="Quantity" Width="100px" />
+        </GridColumnsBase>
+    </GridControl>;
+
+    private void OnLayoutChanged(GridSettings settings) => _commitCount++;
+
+    public sealed class BenchRow
+    {
+        public string Code { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Vendor { get; set; } = "";
+        public int Quantity { get; set; }
+    }
+}

@@ -2,6 +2,7 @@ using FlexKitTester.Components;
 using FlexKitTester.Services;
 using Microsoft.AspNetCore.SignalR;
 using Radzen;
+using Fx.ControlKit.Reports;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,16 @@ builder.Services.AddSingleton<SqliteProviderBenchDatabase>();
 builder.Services.Configure<LatencyProbeOptions>(
     builder.Configuration.GetSection(LatencyProbeOptions.SectionName));
 builder.Services.AddScoped<LatencyProbeService>();
+
+builder.Services.AddSingleton(new ReportOptions { MaxRowsPerReport = CrystalBenchDataExecutor.MaxRows });
+builder.Services.AddScoped<CrystalXmlReportLoader>();
+builder.Services.AddSingleton<CrystalBenchSamples>();
+builder.Services.AddScoped<CrystalBenchDataExecutor>();
+builder.Services.AddScoped<IReportDataExecutor>(services => services.GetRequiredService<CrystalBenchDataExecutor>());
+builder.Services.AddScoped<IReportSessionContext, CrystalBenchSessionContext>();
+builder.Services.AddScoped<IReportExporter, CrystalBenchNoRuntimeExporter>();
+builder.Services.AddScoped<IReportViewerSettings, InMemoryReportViewerSettings>();
+builder.Services.AddScoped<IReportPickListProvider, EmptyReportPickListProvider>();
 
 // Application-wide text zoom, one instance per circuit.
 builder.Services.AddScoped<Fx.ControlKit.ZoomService>();

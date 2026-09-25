@@ -1,0 +1,352 @@
+@using FlexKitTester.Services
+@using Fx.ControlKit.Reports
+@using System.Text.Json
+@using System.Security.Cryptography
+@using Fx.ControlKit.Grid
+@implements IAsyncDisposable
+@inject IConfiguration Configuration
+@inject IWebHostEnvironment Environment
+@inject CrystalXmlReportLoader Loader
+@inject CrystalBenchDataExecutor Data
+@inject CrystalBenchSamples Samples
+@inject ILogger<CrystalReportsBenchControl> Logger
+
+<PageTitle>Crystal Reports - FlexKitTester</PageTitle>
+<div class="crystal-bench">
+    <header><h1>Crystal Reports</h1><span>@typeof(ReportWriterControl).Assembly.GetName().Name / Native C#</span></header>
+    <section class="bench-library">
+        <div class="bench-toolbar">
+            <TextBoxControl Value="@_search" ValueChanged="SearchChanged" UpdateOnInput="true" Placeholder="Search reports" aria-label="Search reports" Width="260px" Enabled="@_interactive" />
+            <DropDownListControl TValue="string" TItem="string" DataSource="@Collections" Value="@_collection" ValueChanged="CollectionChanged" Width="160px" AriaLabel="Report collection" />
+            <DropDownListControl TValue="string" TItem="string" DataSource="@Statuses" Value="@_filterStatus" ValueChanged="StatusChanged" Width="170px" AriaLabel="Execution status" />
+            <span>@_visible.Count / @_catalog.Count reports</span>
+            <ButtonControl CssClass="bench-icon" Title="@(_catalogExpanded ? "Collapse report catalog" : "Expand report catalog")" aria-label="Toggle report catalog" OnClick="@(_ => _catalogExpanded = !_catalogExpanded)"><SvgIconControl Name="@(_catalogExpanded ? "chevron-up" : "chevron-down")" Size="18px" /></ButtonControl>
+            <ButtonControl CssClass="bench-icon" Title="Previous report" aria-label="Previous report" Disabled="@(_busy || CurrentIndex <= 0)" OnClick="@(_ => NavigateAsync(-1))"><SvgIconControl Name="chevron-left" Size="18px" /></ButtonControl>
+            <ButtonControl CssClass="bench-icon" Title="Next report" aria-label="Next report" Disabled="@(_busy || CurrentIndex >= _visible.Count - 1)" OnClick="@(_ => NavigateAsync(1))"><SvgIconControl Name="chevron-right" Size="18px" /></ButtonControl>
+        </div>
+        <div hidden="@(!_catalogExpanded)">
+        <GridControl TValue="CrystalSampleReport" DataSource="@_visible" EventsRef="@_catalogEvents" Height="260px" Width="100%" RowHeight="30" AllowResizing="true">
+            <GridColumnsBase>
+                <GridColumn Field="Id" HeaderText="ID" Width="64px" MinWidth="64px" MaxWidth="64px" />
+                <GridColumn Field="Name" HeaderText="Report" Width="340" />
+                <GridColumn Field="Collection" HeaderText="Collection" Width="115" />
+                <GridColumn Field="Status" HeaderText="Synthetic run" Width="120" />
+                <GridColumn Field="Pages" HeaderText="Pages" Width="75" />
+                <GridColumn Field="Rows" HeaderText="Sample rows" Width="100" />
+                <GridColumn Field="RelativePath" HeaderText="Source path" Width="450" />
+            </GridColumnsBase>
+        </GridControl>
+        </div>
+        @if (!Samples.Available) { <div class="bench-warning">SQLite sample pack is not installed. Browse or upload an RPT and choose another data source.</div> }
+    </section>
+    <div class="bench-toolbar">
+        @if (_workspace?.ReportRoot is { } root && Directory.Exists(root))
+        {
+            <FilePickerControl UseFileBrowser="true" RootPath="@root" Accept=".rpt" SearchPattern="*"
+                               Label="Browse reports" FilePicked="SelectReportAsync" Enabled="@(!_busy)"
+                               DialogHeader="Crystal reports" DialogWidth="min(760px, 95vw)" />
+        }
+        <FilePickerControl Accept=".rpt" Label="Upload RPT" OnChange="UploadReportAsync" Enabled="@(!_busy)" />
+        <ButtonControl Disabled="@(_busy || _source is null)" OnClick="@(_ => ConvertAsync(false))"><SvgIconControl Name="check" Size="16px" />Convert</ButtonControl>
+        <ButtonControl CssClass="bench-primary" Disabled="@(_busy || _source is null || !CanRun)" OnClick="@(_ => ConvertAsync(true))"><SvgIconControl Name="chevron-right" Size="16px" />Convert &amp; Run</ButtonControl>
+        @if (_busy && _operation is not null)
+        {
+            <ButtonControl IconCss="bi bi-stop-fill" OnClick="@(_ => _operation?.Cancel())">Cancel</ButtonControl>
+        }
+    </div>
+    <div class="bench-data">
+        <label><span>Data source</span>
+            <DropDownListControl TValue="CrystalBenchDataMode" TItem="DataOption" DataSource="@DataOptions"
+                                 Value="@Data.Mode" ValueChanged="ChangeDataMode" TextFieldName="Name" ValueFieldName="Mode"
+                                 Enabled="@(!_busy)" Width="260px" AriaLabel="Report data source" />
+        </label>
+        <FilePickerControl Accept=".json" Label="Load data fixture" OnChange="UploadFixtureAsync" Enabled="@(!_busy)" />
+        @if (Data.FixtureName is { } fixture) { <span>@fixture</span> }
+    </div>
+    <dl class="bench-files"><dt>Report ID</dt><dd>@(_selected is null ? "Not in catalog" : $"#{_selected.Id}")</dd>
+        <dt>Report</dt><dd>@(_sourceName ?? "None selected")</dd>
+        <dt>Source</dt><dd>@(_selected?.RelativePath ?? _source ?? "None selected")</dd>
+        <dt>Converted XML</dt><dd>@(_xmlPath ?? "Not converted")</dd></dl>
+    <div role="status" aria-live="polite" class="bench-status @(_error ? "error" : "")">@_status</div>
+    @if (Data.Mode == CrystalBenchDataMode.LayoutOnly)
+    { <div class="bench-warning">Layout only: no records. This is not a data or Crystal visual comparison.</div> }
+    @if (Data.Mode == CrystalBenchDataMode.Database && !Data.DatabaseAvailable)
+    { <div class="bench-warning">Read-only database is not configured.</div> }
+    @if (Data.Mode == CrystalBenchDataMode.SyntheticSqlite)
+    { <div class="bench-warning">Synthetic SQLite records. Original filters and formulas remain active. SQL joins, database functions, and Crystal visual parity are not validated by this data.</div> }
+    <TabStripControl Items="@Tabs" SelectedIndex="@_tab" SelectedIndexChanged="@(i => _tab = i)" />
+    <section hidden="@(_tab != 0)" class="bench-conversion">
+        <ol>@foreach (var message in _progress) { <li>@message</li> }</ol>
+        @if (!string.IsNullOrEmpty(_queryDetails))
+        { <AccordionControl><AccordionItemControl Title="Query and fixture contract"><pre>@_queryDetails</pre></AccordionItemControl></AccordionControl> }
+    </section>
+    <section hidden="@(_tab != 1)" class="bench-designer">
+        @if (_xmlPath is not null)
+        {
+            <ReportDesignerControl @key="_xmlPath" @ref="_designer" XmlPath="@_xmlPath" AllowFileOpen="false"
+                                   PreviewRequested="PreviewAsync" />
+        }
+    </section>
+    <section hidden="@(_tab != 2)" class="bench-viewer">
+        <ButtonControl IconCss="bi bi-play-fill" Disabled="@(_busy || _xmlPath is null || !CanRun)" OnClick="@(_ => RunAsync())">Run converted XML</ButtonControl>
+        <ReportWriterControl @key="_writerKey" @ref="_writer" UsePositionedLayout="true" PromptOptionalParameters="true" />
+    </section>
+    <section hidden="@(_tab != 3)" class="bench-compatibility">
+        <h2>Compatibility review</h2>
+        <div class="bench-warning">Rendered means the synthetic execution completed, not Crystal approval. Legacy OLE or OS-only image behavior may use a documented modern substitute; data, formulas, charts, and cross-tabs still require review.</div>
+        <GridControl TValue="CrystalSampleIssue" DataSource="@_issues" Height="320px" Width="100%" RowHeight="30">
+            <GridColumnsBase><GridColumn Field="Category" HeaderText="Area" Width="150" /><GridColumn Field="Message" HeaderText="Finding" Width="800" /></GridColumnsBase>
+        </GridControl>
+    </section>
+</div>
+
+@code {
+    private sealed record DataOption(CrystalBenchDataMode Mode, string Name);
+    private readonly List<DataOption> DataOptions = [new(CrystalBenchDataMode.None, "Select data source"),
+        new(CrystalBenchDataMode.LayoutOnly, "Layout only (no records)"), new(CrystalBenchDataMode.Fixture, "Matching data fixture"),
+        new(CrystalBenchDataMode.SyntheticSqlite, "Synthetic SQLite samples"),
+        new(CrystalBenchDataMode.Database, "Read-only database")];
+    private readonly List<TabStripItem> Tabs = [new("Conversion", "bi bi-arrow-repeat"), new("Designer", "bi bi-layout-text-window"), new("Viewer", "bi bi-play-fill"), new("Compatibility", "bi bi-check2-square")];
+    private IReadOnlyList<CrystalSampleReport> _catalog = [];
+    private List<CrystalSampleReport> _visible = [];
+    private List<CrystalSampleIssue> _issues = [];
+    private CrystalSampleReport? _selected;
+    private bool _catalogExpanded = true;
+    private string? _search;
+    private string _collection = "All collections", _filterStatus = "All statuses";
+    private readonly string[] Collections = ["All collections", "Primary", "Downloaded"];
+    private readonly string[] Statuses = ["All statuses", "Rendered", "Review", "Blocked"];
+    private readonly GridControlEvents<CrystalSampleReport> _catalogEvents = new();
+    private int CurrentIndex => _selected is null ? -1 : _visible.FindIndex(r => r.Hash == _selected.Hash);
+    private CrystalBenchWorkspace? _workspace;
+    private ReportWriterControl? _writer;
+    private ReportDesignerControl? _designer;
+    private byte[]? _upload;
+    private string? _source, _sourceName, _xmlPath, _queryDetails;
+    private string _status = "Ready.";
+    private readonly List<string> _progress = [];
+    private CancellationTokenSource? _operation;
+    private bool _busy, _error, _disposed, _pendingRun, _interactive;
+    private int _tab, _writerKey;
+    private bool CanRun => Data.Mode == CrystalBenchDataMode.LayoutOnly
+        || Data.Mode == CrystalBenchDataMode.SyntheticSqlite && Samples.Available && Data.SampleReportHash is not null
+        || Data.Mode == CrystalBenchDataMode.Fixture && Data.FixtureName is not null
+        || Data.Mode == CrystalBenchDataMode.Database && Data.DatabaseAvailable;
+
+    protected override void OnInitialized()
+    {
+        _workspace = new(CrystalBenchWorkspace.ResolveRoot(Configuration, Environment.ContentRootPath));
+        try { _catalog = Samples.ReadCatalog(); FilterCatalog(); }
+        catch (Exception error) { Fail(error); }
+        Data.Mode = Samples.Available ? CrystalBenchDataMode.SyntheticSqlite : CrystalBenchDataMode.None;
+        _catalogEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CrystalSampleReport>>(this, async args => { if (args.Data is not null) await SelectCatalogAsync(args.Data); });
+    }
+
+    private void SearchChanged(string? value) { _search = value; _catalogExpanded = true; FilterCatalog(); }
+    private void CollectionChanged(string value) { _collection = value; _catalogExpanded = true; FilterCatalog(); }
+    private void StatusChanged(string value) { _filterStatus = value; _catalogExpanded = true; FilterCatalog(); }
+    private void FilterCatalog() => _visible = _catalog.Where(r => (_collection == "All collections" || r.Collection == _collection)
+        && (_filterStatus == "All statuses" || r.Status == _filterStatus)
+        && (string.IsNullOrWhiteSpace(_search) || r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == _search.Trim().TrimStart('#')
+            || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || r.RelativePath.Contains(_search, StringComparison.OrdinalIgnoreCase))).ToList();
+    private async Task NavigateAsync(int delta)
+    {
+        var index = CurrentIndex + delta;
+        if (index >= 0 && index < _visible.Count) await SelectCatalogAsync(_visible[index]);
+    }
+    private async Task SelectCatalogAsync(CrystalSampleReport report)
+    {
+        if (_workspace?.ReportRoot is null) { Fail(new InvalidOperationException("Configure the Reports corpus root first.")); return; }
+        await SelectReportAsync(Path.Combine(_workspace.ReportRoot, report.RelativePath));
+    }
+    private void MatchSample(string hash)
+    {
+        _selected = _catalog.FirstOrDefault(r => r.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+        Data.SampleReportHash = _selected?.Hash;
+        _issues = _selected?.Issues.ToList() ?? [];
+        if (_selected is null) _issues.Add(new("Sample data", "This binary is not in the sample pack. Generate matching samples or load a data fixture."));
+        _issues.Add(new("Visual approval", "Pending original Crystal render with matching data, parameters, fonts, and print settings."));
+    }
+
+    private void ChangeDataMode(CrystalBenchDataMode mode)
+    {
+        if (_busy || Data.Mode == mode) return;
+        Data.Mode = mode;
+        _writerKey++; _writer = null; _pendingRun = false;
+        _error = false; _status = "Data source changed. Run the converted XML to load new results.";
+    }
+
+    private async Task<bool> CanReplaceAsync() => !_busy && (_designer is null || await _designer.CanReplaceDocumentAsync());
+
+    private async Task SelectReportAsync(string? path)
+    {
+        if (path is null || !await CanReplaceAsync()) return;
+        try
+        {
+            _source = _workspace!.ValidateSource(path);
+            _sourceName = Path.GetFileName(path);
+            _upload = null;
+            ResetConverted();
+            using var stream = File.OpenRead(_source);
+            MatchSample(Convert.ToHexString(SHA256.HashData(stream)));
+        }
+        catch (Exception error) { Fail(error); }
+    }
+
+    private async Task UploadReportAsync(InputFileChangeEventArgs args)
+    {
+        if (!await CanReplaceAsync()) return;
+        var file = args.File;
+        if (!string.Equals(Path.GetExtension(file.Name), ".rpt", StringComparison.OrdinalIgnoreCase) || file.Size > CrystalBenchWorkspace.MaxReportBytes)
+        { Fail(new InvalidDataException("Select a .rpt file no larger than 64 MB.")); return; }
+        _busy = true;
+        try
+        {
+            await using var input = file.OpenReadStream(CrystalBenchWorkspace.MaxReportBytes);
+            using var copy = new MemoryStream();
+            await input.CopyToAsync(copy);
+            _upload = copy.ToArray(); _source = _sourceName = Path.GetFileName(file.Name);
+            ResetConverted();
+            MatchSample(Convert.ToHexString(SHA256.HashData(_upload)));
+        }
+        catch (Exception error) { Fail(error); }
+        finally { _busy = false; }
+    }
+
+    private void ResetConverted()
+    {
+        _xmlPath = null; _designer = null; _queryDetails = null; _pendingRun = false;
+        _writerKey++; _progress.Clear(); _error = false; _status = "Ready to convert."; _tab = 0;
+    }
+
+    private async Task UploadFixtureAsync(InputFileChangeEventArgs args)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await using var stream = args.File.OpenReadStream(16 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            Data.LoadFixture(args.File.Name, await reader.ReadToEndAsync());
+            Data.Mode = CrystalBenchDataMode.Fixture;
+            _writerKey++; _writer = null; _pendingRun = false;
+            _error = false; _status = "Data fixture loaded.";
+        }
+        catch (Exception error) { Fail(error); }
+        finally { _busy = false; }
+    }
+
+    private async Task ConvertAsync(bool run)
+    {
+        if (_source is null || !await CanReplaceAsync()) return;
+        ResetConverted(); _busy = true; _status = "Converting RPT binary...";
+        _operation?.Dispose(); _operation = new();
+        try
+        {
+            void Progress(string message) => _ = InvokeAsync(() =>
+            { if (!_disposed) { if (_progress.Count < 100) _progress.Add(message); StateHasChanged(); } });
+            CrystalRptConversionResult result;
+            if (_upload is { } upload)
+            {
+                await using var stream = new MemoryStream(upload, writable: false);
+                result = await _workspace!.ConvertStreamAsync(_sourceName!, stream, Progress, _operation.Token);
+            }
+            else result = await _workspace!.ConvertFileAsync(_source, Progress, _operation.Token);
+            _operation.Token.ThrowIfCancellationRequested();
+            _xmlPath = result.ReportXmlPath;
+            using (var convertedSource = File.OpenRead(Path.Combine(Path.GetDirectoryName(_xmlPath)!, _sourceName!)))
+                MatchSample(Convert.ToHexString(SHA256.HashData(convertedSource)));
+            var definition = Loader.LoadPositioned(_xmlPath);
+            _issues.AddRange(definition.RuntimeDiagnostics.Select(d => new CrystalSampleIssue("Runtime", d)));
+            _queryDetails = BuildContract(definition);
+            _status = $"Converted {_sourceName}. {result.SubreportXmlPaths.Count} subreport(s).";
+            if (run) { _tab = 2; _catalogExpanded = false; _pendingRun = true; }
+        }
+        catch (OperationCanceledException) { _status = "Conversion cancelled."; }
+        catch (Exception error) { Fail(error); }
+        finally { _busy = false; _operation?.Dispose(); _operation = null; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) { _interactive = true; StateHasChanged(); }
+        if (_pendingRun && _writer is not null && !_disposed)
+        { _pendingRun = false; await RunAsync(); StateHasChanged(); }
+    }
+
+    private async Task RunAsync()
+    {
+        if (_busy || _xmlPath is null || _writer is null || !CanRun) return;
+        _busy = true; _tab = 2;
+        try
+        {
+            var seed = Data.Mode == CrystalBenchDataMode.SyntheticSqlite ? Samples.Parameters(Data.SampleReportHash!, Loader.LoadPositioned(_xmlPath)) : null;
+            await _writer.ShowReportAsync(_xmlPath, seed);
+            _error = !string.IsNullOrEmpty(_writer.ErrorMessage);
+            _status = _error ? _writer.ErrorMessage! : _writer.StatusMessage;
+            CaptureRuntimeIssues();
+        }
+        catch (Exception error) { Fail(error); }
+        finally { _busy = false; }
+    }
+
+    private async Task PreviewAsync(ReportDesignerDocument document)
+    {
+        if (_busy || _writer is null) return;
+        if (!CanRun) { Fail(new InvalidOperationException("Select a report data source before previewing.")); return; }
+        _busy = true; _tab = 2;
+        try
+        {
+            var parameters = Data.Mode == CrystalBenchDataMode.SyntheticSqlite && _xmlPath is not null
+                ? Samples.Parameters(Data.SampleReportHash!, Loader.LoadPositioned(_xmlPath)).ToDictionary(p => p.Key, p => (object)p.Value) : null;
+            await _writer.ShowDesignerReport(document, parameters);
+            _error = !string.IsNullOrEmpty(_writer.ErrorMessage);
+            _status = _error ? _writer.ErrorMessage! : _writer.StatusMessage;
+            CaptureRuntimeIssues();
+        }
+        catch (Exception error) { Fail(error); }
+        finally { _busy = false; }
+    }
+
+    private static string BuildContract(ReportDefinition definition)
+    {
+        var reports = new List<ReportDefinition>();
+        void Visit(ReportDefinition report, int depth)
+        {
+            if (depth > 8 || reports.Contains(report)) return;
+            reports.Add(report);
+            if (report.PositionedLayout is { } layout)
+                foreach (var child in layout.Subreports.Values) Visit(child.Definition, depth + 1);
+        }
+        Visit(definition, 0);
+        return JsonSerializer.Serialize(new { reports = reports.Select(r => new {
+            reportId = r.ReportId, sqlSha256 = CrystalBenchDataExecutor.QueryHash(r.Sql), sql = r.Sql,
+            parameterDefinitions = r.Parameters.Select(p => new { p.Name, p.Prompt, p.DefaultValue, p.ParameterType }),
+            parameters = r.Parameters.ToDictionary(p => p.Name, p => (object)p.DefaultValue)
+                .Concat(r.FixedParameters).GroupBy(p => p.Key).ToDictionary(g => g.Key, g => g.Last().Value),
+            columns = CrystalBenchDataExecutor.RequiredColumns(r).Select(name => new { name, type = "string" }), rows = Array.Empty<object>()
+        }) }, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private void Fail(Exception error)
+    {
+        Logger.LogWarning(error, "Crystal report bench operation failed");
+        _error = true; _status = error.Message;
+        _issues.Add(new("Blocked", error.Message));
+    }
+
+    private void CaptureRuntimeIssues()
+    {
+        if (_writer is null) return;
+        _issues.AddRange(_writer.Tabs.SelectMany(t => t.RuntimeDiagnostics).Select(d => new CrystalSampleIssue("Runtime", d)));
+        if (_error) _issues.Add(new("Blocked", _status));
+        _issues = _issues.Distinct().ToList();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true; _operation?.Cancel(); _upload = null;
+        if (_workspace is not null) await _workspace.DisposeAsync();
+        _operation?.Dispose();
+    }
+}
