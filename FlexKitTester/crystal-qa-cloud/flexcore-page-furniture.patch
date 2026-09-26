@@ -1,0 +1,69 @@
+From 0f3867bf72edb3185fdabcf6dd8094b085c25c39 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Sat, 26 Sep 2026 02:09:11 +0000
+Subject: [PATCH] Clip grown page furniture and keep formula faults off the
+ pagination abort path.
+
+Designed headers that already fill the page still fail. An inline subreport that grows past a page header is clipped to the designed section height. While-printing formula errors during physical replay are recorded as field diagnostics instead of aborting the report.
+---
+ Reports/ReportLayoutSession.Scheduling.cs |  8 +++++++-
+ Reports/ReportPositionedLayout.cs         | 23 ++++++++++++++++++++++-
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/Reports/ReportLayoutSession.Scheduling.cs b/Reports/ReportLayoutSession.Scheduling.cs
+index a007913..34d25ae 100644
+--- a/Reports/ReportLayoutSession.Scheduling.cs
++++ b/Reports/ReportLayoutSession.Scheduling.cs
+@@ -281,8 +281,14 @@ public sealed partial class ReportLayoutSession
+                         try
+                         {
+                             // Resolve field values before their formatting; both share the occurrence's formula cache.
++                            // Format() turns a formula fault into a field diagnostic. This prefetch runs outside Format,
++                            // so the same faults must not abort the physical replay (while-printing array formulas).
+                             foreach (var reference in original.Visual.Runs.Select(r => r.Binding).Prepend(original.Kind == "Field" ? original.Binding : "").Where(r => r.Length > 0))
+-                                _ = owner.Value(reference, item.Row);
++                            {
++                                try { _ = owner.Value(reference, item.Row); }
++                                catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or FormatException or InvalidCastException or OverflowException or DivideByZeroException or ArgumentException)
++                                { /* Format records the diagnostic when it evaluates this reference. */ }
++                            }
+                             element = owner.ApplyObjectConditions(owner.ApplyObjectConditions(original, item.Row), item.Row, true);
+                             html = ReportObjectRenderer.Content(element, reference => owner.Format(reference, item.Row, element.FormatString));
+                         }
+diff --git a/Reports/ReportPositionedLayout.cs b/Reports/ReportPositionedLayout.cs
+index beb42b1..2062f64 100644
+--- a/Reports/ReportPositionedLayout.cs
++++ b/Reports/ReportPositionedLayout.cs
+@@ -972,7 +972,28 @@ public sealed partial class ReportLayoutSession
+             var next = new Page { Number = number, Bottom = size.ContentHeightTwips - reserve };
+             resetPageNumber = false;
+             if (withHeaders) AddHeaders(next, row);
+-            if (next.Cursor >= next.Bottom) throw new InvalidDataException("Page headers plus footers leave no space for content (Crystal: page area too large).");
++            if (next.Cursor >= next.Bottom)
++            {
++                // Designed header and footer sections that already fill the page are Crystal's
++                // "page area too large" error. Growth past a section that fits (an inline
++                // subreport in the page header is the usual case) is clipped to that section
++                // so the body keeps the room the design left for it.
++                var staticSpan = headers.Concat(footers).Where(section => !section.IsSuppressed).Sum(section => section.HeightTwips);
++                if (staticSpan >= size.ContentHeightTwips)
++                    throw new InvalidDataException("Page headers plus footers leave no space for content (Crystal: page area too large).");
++                _diagnostics.Add("Page header or footer content that grows past its section is clipped to the designed section height. The overflow is usually an inline subreport.");
++                var cursor = 0;
++                for (var i = 0; i < next.Placements.Count; i++)
++                {
++                    var placement = next.Placements[i];
++                    // Expand() copies the section and adds growth onto HeightTwips. The document
++                    // section still has the designed height, which is what the page must reserve.
++                    var designed = _layout.Document.Sections.First(section => section.Id == placement.Band.Section.Id).HeightTwips;
++                    next.Placements[i] = placement with { Top = cursor, Height = designed };
++                    cursor += placement.Band.Section.UnderlayFollowingSections ? 0 : designed;
++                }
++                next.Cursor = cursor;
++            }
+             var (headerEnd, headerCount) = (next.Cursor, next.Placements.Count);
+             foreach (var repeat in repeats)
+             {
+-- 
+2.43.0
+
