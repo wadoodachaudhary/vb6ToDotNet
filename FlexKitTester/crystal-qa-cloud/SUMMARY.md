@@ -1,31 +1,33 @@
 # Crystal Reports conversion QA
 
-Cloud batch of the FlexKitTester sample pack on 2026-09-25 (UTC).
+Cloud batch of the FlexKitTester sample pack on 2026-09-26 (UTC), follow-up to the 2026-09-25 run.
 Engine: native C# RPT to XML in FlexCore (`CrystalRptToXml`), then synthetic SQLite rows from `FlexKitTester/Data/CrystalSamples.db`, then C# pagination.
-Sibling revisions used for this run: FlexCore `2587807`, JavaToCSharp `a34ef9d`.
+Sibling revisions used for this run: FlexCore `0f3867b` on branch `cursor/crystal-page-furniture-1f97` (parent `2587807`), JavaToCSharp `a34ef9d`.
 Source `.rpt` files were left unchanged. No SAP Crystal runtime was used.
 
 ## Counts
 
-| Metric | Count |
-| --- | ---: |
-| Reports in pack (attempted) | 530 |
-| Conversion OK | 530 |
-| Rendered clean (`Rendered`) | 249 |
-| Rendered with diagnostics (`Review`) | 123 |
-| Render OK (Rendered + Review) | 372 |
-| Failed / blocked | 158 |
-| Skipped | 0 |
-| PNG screenshots | 530 |
+| Metric | 2026-09-25 | 2026-09-26 |
+| --- | ---: | ---: |
+| Reports in pack (attempted) | 530 | 530 |
+| Conversion OK | 530 | 530 |
+| Rendered clean (`Rendered`) | 249 | 296 |
+| Rendered with diagnostics (`Review`) | 123 | 234 |
+| Render OK (Rendered + Review) | 372 | 530 |
+| Failed / blocked | 158 | 0 |
+| Skipped | 0 | 0 |
+| PNG screenshots | 530 | 530 |
 
-Primary corpus (`Reports/rpt`, 19 reports): 9 Review, 6 Rendered, 4 Blocked.
-Downloaded samples: 243 Rendered, 154 Blocked, 114 Review.
+Of the 158 reports that were blocked on 2026-09-25: **47 Rendered, 111 Review, 0 still blocked**. None of the 372 that already rendered changed status, page count, or diagnostics.
 
-Elapsed: 4 minutes 29 seconds, including one Chrome session that captured all 530 PNGs.
+Primary corpus (`Reports/rpt`, 19 reports): 11 Review, 8 Rendered, 0 Blocked.
+Downloaded samples: 288 Rendered, 223 Review, 0 Blocked.
+
+Elapsed: 4 minutes 52 seconds, including one Chrome session that captured all 530 PNGs.
 
 ## Artifacts
 
-- `screenshots/` — one PNG per report, `{id:0000}-{safeName}.png`. Each image is the QA page: status banner plus the positioned pages when pagination succeeded.
+- `screenshots/` — one PNG per report, `{id:0000}-{safeName}.png`. Each image is the QA page: status banner plus the positioned pages when pagination succeeded. PNGs for the 158 previously blocked reports were replaced. The other 372 PNGs are unchanged.
 - `results.jsonl` — one JSON object per report: `Id`, `Name`, `Status`, `ConversionOk`, `RenderOk`, `Pages`, `Error`, `ScreenshotPath` (repo-relative), plus hash, relative RPT path, and up to 20 diagnostics.
 - `gallery.html` — thumbnail index of every PNG. Open it in a browser from this folder.
 
@@ -41,42 +43,47 @@ open FlexKitTester/crystal-qa-cloud/gallery.html
 open FlexKitTester/crystal-qa-cloud/screenshots
 ```
 
-## Top failure themes
+## Sample schema changes
 
-Every report converted. Blocked rows failed during sample execution or pagination, and their screenshots are the status card.
+`FlexKitTester/Data/CrystalSamples.db` was refreshed for the 158 previously blocked binaries. Each report was converted again with the current FlexCore importer and reseeded by `CrystalSamples.Seed` `worker`, then installed with `install-capture`. Other catalog reports were not rewritten.
 
-### Blocked (158)
+| Change | Reports |
+| --- | ---: |
+| Schema fingerprint replaced (stored dataset key did not match this conversion) | 153 |
+| Column names or types also changed | 84 |
+| Column signature unchanged (fingerprint only) | 74 |
+| Gained a dataset the old pack did not have (usually a subreport) | 17 |
+| Parameter values refreshed | 24 |
 
-- 153 — SQLite sample schema fingerprint does not match this conversion
-- 5 — Other runtime blocker
+Column corrections are the current converter's field types. The old pack often stored dates as strings and amounts as datetimes, and it omitted columns the conversion now projects (for example `Orders_Ship Via`, `sales_order_sales_rep_id`). Rows are still the seed tool's deterministic synthetic projections (24 rows when the report has fields, 1 row for a static report).
 
-The schema mismatches mean the current native conversion fingerprint does not match the dataset stored in `CrystalSamples.db`. The bench refuses to substitute unrelated rows. Those 153 reports still converted.
+Parameter fixes that unblocked runtime failures:
 
-Other runtime blockers:
+- #225 and #257 `EndDate`: `2005-01-30 0` → `2005-01-31 00:00:00`
+- #521 `EndDate`: `2005-03-30 55920` → `2005-03-31 15:32:00` (55920 seconds after midnight is 15:32:00; the old pack stored Crystal's date and time parts as raw numbers)
+- Linked subreport parameters that were the string `Sample` are now `1` when the linked column is numeric
 
-- #152 76 Median of an Array.rpt: InvalidDataException: A subscript must be between 1 and the size of the array.
-- #225 Combination Balance Sheet and Income Statement.RPT: FormatException: String '2005-01-30 0' was not recognized as a valid DateTime.
-- #249 crptSubReport.rpt: InvalidDataException: Page headers plus footers leave no space for content (Crystal: page area too large).
-- #486 TOCv8.rpt: InvalidDataException: A subscript must be between 1 and the size of the array.
-- #521 Variance Analysis Report.rpt: InvalidDataException: Crystal function month: String '2005-03-30 55920' was not recognized as a valid DateTime.
+#152 (76 Median of an Array) paginates with the refreshed rows. The previous pack's rows tripped the array subscript check.
 
-### Review (123)
+## Runtime mitigations
 
-These reports paginated. The screenshot shows the pages. The status is `Review` because the run recorded at least one diagnostic. Primary theme (first diagnostic):
+Two FlexCore layout changes in `0f3867b` (`cursor/crystal-page-furniture-1f97`). Designed page headers and footers that already fill the page still raise Crystal's "page area too large" error.
 
-- 68 — CanGrow used approximate font metrics (batch pagination did not call the browser measurer)
-- 26 — Cross-tab objects rendered as unsupported-object placeholders
-- 10 — Field or formula reference could not be resolved
-- 7 — Chart objects rendered as unsupported-object placeholders
-- 4 — Unimplemented Crystal function or property
-- 4 — Subreport on-demand or definition unavailable
-- 2 — Other diagnostic: {@Title}: Document property 'filename' is not available to this report run.
-- 1 — Other diagnostic: SectionAreaConditionFormulas/BackgroundColor: the XML contains only a line comment; reconvert the RPT to retai
-- 1 — Other diagnostic: SectionAreaConditionFormulas/EnableSuppress: the XML contains only a line comment; reconvert the RPT to retain
+- Page-header growth is clipped to the designed section height when an inline subreport would otherwise consume the page. #248 `crptDetails.rpt` and #249 `crptSubReport.rpt` are Review with that diagnostic. The subreport in the page header is clipped; the body still prints.
+- Physical page replay no longer aborts when a while-printing formula throws. The fault is recorded as a field diagnostic, the same way `Format()` already did. #486 `TOCv8.rpt` is Review: `{@Index Display While Do}` indexes past the index array because the While loop stops on string length 250 and the short synthetic index never reaches that length. That formula behavior is inherent to this sample size.
 
-The CanGrow metric warning comes from `ReportLayoutSession.Paginate()` in the batch worker. The separate `--capture-native` path measures text in Chrome; this batch does not, so many otherwise successful layouts are marked Review for approximate CanGrow pagination.
+## Review themes (234)
 
-Charts and cross-tabs that the engine does not draw yet appear as labeled placeholders in the PNG, with the rest of the page still laid out.
+These reports paginated. The screenshot shows the pages. The status is `Review` because the run recorded at least one diagnostic. Common themes:
+
+- CanGrow used approximate font metrics (batch pagination did not call the browser measurer)
+- Cross-tab and chart objects rendered as unsupported-object placeholders
+- Field or formula reference could not be resolved
+- Subreport on-demand or definition unavailable
+- Page header or footer content clipped to the designed section height (#248, #249)
+- `{@Index Display While Do}` array subscript on #486
+
+The CanGrow metric warning comes from `ReportLayoutSession.Paginate()` in the batch worker. The separate `--capture-native` path measures text in Chrome; this batch does not.
 
 ## How to re-run
 
@@ -87,9 +94,10 @@ VBToCSharp/HomeFront/FlexKitTester/     this repo
 VBToCSharp/FlexCore/                    github.com/wadoodachaudhary/FlexCore
 JavaToCSharp/Reports/                   rpt + downloaded-samples
 JavaToCSharp/tools/CrystalBench.Tests/
+JavaToCSharp/tools/CrystalSamples.Seed/
 ```
 
-`FlexKitTester.csproj` references `../../FlexCore`. `CrystalBench.Tests` references `../../../VBToCSharp/HomeFront/FlexKitTester`. Run the harness from `JavaToCSharp` so `Reports/` resolves.
+`FlexKitTester.csproj` references `../../FlexCore`. `CrystalBench.Tests` and `CrystalSamples.Seed` reference `../../../VBToCSharp/HomeFront/FlexKitTester`. Run the harness from `JavaToCSharp` so `Reports/` resolves. Use FlexCore `0f3867b` (`cursor/crystal-page-furniture-1f97`) or later so #248, #249, and #486 stay unblocked.
 
 ```sh
 dotnet build VBToCSharp/HomeFront/FlexKitTester/FlexKitTester.csproj
@@ -101,7 +109,17 @@ dotnet run --project tools/CrystalBench.Tests -- --batch-qa ../VBToCSharp/HomeFr
 
 Optional filters: `--limit N`, `--from-id N`, `--to-id N`. The pack path defaults to `../VBToCSharp/HomeFront/FlexKitTester/Data/CrystalSamples.db` (`CRYSTAL_TEST_SAMPLE_DB` overrides it). Each report runs in its own process with a 40-second limit.
 
+To refresh one report's synthetic rows after a converter change (does not renumber the catalog):
+
+```sh
+dotnet run --project tools/CrystalSamples.Seed -- worker Reports <relative.rpt> <sha256> /tmp/capture.json
+dotnet run --project tools/CrystalSamples.Seed -- install-capture <CrystalSamples.db> /tmp/capture.json
+```
+
+`install-capture` accepts a Review or Rendered capture only. Back up the pack first.
+
 ## What remains
 
-The full pack of 530 reports was converted, classified, and screenshotted. Nothing was skipped.
+The full pack of 530 reports was converted, paginated, and screenshotted. Nothing was skipped and nothing is blocked.
 Screenshots show native conversion and synthetic-sample pagination. Matching original Crystal output still needs the same data, parameters, fonts, and page setup.
+#486 still reports an array-subscript diagnostic inside `{@Index Display While Do}` with this short synthetic index. Charts and cross-tabs remain placeholders.
