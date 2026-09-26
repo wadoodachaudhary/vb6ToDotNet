@@ -2,7 +2,8 @@
 
 Cloud batch of the FlexKitTester sample pack on 2026-09-26 (UTC), follow-up to the 2026-09-25 run.
 Engine: native C# RPT to XML in FlexCore (`CrystalRptToXml`), then synthetic SQLite rows from `FlexKitTester/Data/CrystalSamples.db`, then C# pagination.
-Sibling revisions used for this run: FlexCore `0f3867b` on branch `cursor/crystal-page-furniture-1f97` (parent `2587807`), JavaToCSharp `a34ef9d`.
+Sibling revisions used for this run: FlexCore `2587807` plus `flexcore-page-furniture.patch` (`0f3867b`), JavaToCSharp `a34ef9d`.
+The patch could not be pushed to `wadoodachaudhary/FlexCore` from this run. Apply it on top of `2587807` before a re-run.
 Source `.rpt` files were left unchanged. No SAP Crystal runtime was used.
 
 ## Counts
@@ -67,7 +68,7 @@ Parameter fixes that unblocked runtime failures:
 
 ## Runtime mitigations
 
-Two FlexCore layout changes in `0f3867b` (`cursor/crystal-page-furniture-1f97`). Designed page headers and footers that already fill the page still raise Crystal's "page area too large" error.
+Two FlexCore layout changes in `flexcore-page-furniture.patch` (`0f3867b`, parent `2587807`). Designed page headers and footers that already fill the page still raise Crystal's "page area too large" error.
 
 - Page-header growth is clipped to the designed section height when an inline subreport would otherwise consume the page. #248 `crptDetails.rpt` and #249 `crptSubReport.rpt` are Review with that diagnostic. The subreport in the page header is clipped; the body still prints.
 - Physical page replay no longer aborts when a while-printing formula throws. The fault is recorded as a field diagnostic, the same way `Format()` already did. #486 `TOCv8.rpt` is Review: `{@Index Display While Do}` indexes past the index array because the While loop stops on string length 250 and the short synthetic index never reaches that length. That formula behavior is inherent to this sample size.
@@ -97,7 +98,11 @@ JavaToCSharp/tools/CrystalBench.Tests/
 JavaToCSharp/tools/CrystalSamples.Seed/
 ```
 
-`FlexKitTester.csproj` references `../../FlexCore`. `CrystalBench.Tests` and `CrystalSamples.Seed` reference `../../../VBToCSharp/HomeFront/FlexKitTester`. Run the harness from `JavaToCSharp` so `Reports/` resolves. Use FlexCore `0f3867b` (`cursor/crystal-page-furniture-1f97`) or later so #248, #249, and #486 stay unblocked.
+`FlexKitTester.csproj` references `../../FlexCore`. `CrystalBench.Tests` and `CrystalSamples.Seed` reference `../../../VBToCSharp/HomeFront/FlexKitTester`. Run the harness from `JavaToCSharp` so `Reports/` resolves. Apply `FlexKitTester/crystal-qa-cloud/flexcore-page-furniture.patch` on FlexCore `2587807` so #248, #249, and #486 stay unblocked:
+
+```sh
+git -C /path/to/FlexCore apply /path/to/FlexKitTester/crystal-qa-cloud/flexcore-page-furniture.patch
+```
 
 ```sh
 dotnet build VBToCSharp/HomeFront/FlexKitTester/FlexKitTester.csproj
