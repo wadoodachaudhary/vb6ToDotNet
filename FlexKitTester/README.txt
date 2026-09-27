@@ -208,6 +208,32 @@ and Item filters together, clear one column, undo and round-trip the XLSX.
 Both pages expose snapshot and API buttons and use FlexCore controls.
 See FlexCore/docs/pdf-spreadsheet-parity-progress.md for implemented scope.
 
+Grid selection paint regression (HHM-1170)
+----------------------------------------
+The synthetic /r2qa-grid bench supports RowSelection, AllowSelect and HighlightRows
+query options; omitted selection/highlight flags keep their normal enabled defaults.
+No application database is used.
+
+verification/keyboard-selection-colors.mjs checks each animation frame for the
+correct row shade, one active-cell cue, and authored grey/purple backgrounds and
+foreground colours during horizontal navigation, at 0/400/800 ms added RTT.
+Set CASE=cell-styled and LONG_NAV=1 to cross navigation sync checkpoints.
+verification/cell-row-handoff.mjs covers rapid pointer clicks, vertical arrows,
+and pointer takeover while keyboard synchronization is pending. Its selection
+colour differs from hover so the test cannot mistake hover for selection.
+Set WORKSHEET=1 to assert the actual #e8e8e8 selected-row default over green/purple
+columns and their immediate colour restoration on every other row. The fixture
+matches worksheet CSS specificity and checks starting colours after hydration.
+Set CLICK_FIELD=Community to start selections directly in a coloured column.
+The keyboard colour suite also checks deselected rows; its inline-colour case
+disables row highlighting explicitly to verify inline style preservation.
+
+Both scripts accept BENCH_URL, LIBRARY_ROOT and OUTPUT_DIR. BASELINE_MODULE loads
+saved pre-fix code and records failures without stopping at the first latency.
+For direct FlexKit checks, build with -p:UseFlexKit=true and set LIBRARY_ROOT to
+the FlexKit source folder. The pointer-selection-latency.mjs regression also
+loads the current module directly to avoid stale compressed static assets.
+
 TreeGrid editing and hierarchy bench
 -----------------------------------
 Open /flexcore-controls/tree-grid-operations for inline/dialog/batch drafts,

@@ -75,6 +75,15 @@ lists each failure, and manifest.json contains original paths and verified hashe
 These are execution blockers (including synthetic-data problems), not 52 failed
 native extractions. Copies are excluded from the seed corpus enumeration.
 
+**2026-09-25:** after the blocked-52 engine fixes (FlexCore 344af31 and 0a473d8), the pack
+was regenerated with `build` and `verify` against FlexCore and installed here. All 530 reports
+now reach pagination: 220 Rendered, 310 Review, 0 Blocked. All 52 former blockers run on the
+bench (14 Rendered, 38 Review). Review means it paginates with a caveat: text measurement
+unavailable offline, chart/cross-tab placeholders, synthetic rows that miss a report's filters
+(#12, #15, #33, #124), #281's uncompilable custom function, #248's clipped page-header subreport.
+The previous pack is kept as `CrystalSamples-2026-09-23-backup.db` beside the regenerated one in
+the regenerating session's `crystal-pack` folder.
+
 Detailed diagnosis, prioritized triage and exact commands for another LLM are in
 `JavaToCSharp/Reports/BLOCKED-REPORTS-HANDOFF.md`. Report #1 is not one of the 52
 terminal failures: it previously completed with an unsupported cross-tab. Its

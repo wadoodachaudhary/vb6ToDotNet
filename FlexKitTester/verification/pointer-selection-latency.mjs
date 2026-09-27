@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const base = process.env.BENCH_URL || 'http://127.0.0.1:5299';
 const output = process.env.RESULTS_DIR || '/tmp/flexcore-pointer-selection';
 const baseline = process.env.BASELINE_MODULE;
+const library = process.env.LIBRARY_ROOT || fileURLToPath(new URL('../../../FlexCore/', import.meta.url));
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const results = [];
@@ -24,10 +26,8 @@ async function openBench(path, width = 1400) {
         socket.onMessage(message => setTimeout(() => server.send(message), delay));
         server.onMessage(message => setTimeout(() => socket.send(message), delay));
     });
-    if (baseline) {
-        const original = await readFile(baseline, 'utf8');
-        await page.route('**/grid-control.js*', route => route.fulfill({ contentType: 'text/javascript', body: original }));
-    }
+    const source = await readFile(baseline || join(library, 'wwwroot/grid-control.js'), 'utf8');
+    await page.route('**/grid-control.js*', route => route.fulfill({ contentType: 'text/javascript', body: source }));
     await page.goto(base + path);
     await page.waitForTimeout(700);
     return { page, errors, setDelay: value => { delay = value; } };
