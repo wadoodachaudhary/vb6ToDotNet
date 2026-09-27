@@ -6,6 +6,7 @@ same staging-clone identity — so say so in the hand-off note if it matters.
 
 | When (EDT) | hyphen-pb main | homefront | flexkit (FlexKit) | flexcore GitHub (FlexCore → nuget.org) | R1-UAT | Local commits | Notes |
 |---|---|---|---|---|---|---|---|
+| 09-27 00:08 | 161809c | f9ce0c2 | 99fe9a9 (0.1.108) | 7b0cfdd (0.2.48 NOT published — still held) | ca518c4 frozen | app 1fbb5e5 (notes; de17e8d HHM-1157 rename cap + dialog containment shipped from the same tree); FlexKit 51d62fa (HHM-1170 cell-mode selection stops covering authored column colours, 0.1.108) over 6b41bd9; FlexCore 6c22b4a (mirror) over 400d41b; outer 5cbc219 (skill extension) + 44b980b (FlexKitTester HHM-1170 benches, Crystal bench notes) | owner asked to finish the UpdateRepositories skill, then update the repositories and merge/close any open MRs. Skill grew four reference files (merge-requests, nuget-and-versions, flexkit-flexcore-sync, verification, handoff) + hard rules 10-13. Review wv4458p4v (3 lenses + adversarial verify) landed BEFORE the push: 9 confirmed, all info, 7 refuted — fixed the four that were cheap and clearly right (vb6-windows theme + four `var()` fallbacks still on the pre-fix #f5f5f5; `setRowPreview`'s cell branch never drained `paintedPreviewEls` on the preview-off path the keyboard callers use; `restoreSelectedLook` never cleared `data-fx-selection-muted`). 27/27 harnesses, 5 builds clean, bench re-run 0 failures at 0/400/800 ms RTT. No teammate commits to take (every one already in our trees). MR !41 CLOSED, not merged — all four of its tickets are on main and merging would have put back its unconditional HHM-1159 DELETE. Zero open MRs now. |
 | 09-26 02:17 | 4a6d61f | 5052586 | feb0d80 (0.1.107) | f4de318 (0.2.48 NOT published — still held) | ca518c4 frozen | app dff7e97 (`--pull` Deepika 601603f 438cad9 60dfe16, Irfan 98677c6 — fast-forward, no conflicts), 6a58c4b (R2-QA HHM-1165..1170/1172 worksheet + picker, Codex report-import reconversion, ship-review fixes); FlexKit 36885e8 (Crystal formula rewrite + blocked-52, FlexCore 0a473d8 ported, HHM-1132/1157/1170/901, GridColumn.DisplayFormatter); FlexCore fa8011c (mirror) | owner asked: verify R2-QA Dev Review + bring in the FlexCore reporting code. Review wf_0398afff-2e1 landed BEFORE the push: 8 confirmed (picker date filter/checklist, duplicate rows uncosted, dropdown focus 2 RTT + dispose leak, cell-mode keypress flash, price batch overwrite, Sales Pricing menu hidden) — all fixed. flexcore staging clone reset to origin/main 0a473d8 (the Crystal session had pushed the source repo to GitHub); the push re-stripped docs/ and tests/ from GitHub main. 12 stale self-history REVERT flags acked in preflight-ack.txt. |
 | 09-23 17:19 | 316afba | 9f4fca6 | 0ff5af6 (0.1.106) | 4566b0e (0.2.48 NOT published — held) | ca518c4 frozen | app 8e10e6d (revert MR !39 — owner had closed it 09-21), 3f3df5d (wizard harness, 15 wizards), b021eb1 (MR !41 HHM-922/964/1159/1161), 6272974 (HHM-1159 DELETE gated on saved keys), 7822dee (Codex Reports → Manage + "Convert to Open XML" label); FlexKit b4e1978; FlexCore 99821fa | held three times for live Codex sessions (Crystal reader, report manager, record-161 fix; last quiet 16:51). Reviews before the push: wf_06f8c26a-ce4 (!41: HHM-1159 DELETE could wipe a live row's saved record — fixed, verified 3 rounds), wf_48805d75-d75 + wf_02a1512f-0d0 + wf_2ae6ecc6-545 (Crystal reader + Reports → Manage: security/data-loss and library defects — owner: "just ship it", report work is not QA's focus). NuGet publish of FlexCore 0.2.48 HELD until the confirmed library defects are fixed (a publish is permanent). No teammate commits; MR !41 taken. |
 | 09-23 08:56 | 22b5713 | 2261abc | 243ca03 (0.1.105) | eccf524 (0.2.47 published, listed 09:04 — indexing lagged past the script's 6-min wait) | ca518c4 frozen | app 46c383a (`--pull` Irfan a42eb60, Deepika 6b9507b — fast-forward, no conflicts), 3d6f63b (Baaria MR !40 HHM-1100), 9174ec2 (Codex wizard/WizardControl batch + deleted dead pages + HHM-1156 TBD + review fixes); FlexKit 0eb4634; FlexCore 6b38787 | review wf_14d2d7a0-336 (4 dimensions + adversarial verify) landed BEFORE the push. Fixed: the filter checklist lost its full value set when Search values was cleared under a condition, so Apply stored a checked-value filter that outlived the condition (FlexKit+FlexCore); EstimateChecks asserted a constant for the disabled-Forecasting guard. Refuted after verification: deleting FRFPWizard (orphaned page, VB6 NewRFQ button never migrated), Field PO Requests removal (documented HHM-790 sunset + regression tests), TBD Ctrl+Delete (documented HHM-1156 spec). Open for the owner: Cost Forecasting disabled on all three surfaces with no owner attribution. New harness TbdAssignmentChecks (220 browser + 572 visual). |
@@ -55,6 +56,32 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
    as "open": !39, closed by the owner on 09-21 (its description asked for a real-division check first),
    was taken into main on 09-22 and had to be reverted (8e10e6d). Before taking an MR, confirm in the
    GitLab UI that it is OPEN; if the UI is unreachable, ask the owner rather than infer it from git.
+
+## Open as of 2026-09-27 00:25 (after the 09-27 deploy)
+
+- **FlexCore NuGet still held** at 0.2.48, judged on GitHub main **7b0cfdd**: the Crystal-reader defects that held
+  0.2.48 on 09-26 were not worked on in this round, so the hold stands unchanged (TslvStreamReader.LoadString decodes
+  UTF-8 where Latin-1 is needed; a dropped legacy join still renders as CROSS JOIN; ConversionDiagnostics are still not
+  surfaced at runtime). A held publish is not resumable — when it is finally published, 0.2.48 will carry every change
+  accumulated since 4566b0e, now four rounds of content.
+- **MRs: none open.** !41 (HHM-922/964/1159/1161, Baaria) was closed with a comment naming main 161809c and explaining
+  that HHM-1159 shipped as the narrower `_savedDetailKeys`/`_removedDetailKeys` variant (6272974); GitLab also reported
+  it as conflicted. The stale branches HHM-1053, HHM-1057, HHM-1057-persist-on-first-use, HHM-922-964-1159-1161,
+  festimateitems-phase-dropdown and wip/festimateitems-local-20260914 still exist with no MR behind them — deleting them
+  is the owner's call.
+- **HHM-1170 needs the owner's live retest.** The fix is verified on the FlexKitTester bench only (cell/row handoff
+  316/460/606 frames; 30 colour cases; 0 failures at 0/400/800 ms added RTT). The owner's app was not restarted, so the
+  worksheet check against the September 26 recording is still outstanding. The ticket stays in Development Review.
+- **Info findings left unfixed from review wv4458p4v** (all verified as non-defects today): cell-mode mute is CSS-only,
+  so it cannot suppress the inline `fx-selected` row paint the server writes — unreachable while cell-mode grids do not
+  set HighlightSelectedRows, but it is a latent trap for the first one that does; and `GridControl.razor.cs:765`'s
+  PersistenceKey doc comment names HomeFront (one of 14 such mentions in the library — a sweep, not a deploy fix).
+- **Still open from earlier rounds:** whether GitHub FlexCore main should carry `docs/` and `tests/` (the strip removes
+  them every deploy); Jira tickets left in Development Review (HHM-1157, HHM-1166, HHM-1138, HHM-1132); Atlassian token
+  rotation; QA login dev panel; FlexCore.Llm / FlexCore.Documents versioning.
+- **Next versions:** FlexKit >= 0.1.109 (0.1.108 burned by this round's pack), FlexCore >= 0.2.48 (unpublished).
+- **Housekeeping:** the outer repo's bench work is now committed (44b980b); `MobileSource/m/` and `MobileSource/t_rec3.sh`
+  are still untracked scratch. The deploy never pushes the outer repo — push it to GitHub by hand.
 
 ## Open as of 2026-09-26 02:20 (after the 09-26 deploy)
 
