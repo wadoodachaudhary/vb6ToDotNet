@@ -2,6 +2,7 @@
 # Fixture test for classify_file/hunks_present in scripts/_common.sh. Builds throwaway repos in a temp
 # dir; touches nothing real. Run after changing _common.sh:  bash tests/classify_fixture.sh
 set -uo pipefail
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"   # resolve before any cd: $0 is relative
 T=$(mktemp -d); export UR_D=$T/repos UR_HF=$T/src UR_H=$T/H; mkdir -p $T/H/Deploy
 git init -q --bare $T/remote.git
 git clone -q $T/remote.git $T/w 2>/dev/null; cd $T/w; git config user.email a@a; git config user.name a
@@ -43,7 +44,7 @@ sleep 1
 (cd $T/src && git config user.email o@o && git config user.name o \
   && printf 'superseded original body line\nsuperseded teammate addition line\n' > P/Sup.razor && git add P/Sup.razor && git commit -qm "pull: took teammate sup" \
   && printf 'superseded original body line\nOUR later rewrite of that addition\n' > P/Sup.razor && git commit -qam "our rewrite")
-source "$(cd "$(dirname "$0")/.." && pwd)/scripts/_common.sh"
+source "$SKILL_DIR/scripts/_common.sh"
 c=$D/hyphen-pb; fails=0
 expect() { got=$(classify_file hyphen-pb "$1" "$2" | cut -d'|' -f1); ok=FAIL; [ "$got" = "$3" ] && ok=PASS || fails=$((fails+1)); printf '  %-40s %-18s %-10s expected %-10s %s\n' "$4" "$2" "$got" "$3" "$ok"; }
 sha() { git -C $c log --format=%h --grep="^$1" -1 origin/main; }

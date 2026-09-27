@@ -235,3 +235,231 @@ The QA login page shows a live "Security Options (Dev)" panel; `ISecurityOptions
 singleton, so one anonymous "Deselect All" disables password checks for every user until the pool
 recycles. `Security__HideDevPanel=true` on the app pools closes it (and the R1-UAT "Deselect All"
 gap) but ends the owner's ADMIN sign-in shortcut, so it has not been done.
+
+<!-- APPEND to reference/rules-and-traps.md. Also amend the page header (line 3): the range is now
+     2026-08-24 to 2026-09-26. -->
+
+## Traps learned 2026-09-17 … 2026-09-26
+
+### A held NuGet publish keeps absorbing later work
+FlexCore 0.2.48 went to GitHub on 09-23 17:20 (`4566b0e`) with the publish held until five
+Crystal-reader defects were fixed (history.md:10, :76-86). FlexCore then changed three more times
+(09-25 `344af31`, `2587807`, `0a473d8`; 09-26 `fa8011c`) and was pushed again on 09-26 under the **same
+version number** (`f4de318`). `publish_flexcore.sh` packs the pushed snapshot rather than the live tree,
+but the snapshot moved: publishing 0.2.48 now ships the 09-26 content, not the content the hold was
+judged on. Two mechanics keep that invisible and make the hold unresumable:
+- `scripts/publish_flexcore.sh:40` requires the snapshot's `<Version>` to equal the live
+  `FlexCore.csproj` version — so the held number must not be bumped while held.
+- `scripts/publish_flexcore.sh:32` refuses a gate state older than 720 minutes
+  (`gate state is $age min old — run the full procedure (gate, deploy, verify) first`). A hold that
+  outlasts 12 hours can only be released by a whole fresh gate → deploy → verify round.
+
+**Tell:** a history row reading `(0.2.48 NOT published — still held)` with a later deploy row under the
+same version. **Fix:** record in the history row the GitHub sha the hold was judged on; at release time
+either re-review `git -C /Users/wadood/projects/VBToCSharp/HomeFront/Deploy/repos/flexcore log --oneline
+<hold-sha>..origin/main`, or bump and publish the current snapshot as a new version. Read the script's
+last line too: step 6 is fail-open — no nuget.org listing within 6 minutes prints `! pushed, but
+nuget.org did not list …` and still exits 0 (`:90`; hit 09-23 08:56, listed 09:04).
+
+### FlexCore's source repo can push straight to GitHub, so GitHub main is not only deploy snapshots
+The existing "FlexCore on GitHub is a deploy mirror" entry no longer holds on its own.
+`/Users/wadood/projects/VBToCSharp/FlexCore` has its own `github` remote and its `main` tracks
+`github/main`; `git -C /Users/wadood/projects/VBToCSharp/FlexCore reflog show github/main --date=iso`
+records direct pushes on 2026-09-09 (`0450fc3`) and 2026-09-25 (`2587807` 12:24, `0a473d8` 22:12), each
+preceded by a `Merge github/main into main` — which is what turns the otherwise rejected push into a
+fast-forward. `2587807`'s body: it "Restored docs/tests that deploy commits had removed on github/main
+so cloud clones keep the full tree". The 09-26 deploy stripped `docs/` and `tests/` again. GitHub main
+now interleaves both kinds of commit:
+
+```
+f4de318 Deploy flexcore — 2026-09-26 02:18
+0a473d8 fix: clip page-header subreports and soft-fail print formulas
+2587807 Merge github/main into main; keep local Crystal/R2-QA and tests
+344af31 Crystal formula engine rewrite, native RPT recovery, R2-QA grid/dropdown mirrors
+4566b0e Deploy flexcore — 2026-09-23 17:20
+```
+
+`homefront` and `flexkit` origin/main are still pure `Deploy <repo>` history (last ten commits of each).
+**Tell:** the flexcore staging clone will not fast-forward; `git -C …/Deploy/repos/flexcore reflog main
+--date=iso | grep reset:` shows a manual reset after each direct push (2026-09-06, 09-09, and 2026-09-26
+01:15 → `0a473d8`). **Fix:** confirm the commits are ours, then `git -C
+/Users/wadood/projects/VBToCSharp/HomeFront/Deploy/repos/flexcore reset --hard origin/main` before the
+run. Whether GitHub main should carry `docs/` and `tests/` is an open owner decision (history.md:69-70).
+
+### classify_file reads FlexCore's own pushed commits as teammate changes
+`unshipped_commits()` treats every non-merge commit after the last `Deploy <repo>` commit as somebody
+else's work, filtering on the subject alone — `grep -v '|Deploy '` (`scripts/_common.sh:100-104`;
+`last_deploy()` at `:96`). Since flexcore's GitHub main also carries our own source commits, preflight §5
+and gate check 2 report `REVERT`/`LOST` on lines those commits themselves superseded.
+
+**Tell:** `upstream commit(s) past our last push` on **flexcore** only, authored `wadood`, with ordinary
+feature subjects. **Fix:** verify each sha is in the source repo's own history
+(`git -C /Users/wadood/projects/VBToCSharp/FlexCore merge-base --is-ancestor <sha> HEAD`), then ack it.
+The 09-26 run did that: 12 of the 17 non-comment lines in
+`/Users/wadood/projects/VBToCSharp/HomeFront/Deploy/preflight-ack.txt` now read "FlexCore's own history
+(ancestor of source HEAD 0a473d8 == GitHub origin/main), superseded by later commits". It is a
+workaround — an acked sha can never flag again. The fix belongs in `_common.sh`: for flexkit/flexcore,
+a commit the source repo can reach is ours.
+
+### The running app writes files into the trees the deploy rsyncs
+`RUNTIME_DATA_EXCLUDE` (`tools/deploy_to_repos.sh:47-52`) covers `wwwroot/tickets/`, `wwwroot/feedback/`,
+`Logs/`, `*.log`; `ENV_CONFIG_EXCLUDE` (`:38-41`) covers `appsettings*.json` and
+`App_Data/jira-settings.json`. **`User/` is in neither.** The app writes per-user preference JSON and
+imported report definitions there — 17 files now, including other people's `User/Reports/<hash>/…/*.rpt`
+and `converted/*.xml`. They are git-ignored locally (`MobileSource/HomeFront/.gitignore:63-64`), rsync
+does not read `.gitignore`, so all 17 sit in the working trees of **both** `Deploy/repos/hyphen-pb` and
+`Deploy/repos/homefront`, off the branch only because the clone's copy of our `.gitignore` ignores
+`User/` and `git add -A` skips them — one `.gitignore` edit away from shipping customer data. Not
+hypothetical: `wwwroot/tickets/**` and `wwwroot/feedback/debug_capture.png` were tracked on both app
+mains before the 2026-08-24 exclusion.
+
+**Tell:** none — `verify_deploy.sh:97-101` uses `git status --porcelain`, which hides ignored files.
+**Check:**
+
+```bash
+for r in hyphen-pb homefront; do
+  git -C /Users/wadood/projects/VBToCSharp/HomeFront/Deploy/repos/$r ls-tree -r --name-only origin/main \
+    | grep -E '^(User/|App_Data/|wwwroot/tickets/|wwwroot/feedback/|Logs/)' \
+    | grep -v '^App_Data/jira-settings.json$'
+done
+```
+
+Only the repo-owned `App_Data/jira-settings.json` may come back. Adding `--exclude='User/'` to
+`RUNTIME_DATA_EXCLUDE` and this assertion to `verify_deploy.sh` are both still to do.
+
+### A secret is already on the pushed branches, and a grep secret-gate can pass without scanning
+`App_Data/jira-settings.json` is tracked on `hyphen-pb origin/main`, `hyphen-pb origin/R1-UAT` and
+`homefront origin/main`, and its `ApiToken` is a 192-character live Atlassian token (verified read-only:
+field names and lengths only). Rotation is a human action in Atlassian, still open. No script looks for
+it — the file appears in `scripts/` only as repo-owned (`_common.sh:23`) and in a comment in
+`publish_flexcore.sh`. The local copy is rewritten by the running app (it stores `LastSyncTime`), so it
+always looks edited without being a source change; the gate prunes `*/HomeFront/App_Data`
+(`pre_deploy_gate.sh:76-78`), which is why it does not false-block.
+
+The scan you would reach for is itself unreliable: macOS `grep`/ugrep aborts on a long alternation regex
+("exceeds complexity limits") and prints **nothing**, so `HITS=$(grep …)` read empty as clean and a push
+went ahead unscanned on 2026-09-14 (re-scanned with Python: clean — memory note
+`zsh_shell_silent_failure_traps`:50). **Fix:** scan with Python, one pattern per compile, and treat any
+tool error as FAIL, never as empty. Never print a matched value — report file, field name, length. Two
+committed secrets are outstanding and both need rotation: this `ApiToken`, and the Cognito
+`AppClientSecret` in the remote's `appsettings.Development.json` (memory note
+`deploy_never_push_env_config`) — one more reason the `appsettings*.json` exclusion never comes off.
+
+### "Not in main" is not "open" — MR state exists only in GitLab
+`git ls-remote origin 'refs/merge-requests/*/head'` lists every MR ever opened; open, closed, merged and
+merged-into-another-branch look identical. MR !39 was read as open from the refs and taken into main on
+09-22 (`afaf1b2`); the owner had closed it on 09-21 because its description asked for a check on a real
+division first, and it was reverted on 09-23 (`8e10e6d`). !35, !36 and !38 were closed too and were *not*
+reverted, so "closed MR content kept by omission" is an unrecorded state on hyphen-pb main
+(history.md:54-57, :105-107; memory note `mr_state_only_from_gitlab`). **Fix:** confirm OPEN in the GitLab
+UI first — the owner's Chrome session, or the browser pane once signed in; if neither is reachable, list
+the candidates and ask. Report "not in main", not "open", unless the UI said so, and record in the history
+row what the UI said — and, if it later proves closed, whether the owner kept or reverted it.
+
+### The outer repo's history row is never pushed
+The deploy does not push the outer `HomeFront` repo and step 12 stops at committing the row. That repo
+has a remote (`https://github.com/wadoodachaudhary/vb6ToDotNet.git`) and currently reads
+`* main cf379af [origin/main: ahead 1]` — the 09-26 history row has never left this Mac. The previous
+push was `d17b297` on 2026-09-25 12:24, made by the Crystal session bundling its bench commit, not by a
+deploy round; before that, 2026-08-09. **Fix:** push that one branch by hand after recording the row —
+`git -C /Users/wadood/projects/VBToCSharp/HomeFront push origin main` — and nothing else: the repo also
+holds 17 `claude/*` worktree branches, so `git push --all` is wrong. Whether this belongs in the routine
+is an owner decision; write the answer down either way.
+
+### One run can ship different app content to hyphen-pb and homefront
+The repos are processed hyphen-pb → homefront → flexkit → flexcore (`tools/deploy_to_repos.sh:510-517`),
+each rsyncs the **live** source at its own turn (`:710`), and only hyphen-pb packs FlexKit and runs the
+staged build (`:722-729`). That build took 16 minutes on 09-22 (history.md:12) while the gate's quiet
+window is 10 (`pre_deploy_gate.sh:20`, `QUIET="${QUIET_MINUTES:-10}"`). A session that resumes editing
+after the gate passes therefore lands on homefront, flexkit and flexcore but not on hyphen-pb: the two
+app mains diverge for that run, and FlexKit/FlexCore can ship code the staged build never compiled.
+`verify_deploy.sh` compares each clone against the gate baseline and never compares the two app branches
+with each other. **Fix:** on a long run re-check the source trees' mtimes before `▸ Done.`, and raise the
+window (`QUIET_MINUTES=20 bash …/pre_deploy_gate.sh`). A cross-repo app-tree diff — excluding
+`local-packages/`, `HomeFront.csproj`, `HomeFront.sln`, `NuGet.Config`, `appsettings*.json` — would be a
+real added check.
+
+### A harness or fixture pack encodes a premise the code later disproved
+The Crystal bench pack recorded per-report verdicts taken when 52 reports were execution blockers, and
+`JavaToCSharp/Reports/blocked-52` exists because of that premise. The 09-24/25 engine work disproved it,
+so the pack was rebuilt (`CrystalSamples.Seed build`, then `verify`) and reinstalled at
+`/Users/wadood/projects/VBToCSharp/HomeFront/FlexKitTester/Data/CrystalSamples.db` on 09-25 23:45:
+530/530 paginate — 220 Rendered, 310 Review, **0 Blocked** (`FlexKitTester/CRYSTAL-REPORTS.md:78-85`;
+memory note `crystal_blocked52_resolution`). Until that rebuild every bench number from the old pack
+described a world the library no longer lived in. Same shape in C#: on 09-23 a review found
+`EstimateChecks` asserting a constant for the disabled-Forecasting guard, so the check could not fail
+(history.md:11). **Tell:** expectations generated before the fix they are now used to judge; an assertion
+comparing a literal the test itself just set. **Fix:** regenerate the fixture against the library it will
+judge, record date and sha in its README, keep the previous pack (the 09-23 one is beside the regenerated
+pack in the regenerating session's `crystal-pack` folder), and make assertions read rendered output or
+source, never their own input.
+
+### Committing a shared file another session is editing
+FlexKit and FlexCore are normally being edited by several sessions during a round, and the deploy must
+commit them anyway. Never stage such a file wholesale and never swap one aside: on 2026-09-21 FlexKit
+`Grid/GridControl.razor.cs` was copied to HEAD for about 9 seconds while the HHM-1149 session applied its
+autofit patch to the same file; nothing was lost only because the snapshot happened to be taken 1 s after
+that patch landed (memory note `mutation_test_never_swap_shared_files`). **Fix:** commit an own-hunk
+patch — take the HEAD content, replace only your region, `git diff --no-index` (fix the `a/` `b/` paths),
+then `git apply --cached --check` and `git apply --cached`. Build HEAD-plus-that-patch in an isolated
+copy (`git archive HEAD | tar -x -C "$SP/iso"`) first. If a peer session holds the same file, message it
+with the hunk you are committing.
+
+### The scratchpad is wiped on restart
+Holds last hours, which is the exposure: the session scratchpad
+(`/private/tmp/claude-501/<project>/<session>/scratchpad`) comes back **empty** after a session restart —
+on 2026-09-23→24 a multi-agent workflow's private FlexKit workspaces, patches and baseline logs vanished
+mid-run (memory note `scratchpad_wiped_on_restart`). Agent transcripts under
+`~/.claude/projects/<project>/<session>/subagents/workflows/<run>/agent-*.jsonl` survive; a replay from
+them recovered the work byte-exact. **Fix:** while a held round has a long workflow editing files in
+scratch, copy patches and tarballs to `~/.claude/projects/<project>/<session>/<name>-backup/` every few
+minutes — no `git add` in that loop, it races the agents' index. The skill's own state files are safe:
+`.update-repositories-gate.state`, `pull-conflicts.txt` and `preflight-ack.txt` live in
+`/Users/wadood/projects/VBToCSharp/HomeFront/Deploy/`, not in scratch.
+
+### Two VB6 copies, same file name, different line numbers
+Two live VB6 trees exist and a citation is worthless unless it says which one:
+
+| Copy | Path | Role |
+|---|---|---|
+| New VB6 | `/Users/wadood/projects/VBToCSharp/HomeFront/HomeFrontVB6/{HFEst,HFSystem}/Source` | current desktop source; has features the port does not |
+| As-migrated | `/Users/wadood/projects/VBToCSharp/HomeFront/MobileSource/HomeFrontVB6/{HFEst,HFSystem/Source}` | the snapshot the Blazor migration was built from |
+
+They are not the same file with a different header. `FEstimateItems.frm` is 14263 lines in the new copy
+and 14111 in the as-migrated one; `gItems` begins at `:1336` versus `:1327`, so
+`FEstimateItems.frm:1389` is `ScrollTrack = 0 'False` in one copy and `MultiTotals = -1 'True` in the
+other. Content differs too: the new `FAssembly.frm` filters `tblcategories` on `isnull(inactive,0)=0`
+where the as-migrated copy does not. The app's `CLAUDE.md:790` points at the `MobileSource/HomeFrontVB6`
+copy; `~/.claude/CLAUDE.md` points at the project-root one. **Tell:** a quoted line whose text does not
+match the citation; two notes citing different lines for one behaviour. **Fix:** quote the line's text
+with its full path, not a bare `frm:NNNN`, and name the copy. Behaviour the port must match is the
+as-migrated copy unless the work is explicitly re-migration (memory note `vb6_source_original_vs_new` has
+the diff scope; its `HomeFrontVB6/Original/…` paths no longer exist on disk).
+
+### Design-time `.frm` / `.frx` values are real VB6 state, not placeholders
+Design-time control definitions may be reproduced literally; runtime-derived values may not
+(AGENTS.md §1). The sharpest case: a **blank** grid caption is not a missing caption, it is what hides
+the column — `FColumns.frm:367` lists a column only when `.ColKey(i) <> "" And .TextMatrix(0, i) <> ""`.
+Inventing captions for `RoundTo` and `Seq` on FEstimateItems.gItems put two columns legacy never offers
+into Choose Columns and wrote those captions into four `AppGridLayout` rows (memory note
+`full_parity_is_the_default`; owner 2026-09-20: "We are trying to achieve 100% VB6 parity nothing less or
+more … Remove HF inventions"). The same rule removed the invented `[gBillingItems FALLBACK]` marker from
+FCreateContract (VB6 `gBillingItems` is design-time only) and set gItems' `ScrollTrack="false"` from the
+`.frm` (memory note `r2qa_batch_2026_09_21`). **Citing `.frx`:** it is binary and the `.frm` references
+it by hex offset — `FormatString = $"FEstimateItems.frx":433F` at
+`HomeFrontVB6/HFEst/Source/FEstimateItems.frm:1388`. An `frx:3665` citation is a byte offset, not a line;
+quote the extracted text beside it.
+
+## Owner rules (binding, with dates) — addendum 2026-09-17 … 2026-09-26
+
+| Rule | Since |
+|---|---|
+| Grid filter / search boxes: search-as-you-type is the DEFAULT; commit-only (Enter/Tab) is opt-in via `FilterSettings.SearchAsYouType = false`. Reverses the 09-17 commit-only default. | 2026-09-18 |
+| Limit dialog boxes on the web: wizards keep their steps and pickers inside the wizard page, never a nested dialog; Work Reassignment starts on its inline vendor list. (AGENTS.md §2) | 2026-09-19 |
+| HomeFrontPB is frozen, released and deployed: no edits, no sync into it, no build, no redeploy. Supersedes the older "keep it synchronised" instructions. (AGENTS.md §4, §5) | 2026-09-19 |
+| Mass Change's Choose-Action page carries no pickers, so Next stays enabled where VB6 disables it for Add/Remove/Substitute. | 2026-09-22 |
+| Cost Forecasting stays disabled, Field PO Requests stays descoped, and the TBD wizard keeps Ctrl+Delete. VB6 does the opposite in all three; do NOT "restore parity" — EstimateChecks and WizardChecks pin them, so a failure there means someone re-added it. | 2026-09-23 |
+| Reports → Manage ships with its known defects: "just ship it" — report work is not QA's focus this round. | 2026-09-23 |
+| Hold the FlexCore NuGet publish until the Crystal-reader defects are fixed. 0.2.48 is on GitHub, unpublished. | 2026-09-23 |
+| Take MR !41 in the next update, reviewed; do not merge it in GitLab first — main is QA. | 2026-09-23 |
+| The FlexCore Crystal fix `0a473d8` was ported INTO FlexKit on owner request, confirmed 09-26. FlexCore → FlexKit still needs that explicit ask every time. | 2026-09-26 |

@@ -1,6 +1,6 @@
 ---
 name: update-repositories
-description: Deploy HomeFront, FlexKit and FlexCore to GitLab/GitHub and publish FlexCore to NuGet — the "Update Repositories" routine for this Mac. Use when the user asks to update, deploy, push or sync the repositories, check whether they are in sync, pull teammates' merge requests, or hand the work over between the Wadood and Innovatix Claude accounts.
+description: Deploy HomeFront, FlexKit and FlexCore to GitLab/GitHub and publish FlexCore to NuGet — the "Update Repositories" routine for this Mac. Covers the standing owner rules, taking and acking teammates' merge requests, the FlexKit↔FlexCore mirror, version burning and NuGet publishing (including held publishes), the verification matrix, and the two-account hand-off. Use when the user asks to update, deploy, push or sync the repositories, check whether they are in sync, pull teammates' merge requests, publish FlexCore, or hand the work over between the Wadood and Innovatix Claude accounts.
 ---
 
 # Update Repositories
@@ -32,6 +32,13 @@ Deploy and publish ONLY when the owner explicitly asks to update/deploy the repo
 "Check whether the repositories are in sync — do not update" means: run `preflight.sh` (step 1) and
 report; change nothing. A message asking for details or fixes does not authorise a push or a publish.
 
+## Cold start
+
+New account, or first run of the week? Read [reference/handoff.md](reference/handoff.md) first: both
+accounts share `~/.claude`, the memory store is pinned per repo root (and three roots load nothing without
+that pin), and it carries the day-one / end-of-week checklists, the Jira conventions and the machine-local
+prerequisites git does not carry (keychain key, FlexKit feed, Playwright, the owner's own ports).
+
 ## Hard rules
 
 1. **Working trees ship, uncommitted edits included — by design** (owner 2026-08-28). Never gate on a
@@ -61,10 +68,35 @@ report; change nothing. A message asking for details or fixes does not authorise
    a source tree — it ships as-is.
 9. The dev login-skip (`Services/DevAutoLogin.cs`) stays **working locally** and **absent from every
    pushed branch** — the script strips it from staging clones only. Never delete it locally.
+10. **An MR's state comes only from the GitLab UI.** `refs/merge-requests/N/head` exists for open, closed
+    and merged alike. Reading "open" from git shipped closed MR !39 on 09-22; the owner had closed it on
+    09-21 and it was reverted on 09-23. Say "not in main", not "open", unless the UI said so — and an MR's
+    content only survives in main once it exists in OUR source tree (a teammate's merge we do not hold is
+    overwritten by our own rsync). [reference/merge-requests.md](reference/merge-requests.md).
+11. **Bench work needs the owner's own go-ahead.** Anything developed FlexKitTester → FlexCore stays there
+    until the owner has tested it on the bench and says go; only then may FlexKit change and ship. FlexKit
+    feeds every host app on ProjectReference, so an unapproved port lands everywhere on the next build.
+12. **Scan for secrets before the push, and never trust a silent scan.** macOS `grep` aborts on a long
+    alternation and prints nothing, so `HITS=$(grep …)` reads empty as clean — that happened on 09-14. Scan
+    with Python, one pattern per compile, and treat any tool error as FAIL. A secret already tracked on a
+    pushed branch (the live Atlassian token in `App_Data/jira-settings.json`) is an owner decision, not
+    something to fix mid-round: report it and do not make it worse.
+13. **A held publish stays held until the owner lifts it**, and it is not resumable: `publish_flexcore.sh`
+    refuses a gate state older than 720 minutes, and a held version keeps absorbing later rounds' content
+    under the same number. Record the GitHub sha the hold was judged on.
+    [reference/nuget-and-versions.md](reference/nuget-and-versions.md).
 
-Every trap with its tell: [reference/rules-and-traps.md](reference/rules-and-traps.md). Past runs and what
-is open: [reference/history.md](reference/history.md). When updating either, edit the canonical copy
-(absolute path above) — the installed copy is read-only.
+Reference pages (edit the canonical copy — the installed one is read-only):
+
+| Page | What it answers |
+|---|---|
+| [rules-and-traps.md](reference/rules-and-traps.md) | every trap with its tell, and the dated owner rules |
+| [history.md](reference/history.md) | every past run, the lessons, and the current "Open as of" list |
+| [merge-requests.md](reference/merge-requests.md) | MR state, authorship, taking one, acking, who closes |
+| [flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md) | the mirror: identity, direction, port-not-copy, parity, build matrix |
+| [nuget-and-versions.md](reference/nuget-and-versions.md) | burning, the FlexKit feed, the package, publishing, held publishes |
+| [verification.md](reference/verification.md) | the evidence matrix: harnesses, browser suites, report suites, consumer builds |
+| [handoff.md](reference/handoff.md) | cold start, memory pinning, day-one / end-of-week, Jira, machine-local setup |
 
 ## Procedure
 
@@ -160,14 +192,19 @@ Done when preflight shows no `REVERT`/`ABSENT`/`RESURRECT`/`HANDMERGE`/`LOST` li
 
 `git diff` in the app, FlexKit and FlexCore. Look for: half-finished edits; an unknown Razor component
 attribute (compiles, then throws at runtime); a FlexKit change without its FlexCore port (compare the two
-libraries' diffs file by file); library code that names HomeFront; secrets. For a large diff run a parallel
-review first — and apply rule 6 while it runs.
+libraries' diffs file by file, and grep every ported file for `_content/FlexKit/` — assembly-scoped paths
+compile and fail at runtime); library code that names HomeFront; a bench port the owner has not approved
+(rule 11); secrets (rule 12). For a large diff run a parallel review first — and apply rule 6 while it runs.
+Mirror mechanics and the parity command: [reference/flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md).
 
 ### 5. Bump versions (before any dry run)
 
 - `FlexKit/FlexKit.csproj` `<Version>` — bump if FlexKit changed (code or asset) and its version is burned.
 - `FlexCore/FlexCore.csproj` `<Version>` — bump above nuget.org's latest if FlexCore changed.
   (`FlexCore.Llm.csproj` and `FlexCore.Documents.csproj` carry their own versions; neither is published.)
+
+Re-check both numbers against reality here, not from memory — the gate does not check FlexCore's at all:
+[reference/nuget-and-versions.md](reference/nuget-and-versions.md).
 
 ### 6. Build — serially
 
@@ -178,7 +215,7 @@ dotnet build ../FlexCore.Showcase/FlexCore.Showcase.sln --no-incremental -v q -n
 
 Each must print `0 Error(s)`. If FlexCore changed, also build its other consumers one at a time (owner
 2026-09-14): Mutarjim, GhostWriter, DotNetCCM. Concurrent builds of one library race on its `obj/`. Never
-build `HomeFrontPB.sln`.
+build `HomeFrontPB.sln`. Full matrix: [reference/flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md).
 
 ### 7. Run the harnesses
 
@@ -189,15 +226,20 @@ bash Docs-Skill/UpdateRepositories/scripts/run_harnesses.sh
 All must pass — a green build proves nothing about them (csproj-excluded, reflection-based). Browser-driven
 fixture hosts (`Sdk="Microsoft.NET.Sdk.Web"`, e.g. InputDialogBrowserChecks) are skipped and listed; run one
 by hand per its README when its area changed. If a harness fails, decide whether it is stale against an
-intended change or the code regressed, and say which. If `Reports/*` changed in FlexKit or FlexCore, also run
-the suites in `/Users/wadood/projects/JavaToCSharp/tools/ReportDesigner.*` (their READMEs give the
-arguments; FlexCore via `-p:ReportSourceDir=/Users/wadood/projects/VBToCSharp/FlexCore/Reports`).
+intended change or the code regressed, and say which.
+
+`run_harnesses.sh` runs the C# half only. The browser suites, the ReportDesigner suites (run these when
+`Reports/*` changed in either library), the Crystal bench pack, FlexCore's own suites and the consumer
+builds are all in [reference/verification.md](reference/verification.md), with the exact commands — several
+of those suites drive the OWNER'S live instance and need his say-so first.
 
 ### 8. Commit each repository
 
 The app is a **nested** repo (`MobileSource/HomeFront`); FlexKit on `telerik-parity-20260904`; FlexCore on
 `main`; the outer `HomeFront/` repo for `tools/` and `Docs-Skill/`. Describe other sessions' work from their
 own CLAUDE.md sections and results files, not guesses. Never commit HomeFrontPB; leave scratch untracked.
+If another session is editing a file you must commit, stage only your own hunk (write the patch against
+`git show HEAD:<path>` and `git apply --cached`) rather than committing their work in progress.
 
 ### 9. Gate, dry run, gate, deploy
 
@@ -253,6 +295,10 @@ the package has FlexCore.dll + README and no FlexCore.Llm, agent notes, docs or 
 a push without "Your package was pushed" as failure; then waits for nuget.org to list the version. The key
 comes from the keychain inside the command and is never printed.
 
+If the publish is **held** (rule 13), say so in the record with the version, the GitHub sha the hold was
+judged on, and what must be fixed to lift it. Indexing can outlast the script's 6-minute wait — confirm the
+listing before recording it as published. [reference/nuget-and-versions.md](reference/nuget-and-versions.md).
+
 ### 12. Record it for the other account
 
 Two Claude accounts (Wadood, Innovatix) alternate weeks on this Mac and share one memory store.
@@ -261,8 +307,13 @@ Two Claude accounts (Wadood, Innovatix) alternate weeks on this Mac and share on
   teammate commits merged, what is open or deliberately not done.
 - Append a row to
   `/Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skill/UpdateRepositories/reference/history.md`
-  (the canonical copy — the installed one is read-only), commit it in the HomeFront repo, then run
+  and refresh its "Open as of" block (the canonical copy — the installed one is read-only), commit it in the
+  HomeFront repo **and push that repo if it has a remote**, then run
   `bash /Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skill/UpdateRepositories/install.sh`.
+- Give each library's `CLAUDE.md` a dated section for this round's own ship-review fixes — both, since the
+  port is byte-identical.
+- Jira moves belong to the hand-off, not the deploy, and only when the owner asks: see
+  [reference/handoff.md](reference/handoff.md).
 
 ## Stop and ask the owner when
 
@@ -271,9 +322,18 @@ Two Claude accounts (Wadood, Innovatix) alternate weeks on this Mac and share on
   conflicts with something we changed on purpose (record the decision in `preflight-ack.txt`);
 - a harness fails and it is unclear whether the code or the harness is wrong;
 - a review of the shipping diff is still running when everything else is ready;
-- the request would touch R1-UAT, HomeFrontPB, a secret, or someone else's merge request.
+- the request would touch R1-UAT, HomeFrontPB, a secret, or someone else's merge request;
+- a FlexKit diff turns out to be an unapproved bench port (rule 11) — holding costs a day, shipping it
+  costs every host app;
+- an MR's state cannot be read in the GitLab UI: list the candidates and ask, never decide from git refs;
+- a publish is held and the hold's conditions are not demonstrably met.
 
 ## Maintaining this skill
 
-Scripts share `scripts/_common.sh`. After changing it or the gate, run
-`bash tests/classify_fixture.sh` and `bash tests/gate_fixture.sh` (throwaway repos; touch nothing real).
+`preflight.sh`, `pre_deploy_gate.sh` and `verify_deploy.sh` share `scripts/_common.sh`; `run_harnesses.sh`
+and `install.sh` stand alone. After changing `_common.sh` or the gate, run `bash tests/classify_fixture.sh`
+and `bash tests/gate_fixture.sh` (throwaway repos; they touch nothing real).
+
+Keep this skill current in the same round as the lesson: a trap that lives only in a transcript is lost at
+the hand-off. Every claim here carries its evidence — a commit, a script line, a dated owner directive or a
+memory note — so the next reader can check it rather than trust it.
