@@ -49,6 +49,13 @@ else
     echo "WARN: app user-secrets not written (no UserSecretsId or SA password)"; status=1
 fi
 
+# Teammates' merged GitLab work (needs HF_GITLAB_TOKEN). Its problems are reported, not
+# fatal: the session can still work, and resolves any ATTENTION lines first.
+if [ $status -eq 0 ]; then
+    bash "$HERE/teammates.sh"; rc=$?
+    [ $rc -eq 0 ] || echo "WARN: teammates' GitLab work not fully in (teammates.sh exit $rc; see above)"
+fi
+
 if [ $status -eq 0 ]; then
     date > "$READY"
     echo "HomeFront cloud session ready: app $APP, FlexKit $FLEXKIT, HOMEFRONTSQL on localhost,1433."

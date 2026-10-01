@@ -23,6 +23,12 @@ the Mac with the `/update-repositories` skill.
    - **Environment variables**: `HF_CLOUD=1` (plus `ASPNETCORE_ENVIRONMENT=Development` if you like;
      the launch profile sets it too). No password is needed: the SA password is generated
      inside each sandbox.
+   - **`HF_GITLAB_TOKEN`**: a GitLab token with only `read_repository` that can read
+     `application-modernization/hyphen-pb` and `flexkit` (a group access token with the Reporter
+     role, or a personal access token). It lets each session bring in teammates' merged work.
+     It cannot push, and the cloud never pushes to GitLab.
+3. Connect the **Atlassian** connector at claude.ai/customize/connectors (Jira reads; writes only
+   on the owner's explicit request).
    - **Setup script**:
      ```bash
      curl -fsSL https://raw.githubusercontent.com/wadoodachaudhary/vb6ToDotNet/main/tools/cloud/environment-setup.sh | bash
@@ -37,6 +43,12 @@ the Mac it does nothing. `session-start.sh`:
 - places the app and FlexKit in the Mac's layout (from the setup cache), fast-forwarding them to GitHub;
 - starts SQL Server and restores `HOMEFRONTSQL` (`db.sh`, checksum-verified);
 - writes the app's `Database:Password` user-secret;
+- runs `teammates.sh`: fetches GitLab `hyphen-pb` main and `flexkit` main (read-only) and
+  merges teammates' work since the last deploy into the app's `main` and FlexKit's
+  `telerik-parity-20260904`, file by file as `deploy_to_repos.sh --pull` does. Branch-owned files
+  and deletions are only reported. Clean results are built and pushed to the GitHub mirrors;
+  conflicts stay local with an `ATTENTION` line for the session to resolve. Each sync records a
+  `GitLab-Synced: <repo> <sha>` trailer, so the same work is never merged twice;
 - touches `/tmp/hf-cloud-ready` (log: `/tmp/hf-cloud-start.log`).
 
 Query the database with `bash tools/cloud/sql.sh "SELECT ..."`. It never prints the password.
@@ -54,18 +66,32 @@ answers "you don't have access", the Claude GitHub App is not installed on HomeF
 FlexKit yet (step 1 above). Release assets are fetched through the REST API, because
 `gh release download` uses GraphQL, which cloud sessions refuse.
 
-## Getting cloud work back to the Mac
+## Jira tickets: cloud fixes, Mac tests
 
-The cloud pushes the app to GitHub `HomeFront` main and FlexKit to GitHub `telerik-parity-20260904`.
-On the Mac the app and FlexKit repos each have a `github` remote:
+The `jira-ticket` skill (`.claude/skills/jira-ticket`) is the cloud routine: read the ticket
+through the Atlassian connector, branch `jira/<KEY>` from the current main branch in each repo
+the fix touches, verify, push the branch to GitHub, and report. Fixes never go straight to
+`main` or `telerik-parity-20260904`.
+
+On the Mac (the app and FlexKit each have a `github` remote):
+
+```bash
+bash tools/cloud/ticket.sh list            # ticket branches on GitHub, merged or still to test
+bash tools/cloud/ticket.sh test HHM-1234   # check out jira/HHM-1234 in the app and/or FlexKit
+bash tools/cloud/ticket.sh accept HHM-1234 # merge into main / telerik-parity-20260904, push to GitHub
+bash tools/cloud/ticket.sh back            # return both repos to their main branches
+```
+
+Teammates' merges reach the GitHub mirrors through `teammates.sh`, so before deploying pull them
+too (`/update-repositories` then judges teammate work by content, so nothing is applied twice):
 
 ```bash
 git -C MobileSource/HomeFront pull --ff-only github main
 git -C ../FlexKit pull --ff-only github telerik-parity-20260904
 ```
 
-Pull both before deploying, or a GitLab push will not contain the cloud work. Cloud database
-changes stay in that sandbox and are never written back to the Mac.
+Every FlexKit change still needs its FlexCore port on the Mac. Cloud database changes stay in
+that sandbox and are never written back to the Mac.
 
 ## Refreshing the database copy
 
