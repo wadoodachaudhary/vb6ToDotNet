@@ -7,13 +7,16 @@
 #
 #   bash pre_deploy_gate.sh               # normal push
 #   bash pre_deploy_gate.sh --with-r1uat  # the run will also deploy R1-UAT
+#   bash pre_deploy_gate.sh --with-r2uat  # the run will also merge main into R2-UAT
 #   QUIET_MINUTES=20 bash pre_deploy_gate.sh
 set -uo pipefail
 
 WITH_R1UAT=false
+WITH_R2UAT=false
 for a in "$@"; do
   case "$a" in
     --with-r1uat) WITH_R1UAT=true ;;
+    --with-r2uat) WITH_R2UAT=true ;;
     *) echo "✗ unknown argument '$a' (deploy_to_repos.sh would silently ignore a typo like this and push for real)"; exit 2 ;;
   esac
 done
@@ -112,6 +115,8 @@ if [ $BLOCK = 0 ]; then
   {
     echo "time=$(date +%s)"
     echo "with_r1uat=$WITH_R1UAT"
+    echo "with_r2uat=$WITH_R2UAT"
+    echo "hyphen-pb.r2uat=$(git -C "$D/hyphen-pb" rev-parse origin/R2-UAT 2>/dev/null)"
     for r in hyphen-pb homefront flexkit flexcore; do echo "$r.origin=$(git -C "$D/$r" rev-parse origin/main)"; done
     echo "hyphen-pb.r1uat=$(git -C "$D/hyphen-pb" rev-parse origin/R1-UAT 2>/dev/null)"
     echo "flexkit.version=$ver"

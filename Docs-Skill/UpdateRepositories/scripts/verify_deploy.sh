@@ -94,6 +94,24 @@ else
   else note "frozen — not deployed (head $(git -C "$D/hyphen-pb" rev-parse --short origin/R1-UAT))"; fi
 fi
 
+hdr "R2-UAT"
+WITH_R2UAT=$(state with_r2uat); WITH_R2UAT=${WITH_R2UAT:-false}
+now_r2=$(git -C "$D/hyphen-pb" rev-parse origin/R2-UAT 2>/dev/null); was_r2=$(state hyphen-pb.r2uat)
+if [ "$WITH_R2UAT" = true ]; then
+  if git -C "$D/hyphen-pb" merge-base --is-ancestor origin/main origin/R2-UAT 2>/dev/null; then good "R2-UAT contains main ($(git -C "$D/hyphen-pb" rev-parse --short origin/main))"
+  else bad "R2-UAT does NOT contain origin/main — the merge did not land"; fi
+  r2login=$(git -C "$D/hyphen-pb" cat-file blob origin/R2-UAT:Components/Pages/Migrated/FLogin.razor 2>/dev/null)
+  n2=0; for t in EnforceAuth EncryptDbConnection EnforcePasswordCheck GetPasswordFromSystemSecrets; do
+    printf '%s\n' "$r2login" | grep -q "@bind-Checked=\"Sec.$t\" Disabled=\"true\"" && n2=$((n2+1)); done
+  if [ "$n2" -eq 4 ] && printf '%s\n' "$r2login" | grep -q 'Sec.EncryptDbConnection = false;'; then good "lockdown intact (4/4 toggles disabled, EncryptDbConnection forced off)"
+  else bad "R2-UAT lockdown broken ($n2/4 toggles)"; fi
+  git -C "$D/hyphen-pb" cat-file blob origin/R2-UAT:azure-pipelines-uat.yml 2>/dev/null | grep -q -- '- R2-UAT' && good "UAT pipeline triggers on R2-UAT" || bad "azure-pipelines-uat.yml no longer triggers on R2-UAT"
+  if git -C "$D/hyphen-pb" grep -I -i -q -e devautologin origin/R2-UAT -- ':!*.md' 2>/dev/null; then bad "R2-UAT carries the dev login-skip"; else good "R2-UAT: no login skip"; fi
+else
+  if [ -n "$was_r2" ] && [ "$now_r2" != "$was_r2" ]; then note "not deployed by this run; it moved since the gate (teammates push here directly) — head $(git -C "$D/hyphen-pb" rev-parse --short origin/R2-UAT 2>/dev/null)"
+  else note "not deployed this run (head $(git -C "$D/hyphen-pb" rev-parse --short origin/R2-UAT 2>/dev/null))"; fi
+fi
+
 hdr "Staging clones handed back clean and on main"
 for r in hyphen-pb homefront flexkit flexcore; do
   br=$(git -C "$D/$r" branch --show-current); dirty=$(git -C "$D/$r" status --porcelain | wc -l | tr -d ' ')

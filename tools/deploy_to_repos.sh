@@ -135,11 +135,15 @@ DRY_RUN=false
 # R1-UAT is FROZEN (owner 2026-09-12: "R1-UAT is frozen"). A push run no longer
 # deploys it; --with-r1uat deploys it for that one run, only when the owner asks.
 WITH_R1UAT=false
+# R2-UAT is the live UAT branch (owner 2026-10-01). --with-r2uat merges the main this run pushed
+# into it; see deploy_r2uat. Opt-in per run, like --with-r1uat.
+WITH_R2UAT=false
 for arg in "$@"; do
     case "$arg" in
         --pull)   MODE="pull" ;;
         --dry-run) DRY_RUN=true ;;
         --with-r1uat) WITH_R1UAT=true ;;
+        --with-r2uat) WITH_R2UAT=true ;;
     esac
 done
 
@@ -867,10 +871,90 @@ deploy_r1uat() {
     git -C "$git_dir" checkout main --quiet
 }
 
+# R2-UAT (owner 2026-10-01: "R1 is now R2 -- so we have to do what we were doing with R1 there
+# as well"). The branch is main plus two branch-owned edits a teammate maintains: the UAT login
+# lockdown in Components/Pages/Migrated/FLogin.razor and azure-pipelines-uat.yml's trigger. It is
+# fed from the SAME snapshot this run pushed to main -- never from HomeFrontPB -- by MERGING
+# origin/main into it, so a teammate's direct push to R2-UAT is kept and nothing is overwritten.
+# Any conflict, a lost lockdown, a retargeted pipeline or a failed build stops the stage unpushed.
+deploy_r2uat() {
+    local git_dir="$DEPLOY/hyphen-pb"
+
+    # Always hand the clone back on main with no half-finished merge, on every exit path.
+    trap 'git -C "'"$DEPLOY"'/hyphen-pb" merge --abort 2>/dev/null; git -C "'"$DEPLOY"'/hyphen-pb" checkout main --quiet 2>/dev/null || true' RETURN
+
+    git -C "$git_dir" fetch origin --quiet
+    if ! git -C "$git_dir" rev-parse --verify --quiet origin/R2-UAT >/dev/null; then
+        err "R2-UAT: origin/R2-UAT does not exist -- not deployed"
+        return 1
+    fi
+    local ahead
+    ahead=$(git -C "$git_dir" rev-list --count origin/R2-UAT..origin/main)
+    log "R2-UAT: merging origin/main ($ahead commit(s) ahead) into hyphen-pb R2-UAT"
+    if $DRY_RUN; then
+        ok "DRY RUN -- main's new snapshot is not pushed in a dry run, so this only checks origin/main as it stands"
+    fi
+    if [ "$ahead" -eq 0 ]; then
+        ok "R2-UAT already contains main -- nothing to push"
+        return 0
+    fi
+
+    if ! git -C "$git_dir" checkout -B R2-UAT origin/R2-UAT --quiet; then
+        err "R2-UAT: could not check the branch out -- not deployed"
+        return 1
+    fi
+    if ! git -C "$git_dir" merge --no-ff --no-commit origin/main >/dev/null 2>&1; then
+        err "R2-UAT: merging main CONFLICTS -- not pushing. Resolve on the branch, then re-run. Conflicted:"
+        git -C "$git_dir" diff --name-only --diff-filter=U | sed 's/^/      /'
+        return 1
+    fi
+
+    local flogin="$git_dir/Components/Pages/Migrated/FLogin.razor" t missing=""
+    for t in EnforceAuth EncryptDbConnection EnforcePasswordCheck GetPasswordFromSystemSecrets; do
+        grep -q "@bind-Checked=\"Sec.$t\" Disabled=\"true\"" "$flogin" 2>/dev/null || missing="$missing $t"
+    done
+    grep -q 'Sec.EncryptDbConnection = false;' "$flogin" 2>/dev/null || missing="$missing EncryptDbConnection=false"
+    if [ -n "$missing" ]; then
+        err "R2-UAT security lockdown lost (${missing# }) -- not pushing"
+        return 1
+    fi
+    ok "Lockdown intact (4 disabled toggles, EncryptDbConnection forced off)"
+
+    if ! grep -q -- '- R2-UAT' "$git_dir/azure-pipelines-uat.yml" 2>/dev/null; then
+        err "R2-UAT: azure-pipelines-uat.yml no longer triggers on R2-UAT -- not pushing"
+        return 1
+    fi
+    ok "UAT pipeline still triggers on R2-UAT"
+
+    if git -C "$git_dir" grep --cached -I -i -q -e devautologin -- ':!*.md' 2>/dev/null; then
+        err "R2-UAT: the merged index carries the login-skip -- not pushing"
+        return 1
+    fi
+    ok "R2-UAT: no login skip in the merged copy"
+
+    if $DRY_RUN; then
+        ok "DRY RUN -- R2-UAT would take $ahead commit(s) from main; the merge is clean and the lockdown holds"
+        return 0
+    fi
+
+    if ! verify_build "$git_dir" "HomeFront"; then
+        err "R2-UAT build failed -- not pushing"
+        return 1
+    fi
+    git -C "$git_dir" commit -q -m "Merge main into R2-UAT -- $(date '+%Y-%m-%d %H:%M')"
+    git -C "$git_dir" push origin R2-UAT
+    ok "Pushed R2-UAT"
+}
+
 if [ "$MODE" = "push" ]; then
     if $WITH_R1UAT; then
         deploy_r1uat
     else
         log "R1-UAT: FROZEN — not deployed (pass --with-r1uat to deploy it)"
+    fi
+    if $WITH_R2UAT; then
+        deploy_r2uat || { err "R2-UAT stage failed — main and the other repositories are unaffected"; exit 1; }
+    else
+        log "R2-UAT: not deployed (pass --with-r2uat to merge main into it)"
     fi
 fi

@@ -64,7 +64,7 @@ for r in hyphen-pb homefront flexkit flexcore; do
   cur=$(git -C "$c" branch --show-current)
   om=$(git -C "$c" rev-parse --short origin/main 2>/dev/null)
   lm=$(git -C "$c" rev-parse --short main 2>/dev/null)
-  extra=""; [ "$r" = hyphen-pb ] && extra="  R1-UAT=$(git -C "$c" rev-parse --short origin/R1-UAT 2>/dev/null)"
+  extra=""; [ "$r" = hyphen-pb ] && extra="  R1-UAT=$(git -C "$c" rev-parse --short origin/R1-UAT 2>/dev/null)  R2-UAT=$(git -C "$c" rev-parse --short origin/R2-UAT 2>/dev/null) (main is +$(git -C "$c" rev-list --count origin/R2-UAT..origin/main 2>/dev/null) ahead of it)"
   printf '   %-10s on=%-8s origin/main=%-9s last-pushed=%-9s%s\n' "$r" "$cur" "$om" "$lm" "$extra"
   [ "$cur" != main ] && attn "$r staging clone is parked on '$cur', not main"
   dirty=$(git -C "$c" status --porcelain | wc -l | tr -d ' ')

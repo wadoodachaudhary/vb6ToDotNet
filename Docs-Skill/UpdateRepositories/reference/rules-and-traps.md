@@ -463,3 +463,24 @@ quote the extracted text beside it.
 | Hold the FlexCore NuGet publish until the Crystal-reader defects are fixed. 0.2.48 is on GitHub, unpublished. | 2026-09-23 |
 | Take MR !41 in the next update, reviewed; do not merge it in GitLab first — main is QA. | 2026-09-23 |
 | The FlexCore Crystal fix `0a473d8` was ported INTO FlexKit on owner request, confirmed 09-26. FlexCore → FlexKit still needs that explicit ask every time. | 2026-09-26 |
+
+## 2026-10-01 — R1 became R2: the UAT branch is live again, and fed by a merge
+
+- **Owner rule (2026-10-01):** "R1 is no more frozen as it has been renamed to R2 and we are releasing code to the
+  client on R2 branch." `hyphen-pb` `R2-UAT` is the client release line; every round runs the gate and the deploy
+  with `--with-r2uat`.
+- **How it is fed.** `R2-UAT` = `main` + two branch-owned edits a teammate maintains (the login lockdown in
+  `Components/Pages/Migrated/FLogin.razor`; `azure-pipelines-uat.yml` triggering on `R2-UAT`). `deploy_r2uat` merges
+  `origin/main` into it after main is pushed. A merge, not an rsync: teammates push to that branch directly, and a
+  merge keeps their commits where the old R1 rsync would have reset them.
+- **Trap — `--with-r1uat` is now destructive.** It still exists in the script and still rsyncs the frozen HomeFrontPB
+  tree onto `R1-UAT`, which today holds R2 code (Irfan merged main into it, 65cacba). Tell: you typed `r1` out of
+  habit. Never run it.
+- **Trap — a dry run cannot rehearse the R2 merge.** `--dry-run` does not push main, so the stage sees the old
+  `origin/main`; "already contains main" in a dry run says nothing about the real run. The fixture
+  (`tests/r2uat_fixture.sh`, 22 checks) is what proves the conflict / lockdown / pipeline / build paths.
+- **Trap — the stage runs after `Done.`** A failure there exits 1 with main, homefront, flexkit and flexcore already
+  pushed. That is by design: fix the branch and re-run; nothing on main needs undoing.
+- **A push to R2-UAT is a release.** Its pipeline file triggers on that branch. The pre-push review (rule 6) and the
+  "another session mid-work" hold apply with more force, not less.
+
