@@ -41,6 +41,13 @@ the Mac it does nothing. `session-start.sh`:
 
 Query the database with `bash tools/cloud/sql.sh "SELECT ..."`. It never prints the password.
 
+If the log shows `could not read Username for 'https://github.com'` or `could not download`,
+the session cannot reach the private repos. Claude can attach them with `add_repo`
+(`access: push`) and rerun `bash tools/cloud/session-start.sh` in the foreground. If `add_repo`
+answers "you don't have access", the Claude GitHub App is not installed on HomeFront and
+FlexKit yet (step 1 above). Release assets are fetched through the REST API, because
+`gh release download` uses GraphQL, which cloud sessions refuse.
+
 ## Getting cloud work back to the Mac
 
 The cloud pushes the app to GitHub `HomeFront` main and FlexKit to GitHub `telerik-parity-20260904`.

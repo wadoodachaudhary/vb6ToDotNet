@@ -11,6 +11,13 @@ DB_TAG=db-20260930
 DB_FILE=HOMEFRONTSQL-20260930.bak
 warn() { echo "WARN: $*" >&2; }
 mkdir -p "$CACHE/db" "$ROOT/HomeFront/MobileSource"
+# `gh release download` goes through GraphQL, which Claude Code sessions refuse; use REST.
+release_asset() { # <owner/repo> <tag> <file> <dir>
+    local id
+    id="$(gh api "repos/$1/releases/tags/$2" --jq ".assets[] | select(.name == \"$3\") | .id")" && [ -n "$id" ] \
+        && gh api -H 'Accept: application/octet-stream' "repos/$1/releases/assets/$id" > "$4/$3.part" \
+        && mv "$4/$3.part" "$4/$3" || { rm -f "$4/$3.part"; return 1; }
+}
 
 if ! command -v dotnet >/dev/null 2>&1 || ! dotnet --list-sdks 2>/dev/null | grep -q '^10\.'; then
     curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
@@ -34,7 +41,6 @@ clone "$ROOT/FlexKit" https://github.com/wadoodachaudhary/FlexKit.git telerik-pa
 [ -f "$ROOT/HomeFront/MobileSource/HomeFront/HomeFront.csproj" ] && command -v dotnet >/dev/null 2>&1 \
     && { dotnet restore "$ROOT/HomeFront/MobileSource/HomeFront/HomeFront.csproj" -v q || warn "NuGet restore failed"; }
 
-[ -f "$CACHE/db/$DB_FILE" ] || gh release download "$DB_TAG" --repo wadoodachaudhary/HomeFront \
-    --pattern "$DB_FILE" --dir "$CACHE/db" || warn "database backup download failed"
+[ -f "$CACHE/db/$DB_FILE" ] || release_asset wadoodachaudhary/HomeFront "$DB_TAG" "$DB_FILE" "$CACHE/db" || warn "database backup download failed"
 chmod 644 "$CACHE/db/$DB_FILE" 2>/dev/null || true
 echo "HomeFront cloud environment setup finished."
