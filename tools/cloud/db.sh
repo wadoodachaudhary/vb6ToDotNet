@@ -14,6 +14,13 @@ DB_SHA256=42197db007a932c23341531ebfe5a97d772edb663e575c931437c7e799703db6
 IMAGE=mcr.microsoft.com/mssql/server:2022-latest
 fail() { echo "ERROR: $*" >&2; exit 1; }
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -c1-64; }
+# `gh release download` goes through GraphQL, which Claude Code sessions refuse; use REST.
+release_asset() { # <owner/repo> <tag> <file> <dir>
+    local id
+    id="$(gh api "repos/$1/releases/tags/$2" --jq ".assets[] | select(.name == \"$3\") | .id")" && [ -n "$id" ] \
+        && gh api -H 'Accept: application/octet-stream' "repos/$1/releases/assets/$id" > "$4/$3.part" \
+        && mv "$4/$3.part" "$4/$3" || { rm -f "$4/$3.part"; return 1; }
+}
 
 if [ ! -s "$SA_FILE" ]; then
     (umask 077; printf '%sAa1!' "$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-20)" > "$SA_FILE")
@@ -28,7 +35,7 @@ fi
 
 mkdir -p "$DB_DIR"
 if [ ! -f "$DB_DIR/$DB_FILE" ]; then
-    gh release download "$DB_TAG" --repo wadoodachaudhary/HomeFront --pattern "$DB_FILE" --dir "$DB_DIR" \
+    release_asset wadoodachaudhary/HomeFront "$DB_TAG" "$DB_FILE" "$DB_DIR" \
         || fail "could not download $DB_FILE from the private release $DB_TAG"
 fi
 [ "$(sha "$DB_DIR/$DB_FILE")" = "$DB_SHA256" ] || fail "$DB_FILE checksum mismatch"
