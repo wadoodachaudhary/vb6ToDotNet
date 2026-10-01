@@ -180,6 +180,17 @@ into main since it branched):
 **e. Deliberately not taking a teammate hunk** — record it so preflight stops flagging it:
 `echo "<sha> <path> <reason>" >> Deploy/preflight-ack.txt`.
 
+**f. Cloud sessions' GitHub mirrors** (owner 2026-10-01: the mirrors are always the same as the Mac). Claude Code
+cloud sessions work from private GitHub mirrors and push `jira/<KEY>` branches there. Before deploying, fetch them
+and look for anything not in the local lines — a branch is taken only when the owner asks (as for an MR):
+```bash
+git -C MobileSource/HomeFront fetch github --prune && git -C ../FlexKit fetch github --prune && git fetch origin --prune
+git -C MobileSource/HomeFront branch -r --no-merged main | grep github/
+git -C ../FlexKit branch -r --no-merged telerik-parity-20260904 | grep github/
+git branch -r --no-merged main
+```
+Step 13 pushes the mirrors back level after the deploy.
+
 **Safe merge** (never writes conflict markers into a source tree):
 ```bash
 T=$(mktemp -d); C=Deploy/repos/<repo>; F=<path>; SRC=<source tree>
@@ -321,6 +332,19 @@ Two Claude accounts (Wadood, Innovatix) alternate weeks on this Mac and share on
   port is byte-identical.
 - Jira moves belong to the hand-off, not the deploy, and only when the owner asks: see
   [reference/handoff.md](reference/handoff.md).
+
+### 13. Bring the GitHub mirrors level with the Mac — last step, every round
+
+Owner 2026-10-01: "everything should be same and current". After the records of step 12 are committed:
+```bash
+git -C MobileSource/HomeFront push github main
+git -C ../FlexKit push github telerik-parity-20260904
+git push origin main                                   # outer repo (vb6ToDotNet)
+```
+Plain pushes only. A non-fast-forward rejection means a cloud session pushed to that line: stop, fetch, show the
+owner what is there (step 3f) — never force. FlexCore's GitHub `main` is the deploy snapshot the script pushes, so
+it needs nothing here. These mirrors are private and carry the full working source (login skip included); they are
+not deploy targets and nothing is stripped.
 
 ## Stop and ask the owner when
 

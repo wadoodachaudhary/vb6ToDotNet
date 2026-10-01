@@ -881,7 +881,7 @@ deploy_r2uat() {
     local git_dir="$DEPLOY/hyphen-pb"
 
     # Always hand the clone back on main with no half-finished merge, on every exit path.
-    trap 'git -C "'"$DEPLOY"'/hyphen-pb" merge --abort 2>/dev/null; git -C "'"$DEPLOY"'/hyphen-pb" checkout main --quiet 2>/dev/null || true' RETURN
+    trap 'git -C "'"$DEPLOY"'/hyphen-pb" merge --abort 2>/dev/null || true; git -C "'"$DEPLOY"'/hyphen-pb" checkout main --quiet 2>/dev/null || true' RETURN
 
     git -C "$git_dir" fetch origin --quiet
     if ! git -C "$git_dir" rev-parse --verify --quiet origin/R2-UAT >/dev/null; then
