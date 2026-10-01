@@ -41,6 +41,12 @@ the Mac it does nothing. `session-start.sh`:
 
 Query the database with `bash tools/cloud/sql.sh "SELECT ..."`. It never prints the password.
 
+Browser checks: the setup script installs Google Chrome (the checks launch Playwright with
+`channel: 'chrome'`), and the sandbox ships the `playwright` package in `/opt/node-tools`.
+Run them with both `NODE_PATH=/opt/node-tools/node_modules` and
+`PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright/test`. Most checks default to a Mac
+path, and `playwright/test` exports `chromium`, `webkit` and `expect`.
+
 If the log shows `could not read Username for 'https://github.com'` or `could not download`,
 the session cannot reach the private repos. Claude can attach them with `add_repo`
 (`access: push`) and rerun `bash tools/cloud/session-start.sh` in the foreground. If `add_repo`

@@ -30,6 +30,16 @@ if ! docker info >/dev/null 2>&1; then
     (dockerd >/tmp/dockerd-setup.log 2>&1 &)
     for _ in $(seq 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
 fi
+# The browser checks launch Playwright with channel 'chrome' (Google Chrome, not the
+# bundled Chromium). The sandbox already has the playwright package in /opt/node-tools.
+if ! command -v google-chrome >/dev/null 2>&1; then
+    curl -fsSL -o /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+        && { apt-get update -qq || true; } \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /tmp/chrome.deb \
+        || warn "Google Chrome install failed"
+    rm -f /tmp/chrome.deb
+fi
+
 docker pull -q mcr.microsoft.com/mssql/server:2022-latest \
     || warn "SQL Server image pull failed (network access must reach mcr.microsoft.com)"
 
