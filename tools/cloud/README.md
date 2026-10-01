@@ -73,6 +73,10 @@ through the Atlassian connector, branch `jira/<KEY>` from the current main branc
 the fix touches, verify, push the branch to GitHub, and report. Fixes never go straight to
 `main` or `telerik-parity-20260904`.
 
+To have each fix checked out on the Mac without typing anything, keep a Claude session open
+there with Remote Control (`claude remote-control` in `VBToCSharp/HomeFront`, or the desktop app).
+The cloud session finds it and asks it to run `ticket.sh test <KEY>`; otherwise run it yourself.
+
 On the Mac (the app and FlexKit each have a `github` remote):
 
 ```bash

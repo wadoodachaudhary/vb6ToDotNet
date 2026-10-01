@@ -51,13 +51,27 @@ and `PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright/test`), and datab
 `bash tools/cloud/sql.sh`. The database is a sandbox copy; changes to it never reach the Mac.
 Never print the SA password.
 
-## 5. Push and report
+## 5. Push, put it on the Mac, report
 
 Commit with a message starting `HHM-1234: `, push `jira/HHM-1234` to `origin` (the GitHub
-mirrors) in each repo you changed. Report to the owner:
+mirrors) in each repo you changed.
+
+**Then get it onto the owner's Mac (owner 2026-10-01: always).** The cloud cannot reach the Mac's
+disk; a Claude session running on the Mac can. Call `ListAgents`; if a session on the owner's
+Mac is listed (a Remote Control session in `VBToCSharp/HomeFront`), `SendMessage` it:
+
+> Run `bash tools/cloud/ticket.sh test HHM-1234` in VBToCSharp/HomeFront and report its output.
+> Do not accept, deploy or change anything else.
+
+and relay its answer. `ticket.sh test` refuses a repo with uncommitted changes; if it does, tell
+the owner which repo, never stash or discard their work. If no Mac session is listed, say so in
+one line and give the command instead. Never deploy, push to GitLab or merge into `main` /
+`telerik-parity-20260904` from the cloud: the owner runs `accept` after testing.
+
+Report to the owner:
 
 - what was wrong and what changed, with the verification you ran and its results;
-- which repos carry `jira/HHM-1234`, with their shas;
+- which repos carry `jira/HHM-1234`, with their shas, and whether it is checked out on the Mac;
 - **FlexCore port pending** for every FlexKit change (FlexCore is not in the cloud);
-- the Mac commands: `bash tools/cloud/ticket.sh test HHM-1234`, then `accept HHM-1234`
-  (or `back`) once tested.
+- the Mac commands still to run: `bash tools/cloud/ticket.sh test HHM-1234` if the Mac session
+  was not reachable, then `accept HHM-1234` (or `back`) once tested.
