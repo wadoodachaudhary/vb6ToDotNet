@@ -484,3 +484,18 @@ quote the extracted text beside it.
 - **A push to R2-UAT is a release.** Its pipeline file triggers on that branch. The pre-push review (rule 6) and the
   "another session mid-work" hold apply with more force, not less.
 
+## 2026-10-05 — drop folder, local database, quiet window
+
+- **Untracked files in the app root ship.** The deploy rsyncs the working tree, so the owner's `_deploy/` drop
+  folder (zips for the Windows box, 127 MB) was one push away from GitLab. It is excluded now
+  (`NON_WINDOWS_EXCLUDE`, and the app's .gitignore). Before a round, look at `git status --short` in the app for
+  `??` entries and at the dry run's file list for anything that is not source.
+- **The harness sweep needs the local database.** `GridLayoutSaveChecks`, `WorksheetStyleChecks` and
+  `PricingWorksheetChecks` fail with a SqlException when port 1433 is closed. The database is the Docker container
+  `sqlserver_new` (restart policy `unless-stopped` since 10-05); if it is down: `open -a Docker`, wait for
+  `docker info`, `docker start sqlserver_new`. That failure is the environment, not the code.
+- **A teammate refactor can break a source-text pin without breaking the rule.** EstimateChecks pinned the Send
+  Purchase Orders gate as a literal line of FMain; Irfan moved it into a method. Read the new code, confirm the
+  rule is the same, then update the pin — do not drop the check.
+- **The owner may waive the quiet window** ("nothing is happening"): run the gate with `QUIET_MINUTES=1`. Only on
+  the owner's word, and stop any queued wait-loop first so two deploy runs never share the staging clones.
