@@ -907,9 +907,28 @@ deploy_r2uat() {
         return 1
     fi
     if ! git -C "$git_dir" merge --no-ff --no-commit origin/main >/dev/null 2>&1; then
-        err "R2-UAT: merging main CONFLICTS -- not pushing. Resolve on the branch, then re-run. Conflicted:"
-        git -C "$git_dir" diff --name-only --diff-filter=U | sed 's/^/      /'
-        return 1
+        # The branch owns its pipeline and environment files (a teammate edits the same file on
+        # main for main's own environment): a conflict there keeps the branch's copy. Any other
+        # conflict stops the stage.
+        local conflicted f foreign=""
+        conflicted=$(git -C "$git_dir" diff --name-only --diff-filter=U)
+        while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+                azure-pipelines*.yml|appsettings*.json|NuGet.Config) ;;
+                *) foreign="$foreign $f" ;;
+            esac
+        done <<< "$conflicted"
+        if [ -z "$conflicted" ] || [ -n "$foreign" ]; then
+            err "R2-UAT: merging main CONFLICTS -- not pushing. Resolve on the branch, then re-run. Conflicted:"
+            echo "$conflicted" | sed 's/^/      /'
+            return 1
+        fi
+        while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            git -C "$git_dir" checkout --ours -- "$f" && git -C "$git_dir" add -- "$f"
+            ok "R2-UAT keeps its own $f (main changed the same file)"
+        done <<< "$conflicted"
     fi
 
     local flogin="$git_dir/Components/Pages/Migrated/FLogin.razor" t missing=""
