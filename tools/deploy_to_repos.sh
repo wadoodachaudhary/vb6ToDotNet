@@ -62,6 +62,9 @@ NON_WINDOWS_EXCLUDE=(
     --exclude='._*'
     --exclude='*.command'
     --exclude='*.mobileconfig'
+    # The owner's drop folder for the Windows box (HomeFront.zip ~127 MB, FlexKit.zip,
+    # make-deploy-*.sh), shared as \\tsclient\HomeFront\_deploy. Machine-local.
+    --exclude='/_deploy/'
 )
 
 # Deployment plumbing that lives in the REPO, not in the HomeFront source tree.
