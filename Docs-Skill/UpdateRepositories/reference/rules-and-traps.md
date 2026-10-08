@@ -499,3 +499,28 @@ quote the extracted text beside it.
   rule is the same, then update the pin — do not drop the check.
 - **The owner may waive the quiet window** ("nothing is happening"): run the gate with `QUIET_MINUTES=1`. Only on
   the owner's word, and stop any queued wait-loop first so two deploy runs never share the staging clones.
+
+## 2026-10-08 — GitLab over SSH lives on git-ssh.innovatixinc.com
+
+- **`gitlab.innovatixinc.com` is behind Cloudflare and answers the web port only.** `git@gitlab.innovatixinc.com`
+  times out on port 22 (the "No route to host" in the error is the IPv6 attempt). Git over SSH is served by
+  **`git-ssh.innovatixinc.com`** (DevOps, 2026-10-08) — same server, same three host keys.
+- The three GitLab staging clones use `origin = git@git-ssh.innovatixinc.com:application-modernization/<repo>.git`
+  and `core.sshCommand = ssh -o HostKeyAlias=gitlab.innovatixinc.com`, so the new name is checked against the
+  host keys trusted since 2026-06-02 and no dotfile changed. `deploy_to_repos.sh` PROJECTS carries the new URLs.
+  The app repo's and FlexKit's own `origin` remotes still name the old host (unused by the deploy).
+- **Tell before guessing:** `nc -z gitlab.innovatixinc.com 22` fails while `:443` works and `github.com:22` works
+  = the host, not this Mac. VPNs (NordVPN, FortiClient) are irrelevant; a personal access token is only needed
+  for HTTPS (the owner has 2FA, so the account password never works for git).
+- **zsh trap met again:** `set -- $t` does not split words in zsh, so a host/port loop silently tested nothing
+  and reported every host unreachable. Use a function with explicit arguments.
+
+## 2026-10-08 — FlexCore ships from main only
+
+- The FlexCore checkout can be on a feature branch (Cursor PR branches for the Mutarjim IDE). The deploy now
+  SKIPS flexcore then (`✗ Skipping flexcore: its checkout is on '<branch>'`) and the gate leaves it out of the
+  upstream/teammate checks with a `!` line. Nothing is pushed to GitHub FlexCore in that state; record the
+  pending FlexKit→FlexCore port in the history's "Open as of".
+- **Two sessions, one round:** the owner may tell two sessions to deploy. Hand over explicitly (state, shas,
+  uncommitted script edits) and have exactly one session touch Deploy/repos; the owner's latest direct instruction
+  decides who.

@@ -517,9 +517,9 @@ mkdir -p "$DEPLOY"
 PROJECTS=(
     # hyphen-pb main is fed from HomeFront (owner directive 2026-08-27) — HomeFrontPB
     # is untouched on this machine and now feeds the R1-UAT branch instead.
-    "hyphen-pb|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/hyphen-pb|git@gitlab.innovatixinc.com:application-modernization/hyphen-pb.git"
-    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@gitlab.innovatixinc.com:application-modernization/homefront.git"
-    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@gitlab.innovatixinc.com:application-modernization/flexkit.git"
+    "hyphen-pb|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/hyphen-pb|git@git-ssh.innovatixinc.com:application-modernization/hyphen-pb.git"
+    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@git-ssh.innovatixinc.com:application-modernization/homefront.git"
+    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@git-ssh.innovatixinc.com:application-modernization/flexkit.git"
     "flexcore|$ROOT/FlexCore|$DEPLOY/flexcore|https://github.com/wadoodachaudhary/FlexCore.git"
 )
 
@@ -680,6 +680,17 @@ fi
 for entry in "${PROJECTS[@]}"; do
     IFS='|' read -r name src_dir git_dir remote_url <<< "$entry"
     log "$name: $src_dir → $git_dir"
+
+    # FlexCore ships from its main branch only. The checkout is sometimes switched to a feature
+    # branch for other work (a Cursor branch for the Mutarjim IDE, 2026-10-06); pushing that tree
+    # would publish unmerged work as GitHub main. Skip the repo and say so.
+    if [ "$name" = "flexcore" ]; then
+        flexcore_branch=$(git -C "$src_dir" branch --show-current 2>/dev/null)
+        if [ "$flexcore_branch" != "main" ]; then
+            err "Skipping flexcore: its checkout is on '$flexcore_branch', not main — nothing pushed for it"
+            continue
+        fi
+    fi
 
     # ── Ensure deploy git repo exists ────────────────────────────────
     if [ ! -d "$git_dir/.git" ]; then

@@ -26,8 +26,18 @@ BLOCK=0
 no()  { printf '✗ %s\n' "$1"; BLOCK=1; }
 yes() { printf '✓ %s\n' "$1"; }
 
+# FlexCore ships from main only. While its checkout is on another branch the deploy skips the repo
+# (nothing is pushed to GitHub FlexCore), so its upstream state cannot be reverted by this run and is
+# not judged here.
+fcbr=$(git -C "$V/FlexCore" branch --show-current 2>/dev/null)
+gate_repos="hyphen-pb homefront flexkit flexcore"
+if [ "$fcbr" != "main" ]; then
+  gate_repos="hyphen-pb homefront flexkit"
+  printf '! FlexCore is on %s, not main — the deploy will SKIP flexcore; GitHub FlexCore is left as it is\n' "'$fcbr'"
+fi
+
 # 1. Upstream vs the clone's local main, and unpushed leftovers from a failed push.
-refs="hyphen-pb:main homefront:main flexkit:main flexcore:main"
+refs=""; for r in $gate_repos; do refs="$refs $r:main"; done
 $WITH_R1UAT && refs="$refs hyphen-pb:R1-UAT"
 for spec in $refs; do
   r=${spec%%:*}; b=${spec#*:}
@@ -45,7 +55,7 @@ done
 #    origin/main and hides upstream commits from check 1. It judges every commit after our last
 #    "Deploy <repo>" commit by its content.
 content_bad=0
-for r in hyphen-pb homefront flexkit flexcore; do
+for r in $gate_repos; do
   while IFS='|' read -r sha date author subj; do
     [ -z "$sha" ] && continue
     while IFS= read -r f; do
@@ -87,6 +97,7 @@ else no "source changed in the last $QUIET minutes — another session may be mi
 # 6. FlexKit ships from its working branch.
 br=$(git -C "$V/FlexKit" branch --show-current)
 [ "$br" = "telerik-parity-20260904" ] && yes "FlexKit on telerik-parity-20260904" || no "FlexKit is on '$br', not telerik-parity-20260904"
+[ "$fcbr" = "main" ] && yes "FlexCore on main"
 
 # 7. FlexKit packaging. deploy_to_repos.sh repacks when the version changed or a .cs/.razor/.css/.js/.csproj
 #    file is newer than the feed nupkg — so (a) a repack under a version already extracted in
