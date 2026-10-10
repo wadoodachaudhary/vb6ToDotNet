@@ -49,6 +49,7 @@ public sealed class CrystalBenchDataExecutor(IConfiguration configuration, Cryst
 
     public DataTable Execute(ReportDefinition definition, IDictionary<string, object>? parameters)
     {
+        if (Mode == CrystalBenchDataMode.Database) definition.ValidateSqlParameters(parameters);
         if (Mode == CrystalBenchDataMode.SyntheticSqlite)
             return (samples ?? throw new InvalidOperationException("SQLite sample pack is not configured.")).Execute(
                 SampleReportHash ?? throw new InvalidOperationException("Select a catalog report with sample data."), definition);
