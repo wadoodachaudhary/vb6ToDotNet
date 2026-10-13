@@ -541,3 +541,24 @@ quote the extracted text beside it.
 - **A harness wired to another session's unfinished test goes red for everyone.** R2QaChecks called Codex's
   HHM-1237 test (KeyNotFoundException 'Job_No'). Unwire the call with a comment that says how to restore it, leave the
   test file untracked, and say in the report that the ticket is not fixed.
+
+## 2026-10-13 — a direct push to main, follow-ups to a teammate's hunks, and the suite the sweep skipped
+
+- **A teammate can push straight to main with no merge request.** Deepika's 1adc9ac reached main as a fast-forward of
+  her HHM-1200 branch an hour before the owner asked for the R2-UAT release; the GitLab MR list was empty. Only
+  preflight's "upstream commit(s) past our last push" and its REVERT lines showed it. Never skip preflight because
+  "nothing changed since last night".
+- **Fixing forward inside a teammate's hunk trips the gate, by design.** The gate compares her lines with our tree
+  by content, so changing two of her attributes and re-adding a block where she deleted one reads as REVERT. Commit
+  her version first, exactly as it is on origin/main (hash her blobs into the index:
+  `git -C Deploy/repos/hyphen-pb show origin/main:<path> | git hash-object -w --stdin`, then
+  `git update-index --cacheinfo 100644,<sha>,<path>`), commit the follow-up separately, and record each file in
+  `Deploy/preflight-ack.txt` with what was kept and what was changed and why.
+- **ManualPoChecks was never in the sweep** (Web SDK project = "browser-driven fixture host"), yet its 111 headless
+  scenarios need no browser. Nine of them sat stale after MR !50 for a day. `run_harnesses.sh` now runs any Web SDK
+  harness whose Program.cs serves only under `--serve`. When a page changes, check which suites source-link it
+  (`grep -rl <Page>.razor verification/*/*.csproj`) and run those by hand if the sweep lists them as skipped.
+- **R2-UAT stage, what a good run prints:** `merging origin/main (N commit(s) ahead)`, `Lockdown intact`,
+  `UAT pipeline still triggers on R2-UAT`, `no login skip in the merged copy`, a staged build with `0 Error(s)`,
+  `6d13145..d4de881  R2-UAT -> R2-UAT`. Afterwards `git diff --name-status origin/main origin/R2-UAT` must list only
+  the branch-owned files (10-13: FLogin.razor and azure-pipelines-uat.yml).
