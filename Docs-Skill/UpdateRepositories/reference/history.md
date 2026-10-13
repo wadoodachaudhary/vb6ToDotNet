@@ -88,7 +88,12 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
   report previews; grid combo click-away plan; HHM-1237 not fixed.
 - **Teammates were not told** about the two follow-ups to 1adc9ac (no Jira comment, no GitLab note). Deepika's next
   pull brings them.
-- **Next version:** FlexKit >= 0.1.120 for any library change.
+- **Committed after this release, NOT deployed:** HHM-1237 = app 60c3bc5 + FlexKit b66694e (0.1.120, GridControl.ClearColumnOverrides).
+  They ship together (the app does not compile against 0.1.119). FlexCore port uncommitted on the cursor branch.
+- **Uncommitted in the app tree, another session's:** HHM-1243 lock work (FEstimateItems.razor, FPricingWorkSheet.razor,
+  Services/RecordLocks/*, RecordLockChecks, EstimateChecks/Program.cs, CLAUDE.md). Working trees ship: establish that it is
+  finished and reviewed before the next push-mode run, or hold.
+- **Next version:** FlexKit >= 0.1.121 (0.1.120 is committed, not yet packed).
 
 ## Open as of 2026-10-12 21:30 (main only, two pushes)
 
