@@ -189,7 +189,8 @@ git -C MobileSource/HomeFront branch -r --no-merged main | grep github/
 git -C ../FlexKit branch -r --no-merged telerik-parity-20260904 | grep github/
 git branch -r --no-merged main
 ```
-Step 13 pushes the mirrors back level after the deploy.
+`preflight.sh` does the fetch for the app and FlexKit and lists every `github/jira/*` branch that is not in the local
+line (section 4b). Step 13 pushes the mirrors back level after the deploy.
 
 **Safe merge** (never writes conflict markers into a source tree):
 ```bash

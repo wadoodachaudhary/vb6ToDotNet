@@ -524,3 +524,20 @@ quote the extracted text beside it.
 - **Two sessions, one round:** the owner may tell two sessions to deploy. Hand over explicitly (state, shas,
   uncommitted script edits) and have exactly one session touch Deploy/repos; the owner's latest direct instruction
   decides who.
+
+## 2026-10-12 — fetch the GitHub mirrors before the gate; measure report changes on the shipped .rpt files
+
+- **Step 3f was skipped and cost a second push.** A cloud session had pushed `jira/HHM-1243` (app 0fa2a30, FlexKit
+  fd34267) at 18:55; the mirrors were fetched only at step 13, after the 21:19 push. `preflight.sh` now fetches the
+  `github` remote of the app and FlexKit and lists every `github/jira/*` branch with commits missing from the local
+  line (section 4b, an ATTENTION line each). A cloud FlexKit commit also needs its own version bump (0.1.118 was
+  already pushed, so the merge shipped as 0.1.119) and its FlexCore port.
+- **An `.rpt` path is converted fresh on every open** (`ReportConversionWorkspace`), so a change to the native Crystal
+  converter or the positioned renderer reaches ARInvoice, POHistory, the PO formats opened by `.rpt` and every private
+  import at once, whatever the stored XML says. Before shipping one, convert all the `.rpt` files under
+  `wwwroot/resources` and count what the change touches. 10-12: the new number formats threw on any format they
+  could not honour; 75 fields in 21 of the 153 shipped reports (74 a positioned currency symbol) would have printed
+  "[Formula error: ...]". The harness fixtures had none of them.
+- **A harness wired to another session's unfinished test goes red for everyone.** R2QaChecks called Codex's
+  HHM-1237 test (KeyNotFoundException 'Job_No'). Unwire the call with a comment that says how to restore it, leave the
+  test file untracked, and say in the report that the ticket is not fixed.

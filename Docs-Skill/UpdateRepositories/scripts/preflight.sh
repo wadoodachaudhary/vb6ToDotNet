@@ -1,6 +1,7 @@
 #!/bin/bash
 # preflight.sh — READ-ONLY checks before an Update Repositories run.
-# Changes nothing except `git fetch` in the staging clones. Every check runs and reports; the ATTENTION
+# Changes nothing except `git fetch` in the staging clones and of the `github` mirror remotes in the app and
+# FlexKit (remote-tracking refs only). Every check runs and reports; the ATTENTION
 # list at the end is what needs a decision before deploying.
 #
 #   bash preflight.sh        # historic check looks back 10 days (unshipped commits are always checked)
@@ -99,6 +100,28 @@ for b in $(git -C "$c" for-each-ref --format='%(refname:short)' refs/remotes/ori
   [ "$age" -le 14 ] && attn "branch $b has commits from the last 14 days — check for an open MR"
 done
 echo "   GitLab UI: https://gitlab.innovatixinc.com/groups/application-modernization/-/merge_requests/?state=opened"
+
+# ── 4b. Step 3f: cloud sessions' ticket branches on the GitHub mirrors ───────────
+# Cloud sessions push jira/<KEY> branches to the private GitHub mirrors. One that is not in the local line
+# is left out of the push (2026-10-12: a branch pushed at 18:55 was noticed only after the deploy).
+hdr "4b. Step 3f — GitHub mirror ticket branches not in the local lines"
+for spec in "app|$HF|main" "FlexKit|$V/FlexKit|telerik-parity-20260904"; do
+  IFS='|' read -r label dir line <<< "$spec"
+  git -C "$dir" remote get-url github >/dev/null 2>&1 || { echo "   $label: no 'github' remote"; continue; }
+  if ! git -C "$dir" fetch github --prune --quiet 2>/dev/null; then
+    attn "$label: could not fetch the GitHub mirror — cloud ticket branches unchecked (SKILL.md step 3f)"
+    continue
+  fi
+  hits=0
+  for b in $(git -C "$dir" for-each-ref --format='%(refname:short)' refs/remotes/github/jira); do
+    n=$(git -C "$dir" rev-list --count "$line..$b" 2>/dev/null || echo 0)
+    [ "${n:-0}" -gt 0 ] || continue
+    hits=1
+    printf '   %-8s %-34s %s commit(s) not in %s (last: %s)\n' "$label" "$b" "$n" "$line" "$(git -C "$dir" log -1 --format='%cs %an' "$b")"
+    attn "$label: $b has $n commit(s) not in $line — cloud work the push would leave out (SKILL.md step 3f)"
+  done
+  [ "$hits" -eq 0 ] && echo "   $label: every github/jira/* branch is in $line"
+done
 
 # ── 5. Would the push undo a teammate's work? ───────────────────────────────────
 # The deploy rsyncs our trees over each remote, so a teammate change missing from our tree is silently
