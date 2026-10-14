@@ -73,6 +73,7 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 
 ## Open as of 2026-10-14 01:21 (main + R2-UAT)
 
+- **Committed after this release, NOT on GitLab (Homefront session, 10-14):** HHM-1276 = app 2c7de1c + FlexKit ca62752 (0.1.121; GridControl.FocusGroupHeaderOnContextMenu and GetCurrentGroup). They ship together: the app does not compile against 0.1.120. FlexCore port uncommitted on cursor/live-program-preview-50d1. New suite verification/AttachmentLinkChecks needs local SQL (scratch database HF_ATTACHCHECKS, created and dropped). Next changed FlexKit >= 0.1.122.
 - Main 19c7a66 and R2-UAT 582578a carry the merged app and FlexKit 0.1.120; R2 differs only in its existing FLogin.razor and azure-pipelines-uat.yml. Protected configuration is unchanged. Azure pipeline/IIS result is not verified.
 - GitHub source mirrors for this round: app deaecf5 and FlexKit b66694e; outer repository contains this release record and verifier fixes. No open GitLab MRs and no pending app/FlexKit Jira branches after the merge.
 - FlexCore remains on cursor/live-program-preview-50d1 with local ports uncommitted. GitHub main e3b6405 and the NuGet 0.2.48 hold are unchanged. Showcase still fails its existing SQLite 10.0.8/10.0.12 downgrade. Do not publish this branch or resume the held package.
