@@ -515,6 +515,15 @@ quote the extracted text beside it.
 - **zsh trap met again:** `set -- $t` does not split words in zsh, so a host/port loop silently tested nothing
   and reported every host unreachable. Use a function with explicit arguments.
 
+### 2026-10-14 DNS fallback
+
+During a release, `git-ssh.innovatixinc.com` began resolving to Cloudflare too. The documented DevOps server
+`3.145.28.151` still accepted the existing key and matched the trusted `gitlab.innovatixinc.com` host key.
+For that run only, gate/deploy/verification used
+`GIT_SSH_COMMAND='ssh -o HostName=3.145.28.151 -o HostKeyAlias=gitlab.innovatixinc.com -o StrictHostKeyChecking=yes -o ConnectTimeout=10'`.
+Repository URLs and SSH configuration were not changed. Recheck reachability and the trusted host key before
+reusing this workaround; never disable host-key checks or infer a new server address.
+
 ## 2026-10-08 — FlexCore ships from main only
 
 - The FlexCore checkout can be on a feature branch (Cursor PR branches for the Mutarjim IDE). The deploy now

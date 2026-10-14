@@ -59,6 +59,12 @@ done
 hdr "Non-runtime files must be stripped from every pushed branch (owner 2026-09-13)"
 for spec in $APP_REFS flexkit:origin/main flexcore:origin/main; do
   repo=${spec%%:*}; ref=${spec#*:}
+  if [ "$repo" = flexcore ] && [ "$(git -C "$V/FlexCore" branch --show-current)" != main ] \
+      && [ -n "$(state flexcore.origin)" ] \
+      && [ "$(git -C "$D/flexcore" rev-parse origin/main)" = "$(state flexcore.origin)" ]; then
+    note "flexcore: not published and unchanged from the gate; existing repository content is outside this deploy"
+    continue
+  fi
   hits=$(git -C "$D/$repo" ls-tree -r --name-only "$ref" | grep -E "$NON_RUNTIME" | head -5 | tr '\n' ' ')
   [ -z "$hits" ] && good "$repo $ref: none" || bad "$repo $ref ships non-runtime files: $hits"
 done
@@ -102,10 +108,11 @@ if [ "$WITH_R2UAT" = true ]; then
   else bad "R2-UAT does NOT contain origin/main — the merge did not land"; fi
   r2login=$(git -C "$D/hyphen-pb" cat-file blob origin/R2-UAT:Components/Pages/Migrated/FLogin.razor 2>/dev/null)
   n2=0; for t in EnforceAuth EncryptDbConnection EnforcePasswordCheck GetPasswordFromSystemSecrets; do
-    printf '%s\n' "$r2login" | grep -q "@bind-Checked=\"Sec.$t\" Disabled=\"true\"" && n2=$((n2+1)); done
-  if [ "$n2" -eq 4 ] && printf '%s\n' "$r2login" | grep -q 'Sec.EncryptDbConnection = false;'; then good "lockdown intact (4/4 toggles disabled, EncryptDbConnection forced off)"
+    [[ "$r2login" == *"@bind-Checked=\"Sec.$t\" Disabled=\"true\""* ]] && n2=$((n2+1)); done
+  if [ "$n2" -eq 4 ] && [[ "$r2login" == *'Sec.EncryptDbConnection = false;'* ]]; then good "lockdown intact (4/4 toggles disabled, EncryptDbConnection forced off)"
   else bad "R2-UAT lockdown broken ($n2/4 toggles)"; fi
-  git -C "$D/hyphen-pb" cat-file blob origin/R2-UAT:azure-pipelines-uat.yml 2>/dev/null | grep -q -- '- R2-UAT' && good "UAT pipeline triggers on R2-UAT" || bad "azure-pipelines-uat.yml no longer triggers on R2-UAT"
+  r2pipeline=$(git -C "$D/hyphen-pb" cat-file blob origin/R2-UAT:azure-pipelines-uat.yml 2>/dev/null)
+  [[ "$r2pipeline" == *'- R2-UAT'* ]] && good "UAT pipeline triggers on R2-UAT" || bad "azure-pipelines-uat.yml no longer triggers on R2-UAT"
   if git -C "$D/hyphen-pb" grep -I -i -q -e devautologin origin/R2-UAT -- ':!*.md' 2>/dev/null; then bad "R2-UAT carries the dev login-skip"; else good "R2-UAT: no login skip"; fi
 else
   if [ -n "$was_r2" ] && [ "$now_r2" != "$was_r2" ]; then note "not deployed by this run; it moved since the gate (teammates push here directly) — head $(git -C "$D/hyphen-pb" rev-parse --short origin/R2-UAT 2>/dev/null)"
