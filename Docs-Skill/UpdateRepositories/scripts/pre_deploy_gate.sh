@@ -72,13 +72,22 @@ if [ -s "$PULL_CONFLICTS" ]; then no "unresolved --pull conflicts listed in $PUL
 else yes "no unresolved --pull conflicts recorded"; fi
 
 # 4. Conflict markers anywhere in the trees that ship (a failed hand-merge writes them into source, and
-#    no build checks CSS or JS).
-markers=""
+#    no build checks CSS or JS). FlexCore off main does not ship (see the top): its markers are shown,
+#    not blocked on — they are someone's unfinished merge on that branch, not this run's.
+markers=""; scanned="the app, FlexKit or FlexCore"
 for t in "$HF" "$V/FlexKit" "$V/FlexCore"; do
   hits=$(git -C "$t" grep --untracked -nE '^(<<<<<<<|>>>>>>>)( |$)' 2>/dev/null | head -3)
+  if [ "$t" = "$V/FlexCore" ] && [ "$fcbr" != "main" ]; then
+    scanned="the app or FlexKit"
+    if [ -n "$hits" ]; then
+      printf '! FlexCore (%s, not shipped by this run) has merge-conflict markers — resolve them before it ships:\n' "'$fcbr'"
+      printf '%s\n' "$hits" | sed 's|^|     FlexCore: |'
+    fi
+    continue
+  fi
   [ -n "$hits" ] && markers="$markers$(printf '%s\n' "$hits" | sed "s|^|     $(basename "$t"): |")\n"
 done
-if [ -z "$markers" ]; then yes "no merge-conflict markers in the app, FlexKit or FlexCore"
+if [ -z "$markers" ]; then yes "no merge-conflict markers in $scanned"
 else no "merge-conflict markers found:"; printf "$markers"; fi
 
 # 5. Nobody saved source in the last $QUIET minutes (the deploy ships working trees). Runtime data the

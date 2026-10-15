@@ -57,6 +57,14 @@ check "B2. after merging the teammate line into our tree" pass "every unshipped 
 printf '<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs\n' > $HF/P/Broken.razor
 check "C. conflict markers in the app" block "merge-conflict markers found"
 rm $HF/P/Broken.razor
+# C2/C3. FlexCore off main is not shipped: its markers warn; on main they block
+fcbr0=$(git -C $V/FlexCore branch --show-current)
+printf '<<<<<<< Updated upstream\nx\n=======\ny\n>>>>>>> Stashed changes\n' > $V/FlexCore/Broken.cs
+g -C $V/FlexCore checkout -qB fixture-side
+check "C2. markers in FlexCore off main -> warning only" pass "not shipped by this run) has merge-conflict markers"
+g -C $V/FlexCore checkout -qB main
+check "C3. markers in FlexCore on main -> block" block "FlexCore: Broken.cs"
+g -C $V/FlexCore checkout -q "$fcbr0"; rm $V/FlexCore/Broken.cs
 
 # D. unresolved --pull conflicts recorded
 printf 'P/Page.razor\n' > $H/Deploy/pull-conflicts.txt
