@@ -82,9 +82,15 @@ nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only 
 - **HHM-1305 (Codex, FlexKit) held out**: uncommitted in FlexKit; verified regression (divider press released off the grip sorts the column) plus minor
   render-twice/null-race findings. Its app check verification/GridAutoFitChecks fails until it ships. Codex mirrored it to FlexCore's working tree.
 - **Still held out, still unclaimed:** FlexKit Grid/GridControl.razor.css hunk; app FMain.razor LoginDSN hunks; local appsettings (HomeFrontSQLMel_10142026), DevAutoLogin.
-- **FlexCore**: sync + conflict resolution running in an isolated copy (scratchpad iso-flexcore), not yet applied. Root cause found: Cursor PR #7 (76d5c77,
-  10-13) ported FlexKit 0.1.116's superseded PositionedSelectionWhere; FlexKit replaced it on 10-10 with PositionedSelectionSql (a65dc60/060ac15). Keep FlexKit's;
-  adapt FlexCore-only tests/FlexCore.RegressionTests/PositionedCrystalChecks.cs. Showcase needs Microsoft.Data.Sqlite 10.0.12.
+- **FlexCore synced and compiling (10-15 ~12:20, owner: "Synch up FlexCore with FlexKit and also compile FlexCore"), still NOT committed or pushed** (branch
+  cursor/live-program-preview-50d1; GitHub main e3b6405; NuGet 0.2.48 held). The 10-14 stash-pop conflicts are resolved by taking FlexKit's files (Cursor PR #7
+  76d5c77 had ported FlexKit 0.1.116's superseded PositionedSelectionWhere; FlexKit replaced it 10-10 with PositionedSelectionSql, a65dc60/060ac15) plus PR #7's
+  one doc line; FlexCore-only tests/FlexCore.RegressionTests/PositionedCrystalChecks.cs rewritten to the AST contract (19/19; suite 445/445 without the Linux-only
+  live-preview check). Prove-port: no unported FlexKit change. Index = the whole port set, buildable on its own; Grid/GridControl.razor(.cs) worktree carry
+  Codex's HHM-1305 mirror UNSTAGED (index = FlexKit HEAD) - `git restore --worktree` them if HHM-1305 is dropped. **stash@{0} "pre-main-merge 2026-10-14-1007" is
+  spent: never pop/apply it (it holds the unclaimed CSS hunk and the pre-merge files); drop it after FlexCore is committed.** Builds: FlexCore.Showcase.sln 0/0,
+  Mutarjim 0 errors, DotNetCCM 0 errors, GhostWriter 0 errors. Consumer pins fixed: FlexCore.Showcase.csproj and GhostWriter.csproj Microsoft.Data.Sqlite -> 10.0.12
+  (NU1605 against FlexCore's 10.0.12; the Showcase line sits inside someone's uncommitted Showcase work; GhostWriter has no git).
 - **Owner decisions open:** other FBilling numeric formats vs frx (HoldbackRate #.##, JTDCost 0, HoldbackBilled blank, Draw alignment, date formats); FlexKit
   frozen-column header not sticky (GridControl.razor:763 appends position:relative) - seen in HHM-1303's preview; FEstimateItems/FCustomQuote takeoff pricing
   gaps vs VB6 (reported, not fixed); grid combo click-away plan. Other screens' fallback markers left as they are by owner instruction.

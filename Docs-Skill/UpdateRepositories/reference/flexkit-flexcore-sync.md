@@ -183,6 +183,8 @@ dotnet run --project verification/GridSortChecks \
   -p:ControlLibraryProject=/Users/wadood/projects/VBToCSharp/FlexCore/FlexCore.csproj -- --checks
 ```
 
+Three more can target FlexCore (verified 2026-10-15): `ReportRendererChecks` and `PasswordChecks` through
+`-p:ControlKitProject=<FlexCore.csproj>`, and `MdiSplitChecks` by retargeting its ProjectReference in a scratch copy.
 The other 31 build against FlexKit only, so a green harness run says nothing about FlexCore. FlexCore's
 own `tests/` (7 projects) are in no solution and are not run by this procedure.
 
