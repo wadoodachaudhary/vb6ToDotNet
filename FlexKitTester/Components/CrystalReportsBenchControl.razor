@@ -13,7 +13,7 @@
 
 <PageTitle>Crystal Reports - FlexKitTester</PageTitle>
 <div class="crystal-bench">
-    <header><h1>Crystal Reports</h1><span>@typeof(ReportWriterControl).Assembly.GetName().Name / Native C#</span></header>
+    <header><h1>@(MenuOnly ? "HomeFront Reports — Phase 1" : "Crystal Reports")</h1><span>@typeof(ReportWriterControl).Assembly.GetName().Name / Native C#</span></header>
     <section class="bench-library">
         <div class="bench-toolbar">
             <TextBoxControl Value="@_search" ValueChanged="SearchChanged" UpdateOnInput="true" Placeholder="Search reports" aria-label="Search reports" Width="260px" Enabled="@_interactive" />
@@ -25,28 +25,33 @@
             <ButtonControl CssClass="bench-icon" Title="Next report" aria-label="Next report" Disabled="@(_busy || CurrentIndex >= _visible.Count - 1)" OnClick="@(_ => NavigateAsync(1))"><SvgIconControl Name="chevron-right" Size="18px" /></ButtonControl>
         </div>
         <div hidden="@(!_catalogExpanded)">
-        <GridControl TValue="CrystalSampleReport" DataSource="@_visible" EventsRef="@_catalogEvents" Height="260px" Width="100%" RowHeight="30" AllowResizing="true">
+        <GridControl TValue="CrystalSampleReport" DataSource="@_visible" EventsRef="@_catalogEvents" Height="260px" Width="100%" RowHeight="30" AllowResizing="true" AllowSorting="@(!MenuOnly)">
             <GridColumnsBase>
-                <GridColumn Field="Id" HeaderText="ID" Width="64px" MinWidth="64px" MaxWidth="64px" />
+                <GridColumn Field="@(MenuOnly ? nameof(CrystalSampleReport.DisplayId) : nameof(CrystalSampleReport.Id))" HeaderText="@(MenuOnly ? "Menu" : "ID")" Width="64px" MinWidth="64px" MaxWidth="64px" />
+                @if (MenuOnly) { <GridColumn Field="CorpusId" HeaderText="Corpus ID" Width="100" /> }
                 <GridColumn Field="Name" HeaderText="Report" Width="340" />
                 <GridColumn Field="Collection" HeaderText="Collection" Width="115" />
-                <GridColumn Field="Status" HeaderText="Synthetic run" Width="120" />
+                <GridColumn Field="Status" HeaderText="@(MenuOnly ? "Validation" : "Synthetic run")" Width="120" />
+                @if (!MenuOnly)
+                {
                 <GridColumn Field="Pages" HeaderText="Pages" Width="75" />
                 <GridColumn Field="Rows" HeaderText="Sample rows" Width="100" />
+                }
                 <GridColumn Field="RelativePath" HeaderText="Source path" Width="450" />
             </GridColumnsBase>
         </GridControl>
         </div>
-        @if (!Samples.Available) { <div class="bench-warning">SQLite sample pack is not installed. Browse or upload an RPT and choose another data source.</div> }
+        @if (MenuOnly) { <div class="bench-warning">Only the 19 approved Reports menu binaries and their embedded subreports are selected. Conversion, XML comparison, data execution, pagination and original Crystal approval are separate checks.</div> }
+        else if (!Samples.Available) { <div class="bench-warning">SQLite sample pack is not installed. Browse or upload an RPT and choose another data source.</div> }
     </section>
     <div class="bench-toolbar">
-        @if (_workspace?.ReportRoot is { } root && Directory.Exists(root))
+        @if (!MenuOnly && _workspace?.ReportRoot is { } root && Directory.Exists(root))
         {
             <FilePickerControl UseFileBrowser="true" RootPath="@root" Accept=".rpt" SearchPattern="*"
                                Label="Browse reports" FilePicked="SelectReportAsync" Enabled="@(!_busy)"
                                DialogHeader="Crystal reports" DialogWidth="min(760px, 95vw)" />
         }
-        <FilePickerControl Accept=".rpt" Label="Upload RPT" OnChange="UploadReportAsync" Enabled="@(!_busy)" />
+        @if (!MenuOnly) { <FilePickerControl Accept=".rpt" Label="Upload RPT" OnChange="UploadReportAsync" Enabled="@(!_busy)" /> }
         <ButtonControl Disabled="@(_busy || _source is null)" OnClick="@(_ => ConvertAsync(false))"><SvgIconControl Name="check" Size="16px" />Convert</ButtonControl>
         <ButtonControl CssClass="bench-primary" Disabled="@(_busy || _source is null || !CanRun)" OnClick="@(_ => ConvertAsync(true))"><SvgIconControl Name="chevron-right" Size="16px" />Convert &amp; Run</ButtonControl>
         @if (_busy && _operation is not null)
@@ -63,7 +68,7 @@
         <FilePickerControl Accept=".json" Label="Load data fixture" OnChange="UploadFixtureAsync" Enabled="@(!_busy)" />
         @if (Data.FixtureName is { } fixture) { <span>@fixture</span> }
     </div>
-    <dl class="bench-files"><dt>Report ID</dt><dd>@(_selected is null ? "Not in catalog" : $"#{_selected.Id}")</dd>
+    <dl class="bench-files"><dt>Report ID</dt><dd>@(_selected is null ? "None selected" : MenuOnly ? $"{_selected.DisplayId} [{_selected.CorpusId}]" : $"#{_selected.Id}")</dd>
         <dt>Report</dt><dd>@(_sourceName ?? "None selected")</dd>
         <dt>Source</dt><dd>@(_selected?.RelativePath ?? _source ?? "None selected")</dd>
         <dt>Converted XML</dt><dd>@(_xmlPath ?? "Not converted")</dd></dl>
@@ -93,7 +98,7 @@
     </section>
     <section hidden="@(_tab != 3)" class="bench-compatibility">
         <h2>Compatibility review</h2>
-        <div class="bench-warning">Rendered means the synthetic execution completed, not Crystal approval. Legacy OLE or OS-only image behavior may use a documented modern substitute; data, formulas, charts, and cross-tabs still require review.</div>
+        <div class="bench-warning">@(MenuOnly ? "Conversion and native preview do not establish data execution, pagination or original Crystal approval. Each requires separate evidence." : "Rendered means the synthetic execution completed, not Crystal approval. Legacy OLE or OS-only image behavior may use a documented modern substitute; data, formulas, charts, and cross-tabs still require review.")</div>
         <GridControl TValue="CrystalSampleIssue" DataSource="@_issues" Height="320px" Width="100%" RowHeight="30">
             <GridColumnsBase><GridColumn Field="Category" HeaderText="Area" Width="150" /><GridColumn Field="Message" HeaderText="Finding" Width="800" /></GridColumnsBase>
         </GridControl>
@@ -114,11 +119,13 @@
     private bool _catalogExpanded = true;
     private string? _search;
     private string _collection = "All collections", _filterStatus = "All statuses";
-    private readonly string[] Collections = ["All collections", "Primary", "Downloaded"];
-    private readonly string[] Statuses = ["All statuses", "Rendered", "Review", "Blocked"];
+    private string[] Collections => MenuOnly ? ["All collections", "HomeFront menu"] : ["All collections", "Primary", "Downloaded"];
+    private string[] Statuses => MenuOnly ? ["All statuses", "Not validated"] : ["All statuses", "Rendered", "Review", "Blocked"];
     private readonly GridControlEvents<CrystalSampleReport> _catalogEvents = new();
     private int CurrentIndex => _selected is null ? -1 : _visible.FindIndex(r => r.Hash == _selected.Hash);
     private CrystalBenchWorkspace? _workspace;
+    private CrystalBenchMenuScope? _menuScope;
+    private bool MenuOnly => !string.IsNullOrWhiteSpace(Configuration[CrystalBenchMenuScope.ConfigurationKey]);
     private ReportWriterControl? _writer;
     private ReportDesignerControl? _designer;
     private byte[]? _upload;
@@ -135,10 +142,26 @@
 
     protected override void OnInitialized()
     {
-        _workspace = new(CrystalBenchWorkspace.ResolveRoot(Configuration, Environment.ContentRootPath));
-        try { _catalog = Samples.ReadCatalog(); FilterCatalog(); }
+        if (MenuOnly) DataOptions.RemoveAll(option => option.Mode == CrystalBenchDataMode.SyntheticSqlite);
+        Data.Mode = CrystalBenchDataMode.None;
+        try
+        {
+            if (MenuOnly)
+            {
+                _menuScope = CrystalBenchMenuScope.Load(Path.GetFullPath(Configuration[CrystalBenchMenuScope.ConfigurationKey]!, Environment.ContentRootPath));
+                _catalog = _menuScope.Reports.Select(report => new CrystalSampleReport(report.Sha256, report.Name,
+                    report.RelativePath, "HomeFront menu", "Not validated", 0, 0, [], report.Number, report.CorpusId)).ToArray();
+                _workspace = new(_menuScope.Root, _menuScope);
+            }
+            else
+            {
+                _workspace = new(CrystalBenchWorkspace.ResolveRoot(Configuration, Environment.ContentRootPath));
+                _catalog = Samples.ReadCatalog();
+                Data.Mode = Samples.Available ? CrystalBenchDataMode.SyntheticSqlite : CrystalBenchDataMode.None;
+            }
+            FilterCatalog();
+        }
         catch (Exception error) { Fail(error); }
-        Data.Mode = Samples.Available ? CrystalBenchDataMode.SyntheticSqlite : CrystalBenchDataMode.None;
         _catalogEvents.RowSelected = EventCallback.Factory.Create<RowSelectEventArgs<CrystalSampleReport>>(this, async args => { if (args.Data is not null) await SelectCatalogAsync(args.Data); });
     }
 
@@ -147,8 +170,16 @@
     private void StatusChanged(string value) { _filterStatus = value; _catalogExpanded = true; FilterCatalog(); }
     private void FilterCatalog() => _visible = _catalog.Where(r => (_collection == "All collections" || r.Collection == _collection)
         && (_filterStatus == "All statuses" || r.Status == _filterStatus)
-        && (string.IsNullOrWhiteSpace(_search) || r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) == _search.Trim().TrimStart('#')
-            || r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) || r.RelativePath.Contains(_search, StringComparison.OrdinalIgnoreCase))).ToList();
+        && MatchesSearch(r)).ToList();
+    private bool MatchesSearch(CrystalSampleReport report)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        var query = _search.Trim().TrimStart('#');
+        if (int.TryParse(query, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id))
+            return report.Id == id;
+        return report.CorpusId?.Equals(query, StringComparison.OrdinalIgnoreCase) == true
+            || report.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || report.RelativePath.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
     private async Task NavigateAsync(int delta)
     {
         var index = CurrentIndex + delta;
@@ -156,20 +187,29 @@
     }
     private async Task SelectCatalogAsync(CrystalSampleReport report)
     {
+        if (!_catalog.Contains(report)) { Fail(new InvalidDataException("Select a report from the active catalog.")); return; }
         if (_workspace?.ReportRoot is null) { Fail(new InvalidOperationException("Configure the Reports corpus root first.")); return; }
         await SelectReportAsync(Path.Combine(_workspace.ReportRoot, report.RelativePath));
     }
     private void MatchSample(string hash)
     {
         _selected = _catalog.FirstOrDefault(r => r.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
-        Data.SampleReportHash = _selected?.Hash;
+        if (MenuOnly && _selected is null) throw new InvalidDataException("This report is outside the approved HomeFront menu scope.");
+        Data.SampleReportHash = MenuOnly ? null : _selected?.Hash;
         _issues = _selected?.Issues.ToList() ?? [];
-        if (_selected is null) _issues.Add(new("Sample data", "This binary is not in the sample pack. Generate matching samples or load a data fixture."));
+        if (MenuOnly)
+        {
+            _issues.Add(new("Data execution", "Not validated against an isolated HomeFront database clone."));
+            _issues.Add(new("XML comparison", "Not validated by bench conversion."));
+            _issues.Add(new("Pagination", "Not validated with matching records and page geometry."));
+        }
+        else if (_selected is null) _issues.Add(new("Sample data", "This binary is not in the sample pack. Generate matching samples or load a data fixture."));
         _issues.Add(new("Visual approval", "Pending original Crystal render with matching data, parameters, fonts, and print settings."));
     }
 
     private void ChangeDataMode(CrystalBenchDataMode mode)
     {
+        if (MenuOnly && mode == CrystalBenchDataMode.SyntheticSqlite) { Fail(new InvalidOperationException("Synthetic samples are disabled in HomeFront menu mode.")); return; }
         if (_busy || Data.Mode == mode) return;
         Data.Mode = mode;
         _writerKey++; _writer = null; _pendingRun = false;
@@ -183,7 +223,8 @@
         if (path is null || !await CanReplaceAsync()) return;
         try
         {
-            _source = _workspace!.ValidateSource(path);
+            if (_workspace is null) throw new InvalidOperationException("The report scope is unavailable. Correct the configuration before selecting reports.");
+            _source = _workspace.ValidateSource(path);
             _sourceName = Path.GetFileName(path);
             _upload = null;
             ResetConverted();
@@ -195,6 +236,7 @@
 
     private async Task UploadReportAsync(InputFileChangeEventArgs args)
     {
+        if (MenuOnly) { Fail(new InvalidOperationException("RPT uploads are disabled in HomeFront menu mode. Select an approved menu entry.")); return; }
         if (!await CanReplaceAsync()) return;
         var file = args.File;
         if (!string.Equals(Path.GetExtension(file.Name), ".rpt", StringComparison.OrdinalIgnoreCase) || file.Size > CrystalBenchWorkspace.MaxReportBytes)
@@ -280,6 +322,7 @@
         _busy = true; _tab = 2;
         try
         {
+            ValidateMenuSelection();
             var seed = Data.Mode == CrystalBenchDataMode.SyntheticSqlite ? Samples.Parameters(Data.SampleReportHash!, Loader.LoadPositioned(_xmlPath)) : null;
             await _writer.ShowReportAsync(_xmlPath, seed);
             _error = !string.IsNullOrEmpty(_writer.ErrorMessage);
@@ -297,6 +340,7 @@
         _busy = true; _tab = 2;
         try
         {
+            ValidateMenuSelection();
             var parameters = Data.Mode == CrystalBenchDataMode.SyntheticSqlite && _xmlPath is not null
                 ? Samples.Parameters(Data.SampleReportHash!, Loader.LoadPositioned(_xmlPath)).ToDictionary(p => p.Key, p => (object)p.Value) : null;
             await _writer.ShowDesignerReport(document, parameters);
@@ -306,6 +350,14 @@
         }
         catch (Exception error) { Fail(error); }
         finally { _busy = false; }
+    }
+
+    private void ValidateMenuSelection()
+    {
+        if (!MenuOnly) return;
+        if (_menuScope is null || _source is null || _selected is null)
+            throw new InvalidOperationException("Select an approved HomeFront menu report first.");
+        _menuScope.RequireSource(_source);
     }
 
     private static string BuildContract(ReportDefinition definition)

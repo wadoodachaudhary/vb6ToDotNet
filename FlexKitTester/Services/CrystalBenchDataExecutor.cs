@@ -40,7 +40,7 @@ public sealed class CrystalBenchDataExecutor(IConfiguration configuration, Cryst
                 throw new InvalidDataException("Invalid fixture report, query fingerprint, parameters, columns, or row limit.");
             if (result.Parameters.Keys.Select(k => k.TrimStart('@')).Distinct(StringComparer.OrdinalIgnoreCase).Count() != result.Parameters.Count)
                 throw new InvalidDataException("Fixture parameter names must be unique.");
-            foreach (var value in result.Parameters.Values) _ = Scalar(value);
+            foreach (var value in result.Parameters.Values) ValidateParameter(value);
             _ = Materialize(result);
         }
         _fixtures = file.Reports;
@@ -50,6 +50,8 @@ public sealed class CrystalBenchDataExecutor(IConfiguration configuration, Cryst
     public DataTable Execute(ReportDefinition definition, IDictionary<string, object>? parameters)
     {
         if (Mode == CrystalBenchDataMode.Database) definition.ValidateSqlParameters(parameters);
+        if (Mode == CrystalBenchDataMode.SyntheticSqlite && !string.IsNullOrWhiteSpace(configuration[CrystalBenchMenuScope.ConfigurationKey]))
+            throw new InvalidOperationException("Synthetic sample data is disabled in HomeFront menu mode.");
         if (Mode == CrystalBenchDataMode.SyntheticSqlite)
             return (samples ?? throw new InvalidOperationException("SQLite sample pack is not configured.")).Execute(
                 SampleReportHash ?? throw new InvalidOperationException("Select a catalog report with sample data."), definition);
@@ -129,7 +131,32 @@ public sealed class CrystalBenchDataExecutor(IConfiguration configuration, Cryst
     {
         if (expected.Count != (actual?.Count ?? 0)) return false;
         return expected.All(e => actual!.Any(a => string.Equals(a.Key.TrimStart('@'), e.Key.TrimStart('@'), StringComparison.OrdinalIgnoreCase)
-            && ParameterScalar(e.Value, e.Key, definition) == ParameterScalar(JsonSerializer.SerializeToElement(a.Value is DBNull ? null : a.Value), a.Key, definition)));
+            && ParameterMatches(e.Value, JsonSerializer.SerializeToElement(a.Value is DBNull ? null : a.Value), e.Key, definition)));
+    }
+
+    private static bool ParameterMatches(JsonElement expected, JsonElement actual, string name, ReportDefinition definition)
+    {
+        var parameter = definition.Parameters.FirstOrDefault(p => string.Equals(p.Name.TrimStart('@'), name.TrimStart('@'), StringComparison.OrdinalIgnoreCase));
+        if (parameter?.AllowMultiple == true || expected.ValueKind == JsonValueKind.Array || actual.ValueKind == JsonValueKind.Array)
+        {
+            // Exact lists: no flattening, sorting, deduplication or scalar-to-list coercion.
+            // Subreport execution also carries parent-only parameters that the child does not redeclare.
+            return (parameter is null || parameter is { AllowMultiple: true, ParameterType: ReportParameterType.String })
+                && expected.ValueKind == JsonValueKind.Array && actual.ValueKind == JsonValueKind.Array
+                && expected.EnumerateArray().All(v => v.ValueKind == JsonValueKind.String)
+                && actual.EnumerateArray().All(v => v.ValueKind == JsonValueKind.String)
+                && expected.EnumerateArray().Select(v => v.GetString()).SequenceEqual(actual.EnumerateArray().Select(v => v.GetString()), StringComparer.Ordinal);
+        }
+        if (expected.ValueKind == JsonValueKind.Null || actual.ValueKind == JsonValueKind.Null)
+            return expected.ValueKind == actual.ValueKind;
+        return ParameterScalar(expected, name, definition) == ParameterScalar(actual, name, definition);
+    }
+
+    private static void ValidateParameter(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array) { _ = Scalar(value); return; }
+        if (value.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
+            throw new InvalidDataException("Fixture parameter arrays must contain only strings.");
     }
 
     private static string ParameterScalar(JsonElement value, string name, ReportDefinition definition)

@@ -10,11 +10,13 @@ public sealed class CrystalBenchWorkspace : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1);
     private bool _disposed;
     private readonly Queue<string> _runs = new();
+    private readonly CrystalBenchMenuScope? _menuScope;
     public string? ReportRoot { get; }
 
-    public CrystalBenchWorkspace(string? reportRoot)
+    public CrystalBenchWorkspace(string? reportRoot, CrystalBenchMenuScope? menuScope = null)
     {
-        ReportRoot = string.IsNullOrWhiteSpace(reportRoot) ? null : Path.GetFullPath(reportRoot);
+        _menuScope = menuScope;
+        ReportRoot = menuScope?.Root ?? (string.IsNullOrWhiteSpace(reportRoot) ? null : Path.GetFullPath(reportRoot));
     }
 
     public static string? ResolveRoot(IConfiguration configuration, string contentRoot)
@@ -41,6 +43,7 @@ public sealed class CrystalBenchWorkspace : IAsyncDisposable
         }
         ValidateName(full);
         if (new FileInfo(full).Length > MaxReportBytes) throw new InvalidDataException("RPT files are limited to 64 MB.");
+        _menuScope?.RequireSource(full);
         return full;
     }
 
@@ -73,6 +76,13 @@ public sealed class CrystalBenchWorkspace : IAsyncDisposable
                     if (total > MaxReportBytes) throw new InvalidDataException("RPT files are limited to 64 MB.");
                     await output.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
                 }
+            }
+            if (_menuScope is not null)
+            {
+                var selected = _menuScope.RequireAllowedFile(source);
+                var canonical = Path.Combine(run, selected.Name + ".rpt");
+                if (source != canonical) File.Move(source, canonical);
+                source = canonical;
             }
             var result = await CrystalRptToXml.ConvertAsync(source, Path.ChangeExtension(source, ".xml"),
                 new(ExtractSubreports: true, Progress: progress), cancellationToken);

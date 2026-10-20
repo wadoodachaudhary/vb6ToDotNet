@@ -10,7 +10,10 @@ namespace FlexKitTester.Services;
 
 public sealed record CrystalSampleIssue(string Category, string Message);
 public sealed record CrystalSampleReport(string Hash, string Name, string RelativePath, string Collection,
-    string Status, int Pages, int Rows, List<CrystalSampleIssue> Issues, int Id = 0);
+    string Status, int Pages, int Rows, List<CrystalSampleIssue> Issues, int Id = 0, string? CorpusId = null)
+{
+    public string DisplayId => CorpusId is null ? Id.ToString(CultureInfo.InvariantCulture) : Id.ToString("00", CultureInfo.InvariantCulture);
+}
 public sealed record CrystalSampleColumn(string Name, string Type, string Reference);
 public sealed record CrystalSampleDataset(string Key, List<CrystalSampleColumn> Columns,
     Dictionary<string, string> Parameters, List<JsonElement[]> Rows);
@@ -20,13 +23,16 @@ public sealed record CrystalSampleCapture(CrystalSampleReport Report, List<Cryst
 public sealed class CrystalBenchSamples
 {
     public string DatabasePath { get; }
-    public bool Available => File.Exists(DatabasePath);
+    private readonly bool _menuOnly;
+    public bool Available => !_menuOnly && File.Exists(DatabasePath);
     public CrystalBenchSamples(IConfiguration configuration, IWebHostEnvironment environment)
-        : this(Path.GetFullPath(configuration["CrystalReportsBench:SampleDatabase"] ?? "Data/CrystalSamples.db", environment.ContentRootPath)) { }
+        : this(Path.GetFullPath(configuration["CrystalReportsBench:SampleDatabase"] ?? "Data/CrystalSamples.db", environment.ContentRootPath))
+    { _menuOnly = !string.IsNullOrWhiteSpace(configuration[CrystalBenchMenuScope.ConfigurationKey]); }
     public CrystalBenchSamples(string path) => DatabasePath = Path.GetFullPath(path);
 
     public IReadOnlyList<CrystalSampleReport> ReadCatalog()
     {
+        if (_menuOnly) throw new InvalidOperationException("The synthetic sample catalog is disabled in HomeFront menu mode.");
         if (!Available) return [];
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -74,6 +80,7 @@ public sealed class CrystalBenchSamples
 
     private SqliteConnection Open()
     {
+        if (_menuOnly) throw new InvalidOperationException("Synthetic sample data is disabled in HomeFront menu mode.");
         if (!Available) throw new FileNotFoundException("Generate the offline Crystal sample database first.", DatabasePath);
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = DatabasePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString());
         try
