@@ -524,6 +524,20 @@ For that run only, gate/deploy/verification used
 Repository URLs and SSH configuration were not changed. Recheck reachability and the trusted host key before
 reusing this workaround; never disable host-key checks or infer a new server address.
 
+**Recurred 10-20 and 10-21 — check it first.** Tell: preflight prints `git fetch failed` for all four GitLab
+clones while `curl https://api.nuget.org` works, and `dig +short git-ssh.innovatixinc.com` returns the Cloudflare
+addresses (172.67.149.239 / 104.21.57.206). Fix for the whole round: a host-scoped config, so GitHub is untouched —
+```
+Host git-ssh.innovatixinc.com gitlab.innovatixinc.com
+    HostName 3.145.28.151
+    HostKeyAlias gitlab.innovatixinc.com
+    StrictHostKeyChecking yes
+    BatchMode yes
+    ConnectTimeout 10
+Include /Users/wadood/.ssh/config
+```
+then `export GIT_SSH_COMMAND="ssh -F <that file>"` before preflight, `--pull`, the gate, the deploy and verify.
+
 ## 2026-10-08 — FlexCore ships from main only
 
 - The FlexCore checkout can be on a feature branch (Cursor PR branches for the Mutarjim IDE). The deploy now
