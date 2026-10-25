@@ -517,9 +517,9 @@ mkdir -p "$DEPLOY"
 PROJECTS=(
     # hyphen-pb main is fed from HomeFront (owner directive 2026-08-27) — HomeFrontPB
     # is untouched on this machine and now feeds the R1-UAT branch instead.
-    "hyphen-pb|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/hyphen-pb|git@git-ssh.innovatixinc.com:application-modernization/hyphen-pb.git"
-    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|git@git-ssh.innovatixinc.com:application-modernization/homefront.git"
-    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|git@git-ssh.innovatixinc.com:application-modernization/flexkit.git"
+    "hyphen-pb|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/hyphen-pb|https://gitlab.innovatixinc.com/application-modernization/hyphen-pb.git"
+    "homefront|$HF_ROOT/MobileSource/HomeFront|$DEPLOY/homefront|https://gitlab.innovatixinc.com/application-modernization/homefront.git"
+    "flexkit|$ROOT/FlexKit|$DEPLOY/flexkit|https://gitlab.innovatixinc.com/application-modernization/flexkit.git"
     "flexcore|$ROOT/FlexCore|$DEPLOY/flexcore|https://github.com/wadoodachaudhary/FlexCore.git"
 )
 
