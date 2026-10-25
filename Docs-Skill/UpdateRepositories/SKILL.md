@@ -22,7 +22,7 @@ HomeFront repo, then `bash /Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skil
 | `FlexKit` on branch **`telerik-parity-20260904`** | GitLab `flexkit` main | never `git checkout main` in FlexKit; not on NuGet |
 | `FlexCore` (main) | GitHub `wadoodachaudhary/FlexCore` + **nuget.org** | GitHub main is deploy-snapshot history; `FlexCore.Llm/` goes to GitHub only |
 
-Staging clones: `HomeFront/Deploy/repos/{hyphen-pb,homefront,flexkit,flexcore}`. GitLab over SSH is `git-ssh.innovatixinc.com` (the `gitlab.` name is web-only since 2026-10-08; see rules-and-traps). FlexCore is pushed only while its checkout is on `main`. FlexKit feed:
+Staging clones: `HomeFront/Deploy/repos/{hyphen-pb,homefront,flexkit,flexcore}`. Since 2026-10-25, GitLab uses `https://gitlab.innovatixinc.com` with the owner's personal token supplied by the macOS keychain. The staging remotes and deploy script already use HTTPS; do not print credentials or switch back to the unavailable SSH transport. FlexCore is pushed only while its checkout is on `main`. FlexKit feed:
 `HomeFront/Deploy/local-packages`. The outer git repo is `HomeFront/` itself (owns `tools/` and this
 skill); `VBToCSharp/` is not a repo. `HomeFront/Deploy/` is git-ignored and machine-local; the skill keeps
 three files there: `.update-repositories-gate.state`, `pull-conflicts.txt`, `preflight-ack.txt`.
