@@ -18,7 +18,9 @@ bash "$R" --list     # what would run and what is skipped; always exits 0
 - It `cd`s to the app (`:14,18`) and loops `verification/*/`, taking the first `*.csproj` in each.
   35 directories exist today: 27 run, 8 are skipped.
 - **Skip rule:** `grep -q 'Sdk="Microsoft.NET.Sdk.Web"'` on the csproj (`:36`). Those eight are browser
-  fixture *hosts* — started bare they never exit. They print as `SKIPPED` in both modes.
+  fixture *hosts* — started bare they never exit. They print as `SKIPPED` in both modes. Since 2026-10-26 a
+  csproj carrying `<HarnessSweep>skip: …</HarnessSweep>` is skipped too and prints its reason —
+  `ReportRegressionChecks`, run by `scripts/report_regression.sh` (section below).
 - **Working directory:** a harness whose top-level `.cs` mentions `GetCurrentDirectory` runs from the
   app directory, the rest from their own (`:43`). Two qualify —
   `verification/PricingWorksheetChecks/Program.cs` and `verification/GridLayoutSaveChecks/Program.cs`,
@@ -108,6 +110,43 @@ app's wwwroot and scoped CSS from its content root, and elsewhere fails with
 `DirectoryNotFoundException`. Overrides here: `CHECK_URL` / `CHECK_OUTPUT` (OneTimeChecks,
 ManualPoChecks), `BENCH_URL` / `RESULTS_DIR` / `PNG_MODULE` (TbdAssignmentChecks), `PLAYWRIGHT_MODULE`
 throughout.
+
+## Report Writer regression — the owner's nineteen reports
+
+Owner 2026-10-26: `MobileSource/HomeFront/wwwroot/resources/ReportTest.zip` "is HomeFront 19 reports. Use it when
+Report Writer is modified for regression testing. Add this as regression for update repositories session as well."
+
+```bash
+bash /Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skill/UpdateRepositories/scripts/report_regression.sh
+bash .../report_regression.sh --kit | --core        # one library
+bash .../report_regression.sh --accept              # re-baseline after a REVIEWED intended change (FlexKit writes, FlexCore must agree)
+bash .../report_regression.sh menu06 menu13         # case ids from verification/ReportRegressionChecks/cases.json
+```
+
+- **What it runs:** `verification/ReportRegressionChecks` (console harness; `cases.json` = the nineteen catalogued
+  runs with typed prompt values, rpt/PDF hashes and VB page counts; `baseline/<id>.json` = per-page band digests).
+  The script runs FlexCore first, then FlexKit (`-p:ControlKitProject`), both against the same baselines, so the
+  harness binary is left built against FlexKit and a drifted Reports mirror fails the FlexCore pass. 2026-10-26:
+  191/191 checks per library, all nineteen page counts equal VB's 247 pages, 41 s for both.
+- **Per report:** rpt and reference PDF hashes; the reference's page count (`pdfinfo`); convert → load positioned →
+  `MultiValueParameterRewriter` → `PrepareSqlExecution` → SQL (read-only intent, SELECT only) → `ReportLayoutSession`
+  paginated with real browser metrics (`ReportVendorParityChecks/browser.cjs` + the library's `report-layout.js`) →
+  HTML + native PDF; no subreport error; no diagnostic but the Calibri/Carlito note; page count = VB; every page's
+  bands = baseline (order inside a page ignored: equal-key rows follow the server's plan order; `--strict` pins it).
+- **The zip stays local** (owner 2026-10-26: "Keep it local"; before that a by-hand hold-out, history 10-25). Both
+  `wwwroot/resources/ReportTest.zip` and `ReportTest/` are in the app's `.gitignore`, so no round commits or deploys
+  them; the regression runs on this Mac only and the script stops with a clear message when the zip is gone. The
+  harness, `cases.json` and `baseline/` are committed like every other verification project.
+- **Needs:** SQL container `sqlserver_new` on 1433 (the script checks and names it), Chrome, Node + Playwright
+  (`NODE_PATH` / `PLAYWRIGHT_MODULE`, else the newest `~/.npm/_npx` install — the harness prints which), `pdfinfo`.
+  Output + logs: `${TMPDIR:-/tmp}/update-repositories-report-regression-<stamp>/{core,kit}/<id>/` with
+  `report.pdf` beside `reference.pdf` (the VB PDF) for the page-by-page review.
+- **Red run:** after an intended Reports change, review `report.pdf` vs `reference.pdf` for every case the
+  harness names, then `--accept` and commit `baseline/` with the change — never to turn a red run green. With no
+  Reports change it is a regression (or the local database moved: the cases assume the `HomeFrontVMSQL` restore of
+  2026-10-17) and the round stops. The harness exits 1 on any failed check; the script exits 1 when either pass did.
+- **Not covered:** pixel parity with Crystal (text wrapping, fonts, clipping — the parity suites below), the
+  parameter dialog, the viewer's navigation and drill-down, scheduled e-mail PDFs.
 
 ## Suites that drive the OWNER'S live instance — explicit ask only
 

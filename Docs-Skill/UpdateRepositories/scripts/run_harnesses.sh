@@ -6,7 +6,8 @@
 #   bash run_harnesses.sh           # run them
 #   bash run_harnesses.sh --list    # show what would run and what is skipped
 #
-# Skipped automatically: projects on Sdk="Microsoft.NET.Sdk.Web". Those are browser-driven fixture HOSTS
+# Skipped automatically: projects on Sdk="Microsoft.NET.Sdk.Web", and a csproj carrying <HarnessSweep>skip: ...</HarnessSweep>
+# (ReportRegressionChecks, run by scripts/report_regression.sh). The Sdk.Web ones are browser-driven fixture HOSTS
 # (e.g. InputDialogBrowserChecks: `dotnet run --urls http://127.0.0.1:0`, then `node browser.mjs <url>`,
 # per its README) — started bare they never exit, or fail to bind :5000 (AirPlay owns it on macOS).
 # A host whose Program.cs serves only when `--serve` is passed (ManualPoChecks) runs its headless scenarios here
@@ -38,6 +39,12 @@ for d in verification/*/; do
   name=$(basename "$d")
   if grep -q 'Sdk="Microsoft.NET.Sdk.Web"' "$proj" && ! grep -qs -- '"--serve"' "${d}Program.cs"; then
     skipped=$((skipped + 1)); printf '  %-26s SKIPPED  browser-driven fixture host — run it by hand per %sREADME.md\n' "$name" "$d"
+    continue
+  fi
+  # A csproj that says <HarnessSweep>skip: ...</HarnessSweep> has its own runner (ReportRegressionChecks: database,
+  # Chrome and an output directory — scripts/report_regression.sh, step 7). Listed so it is not forgotten.
+  if reason=$(grep -o '<HarnessSweep>skip:[^<]*' "$proj" 2>/dev/null); then
+    skipped=$((skipped + 1)); printf '  %-26s SKIPPED  %s\n' "$name" "${reason#<HarnessSweep>skip: }"
     continue
   fi
   total=$((total + 1))

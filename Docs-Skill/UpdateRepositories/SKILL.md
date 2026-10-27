@@ -243,6 +243,24 @@ fixture hosts (`Sdk="Microsoft.NET.Sdk.Web"`, e.g. InputDialogBrowserChecks) are
 by hand per its README when its area changed. If a harness fails, decide whether it is stale against an
 intended change or the code regressed, and say which.
 
+**Report Writer regression** (owner 2026-10-26) — the nineteen HomeFront reports of
+`wwwroot/resources/ReportTest.zip`, run against the local database and held to their VB page counts and the
+committed page baselines, FlexCore and FlexKit alike:
+
+```bash
+bash Docs-Skill/UpdateRepositories/scripts/report_regression.sh
+```
+
+Run it whenever `Reports/*` or `wwwroot/report-layout.js` changed in either library, or the app's
+`Services/Reports`, report resources or `PoDocumentRenderer` — and when in doubt: it takes under a minute
+and needs the SQL container, Chrome and Playwright (the script says what is missing). A red run after an
+intended report change is reviewed page by page, then re-baselined with `--accept` and the baselines
+committed with the change; a red run with no report change is a regression and stops the round.
+The zip itself stays on this Mac (owner 2026-10-26, git-ignored) — commit the harness and its baselines, never
+the references. `run_harnesses.sh` lists this project as SKIPPED on purpose. Details:
+[verification.md](reference/verification.md#report-writer-regression--the-owners-nineteen-reports) and
+`MobileSource/HomeFront/verification/ReportRegressionChecks/README.md`.
+
 `run_harnesses.sh` runs the C# half only. The browser suites, the ReportDesigner suites (run these when
 `Reports/*` changed in either library), the Crystal bench pack, FlexCore's own suites and the consumer
 builds are all in [reference/verification.md](reference/verification.md), with the exact commands — several
@@ -363,8 +381,8 @@ not deploy targets and nothing is stripped.
 
 ## Maintaining this skill
 
-`preflight.sh`, `pre_deploy_gate.sh` and `verify_deploy.sh` share `scripts/_common.sh`; `run_harnesses.sh`
-and `install.sh` stand alone. After changing `_common.sh` or the gate, run `bash tests/classify_fixture.sh`
+`preflight.sh`, `pre_deploy_gate.sh` and `verify_deploy.sh` share `scripts/_common.sh`; `run_harnesses.sh`,
+`report_regression.sh` and `install.sh` stand alone. After changing `_common.sh` or the gate, run `bash tests/classify_fixture.sh`
 and `bash tests/gate_fixture.sh` (throwaway repos; they touch nothing real).
 
 Keep this skill current in the same round as the lesson: a trap that lives only in a transcript is lost at
