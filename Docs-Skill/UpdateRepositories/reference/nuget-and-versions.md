@@ -141,14 +141,14 @@ re-checks the built package independently: `lib/net10.0/FlexCore.dll` and `READM
 
 The dependency split is deliberate: ClosedXML lives in FlexCore.Documents, "not in FlexCore … FlexCore's
 own export path uses the dependency-free `Fx.ControlKit.Excel.XlsxWriter` instead"
-(FlexCore.Documents.csproj:38-42), and FlexCore grants it `InternalsVisibleTo` (FlexCore.csproj:57) rather
-than widening its public API. FlexCore references no ClosedXML at all (its package refs are Ical.Net,
-ZXing.Net, AngleSharp and two Microsoft ones, :61-65); FlexKit needs no split because it carries ClosedXML
-itself (FlexKit.csproj:50).
+(`FlexCore.Documents.csproj`), and FlexCore grants it `InternalsVisibleTo` (`FlexCore.csproj`) rather than
+widening its public API. FlexCore references no ClosedXML at all (its package refs are Ical.Net, ZXing.Net,
+AngleSharp and two Microsoft ones); FlexKit needs no split because it carries ClosedXML itself
+(`FlexKit.csproj`) and compiles its `FlexKit.Documents/` folder into FlexKit.dll.
 
-⚠ FlexCore's shipped `<Description>` (FlexCore.csproj:25) still advertises "native ClosedXML Excel export",
-untrue since the Documents split. It is package metadata on nuget.org, so the correction only reaches
-users with the next publish.
+FlexCore's `<Description>` said "native ClosedXML Excel export", untrue since the Documents split. Corrected in
+FlexCore e3d70f0 (2026-10-28), and the README's two ClosedXML phrases with it; nuget.org shows the old text until
+the next publish.
 
 ### "Permanent" also means the public API
 

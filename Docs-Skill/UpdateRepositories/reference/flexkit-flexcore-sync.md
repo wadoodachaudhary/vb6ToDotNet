@@ -17,14 +17,14 @@ FlexCore `fa8011c` on `main`.
 | `<Version>` today | 0.1.107 (:14) | 0.2.48 (:21) |
 | On nuget.org | **no** — `api.nuget.org/v3-flatcontainer/flexkit/index.json` is 404; it ships only as a nupkg in `HomeFront/Deploy/local-packages` | **yes** — 48 versions, latest published 0.2.47; 0.2.48 is not published |
 | `PackageProjectUrl` | github.com/wadoodachaudhary/FlexKit (:22) | flexcoreui.com (:29) |
-| ClosedXML | in-tree dependency (:50) | none — it lives in `FlexCore.Documents` (:42) |
-| Satellites | none | `FlexCore.Documents` 0.2.35, `FlexCore.Llm` 0.2.42 (neither published — both 404), plus `tests/` (7 projects) |
+| ClosedXML | in-tree dependency (`FlexKit.csproj`) | none — it lives in `FlexCore.Documents` |
+| Satellites | none (`FlexKit.Documents/` compiles into FlexKit) | `FlexCore.Documents` 0.2.35, `FlexCore.Llm` 0.2.42 (neither published — both 404), `FlexCore.Migration` (never packed), plus `tests/` (1 project, `FlexCore.RegressionTests`; six more folders hold only old build output) |
 | Deploy target | GitLab `flexkit` main, rsynced from the working **branch** | GitHub `wadoodachaudhary/FlexCore` main + nuget.org |
 
-FlexCore excludes its satellites and tests from its own globs — `tests/**` (:5),
-`FlexCore.Documents/**` (:10), `FlexCore.Llm/**` (:13) — because `FlexCore.csproj` sits at the repo
-root and the SDK globs would otherwise pull them back in with their dependencies. It grants
-`InternalsVisibleTo FlexCore.Documents` (:57) rather than widening its public API for the split.
+FlexCore excludes its satellites and tests from its own globs — `tests/**`, `FlexCore.Documents/**`,
+`FlexCore.Llm/**`, `FlexCore.Migration/**` — because `FlexCore.csproj` sits at the repo root and the SDK
+globs would otherwise pull them back in with their dependencies. It grants `InternalsVisibleTo` to
+`FlexCore.Documents` and `FlexCore.Migration` rather than widening its public API for the split.
 
 Consumers, all live `ProjectReference`, so a library edit lands on the next consumer build:
 
@@ -34,7 +34,7 @@ Consumers, all live `ProjectReference`, so a library edit lands on the next cons
 | HomeFrontPB (`HomeFrontPB.csproj:70`) | FlexKit — **frozen**, never built or deployed (AGENTS.md:38) |
 | GhostWriterLLM (`:15`) | FlexKit |
 | FlexCore.Showcase (`:11`, `:12`) | FlexCore **+ FlexCore.Documents** |
-| Mutarjim (`:13`, `:14`) | FlexCore **+ FlexCore.Llm** |
+| Mutarjim | FlexCore **+ FlexCore.Llm**, and **+ FlexCore.Migration** through an `Exists()`-conditional reference that is uncommitted on `cursor/cpp-python-live-demo-792d` (2026-10-28); committed Mutarjim does not build against current FlexCore without it |
 | GhostWriter (`:59`), DotNetCCM (`:11`) | FlexCore |
 | FlexKitTester (`:10`,`:11` default; `:15` under `-p:UseFlexKit=true`) | FlexCore + Documents by default, FlexKit on demand |
 
@@ -80,13 +80,14 @@ byte-identical, at the same relative path, in both repos. The document controls 
 | FlexKit path | FlexCore path |
 |---|---|
 | `FlexKit.Documents/Spreadsheet/**`, `Pdf/**`, `Data/FilerControl.cs` | `FlexCore.Documents/Spreadsheet/**`, `Pdf/**`, `Data/FilerControl.cs` |
-| `FlexKit.Documents/wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` (206 files) | `FlexCore.Documents/wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` |
+| `wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` (206 files) — FlexKit's own wwwroot | `FlexCore.Documents/wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` |
 | `FlexKit.Documents/_Imports.razor` | `FlexCore.Documents/_Imports.razor` |
 
-FlexKit has no `FlexKit.Documents.csproj`: `FlexKit.csproj` compiles the folder into `FlexKit.dll`, keeps
-ClosedXML and serves the folder's `wwwroot/**` as its own static assets
-(`<Content Include="FlexKit.Documents/wwwroot/**" Link="wwwroot/...">`), so HomeFront still loads
-`_content/FlexKit/pdf-viewer.js` and the deploy packs one FlexKit package. FlexCore builds the folder as the
+FlexKit has no `FlexKit.Documents.csproj`: `FlexKit.csproj` compiles the folder into `FlexKit.dll` and keeps
+ClosedXML. The documents' web assets stay in FlexKit's own `wwwroot/` (a `Content ... Link` from the folder packed
+correctly but gave ProjectReference hosts a development manifest pointing at missing files), so HomeFront still
+loads `_content/FlexKit/pdf-viewer.js` and the deploy packs one FlexKit package. `library_identity.sh` maps those
+two paths onto `FlexCore.Documents/wwwroot/`. FlexCore builds the folder as the
 `FlexCore.Documents` satellite (ClosedXML lives there).
 
 A change to a documents file is made in both `<Brand>.Documents/` folders. Copying one to FlexCore's
@@ -100,10 +101,11 @@ A change to a documents file is made in both `<Brand>.Documents/` folders. Copyi
 - **`README.md`** (both packed as `PackageReadmeFile`) and **`CLAUDE.md`**. Both get a section per round
   (AGENTS.md:44), written from different positions: FlexKit's describes the fix, FlexCore's says
   "Mirrored the FlexKit correction…". Write each; never copy one over the other.
-- **FlexCore-only projects:** `tests/` (7 projects), `FlexCore.Llm/` (GitHub only, never NuGet) and
+- **FlexCore-only projects:** `tests/` (`FlexCore.RegressionTests`), `FlexCore.Llm/` (GitHub only, never NuGet) and
   `FlexCore.Migration/` — the migration tooling (converter shell, program preview, artifact viewers,
   `CrystalSamples.db`, Microsoft.Data.Sqlite), moved out of the library 2026-10-28 and never packed.
-  Mutarjim references it next to FlexCore. None of it goes into FlexKit.
+  Mutarjim needs a reference to it next to FlexCore (so far only an uncommitted edit on one branch). None of it
+  goes into FlexKit.
 
 `.gitignore`, `.gitattributes` and both `_Imports.razor` files are identical now and are carried across like
 any other shared file.
@@ -150,13 +152,13 @@ bash /Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skill/UpdateRepositories/s
 
 It compares tracked **and untracked** files (a new file is untracked until committed), maps
 `FlexKit.Documents/` onto `FlexCore.Documents/`, leaves out the expected identity files listed above and
-flags a literal `_content/FlexKit/` or `_content/FlexCore/` path in library code. It ends `IDENTICAL`, or
-lists each `ONLY IN` / `DIFFER` path and the count. A reported path is either an unported FlexKit change or
+flags a literal `_content/FlexKit/` or `_content/FlexCore/` path in library code and any listed file missing on
+disk. It ends `IDENTICAL`, or lists each `ONLY IN` / `DIFFER` / `MISSING ON DISK` path and the count. A reported path is either an unported FlexKit change or
 unrelated FlexCore work. Decide which before shipping; never "fix" it by copying.
 
 Measured 2026-10-28 after the convergence: 968 shared paths, 0 differing. The only report lines are 12
 FlexKit-only documents (`.agents/AGENTS.md`, `PUBLISHING.md`, `Data/DataControl.API.md`, `docs/*`, 9
-files) that FlexCore lost when deploy snapshots (f4de318 2026-09-26, 598b0d2 2026-10-20) were merged into its
+files) that FlexCore lost when deploy snapshot f4de318 (2026-09-26) was merged into its
 `main` — kept or removed on the owner's word.
 
 Cheapest runtime proof for a Grid / DropDown / Dialog port: four of the app's 35 `verification/*`
@@ -173,15 +175,15 @@ dotnet run --project verification/GridSortChecks \
 Three more can target FlexCore (verified 2026-10-15): `ReportRendererChecks` and `PasswordChecks` through
 `-p:ControlKitProject=<FlexCore.csproj>`, and `MdiSplitChecks` by retargeting its ProjectReference in a scratch copy.
 The other 31 build against FlexKit only, so a green harness run says nothing about FlexCore. FlexCore's
-own `tests/` (7 projects) are in no solution and are not run by this procedure.
+own `tests/FlexCore.RegressionTests` is in no solution and is not run by this procedure.
 
 ## Build matrix
 
 | Edited | Build, serially, `--no-incremental` |
 |---|---|
 | FlexKit | `MobileSource/HomeFront/HomeFront.sln` — contains FlexKit + HomeFront, nothing else (AGENTS.md:41) |
-| FlexCore | `../FlexCore.Showcase/FlexCore.Showcase.sln` — contains Showcase + FlexCore; `FlexCore.Documents` arrives transitively via `FlexCore.Showcase.csproj:12` (AGENTS.md:42) |
-| FlexCore, additionally (owner 2026-09-14) | Mutarjim, GhostWriter, DotNetCCM — one at a time; concurrent builds race on FlexCore's `obj/`. Mutarjim also builds `FlexCore.Migration` through its ProjectReference |
+| FlexCore | `../FlexCore.Showcase/FlexCore.Showcase.sln` — contains Showcase + FlexCore; `FlexCore.Documents` arrives transitively via `FlexCore.Showcase.csproj` (AGENTS.md:42) |
+| FlexCore, additionally (owner 2026-09-14) | Mutarjim, GhostWriter, DotNetCCM — one at a time; concurrent builds race on FlexCore's `obj/`. Mutarjim builds `FlexCore.Migration` only while its working copy carries the uncommitted reference |
 | anything | **never** `HomeFrontPB.sln` — frozen (AGENTS.md:38) |
 
 Each build must print `0 Error(s)`.
@@ -196,6 +198,9 @@ Two gaps in that matrix:
 - **`FlexCore.Llm` is in no solution anywhere** — not even `Mutarjim.sln`, which lists only
   `FlexCore.csproj` and `Mutarjim.csproj`. It compiles as a transitive `ProjectReference` of
   `Mutarjim.csproj:14`. A FlexCore.Llm edit is not covered by the standing build check.
+- **`FlexCore.Migration` is in no solution either.** It compiles through `tests/FlexCore.RegressionTests`
+  (`dotnet run --project tests/FlexCore.RegressionTests/FlexCore.RegressionTests.csproj`) or a Mutarjim build
+  that carries the reference; the Showcase build never compiles it.
 
 ## If the owner asks for a FlexCore → FlexKit port
 
@@ -242,9 +247,8 @@ These contradict the standing rules. All are stripped from every pushed branch
 (`deploy_to_repos.sh:93-108`: `CLAUDE.md`, `AGENTS.md`, `PUBLISHING.md`, `docs/`, `tests/`), so they
 mislead only local sessions — this skill's own audience.
 
-- **`FlexCore/PUBLISHING.md`** (`bea21b5`, 2026-08-13) and **`FlexKit/PUBLISHING.md`** (`b6594ee`,
-  2026-06-21) are byte-identical, both titled "Publishing FlexCore" although FlexKit is not on
-  nuget.org at all. Between them they instruct: push with `--skip-duplicate` (:78, the opposite of the
+- **`FlexKit/PUBLISHING.md`** (`b6594ee`, 2026-06-21; FlexCore's identical copy went with deploy snapshot
+  f4de318) is titled "Publishing FlexCore" although FlexKit is not on nuget.org at all. It instructs: push with `--skip-duplicate` (:78, the opposite of the
   current rule, under which a duplicate means the version was not bumped); pack the **live** tree into
   `./nupkg` (:60-61, exactly what `publish_flexcore.sh` exists to avoid); `git push` in FlexCore (:32,
   :53 — a direct push to `github/main` is rejected non-fast-forward); read the API key from
