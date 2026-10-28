@@ -69,6 +69,14 @@ listing=$(unzip -Z1 "$nupkg" 2>/dev/null)
 leak=$(printf '%s\n' "$listing" | grep -iE 'FlexCore\.Llm|(^|/)CLAUDE\.md$|(^|/)AGENTS\.md$|(^|/)docs/|PUBLISHING\.md|(^|/)tests/' | head -5)
 [ -z "$leak" ] || die "package contains files that must not ship: $leak"
 ok "contents: FlexCore.dll + README present; no FlexCore.Llm, agent notes, docs or tests"
+# Satellites, sample data and migration tooling never ship (FlexCore.Documents, FlexCore.Migration, CrystalSamples.db).
+leak=$(printf '%s\n' "$listing" | grep -iE '^contentFiles/|CrystalSamples|\.db$|\.rpt$|converter-shell\.js|program-preview\.js|FlexCore\.(Migration|Documents)' | head -5)
+[ -z "$leak" ] || die "package contains satellite, sample or tooling files: $leak"
+deps=$(unzip -p "$nupkg" '*.nuspec' 2>/dev/null | grep -oE 'dependency id="[^"]+"' | grep -iE '"(Microsoft\.Data\.Sqlite|ClosedXML)"' | head -3)
+[ -z "$deps" ] || die "package depends on a satellite-only package: $deps"
+tooling=$(unzip -p "$nupkg" lib/net10.0/FlexCore.dll 2>/dev/null | LC_ALL=C grep -aoE 'Fx\.ControlKit\.(Preview|Conversion|Artifacts)' | sort -u | head -3)
+[ -z "$tooling" ] || die "FlexCore.dll contains migration tooling namespaces: $tooling"
+ok "no satellite, sample data, Sqlite/ClosedXML dependency or migration tooling in the package"
 
 if $CHECK; then ok "CHECK ONLY — not pushed"; cleanup; exit 0; fi
 

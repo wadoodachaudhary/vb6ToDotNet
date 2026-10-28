@@ -210,13 +210,15 @@ attribute (compiles, then throws at runtime); a FlexKit change without its FlexC
 libraries' diffs file by file, and grep every ported file for `_content/FlexKit/` — assembly-scoped paths
 compile and fail at runtime); library code that names HomeFront; a bench port the owner has not approved
 (rule 11); secrets (rule 12). For a large diff run a parallel review first — and apply rule 6 while it runs.
-Mirror mechanics and the parity command: [reference/flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md).
+Mirror mechanics and the parity command: [reference/flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md);
+the read-only check is `bash scripts/library_identity.sh` (ends `IDENTICAL`).
 
 ### 5. Bump versions (before any dry run)
 
 - `FlexKit/FlexKit.csproj` `<Version>` — bump if FlexKit changed (code or asset) and its version is burned.
 - `FlexCore/FlexCore.csproj` `<Version>` — bump above nuget.org's latest if FlexCore changed.
-  (`FlexCore.Llm.csproj` and `FlexCore.Documents.csproj` carry their own versions; neither is published.)
+  (`FlexCore.Llm.csproj` and `FlexCore.Documents.csproj` carry their own versions; neither is published.
+  `FlexCore.Migration` is never packed.)
 
 Re-check both numbers against reality here, not from memory — the gate does not check FlexCore's at all:
 [reference/nuget-and-versions.md](reference/nuget-and-versions.md).

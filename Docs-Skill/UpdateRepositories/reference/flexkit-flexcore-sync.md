@@ -73,38 +73,40 @@ only compile-time proof either library is sound is the step 6 build.
 
 ## Port, never copy
 
-Most shared files sit at the same relative path in both repos. Nine source files and 206 vendored PDF
-assets do not, because FlexCore split its document controls into the `FlexCore.Documents` satellite
-while FlexKit keeps them in-tree:
+Converged 2026-10-28 (owner 2026-10-27, "making FlexCore and FlexKit same"): every shared source file is
+byte-identical, at the same relative path, in both repos. The document controls sit in a
+`<Brand>.Documents/` folder in both, with the same layout:
 
 | FlexKit path | FlexCore path |
 |---|---|
-| `Spreadsheet/**` (4 files) | `FlexCore.Documents/Spreadsheet/**` |
-| `Pdf/**` (3 files) | `FlexCore.Documents/Pdf/**` |
-| `Data/FilerControl.cs` | `FlexCore.Documents/Data/FilerControl.cs` |
-| `wwwroot/pdf-viewer.js` | `FlexCore.Documents/wwwroot/pdf-viewer.js` |
-| `wwwroot/vendor/**` (pdfjs + pdf-lib, 206 files) | `FlexCore.Documents/wwwroot/vendor/**` (206 files) |
-| — (FlexKit's root `_Imports.razor` carries the usings) | `FlexCore.Documents/_Imports.razor` |
+| `FlexKit.Documents/Spreadsheet/**`, `Pdf/**`, `Data/FilerControl.cs` | `FlexCore.Documents/Spreadsheet/**`, `Pdf/**`, `Data/FilerControl.cs` |
+| `FlexKit.Documents/wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` (206 files) | `FlexCore.Documents/wwwroot/pdf-viewer.js`, `wwwroot/vendor/**` |
+| `FlexKit.Documents/_Imports.razor` | `FlexCore.Documents/_Imports.razor` |
 
-All nine source files are byte-identical to their satellite twins today. Copying one to FlexCore's
-**root** path instead is silently inert: it is excluded from `FlexCore.csproj`'s globs (:10), so it
-compiles nowhere while the real satellite copy stays stale.
+FlexKit has no `FlexKit.Documents.csproj`: `FlexKit.csproj` compiles the folder into `FlexKit.dll`, keeps
+ClosedXML and serves the folder's `wwwroot/**` as its own static assets
+(`<Content Include="FlexKit.Documents/wwwroot/**" Link="wwwroot/...">`), so HomeFront still loads
+`_content/FlexKit/pdf-viewer.js` and the deploy packs one FlexKit package. FlexCore builds the folder as the
+`FlexCore.Documents` satellite (ClosedXML lives there).
+
+A change to a documents file is made in both `<Brand>.Documents/` folders. Copying one to FlexCore's
+**root** path is silently inert: `FlexCore.csproj` excludes `FlexCore.Documents/**` from its globs.
 
 ### Never carry across
 
-- **The csprojs** — package/assembly/version/description/URLs differ; FlexKit has ClosedXML, FlexCore
-  has `InternalsVisibleTo` and the three `DefaultItemExcludes`.
-- **`README.md`** (2.2 KB FlexKit vs 26 KB FlexCore; both packed as `PackageReadmeFile`) and
-  **`.gitignore`**.
-- **`CLAUDE.md`.** Both get a section per round (AGENTS.md:44), written from different positions:
-  FlexKit's describes the fix, FlexCore's says "Mirrored the FlexKit correction…". Write each; never
-  copy one over the other.
-- **`_Imports.razor`** — FlexKit's root copy has two lines FlexCore's must not get:
-  `@using Fx.ControlKit.Spreadsheet` and `@using Fx.ControlKit.Pdf`. In FlexCore those usings live in
-  `FlexCore.Documents/_Imports.razor`.
-- **FlexCore's `tests/` (57 files), `FlexCore.Documents/` (217), `FlexCore.Llm/` (38)** where they have
-  no FlexKit twin, and any unrelated in-flight FlexCore work — perf work is developed there on the
-  bench.
+- **The csprojs** — package/assembly/version/description/URLs differ; FlexKit has ClosedXML and the
+  documents `Content` link, FlexCore has `InternalsVisibleTo` (Documents, Migration, RegressionTests) and
+  the `DefaultItemExcludes` for `tests/`, `FlexCore.Documents/`, `FlexCore.Llm/`, `FlexCore.Migration/`.
+- **`README.md`** (both packed as `PackageReadmeFile`) and **`CLAUDE.md`**. Both get a section per round
+  (AGENTS.md:44), written from different positions: FlexKit's describes the fix, FlexCore's says
+  "Mirrored the FlexKit correction…". Write each; never copy one over the other.
+- **FlexCore-only projects:** `tests/` (7 projects), `FlexCore.Llm/` (GitHub only, never NuGet) and
+  `FlexCore.Migration/` — the migration tooling (converter shell, program preview, artifact viewers,
+  `CrystalSamples.db`, Microsoft.Data.Sqlite), moved out of the library 2026-10-28 and never packed.
+  Mutarjim references it next to FlexCore. None of it goes into FlexKit.
+
+`.gitignore`, `.gitattributes` and both `_Imports.razor` files are identical now and are carried across like
+any other shared file.
 
 ### The `_content/<AssemblyName>/` trap
 
@@ -140,37 +142,22 @@ Both from real incidents, recorded in `flexkit_flexcore_convergence_20260901`:
 
 ## Prove the port landed
 
-Read-only, about 30 seconds.
+Read-only, a few seconds:
 
 ```bash
-cd /Users/wadood/projects/VBToCSharp
-git -C FlexKit  ls-files --cached --others --exclude-standard | sort > /tmp/fk.txt
-git -C FlexCore ls-files --cached --others --exclude-standard | sort > /tmp/fc.txt
-comm -12 /tmp/fk.txt /tmp/fc.txt | while read -r f; do
-  cmp -s "FlexKit/$f" "FlexCore/$f" || echo "DIFFER $f"
-done
-# the Documents split — same content, different home
-for f in $(git -C FlexCore ls-files FlexCore.Documents | grep -v /vendor/ \
-           | grep -vE '\.csproj$|_Imports' | sed 's|^FlexCore.Documents/||'); do
-  cmp -s "FlexKit/$f" "FlexCore/FlexCore.Documents/$f" || echo "DIFFER(doc) $f"
-done
-grep -rl '_content/Flex' FlexKit FlexCore --exclude-dir=obj --exclude-dir=bin | grep -v /docs/
+bash /Users/wadood/projects/VBToCSharp/HomeFront/Docs-Skill/UpdateRepositories/scripts/library_identity.sh
 ```
 
-`--cached --others --exclude-standard`, not plain `ls-files`, on purpose: a brand-new file is untracked
-until committed and plain `ls-files` cannot see it. Today's uncommitted round is exactly that case —
-`Grid/IGridColumnCaptionLimit.cs` is untracked, identical on both sides, and invisible to the
-tracked-only form of the check.
+It compares tracked **and untracked** files (a new file is untracked until committed), maps
+`FlexKit.Documents/` onto `FlexCore.Documents/`, leaves out the expected identity files listed above and
+flags a literal `_content/FlexKit/` or `_content/FlexCore/` path in library code. It ends `IDENTICAL`, or
+lists each `ONLY IN` / `DIFFER` path and the count. A reported path is either an unported FlexKit change or
+unrelated FlexCore work. Decide which before shipping; never "fix" it by copying.
 
-**Expected output: exactly four `DIFFER` lines and nothing else** — `.gitignore`, `CLAUDE.md`,
-`README.md`, `_Imports.razor`. A fifth line is either an unported FlexKit change or unrelated FlexCore
-work. Decide which before shipping; never "fix" it by copying.
-
-Baseline measured 2026-09-26: FlexKit 896 files, FlexCore 993, **680 shared paths, 676 byte-identical,
-the 4 expected divergences**; all nine Documents-split files identical; outside the shared set the only
-non-satellite difference on either side is its own csproj. The libraries are in full parity right now,
-including the uncommitted round — both trees carry the same five modified files (`CLAUDE.md`,
-`Grid/GridControl.razor`, `.razor.cs`, `.razor.css`, `wwwroot/grid-control.js`) plus that one new file.
+Measured 2026-10-28 after the convergence: 968 shared paths, 0 differing. The only report lines are 12
+FlexKit-only documents (`.agents/AGENTS.md`, `PUBLISHING.md`, `Data/DataControl.API.md`, `docs/*`, 9
+files) that FlexCore lost when deploy snapshots (f4de318 2026-09-26, 598b0d2 2026-10-20) were merged into its
+`main` — kept or removed on the owner's word.
 
 Cheapest runtime proof for a Grid / DropDown / Dialog port: four of the app's 35 `verification/*`
 harnesses can target either library through `<ControlLibraryProject>` (default
@@ -194,7 +181,7 @@ own `tests/` (7 projects) are in no solution and are not run by this procedure.
 |---|---|
 | FlexKit | `MobileSource/HomeFront/HomeFront.sln` — contains FlexKit + HomeFront, nothing else (AGENTS.md:41) |
 | FlexCore | `../FlexCore.Showcase/FlexCore.Showcase.sln` — contains Showcase + FlexCore; `FlexCore.Documents` arrives transitively via `FlexCore.Showcase.csproj:12` (AGENTS.md:42) |
-| FlexCore, additionally (owner 2026-09-14) | Mutarjim, GhostWriter, DotNetCCM — one at a time; concurrent builds race on FlexCore's `obj/` |
+| FlexCore, additionally (owner 2026-09-14) | Mutarjim, GhostWriter, DotNetCCM — one at a time; concurrent builds race on FlexCore's `obj/`. Mutarjim also builds `FlexCore.Migration` through its ProjectReference |
 | anything | **never** `HomeFrontPB.sln` — frozen (AGENTS.md:38) |
 
 Each build must print `0 Error(s)`.
@@ -268,13 +255,11 @@ mislead only local sessions — this skill's own audience.
   following that line would appear to work while bypassing the Keychain route the owner set up; what was
   deleted on 2026-08-12 was the other plaintext file, `~/.nuget-api-key` (memory
   `flexcore_nuget_publish`). Whether the on-disk key is still valid is unverified — it was not read.
-- **`FlexKit/docs/`** is a byte-identical copy of `FlexCore/docs/`, so it tells readers to load
-  `_content/FlexCore/fx-grid-core.css` (`docs/remaining-controls.md:48`,
-  `docs/dedicated-controls.md:30`) — wrong for a FlexKit consumer. Keeping the two identical is what
-  parity requires; do not "fix" one side.
-- **`FlexCore.csproj:25`**, the shipped package `<Description>`, still advertises "native ClosedXML
-  Excel export", untrue since the Documents split (ClosedXML is at `FlexCore.Documents.csproj:42`). It
-  is live metadata on nuget.org, so a fix only reaches consumers with the next publish.
+- **`FlexKit/docs/`** tells readers to load `_content/FlexCore/fx-grid-core.css`
+  (`docs/remaining-controls.md:48`, `docs/dedicated-controls.md:30`) — wrong for a FlexKit consumer.
+  FlexCore no longer has `docs/` (removed with deploy snapshot f4de318); see "Prove the port landed".
+- **`FlexCore.csproj`'s `<Description>`** said "native ClosedXML Excel export", untrue since the Documents
+  split. Corrected in FlexCore e3d70f0 (2026-10-28); nuget.org shows the old text until the next publish.
 - **Retire one trap:** memory `flexcore_grid_control_js_latent_bug` (FlexCore calling an undefined
   `gridHighlightsSelectedRows`) no longer reproduces — the function is defined at
   `FlexCore/wwwroot/grid-control.js:4733` and the file is byte-identical between the libraries. Mark

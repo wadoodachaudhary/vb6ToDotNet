@@ -13,7 +13,7 @@ with the command that re-checks it, because they move every round.
 | FlexKit on nuget.org | not published — HTTP 404. `Deploy/local-packages` is its only ship route (history.md:24) | `curl -s -o /dev/null -w '%{http_code}\n' https://api.nuget.org/v3-flatcontainer/flexkit/index.json` |
 | FlexCore `<Version>` | 0.2.48 (FlexCore.csproj:21), HEAD `fa8011c` on `main` | `grep '<Version>' /Users/wadood/projects/VBToCSharp/FlexCore/FlexCore.csproj` |
 | FlexCore on nuget.org | 48 versions, latest **0.2.47**. 0.2.48 NOT published — held since 09-23 for the Crystal-reader defects (history.md:9-10) | `curl -s https://api.nuget.org/v3-flatcontainer/flexcore/index.json` |
-| Satellites | FlexCore.Documents 0.2.35, FlexCore.Llm 0.2.42 — both 404 on nuget.org, both on GitHub main | same URL with `flexcore.documents` / `flexcore.llm` |
+| Satellites | FlexCore.Documents 0.2.35, FlexCore.Llm 0.2.42 — both 404 on nuget.org, both on GitHub main; FlexCore.Migration (2026-10-28, migration tooling + CrystalSamples.db) is `IsPackable=false` | same URL with `flexcore.documents` / `flexcore.llm` |
 | Feed | `HomeFront/Deploy/local-packages/FlexKit.0.1.107.{nupkg,snupkg}`, 2026-09-26 02:15 | `ls -l /Users/wadood/projects/VBToCSharp/HomeFront/Deploy/local-packages` |
 
 nuget.org has no FlexCore 0.2.34 or 0.2.40 (never published; 0.2.34 exists only in the local cache). The
@@ -129,9 +129,12 @@ re-snapshots it.
 
 ### What the FlexCore package contains
 
-`FlexCore.csproj` excludes three trees from its own globs, each with the reason in a comment, because the
+`FlexCore.csproj` excludes four trees from its own globs, each with the reason in a comment, because the
 project sits at the repo root and the SDK globs would otherwise pull the satellites and their dependencies
-back in: `tests/**` (:5), `FlexCore.Documents/**` (:10), `FlexCore.Llm/**` (:13). `publish_flexcore.sh`
+back in: `tests/**`, `FlexCore.Documents/**`, `FlexCore.Llm/**`, `FlexCore.Migration/**` (2026-10-28).
+Since 2026-10-28 `publish_flexcore.sh` also refuses `contentFiles/`, `CrystalSamples`, any `.db`/`.rpt`,
+the two tooling scripts, a Sqlite or ClosedXML dependency and any `Fx.ControlKit.Preview`/`Conversion`/
+`Artifacts` namespace inside `FlexCore.dll`. `publish_flexcore.sh`
 re-checks the built package independently: `lib/net10.0/FlexCore.dll` and `README.md` must be present
 (:67-68), and any match of `FlexCore.Llm|CLAUDE.md|AGENTS.md|docs/|PUBLISHING.md|tests/` fails the publish
 (:69-70).
