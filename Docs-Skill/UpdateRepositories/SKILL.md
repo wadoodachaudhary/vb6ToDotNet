@@ -48,6 +48,10 @@ prerequisites git does not carry (keychain key, FlexKit feed, Playwright, the ow
    **R2-UAT is the client release branch** (owner 2026-10-01: "R1 is no more frozen as it has been renamed to R2
    and we are releasing code to the client on R2 branch"): every round passes `--with-r2uat` to the gate AND the
    deploy. **Never run `--with-r1uat`** — it rsyncs the frozen PB tree over the R2 code now on `R1-UAT`.
+   When asked to update `R2-UAT-Hyphen`, merge `R2-UAT` into it separately; preserve Irfan's
+   branch-specific settings, including its 120-minute retention override, and its pipeline/config files.
+   Compare each branch with its own pre-release baseline: QA main may already have a separate
+   120-minute setting while R2-UAT uses the default 3 minutes. Do not normalize these during a release.
 3. **Teammates' work comes in before any push-mode run.** A teammate change our tree lacks is silently
    REVERTED by the push. Every push-mode run — **even `--dry-run`** — resets the staging clone's `main`
    to `origin/main`, after which `--pull` reports nothing new. The gate judges unshipped teammate

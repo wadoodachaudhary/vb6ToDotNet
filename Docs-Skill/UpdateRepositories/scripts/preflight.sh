@@ -37,7 +37,7 @@ done
 
 # ── 2. Working trees ────────────────────────────────────────────────────────────
 hdr "2. Working trees (the deploy ships WORKING TREES — uncommitted edits go out)"
-for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore" "outer|$H" "HomeFrontPB|$PB"; do
+for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore" "outer|$H"; do
   name=${spec%%|*}; dir=${spec#*|}
   br=$(git -C "$dir" branch --show-current 2>/dev/null)
   n=$(git -C "$dir" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
@@ -51,7 +51,7 @@ for spec in "app|$HF" "FlexKit|$V/FlexKit" "FlexCore|$V/FlexCore" "outer|$H" "Ho
     attn "$name was edited less than 15 min ago — another session may be mid-edit"
   fi
 done
-echo "   (HomeFrontPB is FROZEN: its local entries are expected — never commit, revert or build it)"
+echo "   (HomeFrontPB is FROZEN and excluded from this scan)"
 if [ -s "$PULL_CONFLICTS" ]; then
   attn "UNRESOLVED --pull conflicts in $PULL_CONFLICTS — hand-merge each, then delete the file; do not --pull again or push until then"
   sed 's/^/   conflict: /' "$PULL_CONFLICTS"
