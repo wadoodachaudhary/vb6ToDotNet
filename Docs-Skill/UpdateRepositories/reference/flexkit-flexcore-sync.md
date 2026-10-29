@@ -156,10 +156,10 @@ flags a literal `_content/FlexKit/` or `_content/FlexCore/` path in library code
 disk. It ends `IDENTICAL`, or lists each `ONLY IN` / `DIFFER` / `MISSING ON DISK` path and the count. A reported path is either an unported FlexKit change or
 unrelated FlexCore work. Decide which before shipping; never "fix" it by copying.
 
-Measured 2026-10-28 after the convergence: 968 shared paths, 0 differing. The only report lines are 12
-FlexKit-only documents (`.agents/AGENTS.md`, `PUBLISHING.md`, `Data/DataControl.API.md`, `docs/*`, 9
-files) that FlexCore lost when deploy snapshot f4de318 (2026-09-26) was merged into its
-`main` — kept or removed on the owner's word.
+Measured 2026-10-28 after the convergence: 968 shared paths, 0 differing, nothing on one side only (FlexKit
+f0ab43a, FlexCore 41a2356). FlexKit's 12 FlexKit-only documents (`docs/` ×9, `PUBLISHING.md`, `.agents/AGENTS.md`,
+`Data/DataControl.API.md`), which FlexCore had lost with deploy snapshot f4de318, were removed on the owner's word.
+The script reads working trees, so another session's uncommitted edits show as `DIFFER` until they are mirrored.
 
 Cheapest runtime proof for a Grid / DropDown / Dialog port: four of the app's 35 `verification/*`
 harnesses can target either library through `<ControlLibraryProject>` (default

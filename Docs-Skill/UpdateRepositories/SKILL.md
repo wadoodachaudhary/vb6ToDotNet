@@ -216,7 +216,7 @@ compile and fail at runtime); library code that names HomeFront; a bench port th
 (rule 11); secrets (rule 12). For a large diff run a parallel review first — and apply rule 6 while it runs.
 Mirror mechanics and the parity command: [reference/flexkit-flexcore-sync.md](reference/flexkit-flexcore-sync.md);
 the read-only check is `bash scripts/library_identity.sh` (it ends `IDENTICAL` or lists each differing path;
-on 2026-10-28 it lists only the 12 FlexKit-only documents that wait for the owner).
+it reads working trees, so another session's uncommitted edits show as DIFFER).
 
 ### 5. Bump versions (before any dry run)
 
