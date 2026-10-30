@@ -78,6 +78,16 @@ included. Reproduced with a fixture on 2026-09-16. **Tell:** preflight/gate repo
 clone. **Fix:** `git -C <clone> reset --hard $(git -C <clone> merge-base main origin/main)` BEFORE
 `--pull`, then check that `--pull --dry-run` lists only the teammates' files. Never force-push.
 
+### A transport failure stops the whole run at the first repo
+`error: RPC failed; curl 55 Send failure: Broken pipe` / `fatal: the remote end hung up unexpectedly`
+(10-30, the ~12 MB hyphen-pb pack with the FlexKit nupkg) or a TLS error (10-29) fails the push of
+an already-committed `Deploy <repo>` commit; `set -e` then ends the run, so the later repos and R2-UAT
+are never attempted and the script prints no ✗ line. **Tell:** a non-zero exit with the last
+`[main <sha>] Deploy …` line not followed by `-> main`; `git -C <clone> ls-remote origin refs/heads/main`
+still shows the old head. **Fix:** after `fetch` confirms origin/main is still the commit's parent, push
+that same commit with the script's own command (`git -C <clone> push origin main`), then re-run the
+deploy: the pushed repo reports `✓ No changes to push` and the rest proceed. Never force-push.
+
 ### `--pull` conflicts vanish — and the next `--pull` silently drops the teammate's side
 `--pull` runs `git merge origin/main` in the clone before the per-file 3-way merges, so afterwards local
 `main == origin/main`. The `✗ N file(s) CONFLICT — left UNCHANGED` list is printed once. A second `--pull`
